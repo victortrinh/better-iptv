@@ -28,7 +28,7 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 
 | What | Where | Result |
 |---|---|---|
-| Sync of 150,000 generated movie Listings (~63 MB of JSON) from a local fake Provider, in a 128 MB heap | MacBook Pro (M-series), `SyncScaleTest` | 0.7 s |
+| Sync of 150,000 generated movie Listings (~63 MB of JSON) from a local fake Provider, in a 128 MB heap | MacBook Pro (M-series), `SyncScaleTest` | 0.7 s; 1.2 s once Listings are Matched to Titles (#5) |
 | Sync of the 148-Listing fixture | Android TV 14 emulator on the same Mac | 3.0 s |
 | First Sync of the full real catalog (movies: 144,031 Listings) | Fire TV Stick | Not measured yet: tracked in [#23](https://github.com/victortrinh/better-iptv/issues/23) ([install guide](install-on-fire-tv.md)). The app shows the time on the Movies screen and logs it under the `Sync` tag. |
 

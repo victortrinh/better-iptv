@@ -62,12 +62,12 @@ class Library private constructor(
                             categories[id] = name
                             staging.category(id, name)
                         }
-                        client.movieListings { id, name, categoryId, added ->
+                        client.movieListings { id, name, categoryId, added, tmdbId, image ->
                             val description = prefixTable.describe(name, categories[categoryId].orEmpty())
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
-                            staging.movieListing(id, name, categoryId, added, hidden = description.hidden != null)
+                            staging.movieListing(id, name, categoryId, added, tmdbId, image, hidden = description.hidden != null)
                         }
                     },
                     completed = { count ->
@@ -99,6 +99,37 @@ class Library private constructor(
     /** Movie Listings, newest first, from [offset] (0-based), with their Likely Version attributes. */
     fun movieListings(offset: Int, limit: Int): List<MovieListing> =
         store.movieListings(offset, limit) { name, category -> prefixTable.describe(name, category).attributes }
+
+    /** How many Titles the movie list Matches its Listings to. */
+    fun titleCount(): Int = store.titleCount()
+
+    /**
+     * Title cards, newest first (by each Title's newest Listing), from [offset] (0-based). Each card
+     * shows its best Version in the Viewer's [contentLanguages] (BCP 47 tags, `en` matching `en-GB`),
+     * or the best one overall when none is in them.
+     */
+    fun titles(offset: Int, limit: Int, contentLanguages: List<String>): List<TitleSummary> =
+        store.titles(offset, limit).map { title ->
+            val (best, name, image) = shown(candidates(title), contentLanguages)
+            TitleSummary(title.id, name.name, name.year, image, best.attributes)
+        }
+
+    /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
+    fun title(id: TitleId, contentLanguages: List<String>): TitleDetails? {
+        val title = store.title(id) ?: return null
+        val candidates = candidates(title)
+        val (_, name, image) = shown(candidates, contentLanguages)
+        val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
+        return TitleDetails(id, name.name, name.year, image, languages, otherLanguages)
+    }
+
+    /** What a Title shows until cloud metadata arrives: its best Version's cleaned name, and the Provider's image from the best Version that has one. */
+    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>): Triple<Candidate, PrefixTable.CleanName, String?> {
+        val ranked = preferred(candidates, contentLanguages)
+        return Triple(ranked.first(), prefixTable.cleanName(ranked.first().listing.name), ranked.firstNotNullOfOrNull { it.listing.image })
+    }
+
+    private fun candidates(title: StoredTitle) = title.listings.map { Candidate(it, prefixTable.describe(it.name, it.category).attributes) }
 
     override fun close() = store.close()
 

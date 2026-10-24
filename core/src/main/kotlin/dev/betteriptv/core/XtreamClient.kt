@@ -61,21 +61,28 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         }
     }
 
-    /** Streams the movie Listings as (Provider id, name, category id, added in epoch seconds). */
-    fun movieListings(each: (id: Long, name: String, categoryId: String?, added: Long?) -> Unit) = api("get_vod_streams") { json ->
+    /**
+     * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, TMDB ID,
+     * image URL). A TMDB ID that isn't a positive number (empty, `0`, an IMDb `tt…` ID) is null.
+     */
+    fun movieListings(each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?) -> Unit) = api("get_vod_streams") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
             var categoryId: String? = null
             var added: Long? = null
+            var tmdbId: Long? = null
+            var image: String? = null
             while (hasNext()) when (nextName()) {
                 "stream_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
                 "category_id" -> categoryId = nextScalar()
                 "added" -> added = nextScalar()?.toLongOrNull()
+                "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+                "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, added)
+            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image)
         }
     }
 
