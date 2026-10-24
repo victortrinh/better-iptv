@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 
 /**
@@ -65,7 +66,7 @@ fun TitleCard(
                     color = Colors.ink,
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = Spacing.s),
                 )
             }
             if (progress != null) {

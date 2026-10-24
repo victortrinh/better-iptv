@@ -6,7 +6,7 @@ import java.util.Locale
 internal class Candidate(val listing: StoredListing, val attributes: VersionAttributes)
 
 /**
- * Better Versions first. CAM copies always rank last and Audio-description ones after the rest, so
+ * Better Versions first. CAM Versions always rank last and Audio-description ones after the rest, so
  * neither is picked by default. Then the highest quality (4K Dolby Vision, 4K HDR, 4K, then unknown),
  * then a known Source, then the newest Listing.
  */
@@ -21,10 +21,12 @@ internal val BEST_FIRST: Comparator<Candidate> =
 /** `fr-CA` is French: a Content language matches every regional variant of it. */
 internal fun primaryLanguage(tag: String): String = tag.substringBefore('-').lowercase(Locale.ROOT)
 
+private val Candidate.primaryLanguage get() = attributes.language?.value?.let(::primaryLanguage)
+
 /** [candidates] best first, those in the Viewer's [contentLanguages] ahead of the rest. */
 internal fun preferred(candidates: List<Candidate>, contentLanguages: List<String>): List<Candidate> {
     val wanted = contentLanguages.map(::primaryLanguage).toSet()
-    return candidates.sortedWith(compareBy<Candidate> { it.attributes.language?.value?.let(::primaryLanguage) !in wanted }.then(BEST_FIRST))
+    return candidates.sortedWith(compareBy<Candidate> { it.primaryLanguage !in wanted }.then(BEST_FIRST))
 }
 
 /**
@@ -36,12 +38,12 @@ internal fun preferred(candidates: List<Candidate>, contentLanguages: List<Strin
 internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List<String>): Pair<List<LanguageGroup>, List<LanguageGroup>> {
     val wanted = contentLanguages.map(::primaryLanguage).distinct()
     val groups = candidates.sortedWith(BEST_FIRST)
-        .groupBy { it.attributes.language?.value?.let(::primaryLanguage) }
+        .groupBy { it.primaryLanguage }
         .map { (language, versions) -> LanguageGroup(language, withBackups(versions)) }
-    val mine = wanted.mapNotNull { language -> groups.find { it.language == language } } + groups.filter { it.language == null }
+    val viewers = wanted.mapNotNull { language -> groups.find { it.language == language } } + groups.filter { it.language == null }
     val others = groups.filter { it.language != null && it.language !in wanted }
         .sortedWith(compareByDescending<LanguageGroup> { it.versionCount }.thenBy { it.language })
-    return mine to others
+    return viewers to others
 }
 
 /** Keeps the first of each set of equivalent Versions in [ranked], with the others as its Backups. */
@@ -54,4 +56,4 @@ private fun withBackups(ranked: List<Candidate>): List<Version> {
     return equivalents.values.map { same -> same.first().toVersion(backups = same.drop(1).map { it.toVersion() }) }
 }
 
-private fun Candidate.toVersion(backups: List<Version> = emptyList()) = Version(listing.id, listing.name, listing.category, attributes, backups)
+private fun Candidate.toVersion(backups: List<Version> = emptyList()) = Version(listing.id, listing.name, attributes, backups)

@@ -61,7 +61,7 @@ fun MoviesScreen(
     library: Library,
     contentLanguages: List<String>,
     grid: LazyGridState,
-    restoreFocus: Int?,
+    restoreFocus: Int,
     onSyncNow: () -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
 ) {

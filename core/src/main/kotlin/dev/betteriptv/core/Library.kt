@@ -110,19 +110,23 @@ class Library private constructor(
      */
     fun titles(offset: Int, limit: Int, contentLanguages: List<String>): List<TitleSummary> =
         store.titles(offset, limit).map { title ->
-            val best = preferred(candidates(title), contentLanguages)
-            val name = prefixTable.cleanName(best.first().listing.name)
-            TitleSummary(title.id, name.name, name.year, best.firstNotNullOfOrNull { it.listing.image }, best.first().attributes)
+            val (best, name, image) = shown(candidates(title), contentLanguages)
+            TitleSummary(title.id, name.name, name.year, image, best.attributes)
         }
 
     /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
     fun title(id: TitleId, contentLanguages: List<String>): TitleDetails? {
         val title = store.title(id) ?: return null
         val candidates = candidates(title)
-        val best = preferred(candidates, contentLanguages)
-        val name = prefixTable.cleanName(best.first().listing.name)
+        val (_, name, image) = shown(candidates, contentLanguages)
         val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
-        return TitleDetails(id, name.name, name.year, best.firstNotNullOfOrNull { it.listing.image }, languages, otherLanguages)
+        return TitleDetails(id, name.name, name.year, image, languages, otherLanguages)
+    }
+
+    /** What a Title shows until cloud metadata arrives: its best Version's cleaned name, and the Provider's image from the best Version that has one. */
+    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>): Triple<Candidate, PrefixTable.CleanName, String?> {
+        val ranked = preferred(candidates, contentLanguages)
+        return Triple(ranked.first(), prefixTable.cleanName(ranked.first().listing.name), ranked.firstNotNullOfOrNull { it.listing.image })
     }
 
     private fun candidates(title: StoredTitle) = title.listings.map { Candidate(it, prefixTable.describe(it.name, it.category).attributes) }

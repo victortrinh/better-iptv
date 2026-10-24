@@ -54,7 +54,6 @@ data class LanguageGroup(val language: String?, val versions: List<Version>) {
 data class Version(
     val listingId: Long,
     val name: String,
-    val category: String,
     val attributes: VersionAttributes,
     val backups: List<Version> = emptyList(),
 )

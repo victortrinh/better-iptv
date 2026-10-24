@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
@@ -79,8 +80,8 @@ private fun TitleContent(title: TitleDetails) {
     val firstVersion = remember { FocusRequester() }
     LaunchedEffect(title.id) { firstVersion.requestFocus() }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
-    val mine = title.languages.ifEmpty { title.otherLanguages }
-    val best = mine.firstOrNull()?.versions?.firstOrNull()
+    val shown = title.languages.ifEmpty { title.otherLanguages }
+    val best = shown.firstOrNull()?.versions?.firstOrNull()
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -88,14 +89,14 @@ private fun TitleContent(title: TitleDetails) {
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
         item {
-            Row(Modifier.padding(top = Spacing.xl, bottom = 20.dp)) {
+            Row(Modifier.padding(top = Spacing.xl, bottom = Spacing.xl)) {
                 Column(Modifier.width(470.dp)) {
-                    Text(title.name, style = Type.display, color = Colors.ink, maxLines = 2)
+                    Text(title.name, style = Type.display, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(Spacing.s))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val versions = (title.languages + title.otherLanguages).sumOf { it.versionCount }
                         val count = pluralStringResource(R.plurals.versions_count, versions, versions)
-                        Text(listOfNotNull(title.year?.toString(), count).joinToString(" · "), style = Type.body, color = Colors.inkMuted)
+                        Text(listOfNotNull(title.year?.toString(), count).joinToString(" · "), style = Type.body, color = Colors.inkMuted, maxLines = 1)
                         Spacer(Modifier.width(Spacing.m))
                         BadgeRow(best?.attributes?.cardBadges().orEmpty())
                     }
@@ -119,7 +120,7 @@ private fun TitleContent(title: TitleDetails) {
             }
         }
         item { VersionHeader(Modifier.padding(bottom = 2.dp)) }
-        mine.forEachIndexed { index, group ->
+        shown.forEachIndexed { index, group ->
             languageGroup(context, group, first = index == 0, firstVersion)
         }
         if (title.languages.isNotEmpty() && title.otherLanguages.isNotEmpty()) {
@@ -145,6 +146,8 @@ private fun LazyListScope.languageGroup(context: Context, group: LanguageGroup, 
             "${group.language?.let(::languageName) ?: context.getString(R.string.language_untagged)} · ${group.versionCount}",
             style = Type.title,
             color = Colors.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = if (first) 0.dp else Spacing.m, bottom = 2.dp),
         )
     }
@@ -170,11 +173,12 @@ private fun Context.line(version: Version): VersionLine {
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
         bitrate = null,
         backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
+        // Both notes are cautions.
         note = when {
             attributes.cam -> getString(R.string.version_cam)
             attributes.audioDescription -> getString(R.string.version_audio_description)
             else -> null
         },
-        noteIsCaution = attributes.cam || attributes.audioDescription,
+        noteIsCaution = true,
     )
 }

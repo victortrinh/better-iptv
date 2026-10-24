@@ -38,19 +38,22 @@ private fun Root(app: BetterIptvApp) {
         // Content languages default to the device's language until settings let the Viewer choose.
         val contentLanguages = remember { listOf(Locale.getDefault().toLanguageTag()) }
         val grid = rememberLazyGridState()
-        var opened by remember { mutableStateOf<Pair<Int, TitleId>?>(null) }
-        var returnedFrom by remember { mutableStateOf<Int?>(null) }
+        var opened by remember { mutableStateOf<OpenedTitle?>(null) }
+        var returnedFrom by remember { mutableStateOf(0) }
         when (val title = opened) {
-            null -> MoviesScreen(app.library, contentLanguages, grid, restoreFocus = returnedFrom ?: 0, onSyncNow = app::sync, onOpen = { index, id ->
-                opened = index to id
+            null -> MoviesScreen(app.library, contentLanguages, grid, restoreFocus = returnedFrom, onSyncNow = app::sync, onOpen = { index, id ->
+                opened = OpenedTitle(index, id)
             })
             else -> {
                 BackHandler {
-                    returnedFrom = title.first
+                    returnedFrom = title.cardIndex
                     opened = null
                 }
-                TitleScreen(app.library, title.second, contentLanguages)
+                TitleScreen(app.library, title.id, contentLanguages)
             }
         }
     }
 }
+
+/** The Title whose details are open, and which card opened it, so focus goes back there. */
+private data class OpenedTitle(val cardIndex: Int, val id: TitleId)
