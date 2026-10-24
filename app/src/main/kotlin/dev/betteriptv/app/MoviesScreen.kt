@@ -3,20 +3,17 @@ package dev.betteriptv.app
 import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -26,57 +23,62 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
-import dev.betteriptv.app.ui.components.BadgeRow
-import dev.betteriptv.app.ui.components.BadgeSpec
-import dev.betteriptv.app.ui.components.Certainty
-import dev.betteriptv.app.ui.components.FocusSurface
-import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.Wordmark
+import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
-import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.CatalogNotSaved
 import dev.betteriptv.core.CompletedSync
 import dev.betteriptv.core.Library
-import dev.betteriptv.core.MovieListing
-import dev.betteriptv.core.Provenance
-import dev.betteriptv.core.Quality
 import dev.betteriptv.core.ProviderProblem
 import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
-import dev.betteriptv.core.VersionAttributes
+import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
-/** Every movie Listing, newest first, read from the device database a page at a time. */
+/**
+ * One card per movie Title, newest first, read from the device database a page at a time.
+ * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
+ */
 @Composable
-fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
+fun MoviesScreen(
+    library: Library,
+    contentLanguages: List<String>,
+    grid: LazyGridState,
+    restoreFocus: Int?,
+    onSyncNow: () -> Unit,
+    onOpen: (index: Int, TitleId) -> Unit,
+) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // A finished Sync swaps in a new catalog: drop the pages read from the old one.
     val syncedAt = status.last?.finishedAt
-    val pages = remember(syncedAt) { MovieListingPages(library) }
-    val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.movieListingCount() } }
+    val pages = remember(syncedAt, contentLanguages) { TitlePages(library, contentLanguages) }
+    val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.titleCount() } }
     val context = LocalContext.current
 
-    Column(Modifier.fillMaxSize().background(Colors.ground).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxSize().background(Colors.ground)) {
+        Row(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY), verticalAlignment = Alignment.CenterVertically) {
             Wordmark()
             Spacer(Modifier.width(Spacing.xl))
             Text(stringResource(R.string.movies_title), style = Type.headline, color = Colors.ink)
             Spacer(Modifier.width(Spacing.m))
-            Text(pluralStringResource(R.plurals.movies_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
+            Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
             Spacer(Modifier.weight(1f))
             NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running)
         }
@@ -84,86 +86,54 @@ fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
             context.describe(status),
             style = Type.caption,
             color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
-            modifier = Modifier.padding(top = Spacing.s, bottom = Spacing.l),
+            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.s),
         )
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            items(count) { index -> MovieRow(pages, index) }
+        // The margins are content padding, so a focused card grows into them instead of being clipped.
+        LazyVerticalGrid(
+            GridCells.FixedSize(Cards.posterWidth),
+            Modifier.fillMaxSize(),
+            state = grid,
+            contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
+            horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+        ) {
+            items(count) { index -> MovieCard(pages, index, focusNow = index == restoreFocus, onOpen) }
         }
     }
 }
 
 @Composable
-private fun MovieRow(pages: MovieListingPages, index: Int) {
-    val movie = pages[index]
-    if (movie == null) LaunchedEffect(index / MovieListingPages.PAGE_SIZE) { pages.load(index / MovieListingPages.PAGE_SIZE) }
-    val interaction = remember { MutableInteractionSource() }
-    val focused by interaction.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(Corners.control)
-    FocusSurface(
-        onClick = {},
-        // Like a Version row: a white fill would hide the Likely badges' outline, so a white
-        // outline marks focus instead.
-        modifier = Modifier.fillMaxWidth().height(40.dp).then(if (focused) Modifier.border(2.dp, Colors.focus, shape) else Modifier),
-        weight = FocusWeight.Row,
-        container = Colors.surface,
-        focusedContainer = Colors.surfaceHigh,
-        interactionSource = interaction,
-    ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = Spacing.l), verticalAlignment = Alignment.CenterVertically) {
-            BadgeRow(movie?.attributes?.badges().orEmpty(), Modifier.width(BADGES))
-            Text(
-                movie?.name.orEmpty(),
-                style = Type.label,
-                color = Colors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(Spacing.l))
-            Text(movie?.category.orEmpty(), style = Type.caption, color = Colors.inkMuted, maxLines = 1)
-        }
-    }
+private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
+    val title = pages[index]
+    if (title == null) LaunchedEffect(index / TitlePages.PAGE_SIZE) { pages.load(index / TitlePages.PAGE_SIZE) }
+    val focus = remember { FocusRequester() }
+    if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
+    TitleCard(
+        image = rememberProviderImage(title?.image),
+        name = title?.name.orEmpty(),
+        badges = title?.best?.cardBadges().orEmpty(),
+        onClick = { title?.let { onOpen(index, it.id) } },
+        modifier = Modifier.focusRequester(focus).padding(vertical = 10.dp),
+    )
 }
 
-/** Room for a quality and a language badge, so names line up. */
-private val BADGES = 96.dp
-
-/** Quality first, then language: "4K · FR-CA". */
-private fun VersionAttributes.badges(): List<BadgeSpec> = listOfNotNull(
-    quality?.let { BadgeSpec(it.value.label, it.provenance.certainty) },
-    language?.let { BadgeSpec(it.value.uppercase(Locale.ROOT), it.provenance.certainty) },
-)
-
-private val Quality.label get() = when (this) {
-    Quality.UHD -> "4K"
-    Quality.FullHD -> "1080p"
-    Quality.HD -> "720p"
-    Quality.SD -> "SD"
-}
-
-private val Provenance.certainty get() = when (this) {
-    Provenance.Likely -> Certainty.Likely
-    Provenance.Confirmed -> Certainty.Confirmed
-}
-
-/** Keeps a few pages of the movie list in memory around where the Viewer is. */
+/** Keeps a few pages of the Title list in memory around where the Viewer is. */
 @Stable
-private class MovieListingPages(private val library: Library) {
-    private val pages = mutableStateMapOf<Int, List<MovieListing>>()
+private class TitlePages(private val library: Library, private val contentLanguages: List<String>) {
+    private val pages = mutableStateMapOf<Int, List<TitleSummary>>()
     private val loading = mutableSetOf<Int>()
 
-    operator fun get(index: Int): MovieListing? = pages[index / PAGE_SIZE]?.getOrNull(index % PAGE_SIZE)
+    operator fun get(index: Int): TitleSummary? = pages[index / PAGE_SIZE]?.getOrNull(index % PAGE_SIZE)
 
     suspend fun load(page: Int) {
         if (page in pages || !loading.add(page)) return
-        val movies = withContext(Dispatchers.IO) { library.movieListings(page * PAGE_SIZE, PAGE_SIZE) }
+        val titles = withContext(Dispatchers.IO) { library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages) }
         loading -= page
-        pages[page] = movies
+        pages[page] = titles
         if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
     }
 
     companion object {
-        const val PAGE_SIZE = 100
+        const val PAGE_SIZE = 60
         const val PAGES_KEPT = 10
     }
 }

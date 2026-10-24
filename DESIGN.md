@@ -329,7 +329,9 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 - **RemoteKeyboard:** 34 dp capsule keys on `glass`, 6 dp apart, letters a–z then digits on a 7-column grid in alphabetical order, so the layout is the same in English and French. Space and Delete are wide keys. Keys use `FocusWeight.Control`.
 
 ### Real screens today
-`LoginScreen` (Provider login, on the bare ground) and `MoviesScreen` (the Movies list after Sync: 40 dp `FocusWeight.Row` rows with white-fill focus) are the shipped surfaces. Home, details, player, search and settings exist only as debug prototypes with placeholder content.
+`LoginScreen` (Provider login, on the bare ground), `MoviesScreen` (one `TitleCard` per Title in a poster grid, `card-gap` apart) and `TitleScreen` (a Title's details: header, `CertaintyLegend`, `VersionHeader`, Versions grouped by language, and an "Other languages" `SettingRow` that opens the remaining groups beneath it) are the shipped surfaces. Home, player, search and settings exist only as debug prototypes with placeholder content.
+
+Until cloud metadata arrives, artwork is the Provider's poster. A card without one is glass with the Title's name on it. Details show the poster beside the header instead of as a backdrop, because a poster blown up to the full screen is too blurry and too bright to keep text on it readable. Language names in Version lists are written in their own language ("Deutsch", "Français (Québec)") so each household member finds theirs.
 
 ### Running the prototypes
 Debug builds include `PrototypeActivity`:

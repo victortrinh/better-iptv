@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
@@ -30,11 +31,11 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * One Title: its poster, or a landscape still when [wide] (Continue watching). Its name and badges
  * (best quality and languages) appear under it while it has focus, so the artwork leads.
- * [progress] draws how far the Viewer got.
+ * Without an [image], the card is glass with the name on it. [progress] draws how far the Viewer got.
  */
 @Composable
 fun TitleCard(
-    image: Painter,
+    image: Painter?,
     name: String,
     badges: List<BadgeSpec>,
     onClick: () -> Unit,
@@ -50,10 +51,23 @@ fun TitleCard(
         FocusSurface(
             onClick,
             Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 2f / 3f),
+            container = Colors.surface,
             onFocus = onFocus,
             interactionSource = interaction,
         ) {
-            Image(image, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            if (image != null) {
+                Image(image, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            } else {
+                Text(
+                    name,
+                    // A poster is narrow: long words break with a hyphen rather than anywhere.
+                    style = Type.label.copy(hyphens = Hyphens.Auto),
+                    color = Colors.ink,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
+                )
+            }
             if (progress != null) {
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Colors.ground.copy(alpha = 0.6f)))
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(Colors.ink))

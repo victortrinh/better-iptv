@@ -6,6 +6,59 @@ import java.time.Instant
 /** One movie Listing, as the Provider names and files it, with what its Prefix and Category say about it. */
 data class MovieListing(val id: Long, val name: String, val category: String, val attributes: VersionAttributes)
 
+enum class TitleKind { Movie, Show }
+
+/**
+ * Which Title a card or details page is about. Movie and show TMDB IDs are separate number spaces,
+ * so a Title is keyed by kind and TMDB ID.
+ */
+sealed interface TitleId {
+    val kind: TitleKind
+
+    /** A Title Matched by the TMDB ID its Listings carry. */
+    data class Tmdb(override val kind: TitleKind, val tmdbId: Long) : TitleId
+
+    /** A Listing with no usable TMDB ID, standing alone until it can be looked up by name. */
+    data class Unmatched(override val kind: TitleKind, val listingId: Long) : TitleId
+}
+
+/**
+ * A Title's card. Until cloud metadata arrives, [name] and [year] come from the [best] Version's
+ * Listing name, and [image] is the Provider's.
+ */
+data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes)
+
+/** A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the rest. */
+data class TitleDetails(
+    val id: TitleId,
+    val name: String,
+    val year: Int?,
+    val image: String?,
+    val languages: List<LanguageGroup>,
+    val otherLanguages: List<LanguageGroup>,
+)
+
+/**
+ * A Title's Versions in one language, best first. [language] is a primary language subtag (`fr`
+ * also holds `fr-CA` Versions), or null for Untagged Versions.
+ */
+data class LanguageGroup(val language: String?, val versions: List<Version>) {
+    /** Every Version in the group, Backups included. */
+    val versionCount: Int get() = versions.sumOf { 1 + it.backups.size }
+}
+
+/**
+ * One playable copy of a Movie, from one Listing. [backups] are the equivalent Versions (same
+ * language and quality), best first, tried when this one fails to start.
+ */
+data class Version(
+    val listingId: Long,
+    val name: String,
+    val category: String,
+    val attributes: VersionAttributes,
+    val backups: List<Version> = emptyList(),
+)
+
 /** How the app knows a Version attribute. */
 enum class Provenance {
     /** Inferred from the Prefix, the Category or the Title's original language. */

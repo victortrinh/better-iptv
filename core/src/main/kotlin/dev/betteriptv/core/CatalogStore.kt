@@ -13,8 +13,10 @@ import java.time.Instant
  *
  * A Sync fills staging tables and swaps them in with one transaction, so readers see either the
  * previous catalog or the new one, never a mix, and a failed Sync leaves the previous one untouched.
- * Movie Listings are stored with their list position as the primary key, so any slice of a
- * 144k-row list is an index lookup. Hidden Listings (Clutter, Sports replays) get no position.
+ * Movie Listings and Titles are stored with their list position as the primary key, so any slice
+ * of a 144k-row list is an index lookup. Each Listing points at its Title's position, and a Title is
+ * found by its key (`movie/238`, or `movie/listing/1001` for an Unmatched one).
+ * Hidden Listings (Clutter, Sports replays) get no position and no Title.
  */
 internal class CatalogStore(path: String) : Closeable {
     private val driver = BundledSQLiteDriver()
@@ -22,14 +24,23 @@ internal class CatalogStore(path: String) : Closeable {
         execSQL("PRAGMA journal_mode=WAL")
         execSQL("PRAGMA synchronous=NORMAL")
         execSQL("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        if (prepare("PRAGMA user_version").use { it.step(); it.getLong(0) } < SCHEMA_VERSION) {
+            // A catalog stored in an older shape is dropped; the next Sync stores it again.
+            execSQL("DROP TABLE IF EXISTS movie_listing")
+            execSQL("DROP TABLE IF EXISTS title")
+            execSQL("DELETE FROM meta")
+            execSQL("PRAGMA user_version = $SCHEMA_VERSION")
+        }
         execSQL(MOVIE_LISTING_TABLE.format("movie_listing"))
+        execSQL(TITLE_TABLE.format("title"))
+        INDEXES.forEach { execSQL(it) }
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
     }
     private val reader: SQLiteConnection = driver.open(path)
 
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?)")
 
         fun category(id: String, name: String) = insertCategory.run {
             bindText(1, id)
@@ -37,13 +48,18 @@ internal class CatalogStore(path: String) : Closeable {
             stepAndReset()
         }
 
-        /** Stores a movie Listing; a [hidden] one is kept out of the movie list. */
-        fun movieListing(id: Long, name: String, categoryId: String?, added: Long?, hidden: Boolean) = insertListing.run {
+        /**
+         * Stores a movie Listing, Matched to its Title by [tmdbId], or standing alone without one.
+         * A [hidden] one is kept out of the movie list and gets no Title.
+         */
+        fun movieListing(id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, hidden: Boolean) = insertListing.run {
             bindLong(1, id)
             bindText(2, name)
             if (categoryId == null) bindNull(3) else bindText(3, categoryId)
             if (added == null) bindNull(4) else bindLong(4, added)
             bindLong(5, if (hidden) 1 else 0)
+            if (image == null) bindNull(6) else bindText(6, image)
+            bindText(7, key(tmdbId?.let { TitleId.Tmdb(TitleKind.Movie, it) } ?: TitleId.Unmatched(TitleKind.Movie, id)))
             stepAndReset()
         }
 
@@ -61,9 +77,11 @@ internal class CatalogStore(path: String) : Closeable {
         writer.execSQL("DROP TABLE IF EXISTS staging_category")
         writer.execSQL("DROP TABLE IF EXISTS staging_listing")
         writer.execSQL("DROP TABLE IF EXISTS staging_movie_listing")
+        writer.execSQL("DROP TABLE IF EXISTS staging_title")
         writer.execSQL("CREATE TABLE staging_category (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
-        writer.execSQL("CREATE TABLE staging_listing (id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER)")
+        writer.execSQL("CREATE TABLE staging_listing (id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT)")
         writer.execSQL(MOVIE_LISTING_TABLE.format("staging_movie_listing"))
+        writer.execSQL(TITLE_TABLE.format("staging_title"))
         try {
             writer.execSQL("BEGIN")
             val staging = Staging(writer)
@@ -72,20 +90,33 @@ internal class CatalogStore(path: String) : Closeable {
             } finally {
                 staging.close()
             }
+            // Titles are listed by their newest Listing.
             writer.execSQL(
                 """
-                INSERT INTO staging_movie_listing (position, id, name, category)
-                SELECT row_number() OVER (ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, '')
-                FROM staging_listing l LEFT JOIN staging_category c ON c.id = l.category_id
+                INSERT INTO staging_title (position, key)
+                SELECT row_number() OVER (ORDER BY max(added) DESC, min(name), min(id)), title_key
+                FROM staging_listing WHERE hidden = 0 GROUP BY title_key
+                """.trimIndent(),
+            )
+            writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
+            writer.execSQL(
+                """
+                INSERT INTO staging_movie_listing (position, id, name, category, added, image, title)
+                SELECT row_number() OVER (ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image, t.position
+                FROM staging_listing l
+                LEFT JOIN staging_category c ON c.id = l.category_id
+                JOIN staging_title t ON t.key = l.title_key
                 WHERE l.hidden = 0
                 """.trimIndent(),
             )
+            writer.execSQL("DROP INDEX staging_title_key")
             writer.execSQL("DROP TABLE staging_listing")
             writer.execSQL("DROP TABLE staging_category")
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             if (writer.inTransaction()) writer.execSQL("ROLLBACK")
             writer.execSQL("DROP TABLE IF EXISTS staging_movie_listing")
+            writer.execSQL("DROP TABLE IF EXISTS staging_title")
             throw e
         }
 
@@ -94,7 +125,10 @@ internal class CatalogStore(path: String) : Closeable {
         writer.execSQL("BEGIN IMMEDIATE")
         try {
             writer.execSQL("DROP TABLE movie_listing")
+            writer.execSQL("DROP TABLE title")
             writer.execSQL("ALTER TABLE staging_movie_listing RENAME TO movie_listing")
+            writer.execSQL("ALTER TABLE staging_title RENAME TO title")
+            INDEXES.forEach { writer.execSQL(it) }
             writer.execSQL("DELETE FROM unknown_prefix")
             writer.prepare("INSERT INTO unknown_prefix VALUES (?, ?, ?)").use { insert ->
                 sync.unknownPrefixes.forEach {
@@ -158,6 +192,45 @@ internal class CatalogStore(path: String) : Closeable {
         }
     }
 
+    fun titleCount(): Int = synchronized(reader) {
+        reader.prepare("SELECT coalesce(max(position), 0) FROM title").use { it.step(); it.getLong(0).toInt() }
+    }
+
+    /** Titles from [offset] (0-based), each with its Listings. */
+    fun titles(offset: Int, limit: Int): List<StoredTitle> = synchronized(reader) {
+        reader.prepare(
+            """
+            SELECT t.key, $LISTING_COLUMNS FROM title t JOIN movie_listing l ON l.title = t.position
+            WHERE t.position > ? AND t.position <= ? ORDER BY t.position
+            """.trimIndent(),
+        ).use {
+            it.bindLong(1, offset.toLong())
+            it.bindLong(2, offset.toLong() + limit)
+            val titles = LinkedHashMap<String, MutableList<StoredListing>>()
+            while (it.step()) titles.getOrPut(it.getText(0)) { mutableListOf() } += it.listing(1)
+            titles.map { (key, listings) -> StoredTitle(titleId(key), listings) }
+        }
+    }
+
+    /** The Title [id] with its Listings, or null when the catalog doesn't have it. */
+    fun title(id: TitleId): StoredTitle? = synchronized(reader) {
+        reader.prepare(
+            "SELECT $LISTING_COLUMNS FROM title t JOIN movie_listing l ON l.title = t.position WHERE t.key = ?",
+        ).use {
+            it.bindText(1, key(id))
+            val listings = buildList { while (it.step()) add(it.listing(0)) }
+            listings.takeIf { it.isNotEmpty() }?.let { StoredTitle(id, it) }
+        }
+    }
+
+    private fun SQLiteStatement.listing(from: Int) = StoredListing(
+        id = getLong(from),
+        name = getText(from + 1),
+        category = getText(from + 2),
+        added = if (isNull(from + 3)) null else getLong(from + 3),
+        image = if (isNull(from + 4)) null else getText(from + 4),
+    )
+
     private fun meta(key: String): String? = synchronized(reader) {
         reader.prepare("SELECT value FROM meta WHERE key = ?").use {
             it.bindText(1, key)
@@ -171,14 +244,40 @@ internal class CatalogStore(path: String) : Closeable {
     }
 
     private companion object {
+        /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
+        const val SCHEMA_VERSION = 1
         const val MOVIE_LISTING_TABLE =
-            "CREATE TABLE IF NOT EXISTS %s (position INTEGER PRIMARY KEY, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS %s (position INTEGER PRIMARY KEY, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
+                "added INTEGER, image TEXT, title INTEGER NOT NULL)"
+        const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (position INTEGER PRIMARY KEY, key TEXT NOT NULL)"
+        /** Made after a swap: an index keeps its name when its table is renamed. */
+        val INDEXES = listOf(
+            "CREATE INDEX IF NOT EXISTS movie_listing_title ON movie_listing (title)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
+        )
+        const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         const val UNKNOWN_PREFIX_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (prefix TEXT PRIMARY KEY, listings INTEGER NOT NULL, example TEXT NOT NULL)"
         const val LAST_SYNC_AT = "last_sync_at"
         const val LAST_SYNC_MILLIS = "last_sync_millis"
         const val LAST_SYNC_LISTINGS = "last_sync_movie_listings"
     }
+}
+
+/** A Title as stored: its Listings, before the Prefix table describes them. */
+internal class StoredTitle(val id: TitleId, val listings: List<StoredListing>)
+
+internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)
+
+private fun key(id: TitleId): String = when (id) {
+    is TitleId.Tmdb -> "${id.kind.name.lowercase()}/${id.tmdbId}"
+    is TitleId.Unmatched -> "${id.kind.name.lowercase()}/listing/${id.listingId}"
+}
+
+private fun titleId(key: String): TitleId {
+    val parts = key.split('/')
+    val kind = TitleKind.entries.single { it.name.lowercase() == parts[0] }
+    return if (parts[1] == "listing") TitleId.Unmatched(kind, parts[2].toLong()) else TitleId.Tmdb(kind, parts[1].toLong())
 }
 
 private fun SQLiteStatement.stepAndReset() {

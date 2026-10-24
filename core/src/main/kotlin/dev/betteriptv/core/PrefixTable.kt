@@ -40,6 +40,22 @@ internal class PrefixTable private constructor(
         return Description(prefix?.takeIf { prefixRule == null }, draft.attributes(), hidden)
     }
 
+    /**
+     * A Listing's name without its Prefix and year, for showing until cloud metadata arrives:
+     * `EN - The Godfather  (1972)` is "The Godfather" from 1972. Anything after the year (often the
+     * name again in another script) is dropped too.
+     */
+    fun cleanName(name: String): CleanName {
+        var rest = name
+        // Some names repeat their Prefix: `NL - NL - The Godfather: Part II`.
+        while (true) rest = PREFIX.find(rest)?.let { rest.substring(it.range.last + 1) } ?: break
+        val year = YEAR.find(rest)
+        val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(Regex("""\s+"""), " ").trim()
+        return CleanName(title.ifEmpty { name.trim() }, year?.groupValues?.get(1)?.toInt())
+    }
+
+    class CleanName(val name: String, val year: Int?)
+
     /** One line of the table: what a Prefix or Category hint says. */
     private data class Rule(
         val language: String? = null,
@@ -104,6 +120,8 @@ internal class PrefixTable private constructor(
          * odd `=`), with at least one letter, so `007 - Octopussy` and `Spider-Man: ...` have none.
          */
         private val PREFIX = Regex("""^\s*((?=[A-Z0-9+=-]*[A-Z])[A-Z0-9+]+(?:[-=][A-Z0-9+]+)*)(?:\s+-\s*|-\s+|\s+\.\s+)""")
+
+        private val YEAR = Regex("""\((19\d\d|20\d\d)\)""")
 
         /** The surveyed Provider's table, bundled with the app. */
         fun bundled(): PrefixTable = parse(

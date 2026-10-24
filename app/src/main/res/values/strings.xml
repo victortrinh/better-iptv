@@ -16,9 +16,9 @@
     <string name="provider_unreachable">Couldn\'t reach your Provider. %1$s</string>
 
     <string name="movies_title">Movies</string>
-    <plurals name="movies_count">
-        <item quantity="one">%1$s Listing</item>
-        <item quantity="other">%1$s Listings</item>
+    <plurals name="titles_count">
+        <item quantity="one">%1$s Title</item>
+        <item quantity="other">%1$s Titles</item>
     </plurals>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
@@ -44,6 +44,24 @@
     <string name="version_audio">Audio</string>
     <string name="version_subtitles">Subtitles</string>
     <string name="version_bitrate">Bitrate</string>
+    <string name="version_none">—</string>
+    <string name="version_cam">Cinema recording (CAM)</string>
+    <string name="version_audio_description">Audio description</string>
+    <string name="subtitles_many">Many languages</string>
+    <string name="language_untagged">Language not named</string>
+    <plurals name="backups_count">
+        <item quantity="one">%1$d Backup</item>
+        <item quantity="other">%1$d Backups</item>
+    </plurals>
+
+    <string name="versions_title">Versions</string>
+    <plurals name="versions_count">
+        <item quantity="one">%1$d Version</item>
+        <item quantity="other">%1$d Versions</item>
+    </plurals>
+    <string name="other_languages">Other languages</string>
+    <string name="other_languages_show">Show %1$d</string>
+    <string name="other_languages_hide">Hide</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>
