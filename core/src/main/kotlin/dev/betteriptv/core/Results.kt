@@ -3,8 +3,43 @@ package dev.betteriptv.core
 import java.time.Duration
 import java.time.Instant
 
-/** One movie Listing, as the Provider names and files it. */
-data class MovieListing(val id: Long, val name: String, val category: String)
+/** One movie Listing, as the Provider names and files it, with what its Prefix and Category say about it. */
+data class MovieListing(val id: Long, val name: String, val category: String, val attributes: VersionAttributes)
+
+/** How the app knows a Version attribute. */
+enum class Provenance {
+    /** Inferred from the Prefix, the Category or the Title's original language. */
+    Likely,
+
+    /** Read from the file, through a Header read or Playback. */
+    Confirmed,
+}
+
+data class Known<out T>(val value: T, val provenance: Provenance)
+
+enum class Quality { SD, HD, FullHD, UHD }
+
+enum class Hdr { HDR10, DolbyVision }
+
+/**
+ * What the app knows about one Version. Languages are BCP 47 tags (`en`, `fr-CA`, `ta`); `mul`
+ * among the subtitles means "many languages". Null means nothing is known yet.
+ */
+data class VersionAttributes(
+    /** The main audio's language. Null for an Untagged Version. */
+    val language: Known<String>? = null,
+    val subtitles: Known<Set<String>>? = null,
+    val quality: Known<Quality>? = null,
+    val hdr: Known<Hdr>? = null,
+    /** The streaming service the Version was copied from, such as "Netflix". */
+    val source: Known<String>? = null,
+    val dolbyAudio: Boolean = false,
+    val cam: Boolean = false,
+    val audioDescription: Boolean = false,
+)
+
+/** A Prefix the Prefix table doesn't know, seen on [listingCount] Listings such as [example]. */
+data class UnknownPrefix(val prefix: String, val listingCount: Int, val example: String)
 
 sealed interface LoginResult
 
@@ -26,7 +61,16 @@ data class Unreachable(val detail: String) : ProviderProblem
 /** The catalog downloaded but couldn't be stored on the device. */
 data class CatalogNotSaved(val detail: String) : SyncProblem
 
-data class CompletedSync(val finishedAt: Instant, val duration: Duration, val movieListingCount: Int)
+/**
+ * A finished Sync. [movieListingCount] counts the movie list, which leaves out Clutter and Sports
+ * replays; [unknownPrefixes] are the Prefixes to add to the Prefix table, most common first.
+ */
+data class CompletedSync(
+    val finishedAt: Instant,
+    val duration: Duration,
+    val movieListingCount: Int,
+    val unknownPrefixes: List<UnknownPrefix>,
+)
 
 sealed interface SyncStatus {
     /** The last Sync that finished, whose catalog the app shows. */

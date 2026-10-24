@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.Closeable
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -38,6 +39,12 @@ class FakeProvider : Closeable {
 
     /** Replaces the fixture's movie list with this one. */
     @Volatile var movieListOverride: String? = null
+
+    /** Replaces the fixture's movie Categories with these ones. */
+    @Volatile var movieCategoriesOverride: String? = null
+
+    /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
+    @Volatile var catalogDirectory: File? = null
 
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val openStreams = AtomicInteger()
@@ -77,7 +84,9 @@ class FakeProvider : Closeable {
         }
         when (query["action"]) {
             null -> respond(exchange) { it.write(account().toByteArray()) }
-            "get_vod_categories" -> respond(exchange) { it.write(fixture("vod_categories.json")) }
+            "get_vod_categories" -> respond(exchange) { body ->
+                if (!catalogFile("vod_categories.json", body)) body.write(movieCategoriesOverride?.toByteArray() ?: fixture("vod_categories.json"))
+            }
             "get_vod_streams" -> respond(exchange) { body -> movieList(body) }
             else -> respond(exchange) { it.write("[]".toByteArray()) }
         }
@@ -93,6 +102,7 @@ class FakeProvider : Closeable {
         val generated = generatedMovies
         val override = movieListOverride
         when {
+            catalogFile("vod_streams.json", body) -> {}
             generated != null -> generateMovies(body, generated)
             override != null -> body.write(override.toByteArray())
             cutMovieListMidway -> {
@@ -172,6 +182,12 @@ class FakeProvider : Closeable {
 
     private fun fixture(name: String): ByteArray =
         javaClass.getResourceAsStream("/fixture/$name")!!.use { it.readBytes() }
+
+    private fun catalogFile(name: String, body: OutputStream): Boolean {
+        val file = catalogDirectory?.resolve(name) ?: return false
+        file.inputStream().use { it.copyTo(body) }
+        return true
+    }
 }
 
 /** Credentials kept in memory, standing in for the device's keystore-backed storage. */

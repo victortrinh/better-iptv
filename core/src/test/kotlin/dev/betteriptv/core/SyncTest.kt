@@ -29,16 +29,17 @@ class SyncTest {
 
         library.sync()
 
-        assertEquals(148, library.movieListingCount())
+        // The fixture's 148 movie Listings, less 3 music videos and 3 Sports replays.
+        assertEquals(142, library.movieListingCount())
         val movies = library.movieListings(offset = 0, limit = 1000)
-        assertEquals(148, movies.size)
+        assertEquals(142, movies.size)
         assertEquals(
             listOf(
-                MovieListing(1107, "EN - Oz the Great and Powerful (2013)", "EN - 2020 & OLD"),
-                MovieListing(1018, "4K-DE-DV - Der Pate (1972)", "DE - ²¹⁶⁰ᵖ DV ᴴᴰᴿ¹⁰/PLUS"),
-                MovieListing(1135, "DE - Die fantastische Welt von Oz (2013)", "DE - FILME 1940/2024"),
+                Triple(1107L, "EN - Oz the Great and Powerful (2013)", "EN - 2020 & OLD"),
+                Triple(1018L, "4K-DE-DV - Der Pate (1972)", "DE - ²¹⁶⁰ᵖ DV ᴴᴰᴿ¹⁰/PLUS"),
+                Triple(1135L, "DE - Die fantastische Welt von Oz (2013)", "DE - FILME 1940/2024"),
             ),
-            movies.take(3),
+            movies.take(3).map { Triple(it.id, it.name, it.category) },
         )
         assertEquals(36, movies.count { "Ballerina" in it.name })
     }
@@ -49,8 +50,8 @@ class SyncTest {
 
         val reopened = openLibrary()
 
-        assertEquals(148, reopened.movieListingCount())
-        assertEquals(148, (reopened.syncStatus.value as SyncStatus.Synced).last.movieListingCount)
+        assertEquals(142, reopened.movieListingCount())
+        assertEquals(142, (reopened.syncStatus.value as SyncStatus.Synced).last.movieListingCount)
     }
 
     @Test fun `a failed Sync keeps the previous catalog and never reports the login`() = runBlocking {
@@ -62,10 +63,10 @@ class SyncTest {
         val status = library.sync()
 
         assertTrue(status is SyncStatus.Failed)
-        assertEquals(148, status.last?.movieListingCount)
+        assertEquals(142, status.last?.movieListingCount)
         assertFalse(status.toString().contains(provider.password))
         assertFalse(status.toString().contains(provider.username))
-        assertEquals(148, library.movieListingCount())
+        assertEquals(142, library.movieListingCount())
         assertEquals("EN - Oz the Great and Powerful (2013)", library.movieListings(0, 1).single().name)
     }
 
@@ -81,8 +82,8 @@ class SyncTest {
         library.sync()
 
         assertEquals(
-            listOf(MovieListing(7, "EN - Newly Added (2026)", "DE - FILME 1940/2024"), MovieListing(8, "EN - Older (2020)", "")),
-            library.movieListings(0, 10),
+            listOf(Triple(7L, "EN - Newly Added (2026)", "DE - FILME 1940/2024"), Triple(8L, "EN - Older (2020)", "")),
+            library.movieListings(0, 10).map { Triple(it.id, it.name, it.category) },
         )
         assertEquals(2, library.movieListingCount())
     }
@@ -111,6 +112,6 @@ class SyncTest {
         val status = library.sync()
 
         assertEquals(Expired(Instant.parse("2026-01-15T00:00:00Z")), (status as SyncStatus.Failed).problem)
-        assertEquals(148, library.movieListingCount())
+        assertEquals(142, library.movieListingCount())
     }
 }
