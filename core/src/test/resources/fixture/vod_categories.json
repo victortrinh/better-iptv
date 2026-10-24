@@ -1,0 +1,417 @@
+[
+ {
+  "category_id": "1",
+  "category_name": "DE - FILME 1940/2024",
+  "parent_id": 0
+ },
+ {
+  "category_id": "2",
+  "category_name": "FR - FANTASTIQUE AVENTURE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "3",
+  "category_name": "IN - HINDI ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "4",
+  "category_name": "FR - LE DRENIER AJOUTEE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "5",
+  "category_name": "TR - SINEMA",
+  "parent_id": 0
+ },
+ {
+  "category_id": "6",
+  "category_name": "IN - TAMIL",
+  "parent_id": 0
+ },
+ {
+  "category_id": "7",
+  "category_name": "SVENSKA 2020 & GAMMAL",
+  "parent_id": 0
+ },
+ {
+  "category_id": "8",
+  "category_name": "IT - CLASSICO",
+  "parent_id": 0
+ },
+ {
+  "category_id": "9",
+  "category_name": "EN - NEW RELEASE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "10",
+  "category_name": "GR - NEW RELEASES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "11",
+  "category_name": "IN - EN HINDI",
+  "parent_id": 0
+ },
+ {
+  "category_id": "12",
+  "category_name": "NORDIC MUSIC",
+  "parent_id": 0
+ },
+ {
+  "category_id": "13",
+  "category_name": "IR - PERSIAN SUB/DUB",
+  "parent_id": 0
+ },
+ {
+  "category_id": "14",
+  "category_name": "FR - COMEDIE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "15",
+  "category_name": "IR - PERSIAN MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "16",
+  "category_name": "DE - ²¹⁶⁰ᵖ DV ᴴᴰᴿ¹⁰/PLUS",
+  "parent_id": 0
+ },
+ {
+  "category_id": "17",
+  "category_name": "DE - FILME ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "18",
+  "category_name": "DE - FILME 2025/2026",
+  "parent_id": 0
+ },
+ {
+  "category_id": "19",
+  "category_name": "FR - FILMS EN SAGA ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "20",
+  "category_name": "EN - IMDB TOP 250",
+  "parent_id": 0
+ },
+ {
+  "category_id": "21",
+  "category_name": "FR - FILM ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "22",
+  "category_name": "ES - PELÍCULAS ANTIGUAS Y SAGAS",
+  "parent_id": 0
+ },
+ {
+  "category_id": "23",
+  "category_name": "NETFLIX MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "24",
+  "category_name": "SOCCER FOOTBALL",
+  "parent_id": 0
+ },
+ {
+  "category_id": "25",
+  "category_name": "NL - VIDEOLAND",
+  "parent_id": 0
+ },
+ {
+  "category_id": "26",
+  "category_name": "PT/BR - FILMES 1960-2023",
+  "parent_id": 0
+ },
+ {
+  "category_id": "27",
+  "category_name": "ES - PELÍCULAS ⁴ᴷ ³⁸⁴⁰ᴾ ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "28",
+  "category_name": "TR - FİLMLER ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "29",
+  "category_name": "KU - BADINI",
+  "parent_id": 0
+ },
+ {
+  "category_id": "30",
+  "category_name": "ES - PELÍCULAS 2025",
+  "parent_id": 0
+ },
+ {
+  "category_id": "31",
+  "category_name": "SOCCER AMERICAN FOOTBALL",
+  "parent_id": 0
+ },
+ {
+  "category_id": "32",
+  "category_name": "ES - PELÍCULAS",
+  "parent_id": 0
+ },
+ {
+  "category_id": "33",
+  "category_name": "IN - TELUGU",
+  "parent_id": 0
+ },
+ {
+  "category_id": "34",
+  "category_name": "NORDIC FILM ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "35",
+  "category_name": "TR - YESIL CAM SINEMA",
+  "parent_id": 0
+ },
+ {
+  "category_id": "36",
+  "category_name": "FR - AUDIO-DESCRIPTION",
+  "parent_id": 0
+ },
+ {
+  "category_id": "37",
+  "category_name": "FR - 2021 ANCIEN FILM",
+  "parent_id": 0
+ },
+ {
+  "category_id": "38",
+  "category_name": "EN - COLLECTIONS",
+  "parent_id": 0
+ },
+ {
+  "category_id": "39",
+  "category_name": "TR - IMD FILMER",
+  "parent_id": 0
+ },
+ {
+  "category_id": "40",
+  "category_name": "NL - 2022 & OUD",
+  "parent_id": 0
+ },
+ {
+  "category_id": "41",
+  "category_name": "IT - 4K MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "42",
+  "category_name": "DE - IMDB TOP 100",
+  "parent_id": 0
+ },
+ {
+  "category_id": "43",
+  "category_name": "EN - ACTION",
+  "parent_id": 0
+ },
+ {
+  "category_id": "44",
+  "category_name": "RO - VOYO",
+  "parent_id": 0
+ },
+ {
+  "category_id": "45",
+  "category_name": "ES - PELÍCULAS ⁴ᴷ ᴴᴰᴿ ᴰᴼᴸᴮʸ ⱽᴵˢᴵÓᴺ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "46",
+  "category_name": "NL - BIOSCOOP",
+  "parent_id": 0
+ },
+ {
+  "category_id": "47",
+  "category_name": "FR - DRAME",
+  "parent_id": 0
+ },
+ {
+  "category_id": "48",
+  "category_name": "TOP MOVIES ⁴ᴷ ³⁸⁴⁰ᴾ ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "49",
+  "category_name": "IR - PERSIAN کلاسیک دوبله",
+  "parent_id": 0
+ },
+ {
+  "category_id": "50",
+  "category_name": "PT/BR - FILMES 2025-2026",
+  "parent_id": 0
+ },
+ {
+  "category_id": "51",
+  "category_name": "AF - IROKO TV",
+  "parent_id": 0
+ },
+ {
+  "category_id": "52",
+  "category_name": "TOP MOVIES BLURAY (MULTI-SUBS)",
+  "parent_id": 0
+ },
+ {
+  "category_id": "53",
+  "category_name": "QC - FILMS VIEILLE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "54",
+  "category_name": "SOCCER RUGBY",
+  "parent_id": 0
+ },
+ {
+  "category_id": "55",
+  "category_name": "TR - ALT YAZI",
+  "parent_id": 0
+ },
+ {
+  "category_id": "56",
+  "category_name": "NETFLIX HEVC",
+  "parent_id": 0
+ },
+ {
+  "category_id": "57",
+  "category_name": "PL - KINO",
+  "parent_id": 0
+ },
+ {
+  "category_id": "58",
+  "category_name": "GR - APPLE+",
+  "parent_id": 0
+ },
+ {
+  "category_id": "59",
+  "category_name": "GR - ΚΙΝΗΜΑΤΟΓΡΑΦΟΣ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "60",
+  "category_name": "PK - PAKISTANI MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "61",
+  "category_name": "IL - HEBREW EN MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "62",
+  "category_name": "FR - FILM ⁴ᴷ ᴴᴰᴿ ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "63",
+  "category_name": "QC - SPECTACLES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "64",
+  "category_name": "PARAMOUNT PICTURES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "65",
+  "category_name": "NETFLIX ASIA",
+  "parent_id": 0
+ },
+ {
+  "category_id": "66",
+  "category_name": "FR - LE DRENIER AJOUTEE ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "67",
+  "category_name": "EN - 2020 & OLD",
+  "parent_id": 0
+ },
+ {
+  "category_id": "68",
+  "category_name": "NORDIC FILM 2022 & OLD",
+  "parent_id": 0
+ },
+ {
+  "category_id": "69",
+  "category_name": "ES - PELÍCULAS ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "70",
+  "category_name": "KU - SORANI",
+  "parent_id": 0
+ },
+ {
+  "category_id": "71",
+  "category_name": "SO - BOLLYWOOD",
+  "parent_id": 0
+ },
+ {
+  "category_id": "72",
+  "category_name": "IL - סרטים 2023 + האחרון",
+  "parent_id": 0
+ },
+ {
+  "category_id": "73",
+  "category_name": "GR - NETFLIX",
+  "parent_id": 0
+ },
+ {
+  "category_id": "74",
+  "category_name": "EN - MOVIES ⁴ᴷ ³⁸⁴⁰ᴾ",
+  "parent_id": 0
+ },
+ {
+  "category_id": "75",
+  "category_name": "IN - HINDI",
+  "parent_id": 0
+ },
+ {
+  "category_id": "76",
+  "category_name": "IL - סרטים 2022 + ישן",
+  "parent_id": 0
+ },
+ {
+  "category_id": "77",
+  "category_name": "IN - GUJARATI MOVIES",
+  "parent_id": 0
+ },
+ {
+  "category_id": "78",
+  "category_name": "GR - DISNEY+",
+  "parent_id": 0
+ },
+ {
+  "category_id": "79",
+  "category_name": "EN - KIDS",
+  "parent_id": 0
+ },
+ {
+  "category_id": "80",
+  "category_name": "FR - THRILLER",
+  "parent_id": 0
+ },
+ {
+  "category_id": "81",
+  "category_name": "ES - PELÍCULAS CLASICO",
+  "parent_id": 0
+ },
+ {
+  "category_id": "82",
+  "category_name": "ES - NETFLIX",
+  "parent_id": 0
+ },
+ {
+  "category_id": "83",
+  "category_name": "FR - ANIMATION ⁴ᴷ ᴴᴰᴿ ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+  "parent_id": 0
+ }
+]

@@ -1,2 +1,9 @@
 .env
 .survey/
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+__pycache__/
