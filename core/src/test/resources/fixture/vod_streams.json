@@ -1,0 +1,2962 @@
+[
+ {
+  "num": 1,
+  "name": "DE - Dangerous Connection - Im Netz der Verschwörung",
+  "stream_type": "movie",
+  "stream_id": 1001,
+  "stream_icon": "",
+  "rating": "5.8",
+  "rating_5based": 2.9,
+  "tmdb": 3548,
+  "trailer": "",
+  "added": "1580611492",
+  "is_adult": 0,
+  "category_id": "1",
+  "category_ids": [
+   1
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 2,
+  "name": "FR - Le Monde fantastique d’Oz (2013)",
+  "stream_type": "movie",
+  "stream_id": 1002,
+  "stream_icon": "",
+  "rating": "5.9",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1728340740",
+  "is_adult": 0,
+  "category_id": "2",
+  "category_ids": [
+   2
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 3,
+  "name": "4K-IN - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1003,
+  "stream_icon": "",
+  "rating": "7.389",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1757959500",
+  "is_adult": 0,
+  "category_id": "3",
+  "category_ids": [
+   3
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 4,
+  "name": "FR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1004,
+  "stream_icon": "",
+  "rating": "7.094",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751566680",
+  "is_adult": 0,
+  "category_id": "4",
+  "category_ids": [
+   4
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 5,
+  "name": "TR - Baba II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1005,
+  "stream_icon": "",
+  "rating": "8.595",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1686732060",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 6,
+  "name": "IN-TL - Dirty Hari (2023)",
+  "stream_type": "movie",
+  "stream_id": 1006,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1719504240",
+  "is_adult": 0,
+  "category_id": "6",
+  "category_ids": [
+   6
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 7,
+  "name": "SE - Almost Famous",
+  "stream_type": "movie",
+  "stream_id": 1007,
+  "stream_icon": "",
+  "rating": "7.5",
+  "rating_5based": 3.8,
+  "tmdb": 786,
+  "trailer": "",
+  "added": "1578904516",
+  "is_adult": 0,
+  "category_id": "7",
+  "category_ids": [
+   7
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 8,
+  "name": "IT - Il padrino - Parte II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1008,
+  "stream_icon": "",
+  "rating": "8.577",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1718723640",
+  "is_adult": 0,
+  "category_id": "8",
+  "category_ids": [
+   8
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 9,
+  "name": "EN - Exposure 36  (2021)",
+  "stream_type": "movie",
+  "stream_id": 1009,
+  "stream_icon": "",
+  "rating": "4",
+  "rating_5based": 2,
+  "tmdb": "615076",
+  "trailer": "",
+  "added": "1652442420",
+  "is_adult": 0,
+  "category_id": "9",
+  "category_ids": [
+   9
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 10,
+  "name": "GR - Pretty Lethal (2026)",
+  "stream_type": "movie",
+  "stream_id": 1010,
+  "stream_icon": "",
+  "rating": "6.7",
+  "rating_5based": 3.4,
+  "tmdb": "1084187",
+  "trailer": "",
+  "added": "1774451673",
+  "is_adult": 0,
+  "category_id": "10",
+  "category_ids": [
+   10
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 11,
+  "name": "IN-EN - Caught Stealing (2025)",
+  "stream_type": "movie",
+  "stream_id": 1011,
+  "stream_icon": "",
+  "rating": "6.903",
+  "rating_5based": 3.5,
+  "tmdb": "1245993",
+  "trailer": "",
+  "added": "1763732820",
+  "is_adult": 0,
+  "category_id": "11",
+  "category_ids": [
+   11
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 12,
+  "name": "MV - Bruce Springsteen & the E Street Band: London Calling Live in Hyde Park (2009)",
+  "stream_type": "movie",
+  "stream_id": 1012,
+  "stream_icon": "",
+  "rating": "6.6",
+  "rating_5based": 3.3,
+  "tmdb": "49417",
+  "trailer": "",
+  "added": "1711824540",
+  "is_adult": 0,
+  "category_id": "12",
+  "category_ids": [
+   12
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 13,
+  "name": "IR - The Godfather",
+  "stream_type": "movie",
+  "stream_id": 1013,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1578526527",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 14,
+  "name": "IT - Il padrino (1972)",
+  "stream_type": "movie",
+  "stream_id": 1014,
+  "stream_icon": "",
+  "rating": "8.694",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1718723640",
+  "is_adult": 0,
+  "category_id": "8",
+  "category_ids": [
+   8
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 15,
+  "name": "FR - Brigsby Bear",
+  "stream_type": "movie",
+  "stream_id": 1015,
+  "stream_icon": "",
+  "rating": "7.3",
+  "rating_5based": 3.7,
+  "tmdb": "403431",
+  "trailer": "",
+  "added": "1589309280",
+  "is_adult": 0,
+  "category_id": "14",
+  "category_ids": [
+   14
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 16,
+  "name": "IR - The Godfather: Part II",
+  "stream_type": "movie",
+  "stream_id": 1016,
+  "stream_icon": "",
+  "rating": "8.5",
+  "rating_5based": 4.3,
+  "tmdb": 240,
+  "trailer": "",
+  "added": "1578526528",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 17,
+  "name": "IR - Pedaran (2024) پدران",
+  "stream_type": "movie",
+  "stream_id": 1017,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1726657171",
+  "is_adult": 0,
+  "category_id": "15",
+  "category_ids": [
+   15
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 18,
+  "name": "4K-DE-DV - Der Pate (1972)",
+  "stream_type": "movie",
+  "stream_id": 1018,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1792182055",
+  "is_adult": 0,
+  "category_id": "16",
+  "category_ids": [
+   16
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 19,
+  "name": "4K-DE - Der Pate: Teil II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1019,
+  "stream_icon": "",
+  "rating": "8.59",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1658865360",
+  "is_adult": 0,
+  "category_id": "17",
+  "category_ids": [
+   17
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 20,
+  "name": "DE - Der Pate - Teil II",
+  "stream_type": "movie",
+  "stream_id": 1020,
+  "stream_icon": "",
+  "rating": "8.5",
+  "rating_5based": 4.3,
+  "tmdb": 240,
+  "trailer": "",
+  "added": "1575916171",
+  "is_adult": 0,
+  "category_id": "1",
+  "category_ids": [
+   1
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 21,
+  "name": "DE - Ballerina Assassin (2025)",
+  "stream_type": "movie",
+  "stream_id": 1021,
+  "stream_icon": "",
+  "rating": "3",
+  "rating_5based": 1.5,
+  "tmdb": "1478052",
+  "trailer": "",
+  "added": "1763839380",
+  "is_adult": 0,
+  "category_id": "18",
+  "category_ids": [
+   18
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 22,
+  "name": "4K-FR - Le Parrain (1972)",
+  "stream_type": "movie",
+  "stream_id": 1022,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1734011916",
+  "is_adult": 0,
+  "category_id": "19",
+  "category_ids": [
+   19
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 23,
+  "name": "EN-TOP - 04. The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1023,
+  "stream_icon": "",
+  "rating": "8.574",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1724698800",
+  "is_adult": 0,
+  "category_id": "20",
+  "category_ids": [
+   20
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 24,
+  "name": "TR - Baba 2",
+  "stream_type": "movie",
+  "stream_id": 1024,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": 240,
+  "trailer": "",
+  "added": "1578908621",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 25,
+  "name": "4K-FR - Le Seigneur des anneaux : Le Retour du roi (2003)",
+  "stream_type": "movie",
+  "stream_id": 1025,
+  "stream_icon": "",
+  "rating": "8.481",
+  "rating_5based": 4.2,
+  "tmdb": "122",
+  "trailer": "",
+  "added": "1599398760",
+  "is_adult": 0,
+  "category_id": "21",
+  "category_ids": [
+   21
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 26,
+  "name": "MV - Sabrina Carpenter - Espresso",
+  "stream_type": "movie",
+  "stream_id": 1026,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1780827060",
+  "is_adult": 0,
+  "category_id": "12",
+  "category_ids": [
+   12
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 27,
+  "name": "ES - El Padrino Parte II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1027,
+  "stream_icon": "",
+  "rating": "8.572",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1775486040",
+  "is_adult": 0,
+  "category_id": "22",
+  "category_ids": [
+   22
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 28,
+  "name": "IR - Oz the Great and Powerful",
+  "stream_type": "movie",
+  "stream_id": 1028,
+  "stream_icon": "",
+  "rating": "5.8",
+  "rating_5based": 2.9,
+  "tmdb": 68728,
+  "trailer": "",
+  "added": "1578526095",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 29,
+  "name": "NF - A Bigger Splash",
+  "stream_type": "movie",
+  "stream_id": 1029,
+  "stream_icon": "",
+  "rating": "6.2",
+  "rating_5based": 3.1,
+  "tmdb": 324807,
+  "trailer": "",
+  "added": "1578914766",
+  "is_adult": 0,
+  "category_id": "23",
+  "category_ids": [
+   23
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 30,
+  "name": "SOC - Denmark - England 20.06.2024",
+  "stream_type": "movie",
+  "stream_id": 1030,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1720807080",
+  "is_adult": 0,
+  "category_id": "24",
+  "category_ids": [
+   24
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 31,
+  "name": "NL - NL - The Godfather: Part II",
+  "stream_type": "movie",
+  "stream_id": 1031,
+  "stream_icon": "",
+  "rating": "8.593",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1576153080",
+  "is_adult": 0,
+  "category_id": "25",
+  "category_ids": [
+   25
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 32,
+  "name": "PT - O Padrinho",
+  "stream_type": "movie",
+  "stream_id": 1032,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1578644458",
+  "is_adult": 0,
+  "category_id": "26",
+  "category_ids": [
+   26
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 33,
+  "name": "4K-ES - El padrino (1972)",
+  "stream_type": "movie",
+  "stream_id": 1033,
+  "stream_icon": "",
+  "rating": "8.695",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1714316040",
+  "is_adult": 0,
+  "category_id": "27",
+  "category_ids": [
+   27
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 34,
+  "name": "4K-TR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1034,
+  "stream_icon": "",
+  "rating": "7.234",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1778852460",
+  "is_adult": 0,
+  "category_id": "28",
+  "category_ids": [
+   28
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 35,
+  "name": "KU-B - The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1035,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1734619704",
+  "is_adult": 0,
+  "category_id": "29",
+  "category_ids": [
+   29
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 36,
+  "name": "ES - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1036,
+  "stream_icon": "",
+  "rating": "7.354",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1759153800",
+  "is_adult": 0,
+  "category_id": "30",
+  "category_ids": [
+   30
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 37,
+  "name": "SOC - Italy - France 23.02.2025",
+  "stream_type": "movie",
+  "stream_id": 1037,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1743968340",
+  "is_adult": 0,
+  "category_id": "31",
+  "category_ids": [
+   31
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 38,
+  "name": "4K-DE - Der Pate - Teil II  (1974)",
+  "stream_type": "movie",
+  "stream_id": 1038,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1630179660",
+  "is_adult": 0,
+  "category_id": "17",
+  "category_ids": [
+   17
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 39,
+  "name": "ES - Mujercitas (2019)",
+  "stream_type": "movie",
+  "stream_id": 1039,
+  "stream_icon": "",
+  "rating": "7.9",
+  "rating_5based": 4,
+  "tmdb": "331482",
+  "trailer": "",
+  "added": "1730917620",
+  "is_adult": 0,
+  "category_id": "32",
+  "category_ids": [
+   32
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 40,
+  "name": "IR - Ballerina (2025) از دنیای جان ویک: بالرین",
+  "stream_type": "movie",
+  "stream_id": 1040,
+  "stream_icon": "",
+  "rating": "7.055",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751418420",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 41,
+  "name": "IN-TU - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1041,
+  "stream_icon": "",
+  "rating": "7.389",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1757950080",
+  "is_adult": 0,
+  "category_id": "33",
+  "category_ids": [
+   33
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 42,
+  "name": "SC-DO - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1042,
+  "stream_icon": "",
+  "rating": "7.5",
+  "rating_5based": 3.8,
+  "tmdb": 541671,
+  "trailer": "",
+  "added": "1752661568",
+  "is_adult": 0,
+  "category_id": "34",
+  "category_ids": [
+   34
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 43,
+  "name": "TR - Bal",
+  "stream_type": "movie",
+  "stream_id": 1043,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": 44160,
+  "trailer": "",
+  "added": "1580908247",
+  "is_adult": 0,
+  "category_id": "35",
+  "category_ids": [
+   35
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 44,
+  "name": "ES - Oz, un mundo de fantasía (2013)",
+  "stream_type": "movie",
+  "stream_id": 1044,
+  "stream_icon": "",
+  "rating": "5.918",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1720015320",
+  "is_adult": 0,
+  "category_id": "32",
+  "category_ids": [
+   32
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 45,
+  "name": "GR - Ballerina Assassin (2025)",
+  "stream_type": "movie",
+  "stream_id": 1045,
+  "stream_icon": "",
+  "rating": "2.8",
+  "rating_5based": 1.4,
+  "tmdb": "1478052",
+  "trailer": "",
+  "added": "1760855028",
+  "is_adult": 0,
+  "category_id": "10",
+  "category_ids": [
+   10
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 46,
+  "name": "SC-DO - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1046,
+  "stream_icon": "",
+  "rating": "7.389",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1758057840",
+  "is_adult": 0,
+  "category_id": "34",
+  "category_ids": [
+   34
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 47,
+  "name": "FR - Une Intime conviction (2019)",
+  "stream_type": "movie",
+  "stream_id": 1047,
+  "stream_icon": "",
+  "rating": "6.9",
+  "rating_5based": 3.5,
+  "tmdb": "487611",
+  "trailer": "",
+  "added": "1761082860",
+  "is_adult": 0,
+  "category_id": "36",
+  "category_ids": [
+   36
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 48,
+  "name": "FR - Le Parrain (1972)",
+  "stream_type": "movie",
+  "stream_id": 1048,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1578523693",
+  "is_adult": 0,
+  "category_id": "37",
+  "category_ids": [
+   37
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 49,
+  "name": "PT - The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1049,
+  "stream_icon": "",
+  "rating": "8.591",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1695164100",
+  "is_adult": 0,
+  "category_id": "26",
+  "category_ids": [
+   26
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 50,
+  "name": "EN - The Godfather  (1972)",
+  "stream_type": "movie",
+  "stream_id": 1050,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1700157540",
+  "is_adult": 0,
+  "category_id": "38",
+  "category_ids": [
+   38
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 51,
+  "name": "MV - Whitney Houston - How Will I Know",
+  "stream_type": "movie",
+  "stream_id": 1051,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1773122460",
+  "is_adult": 0,
+  "category_id": "12",
+  "category_ids": [
+   12
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 52,
+  "name": "TR - Baba (1972)",
+  "stream_type": "movie",
+  "stream_id": 1052,
+  "stream_icon": "",
+  "rating": "8.709",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1692441360",
+  "is_adult": 0,
+  "category_id": "39",
+  "category_ids": [
+   39
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 53,
+  "name": "NL - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1053,
+  "stream_icon": "",
+  "rating": "8.709",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1697221020",
+  "is_adult": 0,
+  "category_id": "40",
+  "category_ids": [
+   40
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 54,
+  "name": "4K-IT - Il padrino (1972)",
+  "stream_type": "movie",
+  "stream_id": 1054,
+  "stream_icon": "",
+  "rating": "8.694",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1718990220",
+  "is_adult": 0,
+  "category_id": "41",
+  "category_ids": [
+   41
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 55,
+  "name": "TR - İlk Göz Ağrısı",
+  "stream_type": "movie",
+  "stream_id": 1055,
+  "stream_icon": "",
+  "rating": "0",
+  "rating_5based": 0,
+  "tmdb": 491809,
+  "trailer": "",
+  "added": "1578907434",
+  "is_adult": 0,
+  "category_id": "35",
+  "category_ids": [
+   35
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 56,
+  "name": "DE - From the World of John Wick: Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1056,
+  "stream_icon": "",
+  "rating": "7.047",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751400360",
+  "is_adult": 0,
+  "category_id": "18",
+  "category_ids": [
+   18
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 57,
+  "name": "DE-TOP - 08. Der Pate (1972)",
+  "stream_type": "movie",
+  "stream_id": 1057,
+  "stream_icon": "",
+  "rating": "8.695",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1715011800",
+  "is_adult": 0,
+  "category_id": "42",
+  "category_ids": [
+   42
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 58,
+  "name": "IR - Ustaad Bhagat Singh (2026) استاد باگات سینگ - دوبله",
+  "stream_type": "movie",
+  "stream_id": 1058,
+  "stream_icon": "",
+  "rating": "6.5",
+  "rating_5based": 3.3,
+  "tmdb": "868668",
+  "trailer": "",
+  "added": "1778613660",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 59,
+  "name": "EN-TOP - 02. The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1059,
+  "stream_icon": "",
+  "rating": "8.69",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1724698800",
+  "is_adult": 0,
+  "category_id": "20",
+  "category_ids": [
+   20
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 60,
+  "name": "NF - Full Circle (2023)",
+  "stream_type": "movie",
+  "stream_id": 1060,
+  "stream_icon": "",
+  "rating": "0",
+  "rating_5based": 0,
+  "tmdb": "1172291",
+  "trailer": "",
+  "added": "1705765440",
+  "is_adult": 0,
+  "category_id": "23",
+  "category_ids": [
+   23
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 61,
+  "name": "EN - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1061,
+  "stream_icon": "",
+  "rating": "7.333",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1761265020",
+  "is_adult": 0,
+  "category_id": "43",
+  "category_ids": [
+   43
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 62,
+  "name": "4K-FR - Le parrain, 2e partie (1974)",
+  "stream_type": "movie",
+  "stream_id": 1062,
+  "stream_icon": "",
+  "rating": "8.572",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1734012012",
+  "is_adult": 0,
+  "category_id": "19",
+  "category_ids": [
+   19
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 63,
+  "name": "RO - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1063,
+  "stream_icon": "",
+  "rating": "7.24",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1776016020",
+  "is_adult": 0,
+  "category_id": "44",
+  "category_ids": [
+   44
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 64,
+  "name": "4K-ES-HDR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1064,
+  "stream_icon": "",
+  "rating": "7.318",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1765881600",
+  "is_adult": 0,
+  "category_id": "45",
+  "category_ids": [
+   45
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 65,
+  "name": "GR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1065,
+  "stream_icon": "",
+  "rating": "7.044",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751393820",
+  "is_adult": 0,
+  "category_id": "10",
+  "category_ids": [
+   10
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 66,
+  "name": "NL - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1066,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751461977",
+  "is_adult": 0,
+  "category_id": "46",
+  "category_ids": [
+   46
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 67,
+  "name": "KU-B - Ballerina (2025) بالێرینا",
+  "stream_type": "movie",
+  "stream_id": 1067,
+  "stream_icon": "",
+  "rating": "7.265",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1771339949",
+  "is_adult": 0,
+  "category_id": "29",
+  "category_ids": [
+   29
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 68,
+  "name": "FR - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1068,
+  "stream_icon": "",
+  "rating": "8.707",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1705570140",
+  "is_adult": 0,
+  "category_id": "47",
+  "category_ids": [
+   47
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 69,
+  "name": "EN - Ballerina Assassin  (2025)",
+  "stream_type": "movie",
+  "stream_id": 1069,
+  "stream_icon": "",
+  "rating": "4",
+  "rating_5based": 2,
+  "tmdb": "1478052",
+  "trailer": "",
+  "added": "1759403340",
+  "is_adult": 0,
+  "category_id": "9",
+  "category_ids": [
+   9
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 70,
+  "name": "4K-TOP - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1070,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751567880",
+  "is_adult": 0,
+  "category_id": "48",
+  "category_ids": [
+   48
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 71,
+  "name": "TR - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1071,
+  "stream_icon": "",
+  "rating": "8.708",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1703158620",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 72,
+  "name": "4K-FR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1072,
+  "stream_icon": "",
+  "rating": "7.317",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1765927200",
+  "is_adult": 0,
+  "category_id": "21",
+  "category_ids": [
+   21
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 73,
+  "name": "4K-DE - From the World of John Wick: Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1073,
+  "stream_icon": "",
+  "rating": "7.373",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1758208260",
+  "is_adult": 0,
+  "category_id": "17",
+  "category_ids": [
+   17
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 74,
+  "name": "4K-FR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1074,
+  "stream_icon": "",
+  "rating": "7.15",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751612100",
+  "is_adult": 0,
+  "category_id": "21",
+  "category_ids": [
+   21
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 75,
+  "name": "EN - Ballerina  (2025)",
+  "stream_type": "movie",
+  "stream_id": 1075,
+  "stream_icon": "",
+  "rating": "7.053",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751377920",
+  "is_adult": 0,
+  "category_id": "9",
+  "category_ids": [
+   9
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 76,
+  "name": "IR - The Godfather - Part I (1972) پدرخوانده بخش اول",
+  "stream_type": "movie",
+  "stream_id": 1076,
+  "stream_icon": "",
+  "rating": "8.687",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1770047640",
+  "is_adult": 0,
+  "category_id": "49",
+  "category_ids": [
+   49
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 77,
+  "name": "PT - Do Universo de John Wick: Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1077,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751493900",
+  "is_adult": 0,
+  "category_id": "50",
+  "category_ids": [
+   50
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 78,
+  "name": "AF-EN - My ExWife",
+  "stream_type": "movie",
+  "stream_id": 1078,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1741654560",
+  "is_adult": 0,
+  "category_id": "51",
+  "category_ids": [
+   51
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 79,
+  "name": "FR - Ducobu 3 (2020)",
+  "stream_type": "movie",
+  "stream_id": 1079,
+  "stream_icon": "",
+  "rating": "5.4",
+  "rating_5based": 2.7,
+  "tmdb": 605733,
+  "trailer": "",
+  "added": "1761082838",
+  "is_adult": 0,
+  "category_id": "36",
+  "category_ids": [
+   36
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 80,
+  "name": "KU-B - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1080,
+  "stream_icon": "",
+  "rating": "8.69",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1734619347",
+  "is_adult": 0,
+  "category_id": "29",
+  "category_ids": [
+   29
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 81,
+  "name": "TOP - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1081,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751654820",
+  "is_adult": 0,
+  "category_id": "52",
+  "category_ids": [
+   52
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 82,
+  "name": "DE - Der Pate",
+  "stream_type": "movie",
+  "stream_id": 1082,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1575916171",
+  "is_adult": 0,
+  "category_id": "1",
+  "category_ids": [
+   1
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 83,
+  "name": "QC - L'Âge des ténèbres (2007)",
+  "stream_type": "movie",
+  "stream_id": 1083,
+  "stream_icon": "",
+  "rating": "6.515",
+  "rating_5based": 3.3,
+  "tmdb": "24173",
+  "trailer": "",
+  "added": "1699402320",
+  "is_adult": 0,
+  "category_id": "53",
+  "category_ids": [
+   53
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 84,
+  "name": "SOC - New Zealand - Argentina 10.08.2024",
+  "stream_type": "movie",
+  "stream_id": 1084,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1725311400",
+  "is_adult": 0,
+  "category_id": "54",
+  "category_ids": [
+   54
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 85,
+  "name": "TR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1085,
+  "stream_icon": "",
+  "rating": "7.287",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751730240",
+  "is_adult": 0,
+  "category_id": "55",
+  "category_ids": [
+   55
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 86,
+  "name": "NF - A California Christmas: City Lights  (2021) HEVC",
+  "stream_type": "movie",
+  "stream_id": 1086,
+  "stream_icon": "",
+  "rating": "6.7",
+  "rating_5based": 3.4,
+  "tmdb": "882096",
+  "trailer": "",
+  "added": "1646927100",
+  "is_adult": 0,
+  "category_id": "56",
+  "category_ids": [
+   56
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 87,
+  "name": "PL - Ballerina. Z uniwersum Johna Wicka (2025)",
+  "stream_type": "movie",
+  "stream_id": 1087,
+  "stream_icon": "",
+  "rating": "7.05",
+  "rating_5based": 3.5,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1751423105",
+  "is_adult": 0,
+  "category_id": "57",
+  "category_ids": [
+   57
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 88,
+  "name": "GR - Rumor Has It... (2005)",
+  "stream_type": "movie",
+  "stream_id": 1088,
+  "stream_icon": "",
+  "rating": "5.676",
+  "rating_5based": 2.8,
+  "tmdb": "2800",
+  "trailer": "",
+  "added": "1777438749",
+  "is_adult": 0,
+  "category_id": "58",
+  "category_ids": [
+   58
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 89,
+  "name": "QC - Les Invasions barbares (2003)",
+  "stream_type": "movie",
+  "stream_id": 1089,
+  "stream_icon": "",
+  "rating": "7.062",
+  "rating_5based": 3.5,
+  "tmdb": "11042",
+  "trailer": "",
+  "added": "1699402320",
+  "is_adult": 0,
+  "category_id": "53",
+  "category_ids": [
+   53
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 90,
+  "name": "GR - Happening (2021)",
+  "stream_type": "movie",
+  "stream_id": 1090,
+  "stream_icon": "",
+  "rating": "7.2",
+  "rating_5based": 3.6,
+  "tmdb": "793998",
+  "trailer": "",
+  "added": "1777263915",
+  "is_adult": 0,
+  "category_id": "59",
+  "category_ids": [
+   59
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 91,
+  "name": "IN-EN - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1091,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1750603620",
+  "is_adult": 0,
+  "category_id": "11",
+  "category_ids": [
+   11
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 92,
+  "name": "PK - Bholay Bhalay Sayan ｜ Telefilm",
+  "stream_type": "movie",
+  "stream_id": 1092,
+  "stream_icon": "",
+  "rating": "5",
+  "rating_5based": 2.5,
+  "tmdb": "",
+  "trailer": "",
+  "added": "1718787840",
+  "is_adult": 0,
+  "category_id": "60",
+  "category_ids": [
+   60
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 93,
+  "name": "IL - Ballerina (2025) בלרינה",
+  "stream_type": "movie",
+  "stream_id": 1093,
+  "stream_icon": "",
+  "rating": "7.469",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1752688980",
+  "is_adult": 0,
+  "category_id": "61",
+  "category_ids": [
+   61
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 94,
+  "name": "FR - Ballerina Assassin (2025)",
+  "stream_type": "movie",
+  "stream_id": 1094,
+  "stream_icon": "",
+  "rating": "3.5",
+  "rating_5based": 1.8,
+  "tmdb": "1478052",
+  "trailer": "",
+  "added": "1769892660",
+  "is_adult": 0,
+  "category_id": "4",
+  "category_ids": [
+   4
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 95,
+  "name": "SE - Paddington",
+  "stream_type": "movie",
+  "stream_id": 1095,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": 116149,
+  "trailer": "",
+  "added": "1579214409",
+  "is_adult": 0,
+  "category_id": "7",
+  "category_ids": [
+   7
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 96,
+  "name": "TR - The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1096,
+  "stream_icon": "",
+  "rating": "8.588",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1703158620",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 97,
+  "name": "4K-FR-HDR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1097,
+  "stream_icon": "",
+  "rating": "7.304",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1767544560",
+  "is_adult": 0,
+  "category_id": "62",
+  "category_ids": [
+   62
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 98,
+  "name": "DE - From the World of John Wick: Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1098,
+  "stream_icon": "",
+  "rating": "7.373",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1758208260",
+  "is_adult": 0,
+  "category_id": "18",
+  "category_ids": [
+   18
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 99,
+  "name": "QC - P-A.Méthot.Le.Party.Du.Millénaire.2022",
+  "stream_type": "movie",
+  "stream_id": 1099,
+  "stream_icon": "",
+  "rating": "",
+  "rating_5based": "0",
+  "tmdb": "",
+  "trailer": "",
+  "added": "1699646520",
+  "is_adult": 0,
+  "category_id": "63",
+  "category_ids": [
+   63
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 100,
+  "name": "4K-ES - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1100,
+  "stream_icon": "",
+  "rating": "7.32",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1764762600",
+  "is_adult": 0,
+  "category_id": "27",
+  "category_ids": [
+   27
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 101,
+  "name": "EN - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1101,
+  "stream_icon": "",
+  "rating": "7.338",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1760998260",
+  "is_adult": 0,
+  "category_id": "43",
+  "category_ids": [
+   43
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 102,
+  "name": "TR - Muhteşem ve Kudretli Oz (2013)",
+  "stream_type": "movie",
+  "stream_id": 1102,
+  "stream_icon": "",
+  "rating": "5.9",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1692622800",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 103,
+  "name": "PRMT - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1103,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1716752526",
+  "is_adult": 0,
+  "category_id": "64",
+  "category_ids": [
+   64
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 104,
+  "name": "NF - Cook Up a Storm",
+  "stream_type": "movie",
+  "stream_id": 1104,
+  "stream_icon": "",
+  "rating": "6.8",
+  "rating_5based": 3.4,
+  "tmdb": "438857",
+  "trailer": "",
+  "added": "1578914220",
+  "is_adult": 0,
+  "category_id": "65",
+  "category_ids": [
+   65
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 105,
+  "name": "FR - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1105,
+  "stream_icon": "",
+  "rating": "7.373",
+  "rating_5based": 3.7,
+  "tmdb": 541671,
+  "trailer": "",
+  "added": "1758246220",
+  "is_adult": 0,
+  "category_id": "66",
+  "category_ids": [
+   66
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 106,
+  "name": "TR - Baba",
+  "stream_type": "movie",
+  "stream_id": 1106,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1578908621",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 107,
+  "name": "EN - Oz the Great and Powerful (2013)",
+  "stream_type": "movie",
+  "stream_id": 1107,
+  "stream_icon": "",
+  "rating": "5.94",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1792795440",
+  "is_adult": 0,
+  "category_id": "67",
+  "category_ids": [
+   67
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 108,
+  "name": "FR - The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1108,
+  "stream_icon": "",
+  "rating": "8.591",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1705570140",
+  "is_adult": 0,
+  "category_id": "47",
+  "category_ids": [
+   47
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 109,
+  "name": "PT - O Padrinho (1972)",
+  "stream_type": "movie",
+  "stream_id": 1109,
+  "stream_icon": "",
+  "rating": "8.688",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1738954260",
+  "is_adult": 0,
+  "category_id": "26",
+  "category_ids": [
+   26
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 110,
+  "name": "SC - The Godfather: Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1110,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": 240,
+  "trailer": "",
+  "added": "1579599237",
+  "is_adult": 0,
+  "category_id": "68",
+  "category_ids": [
+   68
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 111,
+  "name": "ES-DO - Ballerina (2025)",
+  "stream_type": "movie",
+  "stream_id": 1111,
+  "stream_icon": "",
+  "rating": "7.354",
+  "rating_5based": 3.7,
+  "tmdb": "541671",
+  "trailer": "",
+  "added": "1759152720",
+  "is_adult": 0,
+  "category_id": "69",
+  "category_ids": [
+   69
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 112,
+  "name": "KU-S - Oz the Great and Powerful (2013) ئۆزی مەزن و بەهێز",
+  "stream_type": "movie",
+  "stream_id": 1112,
+  "stream_icon": "",
+  "rating": "5.93",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1761432930",
+  "is_adult": 0,
+  "category_id": "70",
+  "category_ids": [
+   70
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 113,
+  "name": "IR - Legend of the Naga Pearls (2017) افسانه مرواریدهای ناگا - دوبله",
+  "stream_type": "movie",
+  "stream_id": 1113,
+  "stream_icon": "",
+  "rating": "5.559",
+  "rating_5based": 2.8,
+  "tmdb": "466438",
+  "trailer": "",
+  "added": "1725462187",
+  "is_adult": 0,
+  "category_id": "13",
+  "category_ids": [
+   13
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 114,
+  "name": "4K-DE - Der Pate (1972)",
+  "stream_type": "movie",
+  "stream_id": 1114,
+  "stream_icon": "",
+  "rating": "8.71",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1658865360",
+  "is_adult": 0,
+  "category_id": "17",
+  "category_ids": [
+   17
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 115,
+  "name": "TR - Baba II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1115,
+  "stream_icon": "",
+  "rating": "8.591",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1692441360",
+  "is_adult": 0,
+  "category_id": "39",
+  "category_ids": [
+   39
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 116,
+  "name": "TR - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1116,
+  "stream_icon": "",
+  "rating": "8.71",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1686732060",
+  "is_adult": 0,
+  "category_id": "5",
+  "category_ids": [
+   5
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 117,
+  "name": "DE - Breakin' 2: Electric Boogaloo  (1984)",
+  "stream_type": "movie",
+  "stream_id": 1117,
+  "stream_icon": "",
+  "rating": "5.016",
+  "rating_5based": 2.5,
+  "tmdb": 17464,
+  "trailer": "",
+  "added": "1658865400",
+  "is_adult": 0,
+  "category_id": "1",
+  "category_ids": [
+   1
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 118,
+  "name": "EN - Jones Plantation  (2023)",
+  "stream_type": "movie",
+  "stream_id": 1118,
+  "stream_icon": "",
+  "rating": "6",
+  "rating_5based": 3,
+  "tmdb": "1126273",
+  "trailer": "",
+  "added": "1695794100",
+  "is_adult": 0,
+  "category_id": "9",
+  "category_ids": [
+   9
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 119,
+  "name": "PT - O Padrinho: Parte II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1119,
+  "stream_icon": "",
+  "rating": "8.57",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1738954260",
+  "is_adult": 0,
+  "category_id": "26",
+  "category_ids": [
+   26
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 120,
+  "name": "SO-IN - 19(1)(a) (2022)",
+  "stream_type": "movie",
+  "stream_id": 1120,
+  "stream_icon": "",
+  "rating": "5.333",
+  "rating_5based": 2.7,
+  "tmdb": "766418",
+  "trailer": "",
+  "added": "1763999580",
+  "is_adult": 0,
+  "category_id": "71",
+  "category_ids": [
+   71
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 121,
+  "name": "GR - The Godfather Part II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1121,
+  "stream_icon": "",
+  "rating": "8.572",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1776493739",
+  "is_adult": 0,
+  "category_id": "59",
+  "category_ids": [
+   59
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 122,
+  "name": "FR - Incroyable mais vrai (2022)",
+  "stream_type": "movie",
+  "stream_id": 1122,
+  "stream_icon": "",
+  "rating": "6.053",
+  "rating_5based": 3,
+  "tmdb": 735697,
+  "trailer": "",
+  "added": "1761082838",
+  "is_adult": 0,
+  "category_id": "36",
+  "category_ids": [
+   36
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 123,
+  "name": "IL - במעמקי הסן",
+  "stream_type": "movie",
+  "stream_id": 1123,
+  "stream_icon": "",
+  "rating": "5.765",
+  "rating_5based": 2.9,
+  "tmdb": "1001311",
+  "trailer": "",
+  "added": "1717966380",
+  "is_adult": 0,
+  "category_id": "72",
+  "category_ids": [
+   72
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 124,
+  "name": "GR - 365 Days: This Day (2022)",
+  "stream_type": "movie",
+  "stream_id": 1124,
+  "stream_icon": "",
+  "rating": "5.926",
+  "rating_5based": 3,
+  "tmdb": "tt12996154",
+  "trailer": "",
+  "added": "1775793939",
+  "is_adult": 0,
+  "category_id": "73",
+  "category_ids": [
+   73
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 125,
+  "name": "FR - Rivales sur la glace (2016)",
+  "stream_type": "movie",
+  "stream_id": 1125,
+  "stream_icon": "",
+  "rating": "6.5",
+  "rating_5based": 3.3,
+  "tmdb": 420511,
+  "trailer": "",
+  "added": "1578523263",
+  "is_adult": 0,
+  "category_id": "37",
+  "category_ids": [
+   37
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 126,
+  "name": "4K-EN - The Godfather  (1972)",
+  "stream_type": "movie",
+  "stream_id": 1126,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1653476940",
+  "is_adult": 0,
+  "category_id": "74",
+  "category_ids": [
+   74
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 127,
+  "name": "EN - The Godfather: Part II  (1974)",
+  "stream_type": "movie",
+  "stream_id": 1127,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1700157540",
+  "is_adult": 0,
+  "category_id": "38",
+  "category_ids": [
+   38
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 128,
+  "name": "IN - Munna Bhai M.B.B.S.  (2003)",
+  "stream_type": "movie",
+  "stream_id": 1128,
+  "stream_icon": "",
+  "rating": "7.4",
+  "rating_5based": 3.7,
+  "tmdb": 19625,
+  "trailer": "",
+  "added": "1611587566",
+  "is_adult": 0,
+  "category_id": "75",
+  "category_ids": [
+   75
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 129,
+  "name": "PT - O Padrinho (1972)",
+  "stream_type": "movie",
+  "stream_id": 1129,
+  "stream_icon": "",
+  "rating": "8.706",
+  "rating_5based": 4.4,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1695164100",
+  "is_adult": 0,
+  "category_id": "26",
+  "category_ids": [
+   26
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 130,
+  "name": "PRMT - The Godfather (1972)",
+  "stream_type": "movie",
+  "stream_id": 1130,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1716752527",
+  "is_adult": 0,
+  "category_id": "64",
+  "category_ids": [
+   64
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 131,
+  "name": "IR - The Godfather Part II (1972) پدرخوانده بخش دوم",
+  "stream_type": "movie",
+  "stream_id": 1131,
+  "stream_icon": "",
+  "rating": "8.687",
+  "rating_5based": 4.3,
+  "tmdb": "238",
+  "trailer": "",
+  "added": "1770047640",
+  "is_adult": 0,
+  "category_id": "49",
+  "category_ids": [
+   49
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 132,
+  "name": "4K-IT - Il padrino: Parte II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1132,
+  "stream_icon": "",
+  "rating": "8.577",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1718990220",
+  "is_adult": 0,
+  "category_id": "41",
+  "category_ids": [
+   41
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 133,
+  "name": "PT - Maldito Futebol Fantasy (2025)",
+  "stream_type": "movie",
+  "stream_id": 1133,
+  "stream_icon": "",
+  "rating": "5.688",
+  "rating_5based": 2.8,
+  "tmdb": "1500691",
+  "trailer": "",
+  "added": "1758753300",
+  "is_adult": 0,
+  "category_id": "50",
+  "category_ids": [
+   50
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 134,
+  "name": "IL - ‏אל תסתכלו למעלה",
+  "stream_type": "movie",
+  "stream_id": 1134,
+  "stream_icon": "",
+  "rating": "7.1",
+  "rating_5based": 3.6,
+  "tmdb": "646380",
+  "trailer": "",
+  "added": "1719184920",
+  "is_adult": 0,
+  "category_id": "76",
+  "category_ids": [
+   76
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 135,
+  "name": "DE - Die fantastische Welt von Oz (2013)",
+  "stream_type": "movie",
+  "stream_id": 1135,
+  "stream_icon": "",
+  "rating": "5.936",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1783092480",
+  "is_adult": 0,
+  "category_id": "1",
+  "category_ids": [
+   1
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 136,
+  "name": "GR - The Harvesters (2018)",
+  "stream_type": "movie",
+  "stream_id": 1136,
+  "stream_icon": "",
+  "rating": "5.739",
+  "rating_5based": 2.9,
+  "tmdb": "517978",
+  "trailer": "",
+  "added": "1768971837",
+  "is_adult": 0,
+  "category_id": "59",
+  "category_ids": [
+   59
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 137,
+  "name": "IN-GU - Daahiben Dodhdaahi  (2023)",
+  "stream_type": "movie",
+  "stream_id": 1137,
+  "stream_icon": "",
+  "rating": "5",
+  "rating_5based": 2.5,
+  "tmdb": "",
+  "trailer": "",
+  "added": "1758278160",
+  "is_adult": 0,
+  "category_id": "77",
+  "category_ids": [
+   77
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 138,
+  "name": "GR - Oz the Great and Powerful (2013)",
+  "stream_type": "movie",
+  "stream_id": 1138,
+  "stream_icon": "",
+  "rating": "5.922",
+  "rating_5based": 3,
+  "tmdb": "68728",
+  "trailer": "",
+  "added": "1740422297",
+  "is_adult": 0,
+  "category_id": "78",
+  "category_ids": [
+   78
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 139,
+  "name": "EN - The Canterville Ghost  (2023)",
+  "stream_type": "movie",
+  "stream_id": 1139,
+  "stream_icon": "",
+  "rating": "6.8",
+  "rating_5based": 3.4,
+  "tmdb": "269509",
+  "trailer": "",
+  "added": "1707234000",
+  "is_adult": 0,
+  "category_id": "79",
+  "category_ids": [
+   79
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 140,
+  "name": "FR - Farceurs naturels nés",
+  "stream_type": "movie",
+  "stream_id": 1140,
+  "stream_icon": "",
+  "rating": "4.9",
+  "rating_5based": 2.5,
+  "tmdb": 383524,
+  "trailer": "",
+  "added": "1589308830",
+  "is_adult": 0,
+  "category_id": "37",
+  "category_ids": [
+   37
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 141,
+  "name": "FR - Mother (2009)",
+  "stream_type": "movie",
+  "stream_id": 1141,
+  "stream_icon": "",
+  "rating": "8",
+  "rating_5based": 4,
+  "tmdb": "698885",
+  "trailer": "",
+  "added": "1695080880",
+  "is_adult": 0,
+  "category_id": "80",
+  "category_ids": [
+   80
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 142,
+  "name": "ES - El padrino. Parte II (1974)",
+  "stream_type": "movie",
+  "stream_id": 1142,
+  "stream_icon": "",
+  "rating": "8.577",
+  "rating_5based": 4.3,
+  "tmdb": "240",
+  "trailer": "",
+  "added": "1719953400",
+  "is_adult": 0,
+  "category_id": "81",
+  "category_ids": [
+   81
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 143,
+  "name": "ES - High Flying Bird (2019)",
+  "stream_type": "movie",
+  "stream_id": 1143,
+  "stream_icon": "",
+  "rating": "5.677",
+  "rating_5based": 2.8,
+  "tmdb": "510498",
+  "trailer": "",
+  "added": "1707944580",
+  "is_adult": 0,
+  "category_id": "82",
+  "category_ids": [
+   82
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 144,
+  "name": "SE - The Godfather  (1972)",
+  "stream_type": "movie",
+  "stream_id": 1144,
+  "stream_icon": "",
+  "rating": "8.7",
+  "rating_5based": 4.4,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1579215804",
+  "is_adult": 0,
+  "category_id": "7",
+  "category_ids": [
+   7
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 145,
+  "name": "4K-FR-HDR - Lilo & Stitch (2025)",
+  "stream_type": "movie",
+  "stream_id": 1145,
+  "stream_icon": "",
+  "rating": "7.244",
+  "rating_5based": 3.6,
+  "tmdb": "552524",
+  "trailer": "",
+  "added": "1767544560",
+  "is_adult": 0,
+  "category_id": "83",
+  "category_ids": [
+   83
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 146,
+  "name": "NL - One Piece Film Red (2022)",
+  "stream_type": "movie",
+  "stream_id": 1146,
+  "stream_icon": "",
+  "rating": "7.198",
+  "rating_5based": 3.6,
+  "tmdb": 900667,
+  "trailer": "",
+  "added": "1728575074",
+  "is_adult": 0,
+  "category_id": "25",
+  "category_ids": [
+   25
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 147,
+  "name": "TR - İksir",
+  "stream_type": "movie",
+  "stream_id": 1147,
+  "stream_icon": "",
+  "rating": "3.8",
+  "rating_5based": 1.9,
+  "tmdb": 326972,
+  "trailer": "",
+  "added": "1580908256",
+  "is_adult": 0,
+  "category_id": "35",
+  "category_ids": [
+   35
+  ],
+  "container_extension": "mp4",
+  "custom_sid": null,
+  "direct_source": ""
+ },
+ {
+  "num": 148,
+  "name": "NF - The Godfather",
+  "stream_type": "movie",
+  "stream_id": 1148,
+  "stream_icon": "",
+  "rating": "8.6",
+  "rating_5based": 4.3,
+  "tmdb": 238,
+  "trailer": "",
+  "added": "1579100115",
+  "is_adult": 0,
+  "category_id": "23",
+  "category_ids": [
+   23
+  ],
+  "container_extension": "mkv",
+  "custom_sid": null,
+  "direct_source": ""
+ }
+]
