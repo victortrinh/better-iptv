@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Better IPTV</string>
+    <string name="app_name">NuageTivi</string>
 
     <string name="login_title">Log in to your Provider</string>
     <string name="login_address">Provider address</string>
@@ -28,4 +28,12 @@
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
+
+    <string name="badge_confirmed">Confirmed</string>
+    <string name="badge_confirmed_meaning">read from the file</string>
+    <string name="badge_likely">Likely</string>
+    <string name="badge_likely_meaning">from the name only</string>
+
+    <string name="keyboard_space">Space</string>
+    <string name="keyboard_delete">Delete</string>
 </resources>

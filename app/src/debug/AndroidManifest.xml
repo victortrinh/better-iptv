@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Design prototypes for #3, launched with adb; never in release builds. -->
+        <activity
+            android:name="dev.betteriptv.app.prototype.PrototypeActivity"
+            android:exported="true"
+            android:screenOrientation="landscape" />
+    </application>
+</manifest>
