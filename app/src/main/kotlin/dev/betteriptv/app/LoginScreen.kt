@@ -1,15 +1,16 @@
 package dev.betteriptv.app
 
 import android.content.Context
-import androidx.annotation.StringRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,24 +18,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
-import androidx.tv.material3.MaterialTheme
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.NuageTextField
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Expired
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LoggedIn
@@ -73,56 +71,34 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
         Unit
     }
 
-    Column(Modifier.fillMaxSize().padding(48.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(stringResource(R.string.login_title), style = MaterialTheme.typography.headlineMedium)
-        LoginField(address, { address = it }, R.string.login_address, placeholder = R.string.login_address_hint, keyboardType = KeyboardType.Uri)
-        LoginField(username, { username = it }, R.string.login_username)
-        LoginField(
-            password,
-            { password = it },
-            R.string.login_password,
-            keyboardType = KeyboardType.Password,
-            onDone = { if (canLogIn) logIn() else focus.moveFocus(FocusDirection.Down) },
-        )
-        Button(enabled = canLogIn, onClick = logIn) {
-            Text(stringResource(if (checking) R.string.login_checking else R.string.login_button))
+    Row(
+        Modifier.fillMaxSize().background(Colors.ground).padding(horizontal = Spacing.screenX * 2, vertical = Spacing.screenY),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = Spacing.xxl)) {
+            Text(stringResource(R.string.app_name), style = Type.display.copy(fontSize = 44.sp, lineHeight = 48.sp), color = Colors.ink)
+            Spacer(Modifier.height(Spacing.l))
+            Text(stringResource(R.string.login_title), style = Type.headline, color = Colors.ink)
+            Spacer(Modifier.height(Spacing.s))
+            Text(stringResource(R.string.login_private), style = Type.body, color = Colors.inkMuted)
         }
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Column(Modifier.width(400.dp), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            val fieldModifier = Modifier.fillMaxWidth()
+            NuageTextField(
+                address, { address = it }, stringResource(R.string.login_address), fieldModifier,
+                placeholder = stringResource(R.string.login_address_hint), keyboardType = KeyboardType.Uri,
+            )
+            NuageTextField(username, { username = it }, stringResource(R.string.login_username), fieldModifier)
+            NuageTextField(
+                password, { password = it }, stringResource(R.string.login_password), fieldModifier,
+                keyboardType = KeyboardType.Password,
+                onDone = { if (canLogIn) logIn() else focus.moveFocus(FocusDirection.Down) },
+            )
+            Spacer(Modifier.height(Spacing.xs))
+            NuageButton(stringResource(if (checking) R.string.login_checking else R.string.login_button), logIn, enabled = canLogIn)
+            problem?.let { Text(it, style = Type.body, color = Colors.error) }
+        }
     }
-}
-
-/**
- * A text field the remote can leave: D-pad up and down move focus instead of the cursor, and the
- * keyboard's action key moves on to the next field (or runs [onDone] on the last one).
- */
-@Composable
-private fun LoginField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    @StringRes label: Int,
-    @StringRes placeholder: Int? = null,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    onDone: (() -> Unit)? = null,
-) {
-    val focus = LocalFocusManager.current
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { androidx.compose.material3.Text(stringResource(label)) },
-        placeholder = placeholder?.let { { androidx.compose.material3.Text(stringResource(it)) } },
-        singleLine = true,
-        visualTransformation = if (keyboardType == KeyboardType.Password) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = if (onDone == null) ImeAction.Next else ImeAction.Done),
-        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }, onDone = { onDone?.invoke() }),
-        modifier = Modifier.width(520.dp).onPreviewKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-            when (event.key) {
-                Key.DirectionDown -> focus.moveFocus(FocusDirection.Down)
-                Key.DirectionUp -> focus.moveFocus(FocusDirection.Up)
-                else -> false
-            }
-        },
-    )
 }
 
 fun Context.describe(problem: ProviderProblem): String = when (problem) {

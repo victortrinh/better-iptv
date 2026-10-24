@@ -24,18 +24,20 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.TopTabs
-import dev.betteriptv.app.ui.theme.Nuage
+import dev.betteriptv.app.ui.theme.Cards
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Corners
+import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
 
 @Composable
 fun SettingsPrototype() {
-    val colors = Nuage.colors
-    var qualityCap by remember { mutableIntStateOf(0) }
+        var qualityCap by remember { mutableIntStateOf(0) }
     var reading by remember { mutableIntStateOf(1) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.requestFocus() }
 
-    Ground(null) {
+    Ground {
         Column(Modifier.fillMaxSize().padding(top = Spacing.screenY)) {
             TopTabs(TABS, selected = 5, onSelect = {}, modifier = Modifier.padding(horizontal = Spacing.screenX))
             LazyColumn(
@@ -48,7 +50,7 @@ fun SettingsPrototype() {
                 item { SettingRow("Content languages", "English, Français", {}, detail = "Rows only show Titles with a Version in these") }
                 item { Heading("Playback") }
                 item {
-                    Labelled("Quality cap", "The highest quality Play picks. Lower it if streams stutter.") {
+                    Labelled("Quality cap", "The highest quality Play picks. Lower it if playback stutters.") {
                         ChoiceRow(listOf("4K", "1080p", "720p"), qualityCap, { qualityCap = it })
                     }
                 }
@@ -67,15 +69,15 @@ fun SettingsPrototype() {
 
 @Composable
 private fun Heading(text: String) {
-    Text(text, style = Nuage.type.headline, color = Nuage.colors.ink, modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
+    Text(text, style = Type.headline, color = Colors.ink, modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
 }
 
 @Composable
 private fun Labelled(label: String, detail: String, content: @Composable () -> Unit) {
     Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Column(Modifier.width(320.dp)) {
-            Text(label, style = Nuage.type.label, color = Nuage.colors.ink)
-            Text(detail, style = Nuage.type.caption, color = Nuage.colors.inkMuted)
+            Text(label, style = Type.label, color = Colors.ink)
+            Text(detail, style = Type.caption, color = Colors.inkMuted)
         }
         Spacer(Modifier.width(16.dp))
         content()

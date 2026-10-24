@@ -7,3 +7,8 @@ local.properties
 .idea/
 *.iml
 __pycache__/
+
+# Impeccable working files (the design contract and DESIGN.md sidecar are kept)
+.impeccable/questions/
+.impeccable/review/
+.impeccable/mocks/

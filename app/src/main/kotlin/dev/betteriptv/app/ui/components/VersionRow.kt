@@ -15,12 +15,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
-import dev.betteriptv.app.ui.theme.Nuage
+import dev.betteriptv.app.R
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Corners
+import dev.betteriptv.app.ui.theme.Type
 
 /** What a Version row shows. Strings arrive formatted; the row only lays them out. */
 data class VersionLine(
@@ -30,7 +34,7 @@ data class VersionLine(
     val subtitles: String,
     val bitrate: String?,
     val backups: String?,
-    /** A warning or explanation under the row: "Likely English", "Cinema recording (CAM)". */
+    /** A warning or explanation under the badges: "Likely English", "Cinema recording (CAM)". */
     val note: String? = null,
     val noteIsCaution: Boolean = false,
 )
@@ -41,55 +45,76 @@ data class VersionLine(
  */
 @Composable
 fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = Nuage.colors
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(Nuage.shape.control)
+    val shape = RoundedCornerShape(Corners.control)
     FocusSurface(
         onClick,
-        // A row in a list doesn't grow on focus; an accent outline marks it instead.
-        modifier.fillMaxWidth().then(if (focused) Modifier.border(2.dp, colors.accent, shape) else Modifier),
-        weight = FocusWeight.Control,
-        grow = false,
-        container = colors.surface,
-        focusedContainer = colors.surfaceHigh,
+        // A row in a list doesn't grow on focus, and its content stays readable on glass, so a
+        // white outline marks it instead of a white fill.
+        modifier.fillMaxWidth().then(if (focused) Modifier.border(2.dp, Colors.focus, shape) else Modifier),
+        weight = FocusWeight.Row,
+        container = Colors.surface,
+        focusedContainer = Colors.surfaceHigh,
         interactionSource = interaction,
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(196.dp)) {
+            Column(Modifier.width(QUALITY)) {
                 BadgeRow(line.badges)
                 if (line.note != null) {
                     Text(
                         line.note,
-                        style = Nuage.type.caption,
-                        color = if (line.noteIsCaution) colors.caution else colors.inkMuted,
+                        style = Type.caption,
+                        color = if (line.noteIsCaution) Colors.caution else Colors.inkMuted,
                         modifier = Modifier.padding(top = 4.dp),
                         maxLines = 1,
                     )
                 }
             }
-            Cell(line.source, 96.dp, emphasis = true)
-            Cell(line.audio, 196.dp)
-            Cell(line.subtitles, 116.dp)
+            Cell(line.source, SOURCE, emphasis = true)
+            Cell(line.audio, AUDIO)
+            Cell(line.subtitles, SUBTITLES)
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                 Column(horizontalAlignment = Alignment.End) {
-                    line.bitrate?.let { Text(it, style = Nuage.type.body, color = colors.ink, textAlign = TextAlign.End) }
-                    line.backups?.let { Text(it, style = Nuage.type.caption, color = colors.inkMuted) }
+                    line.bitrate?.let { Text(it, style = Type.body, color = Colors.ink, textAlign = TextAlign.End) }
+                    line.backups?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
                 }
             }
         }
     }
 }
 
+/** Names the columns of the [VersionRow]s under it. */
+@Composable
+fun VersionHeader(modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+        Heading(stringResource(R.string.version_quality), QUALITY)
+        Heading(stringResource(R.string.version_source), SOURCE)
+        Heading(stringResource(R.string.version_audio), AUDIO)
+        Heading(stringResource(R.string.version_subtitles), SUBTITLES)
+        Text(stringResource(R.string.version_bitrate), style = Type.caption, color = Colors.inkMuted, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+    }
+}
+
+// Fixed column widths, sized for French labels about 20% longer than English.
+private val QUALITY = 188.dp
+private val SOURCE = 124.dp
+private val AUDIO = 188.dp
+private val SUBTITLES = 120.dp
+
+@Composable
+private fun Heading(text: String, width: Dp) {
+    Text(text, style = Type.caption, color = Colors.inkMuted, maxLines = 1, modifier = Modifier.width(width).padding(end = 12.dp))
+}
+
 @Composable
 private fun Cell(text: String, width: Dp, emphasis: Boolean = false) {
     Text(
         text,
-        style = if (emphasis) Nuage.type.label else Nuage.type.body,
-        color = if (emphasis) Nuage.colors.ink else Nuage.colors.inkMuted,
+        style = if (emphasis) Type.label else Type.body,
+        color = if (emphasis) Colors.ink else Colors.inkMuted,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.width(width).padding(end = 12.dp),
     )
 }
-

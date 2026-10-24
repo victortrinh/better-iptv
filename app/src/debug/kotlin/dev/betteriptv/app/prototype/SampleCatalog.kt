@@ -1,7 +1,6 @@
 package dev.betteriptv.app.prototype
 
 import androidx.annotation.DrawableRes
-import androidx.compose.ui.graphics.Color
 import dev.betteriptv.app.R
 import dev.betteriptv.app.ui.components.BadgeSpec
 import dev.betteriptv.app.ui.components.Certainty.Confirmed
@@ -22,18 +21,15 @@ data class SampleTitle(
     @DrawableRes val poster: Int,
     @DrawableRes val still: Int,
     val badges: List<BadgeSpec>,
-    /** A colour from the poster, for Nuage's ground. */
-    val tint: Color,
 )
 
 object SampleCatalog {
     val general = SampleTitle(
         "The General", 1926, "1 h 18", "Comedy · Action", "Buster Keaton, Marion Mack",
-        "When Union spies steal his beloved locomotive, a Southern engineer gives chase alone across enemy lines, and has to bring it back.",
+        "Union spies steal his beloved locomotive, so a Southern engineer chases them alone across enemy lines.",
         R.drawable.proto_poster_general,
         R.drawable.proto_still_general,
         listOf(BadgeSpec("4K", Confirmed), BadgeSpec("HDR", Likely), BadgeSpec("EN", Confirmed)),
-        Color(0xFF2E6A8C),
     )
     val metropolis = SampleTitle(
         "Metropolis", 1927, "2 h 33", "Science fiction", "Brigitte Helm, Gustav Fröhlich",
@@ -41,7 +37,6 @@ object SampleCatalog {
         R.drawable.proto_poster_metropolis,
         R.drawable.proto_still_metropolis,
         listOf(BadgeSpec("1080p", Confirmed), BadgeSpec("FR", Likely), BadgeSpec("EN", Confirmed)),
-        Color(0xFF9C7B3C),
     )
     val safetyLast = SampleTitle(
         "Safety Last!", 1923, "1 h 10", "Comedy", "Harold Lloyd, Mildred Davis",
@@ -49,7 +44,6 @@ object SampleCatalog {
         R.drawable.proto_poster_safety,
         R.drawable.proto_still_safety,
         listOf(BadgeSpec("4K", Likely), BadgeSpec("EN", Likely)),
-        Color(0xFFB53A2E),
     )
     val sherlockJr = SampleTitle(
         "Sherlock Jr.", 1924, "45 min", "Comedy", "Buster Keaton, Kathryn McGuire",
@@ -57,7 +51,6 @@ object SampleCatalog {
         R.drawable.proto_poster_sherlock,
         R.drawable.proto_still_sherlock,
         listOf(BadgeSpec("1080p", Confirmed), BadgeSpec("EN", Confirmed), BadgeSpec("FR", Confirmed)),
-        Color(0xFF6E6E6E),
     )
     val kid = SampleTitle(
         "The Kid", 1921, "1 h 08", "Comedy · Drama", "Charlie Chaplin, Jackie Coogan",
@@ -65,7 +58,6 @@ object SampleCatalog {
         R.drawable.proto_poster_kid,
         R.drawable.proto_still_kid,
         listOf(BadgeSpec("1080p", Confirmed), BadgeSpec("EN", Confirmed)),
-        Color(0xFFA8503A),
     )
     val goldRush = SampleTitle(
         "The Gold Rush", 1925, "1 h 35", "Comedy · Adventure", "Charlie Chaplin, Georgia Hale",
@@ -73,7 +65,6 @@ object SampleCatalog {
         R.drawable.proto_poster_goldrush,
         R.drawable.proto_still_goldrush,
         listOf(BadgeSpec("4K", Confirmed), BadgeSpec("DV", Confirmed), BadgeSpec("FR", Likely)),
-        Color(0xFF8C5A2B),
     )
     val phantom = SampleTitle(
         "The Phantom of the Opera", 1925, "1 h 33", "Horror", "Lon Chaney, Mary Philbin",
@@ -81,7 +72,6 @@ object SampleCatalog {
         R.drawable.proto_poster_phantom,
         R.drawable.proto_still_phantom,
         listOf(BadgeSpec("720p", Likely), BadgeSpec("EN", Confirmed)),
-        Color(0xFF3F7A5A),
     )
     val caligari = SampleTitle(
         "The Cabinet of Dr. Caligari", 1920, "1 h 16", "Horror", "Werner Krauss, Conrad Veidt",
@@ -89,7 +79,6 @@ object SampleCatalog {
         R.drawable.proto_poster_caligari,
         R.drawable.proto_still_caligari,
         listOf(BadgeSpec("1080p", Likely), BadgeSpec("DE", Likely)),
-        Color(0xFFB0782E),
     )
 
     val featured = general

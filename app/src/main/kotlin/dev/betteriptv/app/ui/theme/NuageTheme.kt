@@ -5,61 +5,27 @@ import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
-private val LocalDirection = staticCompositionLocalOf { Directions.Repertoire }
-
-/** The app's tokens, read as `Nuage.colors`, `Nuage.type` and so on. */
-object Nuage {
-    val direction: Direction
-        @Composable @ReadOnlyComposable get() = LocalDirection.current
-    val colors: NuageColors
-        @Composable @ReadOnlyComposable get() = LocalDirection.current.colors
-    val type: NuageType
-        @Composable @ReadOnlyComposable get() = LocalDirection.current.type
-    val shape: NuageShape
-        @Composable @ReadOnlyComposable get() = LocalDirection.current.shape
-}
-
-/**
- * Provides [direction] to the app. Both Material themes are mapped from it so stock components
- * (the Compose Material 3 text field in particular) pick up the same colours.
- */
+/** Wraps the app. The TV Material theme is mapped from the tokens so stock components match. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NuageTheme(direction: Direction = Directions.Repertoire, content: @Composable () -> Unit) {
-    val c = direction.colors
-    androidx.compose.material3.MaterialTheme(
-        colorScheme = androidx.compose.material3.darkColorScheme(
-            primary = c.accent,
-            onPrimary = c.onAccent,
-            background = c.ground,
-            onBackground = c.ink,
-            surface = c.surface,
-            onSurface = c.ink,
-            onSurfaceVariant = c.inkMuted,
-            outline = c.inkMuted,
-            error = c.error,
+fun NuageTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Colors.focus,
+            onPrimary = Colors.onFocus,
+            background = Colors.ground,
+            onBackground = Colors.ink,
+            surface = Colors.ground,
+            onSurface = Colors.ink,
+            onSurfaceVariant = Colors.inkMuted,
+            border = Colors.inkMuted,
+            error = Colors.error,
         ),
     ) {
-        MaterialTheme(
-            colorScheme = darkColorScheme(
-                primary = c.accent,
-                onPrimary = c.onAccent,
-                background = c.ground,
-                onBackground = c.ink,
-                surface = c.surface,
-                onSurface = c.ink,
-                onSurfaceVariant = c.inkMuted,
-                border = c.inkMuted,
-                error = c.error,
-            ),
-        ) {
-            @OptIn(ExperimentalFoundationApi::class)
-            CompositionLocalProvider(LocalDirection provides direction, LocalBringIntoViewSpec provides EdgeScroll, content = content)
-        }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeScroll, content = content)
     }
 }
 

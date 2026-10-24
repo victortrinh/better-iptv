@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -25,104 +28,81 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import dev.betteriptv.app.R
-import dev.betteriptv.app.ui.theme.FocusKind
-import dev.betteriptv.app.ui.theme.Nuage
-import dev.betteriptv.app.ui.theme.TabStyle
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Type
 
-/**
- * A button. Focus fills it with the accent, the one colour reserved for what the Viewer can act on.
- * A [primary] button (Play) keeps an ink fill when unfocused so it stands out before it has focus.
- */
+/** A glass capsule button. Focus turns it solid white; nothing else in the app is white-filled. */
 @Composable
 fun NuageButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
-    primary: Boolean = false,
     enabled: Boolean = true,
 ) {
-    val colors = Nuage.colors
-    val inkFill = primary && !Nuage.direction.glass
     FocusSurface(
         onClick = { if (enabled) onClick() },
         modifier = modifier.height(40.dp),
         weight = FocusWeight.Control,
-        container = if (inkFill) colors.ink else colors.surfaceHigh,
-        focusedContainer = colors.accent,
+        container = Colors.surfaceHigh,
+        focusedContainer = Colors.focus,
     ) { focused ->
         val content = when {
-            !enabled -> colors.inkMuted
-            focused -> colors.onAccent
-            inkFill -> colors.ground
-            else -> colors.ink
+            !enabled -> Colors.inkMuted
+            focused -> Colors.onFocus
+            else -> Colors.ink
         }
         Row(Modifier.align(Alignment.Center).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text, style = Nuage.type.label, color = content, maxLines = 1)
+            Text(text, style = Type.label, color = content, maxLines = 1)
         }
     }
 }
 
-/** The app's name, set in the direction's display face. */
+/** The app's name. */
 @Composable
 fun Wordmark(modifier: Modifier = Modifier) {
-    Text(
-        stringResource(R.string.app_name),
-        style = Nuage.type.headline.copy(fontSize = 22.sp),
-        color = Nuage.colors.ink,
-        modifier = modifier,
-    )
+    Text(stringResource(R.string.app_name), style = Type.headline.copy(fontSize = 22.sp), color = Colors.ink, modifier = modifier)
 }
 
-/** The top navigation: the wordmark, then one tab per destination. Reached by pressing up. */
+/**
+ * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
+ * middle, reached by pressing up.
+ */
 @Composable
 fun TopTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val colors = Nuage.colors
-    val style = Nuage.direction.tabs
-    val underline = Nuage.direction.focus in setOf(FocusKind.OffsetFrame, FocusKind.Underline, FocusKind.Mat)
+    val capsule = RoundedCornerShape(50)
     Box(modifier.fillMaxWidth()) {
         Wordmark(Modifier.align(Alignment.CenterStart))
-        val tabsModifier = when (style) {
-            TabStyle.Inline -> Modifier.align(Alignment.CenterStart).padding(start = 140.dp)
-            TabStyle.Centered -> Modifier.align(Alignment.Center)
-            TabStyle.GlassPill -> Modifier.align(Alignment.Center)
-                .background(colors.surface, RoundedCornerShape(50))
-                .border(1.dp, colors.ink.copy(alpha = 0.14f), RoundedCornerShape(50))
-                .padding(4.dp)
-        }
-        Row(tabsModifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            Modifier.align(Alignment.Center)
+                .background(Colors.surface, capsule)
+                .border(1.dp, Colors.ink.copy(alpha = 0.14f), capsule)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             tabs.forEachIndexed { index, tab ->
                 FocusSurface(
                     onClick = { onSelect(index) },
                     weight = FocusWeight.Control,
-                    corner = if (style == TabStyle.Inline) Nuage.shape.control else 20.dp,
-                    container = if (style == TabStyle.GlassPill && index == selected) colors.surfaceHigh else androidx.compose.ui.graphics.Color.Transparent,
-                    focusedContainer = if (underline) androidx.compose.ui.graphics.Color.Transparent else colors.accent,
+                    corner = 20.dp,
+                    container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
+                    focusedContainer = Colors.focus,
                 ) { focused ->
-                    val ink = when {
-                        focused && !underline -> colors.onAccent
-                        focused || index == selected -> colors.ink
-                        else -> colors.inkMuted
-                    }
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(tab, style = Nuage.type.label, color = ink)
-                        if (underline) {
-                            Spacer(Modifier.height(4.dp))
-                            Box(
-                                Modifier.width(24.dp).height(3.dp).background(
-                                    when {
-                                        focused -> colors.accent
-                                        index == selected -> colors.inkMuted
-                                        else -> androidx.compose.ui.graphics.Color.Transparent
-                                    },
-                                ),
-                            )
-                        }
-                    }
+                    Text(
+                        tab,
+                        style = Type.label,
+                        // Inactive tabs sit on glass over artwork; muted ink would drop below 4.5:1 there.
+                        color = when {
+                            focused -> Colors.onFocus
+                            index == selected -> Colors.ink
+                            else -> Colors.ink.copy(alpha = 0.85f)
+                        },
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    )
                 }
             }
         }
@@ -132,47 +112,45 @@ fun TopTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier
 /** A settings row: what it is on the left, its current value on the right. */
 @Composable
 fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modifier = Modifier, detail: String? = null) {
-    val colors = Nuage.colors
-    FocusSurface(onClick, modifier.fillMaxWidth(), weight = FocusWeight.Control, grow = false, container = colors.surface, focusedContainer = colors.accent) { focused ->
+    FocusSurface(onClick, modifier.fillMaxWidth(), weight = FocusWeight.Row, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = Nuage.type.label, color = if (focused) colors.onAccent else colors.ink)
+                Text(label, style = Type.label, color = if (focused) Colors.onFocus else Colors.ink)
                 if (detail != null) {
-                    Text(detail, style = Nuage.type.caption, color = if (focused) colors.onAccent.copy(alpha = 0.8f) else colors.inkMuted)
+                    Text(detail, style = Type.caption, color = if (focused) Colors.onFocus.copy(alpha = 0.7f) else Colors.inkMuted)
                 }
             }
             Spacer(Modifier.width(16.dp))
-            Text(value, style = Nuage.type.body, color = if (focused) colors.onAccent else colors.inkMuted)
+            Text(value, style = Type.body, color = if (focused) Colors.onFocus else Colors.inkMuted)
         }
     }
 }
 
-/** A small set of exclusive choices (Quality cap, Background reading). */
+/**
+ * A small set of exclusive choices (Quality cap, Background reading). The chosen one is stronger
+ * glass with a check; only focus is white.
+ */
 @Composable
 fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val colors = Nuage.colors
+    val capsule = RoundedCornerShape(50)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { index, option ->
             val isSelected = index == selected
             FocusSurface(
                 onClick = { onSelect(index) },
-                modifier = Modifier.height(36.dp).then(
-                    if (isSelected) Modifier else Modifier.border(1.5.dp, colors.inkMuted.copy(alpha = 0.5f), RoundedCornerShape(Nuage.shape.control)),
-                ),
+                modifier = Modifier.height(36.dp).then(if (isSelected) Modifier else Modifier.border(1.5.dp, Colors.inkMuted.copy(alpha = 0.5f), capsule)),
                 weight = FocusWeight.Control,
-                container = if (isSelected) colors.ink else colors.surface,
-                focusedContainer = colors.accent,
+                container = if (isSelected) Colors.surfaceHigh else Color.Transparent,
+                focusedContainer = Colors.focus,
             ) { focused ->
-                Text(
-                    option,
-                    style = Nuage.type.label,
-                    color = when {
-                        focused -> colors.onAccent
-                        isSelected -> colors.ground
-                        else -> colors.ink
-                    },
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp),
-                )
+                val ink = if (focused) Colors.onFocus else Colors.ink
+                Row(Modifier.align(Alignment.Center).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (isSelected) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(option, style = Type.label, color = ink)
+                }
             }
         }
     }
@@ -180,7 +158,7 @@ fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
 
 /**
  * An on-screen keyboard laid out for the D-pad: letters in alphabetical order on a 7-column grid, so
- * any letter is at most a few presses away and the layout is the same in English and French.
+ * any letter is a few presses away and the layout is the same in English and French.
  */
 @Composable
 fun RemoteKeyboard(onKey: (String) -> Unit, onDelete: () -> Unit, onSpace: () -> Unit, modifier: Modifier = Modifier) {
@@ -202,12 +180,11 @@ private val KEY = 34.dp
 
 @Composable
 private fun Key(label: String, onClick: () -> Unit, width: Dp = KEY) {
-    val colors = Nuage.colors
-    FocusSurface(onClick, Modifier.size(width, KEY), weight = FocusWeight.Control, container = colors.surface, focusedContainer = colors.accent) { focused ->
+    FocusSurface(onClick, Modifier.size(width, KEY), weight = FocusWeight.Control, corner = KEY / 2, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
         Text(
             label,
-            style = Nuage.type.label,
-            color = if (focused) colors.onAccent else colors.ink,
+            style = Type.label,
+            color = if (focused) Colors.onFocus else Colors.ink,
             textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.Center),
         )

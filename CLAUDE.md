@@ -11,3 +11,7 @@ The five default labels: needs-triage, needs-info, ready-for-agent, ready-for-hu
 ### Domain docs
 
 Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Design
+
+The app's visual direction (Verre) is in `DESIGN.md`: tokens, components, the focus grammar and the rules a screen must follow. Read it before building or changing a screen. Product context is in `PRODUCT.md`.

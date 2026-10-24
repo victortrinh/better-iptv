@@ -23,55 +23,50 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
-import dev.betteriptv.app.ui.theme.CardCaption
-import dev.betteriptv.app.ui.theme.FocusKind
-import dev.betteriptv.app.ui.theme.Nuage
+import dev.betteriptv.app.ui.theme.Cards
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Type
 
 /**
- * One Title: its poster (or, when [wide], a landscape still), and under it what the direction shows
- * (name, and the best quality and languages as badges). [progress] draws a Continue watching bar.
+ * One Title: its poster, or a landscape still when [wide] (Continue watching). Its name and badges
+ * (best quality and languages) appear under it while it has focus, so the artwork leads.
+ * [progress] draws how far the Viewer got.
  */
 @Composable
 fun TitleCard(
-    poster: Painter,
+    image: Painter,
     name: String,
     badges: List<BadgeSpec>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    progress: Float? = null,
     wide: Boolean = false,
+    progress: Float? = null,
     onFocus: () -> Unit = {},
 ) {
-    val direction = Nuage.direction
-    val colors = Nuage.colors
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val width = if (wide) direction.wideWidth else direction.posterWidth
 
-    Column(modifier.width(width)) {
-        FocusSurface(onClick, Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 2f / 3f), onFocus = onFocus, interactionSource = interaction) {
-            Image(poster, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    Column(modifier.width(if (wide) Cards.wideWidth else Cards.posterWidth)) {
+        FocusSurface(
+            onClick,
+            Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 2f / 3f),
+            onFocus = onFocus,
+            interactionSource = interaction,
+        ) {
+            Image(image, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             if (progress != null) {
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(colors.ground.copy(alpha = 0.6f)))
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(colors.ink))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Colors.ground.copy(alpha = 0.6f)))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(Colors.ink))
             }
         }
-        // The focus bar of Lampadaire and the mat of Galerie sit just under the poster.
-        val gap = when (direction.focus) {
-            FocusKind.Underline -> 16.dp
-            FocusKind.Mat -> 14.dp
-            else -> 10.dp
-        }
-        Spacer(Modifier.height(gap))
-        // Space is always reserved so rows don't jump when focus moves.
+        // Space is always reserved so rows don't jump when focus moves. The gap clears the focus growth.
+        Spacer(Modifier.height(12.dp))
         Box(Modifier.height(44.dp)) {
-            val showName = direction.cardCaption == CardCaption.Always || focused
-            val showBadges = direction.cardCaption != CardCaption.OnFocus || focused
-            Column {
-                if (showName) {
-                    Text(name, style = Nuage.type.title, color = colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (focused) {
+                Column {
+                    Text(name, style = Type.title, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BadgeRow(badges, Modifier.padding(top = 3.dp), compact = true)
                 }
-                if (showBadges) BadgeRow(badges, Modifier.padding(top = 3.dp), compact = true)
             }
         }
     }

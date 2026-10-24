@@ -1,36 +1,37 @@
 package dev.betteriptv.app.prototype
 
 import android.os.Bundle
-import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import dev.betteriptv.app.ui.theme.Directions
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.NuageTheme
+import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
 
 /**
- * The design prototypes for #3, in debug builds only.
+ * The design prototypes for #3, in debug builds only, with placeholder content.
  *
  *     adb shell am start -n dev.betteriptv/dev.betteriptv.app.prototype.PrototypeActivity \
- *         --es direction galerie --es screen details --ez focus true
+ *         --es screen details --ez focus true
  *
  * Screens: home, details, player, search, settings. `focus` moves the first focus from the main
- * button to the first card (home) or Version (details). The remote's menu key cycles directions.
+ * button to the first card (home) or Version (details).
  */
 class PrototypeActivity : ComponentActivity() {
-    private var direction by mutableStateOf(Directions.Repertoire)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        direction = Directions.byId(intent.getStringExtra("direction"))
         val screen = intent.getStringExtra("screen") ?: "home"
         val focus = intent.getBooleanExtra("focus", false)
         setContent {
-            NuageTheme(direction) {
-                key(direction) {
+            NuageTheme {
+                Box(Modifier.fillMaxSize()) {
                     when (screen) {
                         "details" -> DetailsPrototype(focusVersions = focus)
                         "player" -> PlayerPrototype()
@@ -38,15 +39,18 @@ class PrototypeActivity : ComponentActivity() {
                         "settings" -> SettingsPrototype()
                         else -> HomePrototype(focusCard = focus)
                     }
+                    // So nobody mistakes the made-up Versions for real ones. It sits in the top band, where
+                    // nothing scrolls under it; the player's top right holds the buffering suggestion.
+                    Text(
+                        "Sample content",
+                        style = Type.caption,
+                        color = Colors.inkMuted,
+                        modifier = Modifier
+                            .align(if (screen == "player") Alignment.TopCenter else Alignment.TopEnd)
+                            .padding(horizontal = Spacing.screenX, vertical = Spacing.screenY + 10.dp),
+                    )
                 }
             }
         }
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode != KeyEvent.KEYCODE_MENU) return super.onKeyUp(keyCode, event)
-        val all = Directions.all
-        direction = all[(all.indexOf(direction) + 1) % all.size]
-        return true
     }
 }

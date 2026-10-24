@@ -3,6 +3,7 @@
     <string name="app_name">NuageTivi</string>
 
     <string name="login_title">Log in to your Provider</string>
+    <string name="login_private">Your login stays on this device, encrypted.</string>
     <string name="login_address">Provider address</string>
     <string name="login_address_hint">e.g. http://example.com:8080</string>
     <string name="login_username">Username</string>
@@ -33,6 +34,12 @@
     <string name="badge_confirmed_meaning">read from the file</string>
     <string name="badge_likely">Likely</string>
     <string name="badge_likely_meaning">from the name only</string>
+
+    <string name="version_quality">Quality</string>
+    <string name="version_source">Source</string>
+    <string name="version_audio">Audio</string>
+    <string name="version_subtitles">Subtitles</string>
+    <string name="version_bitrate">Bitrate</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>
