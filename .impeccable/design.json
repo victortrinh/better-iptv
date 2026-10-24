@@ -1,0 +1,406 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T22:30:52+00:00",
+  "title": "Design System: NuageTivi",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Near-Black Ground",
+        "tonalRamp": [
+          "#07080A",
+          "#121317",
+          "#1D1F24",
+          "#2A2C33",
+          "#3C3F47",
+          "#5A5D66",
+          "#8B8E96",
+          "#C9CBD0"
+        ]
+      },
+      "glass": {
+        "role": "neutral",
+        "displayName": "Glass",
+        "canonical": "Colors.surface = 0x1FFFFFFF (white at 12%)",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "glass-high": {
+        "role": "neutral",
+        "displayName": "Strong Glass",
+        "canonical": "Colors.surfaceHigh = 0x33FFFFFF (white at 20%)",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus White",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "on-focus": {
+        "role": "primary",
+        "displayName": "On Focus",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "confirmed": {
+        "role": "certainty",
+        "displayName": "Confirmed Fill",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "on-confirmed": {
+        "role": "certainty",
+        "displayName": "On Confirmed",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "likely": {
+        "role": "certainty",
+        "displayName": "Likely Outline",
+        "tonalRamp": [
+          "#141518",
+          "#26272B",
+          "#3A3B40",
+          "#55565C",
+          "#76777D",
+          "#A9A9AF",
+          "#D1D1D6",
+          "#F2F2F5"
+        ]
+      },
+      "caution": {
+        "role": "status",
+        "displayName": "Caution Amber",
+        "tonalRamp": [
+          "#3A2208",
+          "#5C380F",
+          "#8A5615",
+          "#B8761E",
+          "#E6982F",
+          "#FFB35C",
+          "#FFCC8F",
+          "#FFE6C7"
+        ]
+      },
+      "error": {
+        "role": "status",
+        "displayName": "Failure Red",
+        "tonalRamp": [
+          "#3D0F0C",
+          "#661914",
+          "#94251D",
+          "#C23328",
+          "#F04A3D",
+          "#FF6B60",
+          "#FF9A92",
+          "#FFCFCB"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "A Title's name in the home hero and on its details page. Inter 700, 50 sp, tracked -0.03em."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Row, screen and section headings; the player's Title name; the Wordmark at 22 sp."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "A Title's name under a focused card; language group headings over Versions; the search query."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, metadata lines, Version cells, setting values, field text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, tabs, choices, keys, setting labels, the Source cell."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Badges, column headings, field labels, setting explanations, Sync status. The smallest size allowed."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-lift",
+        "value": "0 14px 28px rgba(0,0,0,0.6)",
+        "purpose": "Approximates Compose shadow(28.dp, black ambient and spot) under a focused TitleCard only."
+      },
+      {
+        "name": "card-sheen",
+        "value": "linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 45%)",
+        "purpose": "Light catching a lifted card, drawn over its artwork while focused. Static today."
+      },
+      {
+        "name": "card-rim",
+        "value": "1.5px solid rgba(255,255,255,0.6)",
+        "purpose": "Keeps a focused card visible where the shadow disappears into the dark ground."
+      },
+      {
+        "name": "row-ring",
+        "value": "2px solid #FFFFFF",
+        "purpose": "Focus on VersionRow and NuageTextField, over glass-high; rows never scale."
+      },
+      {
+        "name": "scrim-horizontal",
+        "value": "linear-gradient(90deg, rgba(7,8,10,0.85) 0%, rgba(7,8,10,0.25) 55%, transparent 100%)",
+        "purpose": "Backdrop scrim keeping hero and details text readable on the left."
+      },
+      {
+        "name": "scrim-vertical",
+        "value": "linear-gradient(180deg, rgba(7,8,10,0.85) 0%, transparent 20%, transparent 35%, rgba(7,8,10,0.85) 75%, #07080A 100%)",
+        "purpose": "Backdrop scrim under the tabs and behind the rows."
+      }
+    ],
+    "motion": [
+      {
+        "name": "focus-scale",
+        "value": "160ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Compose tween(160) (FastOutSlowIn) for every focus scale change."
+      },
+      {
+        "name": "focus-scale-card",
+        "value": "1.12",
+        "purpose": "FocusScale.card: focused artwork."
+      },
+      {
+        "name": "focus-scale-control",
+        "value": "1.06",
+        "purpose": "FocusScale.control: focused buttons, tabs, keys, choices."
+      },
+      {
+        "name": "edge-scroll",
+        "value": "lead 10%, trail 22% of the viewport",
+        "purpose": "EdgeScroll BringIntoViewSpec: lists stay still while the focused item is inside the band."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tv-canvas",
+        "value": "960x540dp (1920x1080 at density 320); 1px here = 1dp"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Glass Button",
+      "kind": "button",
+      "refersTo": "button-glass",
+      "description": "NuageButton: the glass capsule for every action; focus turns it solid white at 1.06x.",
+      "html": "<div class=\"ds-row\"><button class=\"ds-btn\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>Play</button><button class=\"ds-btn ds-btn--focus\">Details</button><button class=\"ds-btn\" disabled>Sync now</button></div>",
+      "css": ".ds-row{display:flex;gap:12px;padding:24px;background:#07080A} .ds-btn{font-family: Inter, system-ui, sans-serif;display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border:none;border-radius:22px;background:rgba(255,255,255,0.20);color:#FFFFFF;font-weight:600;font-size:15px;line-height:20px;transition:transform 160ms cubic-bezier(0.4,0,0.2,1),background 160ms} .ds-btn:focus-visible,.ds-btn--focus{outline:none;background:#FFFFFF;color:#000000;transform:scale(1.06)} .ds-btn:disabled{color:#A9A9AF}"
+    },
+    {
+      "name": "Top Tabs",
+      "kind": "nav",
+      "refersTo": "tab-bar",
+      "description": "TopTabs: Wordmark left, destinations in a centred glass capsule; selected is strong glass, focus is white.",
+      "html": "<div class=\"ds-nav\"><span class=\"ds-wordmark\">NuageTivi</span><div class=\"ds-tabs\"><button class=\"ds-tab ds-tab--focus\">Home</button><button class=\"ds-tab ds-tab--sel\">Movies</button><button class=\"ds-tab\">Shows</button><button class=\"ds-tab\">Live</button><button class=\"ds-tab\">Search</button><button class=\"ds-tab\">Settings</button></div></div>",
+      "css": ".ds-nav{font-family: Inter, system-ui, sans-serif;position:relative;display:flex;align-items:center;justify-content:center;padding:27px 48px;background:#07080A;min-height:44px} .ds-wordmark{position:absolute;left:48px;color:#FFFFFF;font-weight:700;font-size:22px;letter-spacing:-0.01em} .ds-tabs{display:flex;gap:4px;padding:4px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.14)} .ds-tab{font-family: Inter, system-ui, sans-serif;border:none;border-radius:20px;padding:6px 14px;background:transparent;color:rgba(255,255,255,0.85);font-weight:600;font-size:15px;line-height:20px;transition:transform 160ms,background 160ms} .ds-tab--sel{background:rgba(255,255,255,0.20);color:#FFFFFF} .ds-tab:focus-visible,.ds-tab--focus{outline:none;background:#FFFFFF;color:#000000;transform:scale(1.06)}"
+    },
+    {
+      "name": "Title Card",
+      "kind": "card",
+      "refersTo": "title-card-poster",
+      "description": "TitleCard: artwork only at rest; focus lifts 1.12x with shadow, sheen and rim, and reveals the name and compact badges below.",
+      "html": "<div class=\"ds-cards\"><div class=\"ds-card ds-card--focus\"><div class=\"ds-art\" tabindex=\"0\"></div><div class=\"ds-slot\"><div class=\"ds-name\">Metropolis</div><div class=\"ds-badges\"><span class=\"ds-b ds-b--c\">1080p</span><span class=\"ds-b ds-b--l\">FR</span><span class=\"ds-b ds-b--c\">EN</span></div></div></div><div class=\"ds-card\"><div class=\"ds-art\" tabindex=\"0\"></div><div class=\"ds-slot\"></div></div></div>",
+      "css": ".ds-cards{font-family: Inter, system-ui, sans-serif;display:flex;gap:20px;padding:24px 48px;background:#07080A} .ds-card{width:104px} .ds-art{position:relative;aspect-ratio:2/3;border-radius:12px;background:linear-gradient(160deg,#6b6f78,#24262b);transition:transform 160ms cubic-bezier(0.4,0,0.2,1),box-shadow 160ms} .ds-card--focus .ds-art,.ds-art:focus-visible{outline:none;transform:scale(1.12);box-shadow:0 14px 28px rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.6);background:linear-gradient(135deg,rgba(255,255,255,0.3) 0%,rgba(255,255,255,0) 45%),linear-gradient(160deg,#6b6f78,#24262b)} .ds-slot{height:44px;margin-top:12px} .ds-name{color:#FFFFFF;font-weight:600;font-size:16px;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-badges{display:flex;gap:3px;margin-top:3px} .ds-b{font-weight:600;font-size:12px;line-height:16px;padding:2px 4px;border-radius:4px} .ds-b--c{background:#E8E8ED;color:#000000} .ds-b--l{border:1.5px solid #C7C7CC;color:#C7C7CC}"
+    },
+    {
+      "name": "Certainty Badges",
+      "kind": "chip",
+      "refersTo": "badge-confirmed",
+      "description": "Badge and CertaintyLegend: Confirmed is solid, Likely is outlined, everywhere badges appear.",
+      "html": "<div class=\"ds-legend\"><span class=\"ds-badge ds-badge--c\">Confirmed</span><span class=\"ds-mean\">read from the file</span><span class=\"ds-badge ds-badge--l\">Likely</span><span class=\"ds-mean\">from the name only</span></div>",
+      "css": ".ds-legend{font-family: Inter, system-ui, sans-serif;display:flex;align-items:center;gap:6px;padding:24px;background:#07080A} .ds-badge{font-weight:600;font-size:12px;line-height:16px;letter-spacing:0.01em;padding:2px 6px;border-radius:4px} .ds-badge--c{background:#E8E8ED;color:#000000} .ds-badge--l{border:1.5px solid #C7C7CC;color:#C7C7CC} .ds-mean{color:#A9A9AF;font-weight:600;font-size:12px;margin-right:10px}"
+    },
+    {
+      "name": "Version Row",
+      "kind": "custom",
+      "refersTo": "version-row",
+      "description": "VersionRow: one Version as a glass table row with fixed French-safe columns; focus is a white ring, no scale.",
+      "html": "<div class=\"ds-vt\"><div class=\"ds-vr ds-vr--focus\" tabindex=\"0\"><div class=\"ds-q\"><span class=\"ds-badge ds-badge--c\">4K</span> <span class=\"ds-badge ds-badge--c\">HDR10</span></div><div class=\"ds-src\">Netflix</div><div class=\"ds-cell ds-au\">English 5.1, Français</div><div class=\"ds-cell ds-sub\">10 subtitles</div><div class=\"ds-br\">18 Mbps<small>2 Backups</small></div></div><div class=\"ds-vr\" tabindex=\"0\"><div class=\"ds-q\"><span class=\"ds-badge ds-badge--c\">720p</span><div class=\"ds-note\">Cinema recording (CAM)</div></div><div class=\"ds-src\">Unknown</div><div class=\"ds-cell ds-au\">English stereo</div><div class=\"ds-cell ds-sub\">None</div><div class=\"ds-br\">2 Mbps</div></div></div>",
+      "css": ".ds-vt{font-family: Inter, system-ui, sans-serif;display:flex;flex-direction:column;gap:8px;padding:24px 48px;background:#07080A} .ds-vr{display:flex;align-items:center;padding:10px 14px;border-radius:22px;background:rgba(255,255,255,0.12);border:2px solid transparent} .ds-vr:focus-visible,.ds-vr--focus{outline:none;background:rgba(255,255,255,0.20);border-color:#FFFFFF} .ds-q{width:188px} .ds-src{width:124px;color:#FFFFFF;font-weight:600;font-size:15px} .ds-cell{color:#A9A9AF;font-size:15px;line-height:22px} .ds-au{width:188px} .ds-sub{width:120px} .ds-br{flex:1;text-align:right;color:#FFFFFF;font-size:15px;display:flex;flex-direction:column} .ds-br small{color:#A9A9AF;font-size:12px;font-weight:600} .ds-note{color:#FFB35C;font-size:12px;font-weight:600;margin-top:4px} .ds-badge{font-weight:600;font-size:12px;line-height:16px;padding:2px 6px;border-radius:4px} .ds-badge--c{background:#E8E8ED;color:#000000}"
+    },
+    {
+      "name": "Setting Row",
+      "kind": "custom",
+      "refersTo": "setting-row",
+      "description": "SettingRow: label and detail left, value right, on a glass pill; focus is a white fill, no scale.",
+      "html": "<div class=\"ds-set\"><div class=\"ds-sr ds-sr--focus\" tabindex=\"0\"><div><div class=\"ds-l\">App language</div><div class=\"ds-d\">Menus, titles and descriptions</div></div><div class=\"ds-v\">English</div></div><div class=\"ds-sr\" tabindex=\"0\"><div><div class=\"ds-l\">Subscription</div><div class=\"ds-d\">Connection limit: 1</div></div><div class=\"ds-v\">Expires 14 March 2027</div></div></div>",
+      "css": ".ds-set{font-family: Inter, system-ui, sans-serif;display:flex;flex-direction:column;gap:8px;padding:24px 48px;background:#07080A;max-width:760px} .ds-sr{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border-radius:22px;background:rgba(255,255,255,0.12)} .ds-l{color:#FFFFFF;font-weight:600;font-size:15px;line-height:20px} .ds-d{color:#A9A9AF;font-weight:600;font-size:12px;line-height:16px} .ds-v{color:#A9A9AF;font-size:15px} .ds-sr:focus-visible,.ds-sr--focus{outline:none;background:#FFFFFF} .ds-sr:focus-visible .ds-l,.ds-sr--focus .ds-l,.ds-sr:focus-visible .ds-v,.ds-sr--focus .ds-v{color:#000000} .ds-sr:focus-visible .ds-d,.ds-sr--focus .ds-d{color:rgba(0,0,0,0.7)}"
+    },
+    {
+      "name": "Choice Row",
+      "kind": "chip",
+      "refersTo": "choice",
+      "description": "ChoiceRow: a small exclusive set; chosen is strong glass with a check, only focus is white.",
+      "html": "<div class=\"ds-ch\"><button class=\"ds-c ds-c--sel\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\"/></svg>4K</button><button class=\"ds-c ds-c--focus\">1080p</button><button class=\"ds-c\">720p</button></div>",
+      "css": ".ds-ch{font-family: Inter, system-ui, sans-serif;display:flex;gap:8px;padding:24px;background:#07080A} .ds-c{font-family: Inter, system-ui, sans-serif;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:9999px;background:transparent;border:1.5px solid rgba(169,169,175,0.5);color:#FFFFFF;font-weight:600;font-size:15px;transition:transform 160ms,background 160ms} .ds-c--sel{background:rgba(255,255,255,0.20);border-color:transparent} .ds-c:focus-visible,.ds-c--focus{outline:none;background:#FFFFFF;color:#000000;transform:scale(1.06)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "text-field",
+      "description": "NuageTextField: caption label above a 48 dp glass field; focus is a white ring on strong glass.",
+      "html": "<div class=\"ds-form\"><label class=\"ds-tf ds-tf--focus\"><span class=\"ds-tl\">Provider address</span><input class=\"ds-in\" placeholder=\"http://example.com:8080\"></label><label class=\"ds-tf\"><span class=\"ds-tl\">Username</span><input class=\"ds-in\"></label></div>",
+      "css": ".ds-form{font-family: Inter, system-ui, sans-serif;display:flex;flex-direction:column;gap:12px;padding:24px;background:#07080A;width:400px} .ds-tf{display:flex;flex-direction:column} .ds-tl{color:#A9A9AF;font-weight:600;font-size:12px;line-height:16px;padding:0 0 6px 4px} .ds-in{font-family: Inter, system-ui, sans-serif;height:48px;padding:0 16px;border-radius:12px;border:2px solid transparent;background:rgba(255,255,255,0.12);color:#FFFFFF;font-size:15px} .ds-in::placeholder{color:#A9A9AF} .ds-in:focus-visible,.ds-tf--focus .ds-in{outline:none;background:rgba(255,255,255,0.20);border-color:#FFFFFF} .ds-tf:focus-within .ds-tl,.ds-tf--focus .ds-tl{color:#FFFFFF}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Artwork Is the Interface",
+    "overview": "Verre is the Apple TV app (tvOS Liquid Glass) on a Fire TV. A Title's artwork fills the screen, edge to edge, and the interface floats on it as white type and translucent white glass. The interface brings no colour of its own. The ground is near-black, controls are glass capsules, posters have softly rounded corners, and the one solid white thing on screen is what the remote will act on.\n\nThe world refuses the category default: no grey streaming grid with a coloured accent, no Netflix black-and-red. Density is low on the browsing screens (one featured Title big, rows below) and tabular on details, where every Version of a Title lines up by language so the household can compare copies at a glance. Honesty about each Version is visual: a Confirmed attribute is a solid badge, a Likely one is an outlined badge, everywhere.\n\nThe Fire TV Stick is weak, so the glass is a flat translucent tint, never a live blur, and every effect is cheap: a scale, a shadow, a gradient, a border.",
+    "keyCharacteristics": [
+      "Near-black ground; white and translucent white glass (12% and 20%) for everything that isn't artwork.",
+      "Full-bleed backdrop behind the hero and details, held readable by scrims.",
+      "Inter throughout; bold, tightly tracked display.",
+      "Capsule controls, 12 dp poster corners, 4 dp badges.",
+      "White fill means focus. Focused artwork lifts 1.12x with a deep shadow, a light sheen and a bright rim.",
+      "A card's name and badges appear only under the focused card.",
+      "Lists scroll only when focus nears an edge (EdgeScroll)."
+    ],
+    "rules": [
+      {
+        "name": "The Artwork Carries the Colour Rule",
+        "body": "The interface adds no hue. The only non-neutral tokens are Caution Amber and Failure Red, and they appear as small text, never as fills, tabs or highlights.",
+        "section": "colors"
+      },
+      {
+        "name": "The White Means Focus Rule",
+        "body": "No control or row is ever filled solid white unless it has focus. Two small indicators are exempt: the white progress bar on a card, and the off-white `confirmed` badge.",
+        "section": "colors"
+      },
+      {
+        "name": "The Readable From the Couch Rule",
+        "body": "All text keeps at least 4.5:1 contrast against what is actually behind it. That includes glass over artwork, so for example inactive tab labels use white at 85%, not `ink-muted`. Nothing goes smaller than caption (12 sp).",
+        "section": "typography"
+      },
+      {
+        "name": "The French Is Longer Rule",
+        "body": "French strings run about 20% longer. Fixed widths (Version columns, the settings label column, buttons in a row) must hold the French string, and single-line text gets `maxLines` with an ellipsis instead of overflowing.",
+        "section": "typography"
+      },
+      {
+        "name": "The Still Screen Rule",
+        "body": "Lists don't move on every press. Don't override `LocalBringIntoViewSpec`, and don't scroll to a pivot. Rely on EdgeScroll.",
+        "section": "layout"
+      },
+      {
+        "name": "The Overscan Rule",
+        "body": "Nothing readable or focusable sits outside 48 x 27 dp from the screen edge at rest. Only artwork and scrims go full bleed.",
+        "section": "layout"
+      },
+      {
+        "name": "The Tint, Not Blur Rule",
+        "body": "Glass is a translucent tint (`glass`, `glass-high`), not runtime blur. The Fire TV Stick can't afford a blur, and focus moves must stay instant.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Lift Rule",
+        "body": "Only focused artwork lifts. Buttons, tabs, keys and rows never cast a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** read every colour, size, corner and gap from `Colors`, `Type`, `Corners`, `Spacing`, `Cards` and `FocusScale`. Screens never hold raw values.",
+      "**Do** make every focusable thing a `FocusSurface`, or a component built on it, and pick its weight: Card for artwork, Control for buttons/tabs/keys/choices, Row for anything spanning a list.",
+      "**Do** show Confirmed as a solid badge and Likely as an outlined badge everywhere a Version attribute appears: hero, card, details, player.",
+      "**Do** put a full-bleed backdrop with `ground` scrims behind any screen that has a Title's artwork, and keep text on the scrimmed side.",
+      "**Do** keep content inside the 48 x 27 dp overscan margins, applied as list `contentPadding`.",
+      "**Do** check every text colour for 4.5:1 against what is behind it, including glass over artwork.",
+      "**Do** size fixed widths for French strings about 20% longer, and cap single lines with an ellipsis.",
+      "**Do** build on `androidx.tv:tv-material` (`Text`, `Icon`, `MaterialTheme` mapped by `NuageTheme`) and the components in `ui/components/`."
+    ],
+    "donts": [
+      "**Don't** add colour to the interface. No accent hue, tinted glass or coloured focus. Colour comes from artwork, Caution Amber marks cautions, and Failure Red marks failures, as text.",
+      "**Don't** fill anything solid white unless it has focus.",
+      "**Don't** use runtime blur (`Modifier.blur`, RenderEffect) for glass. On the Fire TV Stick glass is a translucent tint.",
+      "**Don't** use Compose Material 3 phone components (`androidx.compose.material3`: Card, Button, TextField, NavigationBar and the like). They bring touch ripples, phone sizes and their own focus.",
+      "**Don't** scale list rows on focus. They get a white fill or a white ring.",
+      "**Don't** show a card's name or badges unless it has focus, and don't let the slot under a card collapse.",
+      "**Don't** override EdgeScroll or scroll lists to a fixed pivot.",
+      "**Don't** give buttons, tabs or rows a shadow. The lift belongs to focused artwork."
+    ]
+  }
+}

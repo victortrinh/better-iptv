@@ -21,7 +21,7 @@ moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
-compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-material-icons-core = { module = "androidx.compose.material:material-icons-core", version = "1.7.8" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 tv-material = { module = "androidx.tv:tv-material", version.ref = "tv-material" }
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }

@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.text.format.DateUtils
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,11 +28,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.Button
-import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.FocusSurface
+import dev.betteriptv.app.ui.components.FocusWeight
+import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.Wordmark
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.CatalogNotSaved
 import dev.betteriptv.core.CompletedSync
 import dev.betteriptv.core.Library
@@ -54,15 +59,23 @@ fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
     val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.movieListingCount() } }
     val context = LocalContext.current
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(stringResource(R.string.movies_title), style = MaterialTheme.typography.headlineMedium)
-            Text(pluralStringResource(R.plurals.movies_count, count, NumberFormat.getIntegerInstance().format(count)))
+    Column(Modifier.fillMaxSize().background(Colors.ground).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Wordmark()
+            Spacer(Modifier.width(Spacing.xl))
+            Text(stringResource(R.string.movies_title), style = Type.headline, color = Colors.ink)
+            Spacer(Modifier.width(Spacing.m))
+            Text(pluralStringResource(R.plurals.movies_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
             Spacer(Modifier.weight(1f))
-            Button(onClick = onSyncNow, enabled = status !is SyncStatus.Running) { Text(stringResource(R.string.sync_now)) }
+            NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running)
         }
-        Text(context.describe(status), style = MaterialTheme.typography.bodyMedium)
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            context.describe(status),
+            style = Type.caption,
+            color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
+            modifier = Modifier.padding(top = Spacing.s, bottom = Spacing.l),
+        )
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             items(count) { index -> MovieRow(pages, index) }
         }
     }
@@ -72,14 +85,24 @@ fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
 private fun MovieRow(pages: MovieListingPages, index: Int) {
     val movie = pages[index]
     if (movie == null) LaunchedEffect(index / MovieListingPages.PAGE_SIZE) { pages.load(index / MovieListingPages.PAGE_SIZE) }
-    Surface(
+    FocusSurface(
         onClick = {},
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         modifier = Modifier.fillMaxWidth().height(40.dp),
-    ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(movie?.name.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(movie?.category.orEmpty(), maxLines = 1, style = MaterialTheme.typography.bodySmall)
+        weight = FocusWeight.Row,
+        container = Colors.surface,
+        focusedContainer = Colors.focus,
+    ) { focused ->
+        Row(Modifier.fillMaxSize().padding(horizontal = Spacing.l), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                movie?.name.orEmpty(),
+                style = Type.label,
+                color = if (focused) Colors.onFocus else Colors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Spacing.l))
+            Text(movie?.category.orEmpty(), style = Type.caption, color = if (focused) Colors.onFocus else Colors.inkMuted, maxLines = 1)
         }
     }
 }
