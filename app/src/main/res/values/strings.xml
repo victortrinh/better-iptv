@@ -3,8 +3,8 @@
     <string name="app_name">Better IPTV</string>
 
     <string name="login_title">Log in to your Provider</string>
-    <string name="login_server">Server address</string>
-    <string name="login_server_hint">e.g. http://example.com:8080</string>
+    <string name="login_address">Provider address</string>
+    <string name="login_address_hint">e.g. http://example.com:8080</string>
     <string name="login_username">Username</string>
     <string name="login_password">Password</string>
     <string name="login_button">Log in</string>
@@ -25,6 +25,7 @@
     <string name="sync_running">Syncing… (showing the catalog from %1$s)</string>
     <string name="sync_done">Synced %1$s in %2$s s.</string>
     <string name="sync_failed">Sync failed: %1$s Showing the catalog from %2$s.</string>
+    <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
 </resources>

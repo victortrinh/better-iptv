@@ -5,8 +5,8 @@ Reads the git-ignored .survey/raw/ written by scripts/survey.py and writes the
 fake Provider's fixture to core/src/test/resources/fixture/. The fixture keeps
 real Listing names and Categories (the groups the spec's tests rely on) but
 strips image hosts, direct sources and trailers, renumbers every Provider id,
-and replaces the account with made-up values, so nothing identifies the
-Provider or the Viewer.
+so nothing identifies the Provider or the Viewer. (The fake Provider makes up
+its own account answer.)
 
 Usage: python3 -I scripts/cut_fixture.py [--raw PATH]   (default: .survey/raw)
 """
@@ -84,25 +84,7 @@ def main():
             "direct_source": "",
         })
 
-    account = {
-        "user_info": {
-            "username": "viewer",
-            "password": "secret",
-            "message": "",
-            "auth": 1,
-            "status": "Active",
-            "exp_date": "1893456000",
-            "is_trial": "0",
-            "active_cons": "0",
-            "created_at": "1735689600",
-            "max_connections": "1",
-            "allowed_output_formats": ["m3u8", "ts"],
-        },
-        "server_info": {"url": "provider.test", "port": "80", "server_protocol": "http", "timezone": "UTC"},
-    }
-
     OUT.mkdir(parents=True, exist_ok=True)
-    write(OUT / "account.json", account)
     write(OUT / "vod_categories.json", out_categories)
     write(OUT / "vod_streams.json", out_movies)
     print(f"wrote {len(out_movies)} movie Listings in {len(out_categories)} Categories to {OUT.relative_to(ROOT)}")

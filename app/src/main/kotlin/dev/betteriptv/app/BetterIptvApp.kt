@@ -37,7 +37,7 @@ class BetterIptvApp : Application() {
         syncJob = scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
             when (val status = library.sync()) {
-                is SyncStatus.Synced -> Log.i(TAG, "Synced ${status.last.movieCount} movie Listings in ${status.last.duration.toMillis()} ms")
+                is SyncStatus.Synced -> Log.i(TAG, "Synced ${status.last.movieListingCount} movie Listings in ${status.last.duration.toMillis()} ms")
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed: ${status.problem}")
                 else -> Unit
             }

@@ -27,7 +27,7 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
             val json = JSONObject(String(cipher.doFinal(Base64.decode(sealed, Base64.NO_WRAP)), Charsets.UTF_8))
-            ProviderLogin(json.getString("server"), json.getString("username"), json.getString("password"))
+            ProviderLogin(json.getString("address"), json.getString("username"), json.getString("password"))
         } catch (e: Exception) {
             // The key is gone (e.g. app data restored elsewhere): ask for the login again.
             null
@@ -36,7 +36,7 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
 
     override fun save(login: ProviderLogin) {
         val json = JSONObject()
-            .put("server", login.serverUrl)
+            .put("address", login.address)
             .put("username", login.username)
             .put("password", login.password)
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -46,10 +46,6 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
             .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString(SEALED, Base64.encodeToString(sealed, Base64.NO_WRAP))
             .apply()
-    }
-
-    override fun clear() {
-        prefs.edit().clear().apply()
     }
 
     private fun key(): SecretKey {

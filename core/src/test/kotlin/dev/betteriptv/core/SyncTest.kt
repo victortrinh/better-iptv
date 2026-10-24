@@ -29,8 +29,8 @@ class SyncTest {
 
         library.sync()
 
-        assertEquals(148, library.movieCount())
-        val movies = library.movies(offset = 0, limit = 1000)
+        assertEquals(148, library.movieListingCount())
+        val movies = library.movieListings(offset = 0, limit = 1000)
         assertEquals(148, movies.size)
         assertEquals(
             listOf(
@@ -49,8 +49,8 @@ class SyncTest {
 
         val reopened = openLibrary()
 
-        assertEquals(148, reopened.movieCount())
-        assertEquals(148, (reopened.syncStatus.value as SyncStatus.Synced).last.movieCount)
+        assertEquals(148, reopened.movieListingCount())
+        assertEquals(148, (reopened.syncStatus.value as SyncStatus.Synced).last.movieListingCount)
     }
 
     @Test fun `a failed Sync keeps the previous catalog and never reports the login`() = runBlocking {
@@ -62,11 +62,11 @@ class SyncTest {
         val status = library.sync()
 
         assertTrue(status is SyncStatus.Failed)
-        assertEquals(148, status.last?.movieCount)
+        assertEquals(148, status.last?.movieListingCount)
         assertFalse(status.toString().contains(provider.password))
         assertFalse(status.toString().contains(provider.username))
-        assertEquals(148, library.movieCount())
-        assertEquals("EN - Oz the Great and Powerful (2013)", library.movies(0, 1).single().name)
+        assertEquals(148, library.movieListingCount())
+        assertEquals("EN - Oz the Great and Powerful (2013)", library.movieListings(0, 1).single().name)
     }
 
     @Test fun `a later Sync replaces the catalog with what the Provider has now`() = runBlocking {
@@ -82,9 +82,9 @@ class SyncTest {
 
         assertEquals(
             listOf(MovieListing(7, "EN - Newly Added (2026)", "DE - FILME 1940/2024"), MovieListing(8, "EN - Older (2020)", "")),
-            library.movies(0, 10),
+            library.movieListings(0, 10),
         )
-        assertEquals(2, library.movieCount())
+        assertEquals(2, library.movieListingCount())
     }
 
     @Test fun `Sync never opens a stream, so it works while one is playing`() = runBlocking {
@@ -111,6 +111,6 @@ class SyncTest {
         val status = library.sync()
 
         assertEquals(Expired(Instant.parse("2026-01-15T00:00:00Z")), (status as SyncStatus.Failed).problem)
-        assertEquals(148, library.movieCount())
+        assertEquals(148, library.movieListingCount())
     }
 }

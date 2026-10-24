@@ -24,6 +24,14 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 - Tests run against a snapshot of the real catalog.
 - Measure Sync and Header read times on the stick itself.
 
+### Measurements
+
+| What | Where | Result |
+|---|---|---|
+| Sync of 150,000 generated movie Listings (~63 MB of JSON) from a local fake Provider, in a 128 MB heap | MacBook Pro (M-series), `SyncScaleTest` | 0.7 s |
+| Sync of the 148-Listing fixture | Android TV 14 emulator on the same Mac | 3.0 s |
+| First Sync of the full real catalog (movies: 144,031 Listings) | Fire TV Stick | Not measured yet: needs ADB debugging on the stick and its IP ([install guide](install-on-fire-tv.md)). The app shows the time on the Movies screen and logs it under the `Sync` tag. |
+
 ## M1: Replace TiviMate for Movies and Shows
 
 - Design direction settled first, so the interface is good from the start.

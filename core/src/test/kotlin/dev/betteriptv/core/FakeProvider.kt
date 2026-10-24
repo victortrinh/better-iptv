@@ -179,5 +179,4 @@ class InMemoryCredentials : CredentialStore {
     var saved: ProviderLogin? = null
     override fun load() = saved
     override fun save(login: ProviderLogin) { saved = login }
-    override fun clear() { saved = null }
 }

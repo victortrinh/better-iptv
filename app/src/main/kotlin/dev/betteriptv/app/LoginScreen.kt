@@ -50,7 +50,7 @@ import java.time.format.FormatStyle
 /** Takes the Provider login with the remote and the on-screen keyboard. */
 @Composable
 fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
-    var server by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var checking by remember { mutableStateOf(false) }
@@ -59,12 +59,12 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
     val context = LocalContext.current
 
     val focus = LocalFocusManager.current
-    val canLogIn = !checking && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty()
+    val canLogIn = !checking && address.isNotBlank() && username.isNotBlank() && password.isNotEmpty()
     val logIn = {
         checking = true
         problem = null
         scope.launch {
-            when (val result = library.logIn(ProviderLogin(server.trim(), username.trim(), password))) {
+            when (val result = library.logIn(ProviderLogin(address.trim(), username.trim(), password))) {
                 is LoggedIn -> onLoggedIn()
                 is ProviderProblem -> problem = context.describe(result)
             }
@@ -75,7 +75,7 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(48.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.login_title), style = MaterialTheme.typography.headlineMedium)
-        LoginField(server, { server = it }, R.string.login_server, placeholder = R.string.login_server_hint, keyboardType = KeyboardType.Uri)
+        LoginField(address, { address = it }, R.string.login_address, placeholder = R.string.login_address_hint, keyboardType = KeyboardType.Uri)
         LoginField(username, { username = it }, R.string.login_username)
         LoginField(
             password,

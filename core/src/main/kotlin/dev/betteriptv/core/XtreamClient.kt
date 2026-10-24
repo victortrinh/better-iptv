@@ -1,11 +1,13 @@
 package dev.betteriptv.core
 
+import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonReader
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.net.URLEncoder
 import java.time.Instant
 
 /**
@@ -16,7 +18,7 @@ import java.time.Instant
  * [ProviderException]s with the credentials scrubbed out.
  */
 internal class XtreamClient(private val login: ProviderLogin, private val http: OkHttpClient) {
-    private val base: HttpUrl = baseUrl(login.serverUrl)
+    private val base: HttpUrl = baseUrl(login.address)
 
     /** Checks the login and the subscription; throws a [ProviderException] when either is refused. */
     fun account(): LoggedIn {
@@ -45,7 +47,39 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         return LoggedIn(expiresOn)
     }
 
-    fun <T> api(action: String?, read: (JsonReader) -> T): T {
+    /** Streams the movie Categories as (Provider category id, name). */
+    fun movieCategories(each: (id: String, name: String) -> Unit) = api("get_vod_categories") { json ->
+        json.eachObject {
+            var id: String? = null
+            var name: String? = null
+            while (hasNext()) when (nextName()) {
+                "category_id" -> id = nextScalar()
+                "category_name" -> name = nextScalar()
+                else -> skipValue()
+            }
+            id?.let { each(it, name.orEmpty()) }
+        }
+    }
+
+    /** Streams the movie Listings as (Provider id, name, category id, added in epoch seconds). */
+    fun movieListings(each: (id: Long, name: String, categoryId: String?, added: Long?) -> Unit) = api("get_vod_streams") { json ->
+        json.eachObject {
+            var id: Long? = null
+            var name: String? = null
+            var categoryId: String? = null
+            var added: Long? = null
+            while (hasNext()) when (nextName()) {
+                "stream_id" -> id = nextScalar()?.toLongOrNull()
+                "name" -> name = nextScalar()
+                "category_id" -> categoryId = nextScalar()
+                "added" -> added = nextScalar()?.toLongOrNull()
+                else -> skipValue()
+            }
+            if (id != null && name != null) each(id, name, categoryId, added)
+        }
+    }
+
+    private fun <T> api(action: String?, read: (JsonReader) -> T): T {
         val url = base.newBuilder()
             .addPathSegment("player_api.php")
             .addQueryParameter("username", login.username)
@@ -60,14 +94,26 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             }
         } catch (e: ProviderException) {
             throw e
-        } catch (e: Exception) {
-            val detail = scrub(e.message ?: "") .ifBlank { e.javaClass.simpleName }
-            throw ProviderException(Unreachable("Couldn't read from the Provider: $detail"))
+        } catch (e: IOException) {
+            throw unreachable(e)
+        } catch (e: JsonDataException) {
+            throw unreachable(e)
         }
     }
 
-    private fun scrub(text: String) =
-        listOf(login.password, login.username).filter { it.isNotEmpty() }.fold(text) { acc, secret -> acc.replace(secret, "***") }
+    private fun unreachable(e: Exception): ProviderException {
+        val detail = scrub(e.message ?: "").ifBlank { e.javaClass.simpleName }
+        return ProviderException(Unreachable("Couldn't read from the Provider: $detail"))
+    }
+
+    /** Removes the login from [text], also in the percent-encoded forms a URL carries it in. */
+    private fun scrub(text: String): String {
+        val secrets = listOf(login.password, login.username).filter { it.isNotEmpty() }.flatMap {
+            val encoded = URLEncoder.encode(it, Charsets.UTF_8)
+            listOf(it, encoded, encoded.replace("+", "%20"))
+        }
+        return secrets.sortedByDescending { it.length }.fold(text) { acc, secret -> acc.replace(secret, "***", ignoreCase = true) }
+    }
 
     companion object {
         /** Accepts a bare host, host:port, or a pasted player link, like the survey script. */
@@ -77,7 +123,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             return try {
                 withScheme.toHttpUrl().newBuilder().encodedPath("/").query(null).fragment(null).build()
             } catch (e: IllegalArgumentException) {
-                throw ProviderException(Unreachable("That server address doesn't look right."))
+                throw ProviderException(Unreachable("That Provider address doesn't look right."))
             }
         }
     }

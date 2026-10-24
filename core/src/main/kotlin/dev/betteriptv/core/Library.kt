@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,67 +51,36 @@ class Library private constructor(
             _syncStatus.value = try {
                 val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
                 client.account()
-                store.replaceMovies(
+                store.replaceMovieListings(
                     fill = { staging ->
-                        client.api("get_vod_categories") { json ->
-                            json.eachObject {
-                                var id: String? = null
-                                var name: String? = null
-                                while (hasNext()) when (nextName()) {
-                                    "category_id" -> id = nextScalar()
-                                    "category_name" -> name = nextScalar()
-                                    else -> skipValue()
-                                }
-                                if (id != null) staging.category(id, name.orEmpty())
-                            }
-                        }
-                        client.api("get_vod_streams") { json ->
-                            json.eachObject {
-                                var id: Long? = null
-                                var name: String? = null
-                                var category: String? = null
-                                var added: Long? = null
-                                while (hasNext()) when (nextName()) {
-                                    "stream_id" -> id = nextScalar()?.toLongOrNull()
-                                    "name" -> name = nextScalar()
-                                    "category_id" -> category = nextScalar()
-                                    "added" -> added = nextScalar()?.toLongOrNull()
-                                    else -> skipValue()
-                                }
-                                if (id != null && name != null) staging.movie(id, name, category, added)
-                            }
-                        }
+                        client.movieCategories(staging::category)
+                        client.movieListings(staging::movieListing)
                     },
-                    meta = { count ->
-                        val completed = CompletedSync(Instant.now(), Duration.ofNanos(System.nanoTime() - started), count)
-                        mapOf(
-                            LAST_SYNC_AT to completed.finishedAt.toString(),
-                            LAST_SYNC_MILLIS to completed.duration.toMillis().toString(),
-                            LAST_SYNC_MOVIES to completed.movieCount.toString(),
-                        )
-                    },
+                    completed = { count -> CompletedSync(Instant.now(), Duration.ofNanos(System.nanoTime() - started), count) },
                 )
                 SyncStatus.Synced(store.lastSync()!!)
             } catch (e: ProviderException) {
                 SyncStatus.Failed(e.problem, last)
+            } catch (e: CancellationException) {
+                _syncStatus.value = last?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced
+                throw e
+            } catch (e: Exception) {
+                // Anything else (a full disk, say) also leaves the previous catalog in place.
+                SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
             _syncStatus.value
         }
     }
 
     /** How many movie Listings the catalog holds. */
-    fun movieCount(): Int = store.movieCount()
+    fun movieListingCount(): Int = store.movieListingCount()
 
     /** Movie Listings, newest first, from [offset] (0-based). */
-    fun movies(offset: Int, limit: Int): List<MovieListing> = store.movies(offset, limit)
+    fun movieListings(offset: Int, limit: Int): List<MovieListing> = store.movieListings(offset, limit)
 
     override fun close() = store.close()
 
     companion object {
-        private const val LAST_SYNC_AT = "last_sync_at"
-        private const val LAST_SYNC_MILLIS = "last_sync_millis"
-        private const val LAST_SYNC_MOVIES = "last_sync_movies"
-
         /** Opens the catalog at [databasePath], creating it if needed. */
         fun open(databasePath: String, credentials: CredentialStore, http: OkHttpClient = defaultHttp()): Library =
             Library(CatalogStore(databasePath), credentials, http)
@@ -119,14 +89,5 @@ class Library private constructor(
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build()
-
-        private fun CatalogStore.lastSync(): CompletedSync? {
-            val at = meta(LAST_SYNC_AT) ?: return null
-            return CompletedSync(
-                Instant.parse(at),
-                Duration.ofMillis(meta(LAST_SYNC_MILLIS)!!.toLong()),
-                meta(LAST_SYNC_MOVIES)!!.toInt(),
-            )
-        }
     }
 }

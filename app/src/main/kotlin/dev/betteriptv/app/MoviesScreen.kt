@@ -31,9 +31,12 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import dev.betteriptv.core.CatalogNotSaved
 import dev.betteriptv.core.CompletedSync
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.MovieListing
+import dev.betteriptv.core.ProviderProblem
+import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,9 +49,9 @@ import kotlin.math.abs
 fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // A finished Sync swaps in a new catalog: drop the pages read from the old one.
-    val catalog = status.last?.finishedAt
-    val pages = remember(catalog) { MoviePages(library) }
-    val count by produceState(initialValue = 0, catalog) { value = withContext(Dispatchers.IO) { library.movieCount() } }
+    val syncedAt = status.last?.finishedAt
+    val pages = remember(syncedAt) { MovieListingPages(library) }
+    val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.movieListingCount() } }
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -66,9 +69,9 @@ fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
 }
 
 @Composable
-private fun MovieRow(pages: MoviePages, index: Int) {
+private fun MovieRow(pages: MovieListingPages, index: Int) {
     val movie = pages[index]
-    if (movie == null) LaunchedEffect(index / MoviePages.SIZE) { pages.load(index / MoviePages.SIZE) }
+    if (movie == null) LaunchedEffect(index / MovieListingPages.PAGE_SIZE) { pages.load(index / MovieListingPages.PAGE_SIZE) }
     Surface(
         onClick = {},
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
@@ -83,23 +86,23 @@ private fun MovieRow(pages: MoviePages, index: Int) {
 
 /** Keeps a few pages of the movie list in memory around where the Viewer is. */
 @Stable
-private class MoviePages(private val library: Library) {
+private class MovieListingPages(private val library: Library) {
     private val pages = mutableStateMapOf<Int, List<MovieListing>>()
     private val loading = mutableSetOf<Int>()
 
-    operator fun get(index: Int): MovieListing? = pages[index / SIZE]?.getOrNull(index % SIZE)
+    operator fun get(index: Int): MovieListing? = pages[index / PAGE_SIZE]?.getOrNull(index % PAGE_SIZE)
 
     suspend fun load(page: Int) {
         if (page in pages || !loading.add(page)) return
-        val movies = withContext(Dispatchers.IO) { library.movies(page * SIZE, SIZE) }
+        val movies = withContext(Dispatchers.IO) { library.movieListings(page * PAGE_SIZE, PAGE_SIZE) }
         loading -= page
         pages[page] = movies
-        if (pages.size > KEEP) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
+        if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
     }
 
     companion object {
-        const val SIZE = 100
-        const val KEEP = 10
+        const val PAGE_SIZE = 100
+        const val PAGES_KEPT = 10
     }
 }
 
@@ -109,6 +112,11 @@ private fun Context.describe(status: SyncStatus): String = when (status) {
     is SyncStatus.Synced -> getString(R.string.sync_done, ago(status.last), String.format(Locale.getDefault(), "%.1f", status.last.duration.toMillis() / 1000.0))
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
+}
+
+private fun Context.describe(problem: SyncProblem): String = when (problem) {
+    is ProviderProblem -> describe(problem)
+    is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
 }
 
 private fun Context.ago(sync: CompletedSync): String {
