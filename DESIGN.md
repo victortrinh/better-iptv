@@ -289,8 +289,8 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 - **`FocusWeight.Card`** (artwork): scales to 1.12x over 160 ms, lifts on the card shadow, gains the sheen and rim. The container doesn't change.
 - **`FocusWeight.Control`** (buttons, tabs, keys, choices): scales to 1.06x over 160 ms and the container turns `focus` white with `on-focus` black content.
 - **`FocusWeight.Row`** (anything that spans a list): does not scale, so its edges stay inside the overscan margin. Choose by content:
-  - **White fill** when the row holds only label, detail and value text (`SettingRow`, Movies list rows). All text switches to `on-focus`.
-  - **White ring** (2 dp `focus` border on `glass-high`) when the row holds badges or several columns whose colours carry meaning (`VersionRow`, `NuageTextField`), so the badges and muted cells stay readable.
+  - **White fill** when the row holds only label, detail and value text (`SettingRow`). All text switches to `on-focus`.
+  - **White ring** (2 dp `focus` border on `glass-high`) when the row holds badges or several columns whose colours carry meaning (`VersionRow`, Movies list rows, `NuageTextField`), so the badges and muted cells stay readable.
 
 ### Buttons (`NuageButton`)
 - **Shape:** capsule, 40 dp tall, 18 dp horizontal padding, optional 20 dp leading icon 8 dp before the label.

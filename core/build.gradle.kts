@@ -26,6 +26,8 @@ dependencies {
 tasks.test {
     // Small on purpose: Sync must stream the catalog, never hold a whole JSON document in memory.
     maxHeapSize = "128m"
+    // ./gradlew :core:test --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
+    providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     testLogging {
         events("failed")
         showStandardStreams = true

@@ -23,6 +23,7 @@ class Library private constructor(
     private val store: CatalogStore,
     private val credentials: CredentialStore,
     private val http: OkHttpClient,
+    private val prefixTable: PrefixTable,
 ) : Closeable {
     private val syncLock = Mutex()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
@@ -42,6 +43,8 @@ class Library private constructor(
     /**
      * Downloads the Provider's movie Categories and Listings and replaces the catalog atomically.
      * Only `player_api` requests are made, never a stream, so a Sync never takes the Viewer's connection.
+     * Clutter and Sports replays are left out of the movie list, and Prefixes the Prefix table
+     * doesn't know are reported in the finished Sync.
      */
     suspend fun sync(): SyncStatus = syncLock.withLock {
         withContext(Dispatchers.IO) {
@@ -51,12 +54,30 @@ class Library private constructor(
             _syncStatus.value = try {
                 val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
                 client.account()
+                val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
                 store.replaceMovieListings(
                     fill = { staging ->
-                        client.movieCategories(staging::category)
-                        client.movieListings(staging::movieListing)
+                        val categories = HashMap<String, String>()
+                        client.movieCategories { id, name ->
+                            categories[id] = name
+                            staging.category(id, name)
+                        }
+                        client.movieListings { id, name, categoryId, added ->
+                            val description = prefixTable.describe(name, categories[categoryId].orEmpty())
+                            description.unknownPrefix?.let { prefix ->
+                                unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
+                            }
+                            staging.movieListing(id, name, categoryId, added, hidden = description.hidden != null)
+                        }
                     },
-                    completed = { count -> CompletedSync(Instant.now(), Duration.ofNanos(System.nanoTime() - started), count) },
+                    completed = { count ->
+                        CompletedSync(
+                            Instant.now(),
+                            Duration.ofNanos(System.nanoTime() - started),
+                            count,
+                            unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
+                        )
+                    },
                 )
                 SyncStatus.Synced(store.lastSync()!!)
             } catch (e: ProviderException) {
@@ -72,18 +93,19 @@ class Library private constructor(
         }
     }
 
-    /** How many movie Listings the catalog holds. */
+    /** How many Listings the movie list holds (Clutter and Sports replays aren't in it). */
     fun movieListingCount(): Int = store.movieListingCount()
 
-    /** Movie Listings, newest first, from [offset] (0-based). */
-    fun movieListings(offset: Int, limit: Int): List<MovieListing> = store.movieListings(offset, limit)
+    /** Movie Listings, newest first, from [offset] (0-based), with their Likely Version attributes. */
+    fun movieListings(offset: Int, limit: Int): List<MovieListing> =
+        store.movieListings(offset, limit) { name, category -> prefixTable.describe(name, category).attributes }
 
     override fun close() = store.close()
 
     companion object {
         /** Opens the catalog at [databasePath], creating it if needed. */
         fun open(databasePath: String, credentials: CredentialStore, http: OkHttpClient = defaultHttp()): Library =
-            Library(CatalogStore(databasePath), credentials, http)
+            Library(CatalogStore(databasePath), credentials, http, PrefixTable.bundled())
 
         private fun defaultHttp() = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

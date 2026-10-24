@@ -3,6 +3,9 @@ package dev.betteriptv.app
 import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -29,20 +33,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.BadgeRow
+import dev.betteriptv.app.ui.components.BadgeSpec
+import dev.betteriptv.app.ui.components.Certainty
 import dev.betteriptv.app.ui.components.FocusSurface
 import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.Wordmark
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.CatalogNotSaved
 import dev.betteriptv.core.CompletedSync
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.MovieListing
+import dev.betteriptv.core.Provenance
+import dev.betteriptv.core.Quality
 import dev.betteriptv.core.ProviderProblem
 import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.VersionAttributes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
@@ -85,26 +96,54 @@ fun MoviesScreen(library: Library, onSyncNow: () -> Unit) {
 private fun MovieRow(pages: MovieListingPages, index: Int) {
     val movie = pages[index]
     if (movie == null) LaunchedEffect(index / MovieListingPages.PAGE_SIZE) { pages.load(index / MovieListingPages.PAGE_SIZE) }
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(Corners.control)
     FocusSurface(
         onClick = {},
-        modifier = Modifier.fillMaxWidth().height(40.dp),
+        // Like a Version row: a white fill would hide the Likely badges' outline, so a white
+        // outline marks focus instead.
+        modifier = Modifier.fillMaxWidth().height(40.dp).then(if (focused) Modifier.border(2.dp, Colors.focus, shape) else Modifier),
         weight = FocusWeight.Row,
         container = Colors.surface,
-        focusedContainer = Colors.focus,
-    ) { focused ->
+        focusedContainer = Colors.surfaceHigh,
+        interactionSource = interaction,
+    ) {
         Row(Modifier.fillMaxSize().padding(horizontal = Spacing.l), verticalAlignment = Alignment.CenterVertically) {
+            BadgeRow(movie?.attributes?.badges().orEmpty(), Modifier.width(BADGES))
             Text(
                 movie?.name.orEmpty(),
                 style = Type.label,
-                color = if (focused) Colors.onFocus else Colors.ink,
+                color = Colors.ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Spacing.l))
-            Text(movie?.category.orEmpty(), style = Type.caption, color = if (focused) Colors.onFocus else Colors.inkMuted, maxLines = 1)
+            Text(movie?.category.orEmpty(), style = Type.caption, color = Colors.inkMuted, maxLines = 1)
         }
     }
+}
+
+/** Room for a quality and a language badge, so names line up. */
+private val BADGES = 96.dp
+
+/** Quality first, then language: "4K · FR-CA". */
+private fun VersionAttributes.badges(): List<BadgeSpec> = listOfNotNull(
+    quality?.let { BadgeSpec(it.value.label, it.provenance.certainty) },
+    language?.let { BadgeSpec(it.value.uppercase(Locale.ROOT), it.provenance.certainty) },
+)
+
+private val Quality.label get() = when (this) {
+    Quality.UHD -> "4K"
+    Quality.FullHD -> "1080p"
+    Quality.HD -> "720p"
+    Quality.SD -> "SD"
+}
+
+private val Provenance.certainty get() = when (this) {
+    Provenance.Likely -> Certainty.Likely
+    Provenance.Confirmed -> Certainty.Confirmed
 }
 
 /** Keeps a few pages of the movie list in memory around where the Viewer is. */
@@ -132,7 +171,8 @@ private class MovieListingPages(private val library: Library) {
 private fun Context.describe(status: SyncStatus): String = when (status) {
     SyncStatus.NeverSynced -> getString(R.string.sync_never)
     is SyncStatus.Running -> status.last?.let { getString(R.string.sync_running, ago(it)) } ?: getString(R.string.sync_first)
-    is SyncStatus.Synced -> getString(R.string.sync_done, ago(status.last), String.format(Locale.getDefault(), "%.1f", status.last.duration.toMillis() / 1000.0))
+    is SyncStatus.Synced -> getString(R.string.sync_done, ago(status.last), String.format(Locale.getDefault(), "%.1f", status.last.duration.toMillis() / 1000.0)) +
+        unknownPrefixes(status.last)
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
 }
@@ -140,6 +180,12 @@ private fun Context.describe(status: SyncStatus): String = when (status) {
 private fun Context.describe(problem: SyncProblem): String = when (problem) {
     is ProviderProblem -> describe(problem)
     is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
+}
+
+/** Names the Prefixes the Prefix table should learn, so they get added instead of guessed. */
+private fun Context.unknownPrefixes(sync: CompletedSync): String {
+    val prefixes = sync.unknownPrefixes.ifEmpty { return "" }
+    return " " + resources.getQuantityString(R.plurals.sync_unknown_prefixes, prefixes.size, prefixes.joinToString(", ") { it.prefix })
 }
 
 private fun Context.ago(sync: CompletedSync): String {

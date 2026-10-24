@@ -31,7 +31,7 @@ class SyncScaleTest {
         val last = (status as SyncStatus.Synced).last
         println("Sync of 150,000 movie Listings on this machine: ${last.duration.toMillis()} ms")
         assertEquals(150_000, library.movieListingCount())
-        assertEquals(MovieListing(150_000, "EN - Generated Movie 150000 (2020)", "DE - FILME 1940/2024"), library.movieListings(0, 1).single())
-        assertEquals(MovieListing(1, "EN - Generated Movie 1 (2020)", "DE - FILME 1940/2024"), library.movieListings(149_999, 50).single())
+        assertEquals("EN - Generated Movie 150000 (2020)", library.movieListings(0, 1).single().name)
+        assertEquals("EN - Generated Movie 1 (2020)", library.movieListings(149_999, 50).single().name)
     }
 }
