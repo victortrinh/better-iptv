@@ -85,6 +85,10 @@ class SampleActivity : ComponentActivity() {
                 Log.i(TAG, "audio track $path encoding=${audioTrackConfig.encoding} channels=${audioTrackConfig.channelConfig}")
             }
 
+            override fun onAudioInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format, decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?) {
+                Log.i(TAG, "audio format ${format.describe()}")
+            }
+
             override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
                 Log.i(TAG, "video decoder $decoderName")
             }

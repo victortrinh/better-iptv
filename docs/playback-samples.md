@@ -30,4 +30,17 @@ Fire TV Stick 4K Max (AFTKA, Fire OS 7, Android 9), on a TV that passes through 
 | `avi_mpeg4_mp3.avi` | MP3 | | MPEG-4 video on the stick's decoder, MP3 on the stick's decoder. |
 | `ts_dts_ac3.ts` | DTS 5.1 (en), AC-3 5.1 (fr) | | DTS decoded by FFmpeg; AC-3 passed through to the TV (`ENCODING_AC3`), as predicted (`Passthrough`). |
 
-Not covered yet, because ffmpeg can't make them: DTS-HD, PGS, VobSub and closed captions need real files, and DTS or TrueHD passthrough needs a soundbar that takes them. Media3 decodes PGS, VobSub and CEA-608/708 itself, and DTS-HD goes through the same FFmpeg `dca` decoder as DTS (or passes through as its DTS core to a soundbar that takes only DTS). `audioOutput` doesn't model channel limits: a 7.1 Track a soundbar takes only as 5.1 may be decoded where it predicts `Passthrough`. ffmpeg also writes WebVTT in MKV with the codec ID `D_WEBVTT/SUBTITLES`, which Media3 doesn't read (it reads mkvmerge's `S_TEXT/WEBVTT`).
+### Real samples
+
+Files from Media3's own test data (`libraries/test_data/src/test/assets/media/` in [androidx/media](https://github.com/androidx/media), branch `release`), which ffmpeg can't make. Same stick and TV, 2026-10-25.
+
+| Sample | Result |
+|---|---|
+| `mkv/sample_with_pgs_subtitles.mkv` | PGS shows. |
+| `mkv/sample_with_vobsub.mkv` | VobSub shows. |
+| `mkv/sample_with_vtt_subtitles.mkv` | WebVTT in MKV (`S_TEXT/WEBVTT`) shows. |
+| `mkv/sample_with_dts_hd_ma.mkv` | DTS-HD MA 7.1 decoded by FFmpeg (`dca`) to 7.1 PCM, as predicted. |
+| `ts/sample_dts_hd_ma.ts` | **Fails.** Media3 1.8's TS reader hands the DTS-HD extension to the decoder as a separate DTS Express format, which the FFmpeg decoder has no codec for: playback stops with an error. Fixed upstream in Media3 1.11 ([androidx/media#3147](https://github.com/androidx/media/issues/3147)). |
+| `mp4/fragmented_captions.mp4`, remuxed to TS with `ffmpeg -c copy` | CEA-608 closed captions show. Media3 reads captions from TS only when the app names a caption format, which the player now does; it doesn't read them from MP4 or MKV files. |
+
+Still not covered: DTS or TrueHD passthrough, which needs a soundbar that takes them. ffmpeg writes WebVTT in MKV with the codec ID `D_WEBVTT/SUBTITLES`, which Media3 doesn't read; mkvmerge's `S_TEXT/WEBVTT` plays. `audioOutput` doesn't model channel limits: a 7.1 Track a soundbar takes only as 5.1 may be decoded where it predicts `Passthrough`.

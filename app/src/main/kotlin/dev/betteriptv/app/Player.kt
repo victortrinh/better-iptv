@@ -2,6 +2,8 @@ package dev.betteriptv.app
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -45,7 +47,10 @@ internal fun buildPlayer(context: Context): Playing {
     try {
         val subtitleParsers = AssSubtitleParserFactory(ass)
         // Blu-ray rips in TS files carry DTS under the type Blu-ray gives it, which Media3 skips by default.
-        val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
+        val extractors = DefaultExtractorsFactory()
+            .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
+            // Live channels carry closed captions in their video; without a caption format, Media3 drops them.
+            .setTsSubtitleFormats(listOf(Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_CEA608).build()))
         val mediaSources = DefaultMediaSourceFactory(DefaultDataSource.Factory(context), extractors.withAssMkvSupport(subtitleParsers, ass))
             .setSubtitleParserFactory(subtitleParsers)
         // The stick's own audio path comes first, so a format is passed through, else decoded by the stick,
