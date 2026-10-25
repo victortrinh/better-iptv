@@ -55,7 +55,7 @@ internal class PrefixTable private constructor(
         val dotted = DOTTED.matchEntire(rest.trim())?.takeIf { it.groupValues[2].toInt() <= Year.now().value + 1 }
         if (dotted != null) return CleanName(dotted.groupValues[1].replace('.', ' '), dotted.groupValues[2].toInt())
         val year = YEAR.find(rest)
-        val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(COUNTRY, "").replace(Regex("""\s+"""), " ").trim()
+        val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(COUNTRY, "").replace(SPACES, " ").trim()
         return CleanName(title.ifEmpty { name.trim() }, year?.groupValues?.get(1)?.toInt())
     }
 
@@ -132,6 +132,10 @@ internal class PrefixTable private constructor(
 
         private val COUNTRY = Regex("""\s*\([A-Z]{2}\)\s*$""")
 
+        private val SPACES = Regex("""\s+""")
+
+        private val MARKS = Regex("""\p{Mn}+""")
+
         /** The surveyed Provider's table, bundled with the app. */
         fun bundled(): PrefixTable = parse(
             PrefixTable::class.java.getResourceAsStream("prefix-table.txt")!!.bufferedReader().use { it.readText() },
@@ -188,7 +192,7 @@ internal class PrefixTable private constructor(
         /** Folds superscripts (`ᴰᴼᴸᴮʸ`), accents and case, so Category hints match however they're styled. */
         private fun fold(text: String): String {
             val compatible = Normalizer.normalize(text, Normalizer.Form.NFKC)
-            val unaccented = Normalizer.normalize(compatible, Normalizer.Form.NFD).replace(Regex("""\p{Mn}+"""), "")
+            val unaccented = Normalizer.normalize(compatible, Normalizer.Form.NFD).replace(MARKS, "")
             // ᶦ folds to a small capital I, which has no uppercase of its own.
             return unaccented.replace('ɪ', 'I').uppercase(Locale.ROOT)
         }

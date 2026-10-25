@@ -18,8 +18,13 @@ internal data class MatchQuestion(val kind: TitleKind, val name: String, val yea
  */
 internal fun matchName(name: String): String =
     Normalizer.normalize(name, Normalizer.Form.NFKD)
-        .replace(Regex("""\p{M}+"""), "")
+        .replace(MARKS, "")
         .lowercase(Locale.ROOT)
-        .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+        .replace(NOT_LETTERS, " ")
         .trim()
-        .replace(Regex("""(?<![\p{L}\p{N}])(\p{L}) (?=\p{L}(?![\p{L}\p{N}]))"""), "$1")
+        .replace(ACRONYM_GAP, "$1")
+
+// Compiled once: compiling them for each Listing made a first Sync take hours on a Fire TV Stick (#23).
+private val MARKS = Regex("""\p{M}+""")
+private val NOT_LETTERS = Regex("""[^\p{L}\p{N}]+""")
+private val ACRONYM_GAP = Regex("""(?<![\p{L}\p{N}])(\p{L}) (?=\p{L}(?![\p{L}\p{N}]))""")
