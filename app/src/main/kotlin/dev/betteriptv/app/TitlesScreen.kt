@@ -4,6 +4,7 @@ import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -33,7 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.TitleCard
-import dev.betteriptv.app.ui.components.Wordmark
+import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
@@ -45,6 +46,7 @@ import dev.betteriptv.core.ProviderProblem
 import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,37 +55,42 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * One card per movie Title, newest first, read from the device database a page at a time, with
- * TMDB's name and poster in the [appLanguage].
+ * One card per movie or show Title ([kind], switched with the tabs), newest first, read from the
+ * device database a page at a time, with TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
  */
 @Composable
-fun MoviesScreen(
+fun TitlesScreen(
     library: Library,
+    kind: TitleKind,
     contentLanguages: List<String>,
     appLanguage: String,
     grid: LazyGridState,
     restoreFocus: Int,
     onSyncNow: () -> Unit,
+    onKind: (TitleKind) -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // A finished Sync swaps in a new catalog, and Listings Matched by name afterwards regroup its
     // Titles: either way, drop the pages read before.
     val synced = status.last
-    val pages = remember(synced, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage) }
-    val count by produceState(initialValue = 0, synced) { value = withContext(Dispatchers.IO) { library.titleCount() } }
+    val pages = remember(synced, kind, contentLanguages, appLanguage) { TitlePages(library, kind, contentLanguages, appLanguage) }
+    val count by produceState(initialValue = 0, synced, kind) { value = withContext(Dispatchers.IO) { library.titleCount(kind) } }
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
-        Row(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY), verticalAlignment = Alignment.CenterVertically) {
-            Wordmark()
-            Spacer(Modifier.width(Spacing.xl))
-            Text(stringResource(R.string.movies_title), style = Type.headline, color = Colors.ink)
-            Spacer(Modifier.width(Spacing.m))
-            Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
-            Spacer(Modifier.weight(1f))
-            NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running)
+        Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
+            TopTabs(
+                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title)),
+                selected = KINDS.indexOf(kind),
+                onSelect = { onKind(KINDS[it]) },
+            )
+            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
+                Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
+                Spacer(Modifier.width(Spacing.m))
+                NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running)
+            }
         }
         Text(
             context.describe(status),
@@ -99,13 +106,13 @@ fun MoviesScreen(
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
-            items(count) { index -> MovieCard(pages, index, focusNow = index == restoreFocus, onOpen) }
+            items(count) { index -> Card(pages, index, focusNow = index == restoreFocus, onOpen) }
         }
     }
 }
 
 @Composable
-private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
+private fun Card(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
     val title = pages[index]
     if (title == null) LaunchedEffect(index / TitlePages.PAGE_SIZE) { pages.load(index / TitlePages.PAGE_SIZE) }
     val focus = remember { FocusRequester() }
@@ -121,7 +128,7 @@ private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: 
 
 /** Keeps a few pages of the Title list in memory around where the Viewer is. */
 @Stable
-private class TitlePages(private val library: Library, private val contentLanguages: List<String>, private val appLanguage: String) {
+private class TitlePages(private val library: Library, private val kind: TitleKind, private val contentLanguages: List<String>, private val appLanguage: String) {
     private val pages = mutableStateMapOf<Int, List<TitleSummary>>()
     private val loading = mutableSetOf<Int>()
 
@@ -129,7 +136,7 @@ private class TitlePages(private val library: Library, private val contentLangua
 
     suspend fun load(page: Int) {
         if (page in pages || !loading.add(page)) return
-        val titles = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage)
+        val titles = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage, kind)
         loading -= page
         pages[page] = titles
         if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
@@ -140,6 +147,9 @@ private class TitlePages(private val library: Library, private val contentLangua
         const val PAGES_KEPT = 10
     }
 }
+
+/** The tabs, in order. */
+private val KINDS = listOf(TitleKind.Movie, TitleKind.Show)
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
     SyncStatus.NeverSynced -> getString(R.string.sync_never)

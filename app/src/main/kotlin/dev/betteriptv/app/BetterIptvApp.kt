@@ -43,7 +43,7 @@ class BetterIptvApp : Application() {
             when (val status = library.sync()) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
-                    "Synced ${status.last.movieListingCount} movie Listings in ${status.last.duration.toMillis()} ms, ${status.last.rematchedListings} Matched by name",
+                    "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.rematchedListings} Matched by name",
                 )
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed: ${status.problem}")
                 else -> Unit

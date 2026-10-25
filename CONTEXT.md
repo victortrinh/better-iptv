@@ -56,7 +56,7 @@ _Avoid_: Series, TV show
 One episode of a Show, identified by season and episode number.
 
 **Version**:
-One playable copy of a Movie or Episode, coming from one Listing, with its own language, quality and Source.
+One playable copy of a Movie or Episode, coming from one Listing (for an Episode, from the show Listing whose details list it), with its own language, quality and Source.
 _Avoid_: Duplicate, copy, variant, stream
 
 **Backup**:
@@ -95,7 +95,7 @@ An audio or subtitle stream inside a Version's file, with a language.
 _Avoid_: Stream
 
 **Confirmed**:
-A Version attribute learned from the file itself, through a Header read or Playback.
+A Version attribute learned from the file itself, through a Header read, Playback, or the Provider's Episode details (which name the resolution and the first audio Track's language).
 
 **Likely**:
 A Version attribute inferred from its Prefix, Category or the Title's original language, not yet Confirmed.

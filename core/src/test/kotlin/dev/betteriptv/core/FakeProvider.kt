@@ -11,6 +11,8 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.net.URLDecoder
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPOutputStream
@@ -19,7 +21,8 @@ import java.util.zip.GZIPOutputStream
  * A local Xtream Codes Provider that replays the sanitized fixture cut by scripts/cut_fixture.py.
  *
  * Like the surveyed Provider, it allows one stream at a time: a second concurrent stream is refused.
- * Tests script it to be down, expired, or to cut the movie list off midway.
+ * Tests script it to be down, expired, or to cut the movie list off midway. Show details are
+ * served from the fixture's `series_info_<id>.json` files; any other Show has no Episodes.
  */
 class FakeProvider : Closeable {
     val username = "viewer"
@@ -43,6 +46,18 @@ class FakeProvider : Closeable {
     /** Replaces the fixture's movie Categories with these ones. */
     @Volatile var movieCategoriesOverride: String? = null
 
+    /** Replaces the fixture's show list with this one. */
+    @Volatile var showListOverride: String? = null
+
+    /** Replaces the fixture's show Categories with these ones. */
+    @Volatile var showCategoriesOverride: String? = null
+
+    /** Show details by Provider show id, served instead of the fixture's. */
+    val showDetailsOverride = ConcurrentHashMap<Long, String>()
+
+    /** Shows whose details are answered with HTTP 503. */
+    val brokenShowDetails: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
 
@@ -54,6 +69,10 @@ class FakeProvider : Closeable {
 
     /** Requests for a stream (movie file) location, from anyone. */
     val streamRequests get() = _streamRequests.get()
+    private val _showDetailsRequests = CopyOnWriteArrayList<Long>()
+
+    /** The show ids whose details were asked for, in order. */
+    val showDetailsRequests: List<Long> get() = _showDetailsRequests.toList()
     val refusedStreams get() = _refusedStreams.get()
     val requestsWithoutGzip get() = _requestsWithoutGzip.get()
 
@@ -88,6 +107,23 @@ class FakeProvider : Closeable {
                 if (!catalogFile("vod_categories.json", body)) body.write(movieCategoriesOverride?.toByteArray() ?: fixture("vod_categories.json"))
             }
             "get_vod_streams" -> respond(exchange) { body -> movieList(body) }
+            "get_series_categories" -> respond(exchange) { body ->
+                if (!catalogFile("series_categories.json", body)) body.write(showCategoriesOverride?.toByteArray() ?: fixture("series_categories.json"))
+            }
+            "get_series" -> respond(exchange) { body ->
+                if (!catalogFile("series_streams.json", body)) body.write(showListOverride?.toByteArray() ?: fixture("series_streams.json"))
+            }
+            "get_series_info" -> {
+                val id = query["series_id"]?.toLongOrNull() ?: -1
+                _showDetailsRequests += id
+                if (id in brokenShowDetails) return exchange.sendResponseHeaders(503, -1)
+                respond(exchange) { body ->
+                    if (!catalogFile("series_info_$id.json", body)) {
+                        // What the surveyed Provider answers for a series it has no Episodes for.
+                        body.write(showDetailsOverride[id]?.toByteArray() ?: fixtureOrNull("series_info_$id.json") ?: NO_EPISODES.toByteArray())
+                    }
+                }
+            }
             else -> respond(exchange) { it.write("[]".toByteArray()) }
         }
     }
@@ -174,17 +210,23 @@ class FakeProvider : Closeable {
 
     private class CutOff : Exception()
 
+    private companion object {
+        const val NO_EPISODES = """{"seasons":[],"info":[],"episodes":[]}"""
+    }
+
     private fun query(exchange: HttpExchange): Map<String, String> =
         exchange.requestURI.rawQuery.orEmpty().split("&").filter { "=" in it }.associate {
             val (key, value) = it.split("=", limit = 2)
             URLDecoder.decode(key, Charsets.UTF_8) to URLDecoder.decode(value, Charsets.UTF_8)
         }
 
-    private fun fixture(name: String): ByteArray =
-        javaClass.getResourceAsStream("/fixture/$name")!!.use { it.readBytes() }
+    private fun fixture(name: String): ByteArray = fixtureOrNull(name)!!
+
+    private fun fixtureOrNull(name: String): ByteArray? =
+        javaClass.getResourceAsStream("/fixture/$name")?.use { it.readBytes() }
 
     private fun catalogFile(name: String, body: OutputStream): Boolean {
-        val file = catalogDirectory?.resolve(name) ?: return false
+        val file = catalogDirectory?.resolve(name)?.takeIf { it.isFile } ?: return false
         file.inputStream().use { it.copyTo(body) }
         return true
     }

@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.TitleKind
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -39,13 +40,23 @@ private fun Root(app: BetterIptvApp) {
         val contentLanguages = remember { listOf(Locale.getDefault().toLanguageTag()) }
         // The App language is the device's when it is French, English otherwise, until settings let the Viewer choose.
         val appLanguage = remember { Locale.getDefault().takeIf { it.language == "fr" }?.toLanguageTag() ?: "en" }
-        val grid = rememberLazyGridState()
+        var kind by remember { mutableStateOf(TitleKind.Movie) }
+        // Each list keeps its scroll position while the other is shown.
+        val movies = rememberLazyGridState()
+        val shows = rememberLazyGridState()
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         when (val title = opened) {
-            null -> MoviesScreen(app.library, contentLanguages, appLanguage, grid, restoreFocus = returnedFrom, onSyncNow = app::sync, onOpen = { index, id ->
-                opened = OpenedTitle(index, id)
-            })
+            null -> TitlesScreen(
+                app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
+                restoreFocus = returnedFrom,
+                onSyncNow = app::sync,
+                onKind = {
+                    kind = it
+                    returnedFrom = -1
+                },
+                onOpen = { index, id -> opened = OpenedTitle(index, id) },
+            )
             else -> {
                 BackHandler {
                     returnedFrom = title.cardIndex

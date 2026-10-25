@@ -1,0 +1,236 @@
+{
+ "seasons": [],
+ "info": {
+  "name": "BE-NL - The Chelsea Detective",
+  "tmdb": "156240",
+  "last_modified": "1703430881"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100025",
+    "episode_num": 1,
+    "title": "BE-NL| The Chelsea Detective - S01E01 - Aflevering 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2760,
+     "duration": "00:46:00",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6647
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100026",
+    "episode_num": 2,
+    "title": "BE-NL| The Chelsea Detective - S01E02 - Aflevering 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2717,
+     "duration": "00:45:17",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6487
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100027",
+    "episode_num": 3,
+    "title": "BE-NL| The Chelsea Detective - S01E03 - Aflevering 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2803,
+     "duration": "00:46:43",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6818
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100028",
+    "episode_num": 4,
+    "title": "BE-NL| The Chelsea Detective - S01E04 - Aflevering 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2584,
+     "duration": "00:43:04",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6889
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100029",
+    "episode_num": 5,
+    "title": "BE-NL| The Chelsea Detective - S01E05",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2801,
+     "duration": "00:46:41",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6508
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100030",
+    "episode_num": 6,
+    "title": "BE-NL| The Chelsea Detective - S01E06",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2843,
+     "duration": "00:47:23",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6566
+    },
+    "custom_sid": null,
+    "added": "1700906267",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100031",
+    "episode_num": 7,
+    "title": "BE-NL| The Chelsea Detective - S01E07",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2758,
+     "duration": "00:45:58",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6866
+    },
+    "custom_sid": null,
+    "added": "1700906268",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100032",
+    "episode_num": 8,
+    "title": "BE-NL| The Chelsea Detective - S01E08",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 2762,
+     "duration": "00:46:02",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 6880
+    },
+    "custom_sid": null,
+    "added": "1700906268",
+    "season": 1,
+    "direct_source": ""
+   }
+  ]
+ }
+}

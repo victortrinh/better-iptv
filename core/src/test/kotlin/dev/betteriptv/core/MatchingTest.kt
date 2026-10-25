@@ -88,7 +88,7 @@ class MatchingTest {
 
         library.sync()
 
-        assertEquals(listOf("Lilo et Stitch"), cloud.matchAsked.map { it["name"] })
+        assertEquals(listOf("Lilo et Stitch"), cloud.matchAsked.filter { it["kind"] == "movie" }.map { it["name"] })
     }
 
     @Test fun `the Sync counts the Listings it Matched by name instead of their Provider ID`() = runBlocking {

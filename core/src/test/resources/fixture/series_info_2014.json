@@ -1,0 +1,467 @@
+{
+ "seasons": [
+  {
+   "name": "1ος κύκλος",
+   "episode_count": "4",
+   "air_date": "2022-02-07",
+   "season_number": 1
+  },
+  {
+   "name": "2ος κύκλος",
+   "episode_count": "4",
+   "air_date": "2023-08-28",
+   "season_number": 2
+  },
+  {
+   "name": "3ος κύκλος",
+   "episode_count": "4",
+   "air_date": "2024-12-19",
+   "season_number": 3
+  },
+  {
+   "name": "4ος κύκλος",
+   "episode_count": "4",
+   "air_date": "2026-08-03",
+   "season_number": 4
+  }
+ ],
+ "info": {
+  "name": "GR - The Chelsea Detective (2022) (GB)",
+  "tmdb": "156240",
+  "last_modified": "1788807119"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100009",
+    "episode_num": 1,
+    "title": "GR - The Chelsea Detective - S01E01 - Επεισόδιο 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5308,
+     "duration": "01:28:28",
+     "video": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 400
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 1353
+    },
+    "custom_sid": null,
+    "added": "1707747394",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100010",
+    "episode_num": 2,
+    "title": "GR - The Chelsea Detective - S01E02 - Επεισόδιο 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5233,
+     "duration": "01:27:13",
+     "video": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 400
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 1347
+    },
+    "custom_sid": null,
+    "added": "1707747395",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100011",
+    "episode_num": 3,
+    "title": "GR - The Chelsea Detective - S01E03 - Επεισόδιο 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5483,
+     "duration": "01:31:23",
+     "video": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 400
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 1354
+    },
+    "custom_sid": null,
+    "added": "1707747395",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100012",
+    "episode_num": 4,
+    "title": "GR - The Chelsea Detective - S01E04 - Επεισόδιο 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5360,
+     "duration": "01:29:20",
+     "video": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 400
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 1362
+    },
+    "custom_sid": null,
+    "added": "1707747396",
+    "season": 1,
+    "direct_source": ""
+   }
+  ],
+  "2": [
+   {
+    "id": "100013",
+    "episode_num": 1,
+    "title": "GR - The Chelsea Detective - S02E01 - Επεισόδιο 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5367,
+     "duration": "01:29:27",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "mp3",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 2906
+    },
+    "custom_sid": null,
+    "added": "1707747396",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100014",
+    "episode_num": 2,
+    "title": "GR - The Chelsea Detective - S02E02 - Επεισόδιο 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5344,
+     "duration": "01:29:04",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "mp3",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 2904
+    },
+    "custom_sid": null,
+    "added": "1707747396",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100015",
+    "episode_num": 3,
+    "title": "GR - The Chelsea Detective - S02E03 - Επεισόδιο 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5272,
+     "duration": "01:27:52",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "mp3",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 2918
+    },
+    "custom_sid": null,
+    "added": "1707747397",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100016",
+    "episode_num": 4,
+    "title": "GR - The Chelsea Detective - S02E04 - Επεισόδιο 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5284,
+     "duration": "01:28:04",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "mp3",
+      "channels": 2,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 2912
+    },
+    "custom_sid": null,
+    "added": "1707747397",
+    "season": 2,
+    "direct_source": ""
+   }
+  ],
+  "3": [
+   {
+    "id": "100017",
+    "episode_num": 1,
+    "title": "GR - The Chelsea Detective - S03E01 - Επεισόδιο 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5311,
+     "duration": "01:28:31",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3213
+    },
+    "custom_sid": null,
+    "added": "1744922001",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100018",
+    "episode_num": 2,
+    "title": "GR - The Chelsea Detective - S03E02 - Επεισόδιο 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5410,
+     "duration": "01:30:10",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3218
+    },
+    "custom_sid": null,
+    "added": "1744922001",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100019",
+    "episode_num": 3,
+    "title": "GR - The Chelsea Detective - S03E03 - Επεισόδιο 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5216,
+     "duration": "01:26:56",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3194
+    },
+    "custom_sid": null,
+    "added": "1745006274",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100020",
+    "episode_num": 4,
+    "title": "GR - The Chelsea Detective - S03E04 - Επεισόδιο 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5316,
+     "duration": "01:28:36",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3223
+    },
+    "custom_sid": null,
+    "added": "1745526955",
+    "season": 3,
+    "direct_source": ""
+   }
+  ],
+  "4": [
+   {
+    "id": "100021",
+    "episode_num": 1,
+    "title": "GR - The Chelsea Detective (2022) (GB) - S04E01 - Επεισόδιο 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5270,
+     "duration": "01:27:50",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3107
+    },
+    "custom_sid": null,
+    "added": "1788807118",
+    "season": 4,
+    "direct_source": ""
+   },
+   {
+    "id": "100022",
+    "episode_num": 2,
+    "title": "GR - The Chelsea Detective (2022) (GB) - S04E02 - Επεισόδιο 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5310,
+     "duration": "01:28:30",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3108
+    },
+    "custom_sid": null,
+    "added": "1788807118",
+    "season": 4,
+    "direct_source": ""
+   },
+   {
+    "id": "100023",
+    "episode_num": 3,
+    "title": "GR - The Chelsea Detective (2022) (GB) - S04E03 - Επεισόδιο 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5280,
+     "duration": "01:28:00",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 3120
+    },
+    "custom_sid": null,
+    "added": "1788807119",
+    "season": 4,
+    "direct_source": ""
+   },
+   {
+    "id": "100024",
+    "episode_num": 4,
+    "title": "GR - The Chelsea Detective (2022) (GB) - S04E04 - Επεισόδιο 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5346,
+     "duration": "01:29:06",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {}
+     },
+     "bitrate": 4220
+    },
+    "custom_sid": null,
+    "added": "1788807119",
+    "season": 4,
+    "direct_source": ""
+   }
+  ]
+ }
+}
