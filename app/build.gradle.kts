@@ -67,4 +67,7 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    // DTS and TrueHD audio, which Fire sticks can't decode, and ASS subtitles with their full styling.
+    implementation(libs.media3.ffmpeg)
+    implementation(libs.ass.media)
 }

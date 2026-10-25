@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,6 +31,7 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.Track
@@ -44,7 +46,7 @@ import java.io.IOException
 @Composable
 fun PlayerScreen(library: Library, plan: PlayPlan) {
     val context = LocalContext.current
-    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var player by remember { mutableStateOf<Playing?>(null) }
     var failed by remember(plan) { mutableStateOf(false) }
 
     LaunchedEffect(plan) {
@@ -55,28 +57,30 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
             failed = true
             return@LaunchedEffect
         }
-        var exo: ExoPlayer? = null
+        var playing: Playing? = null
         try {
-            exo = ExoPlayer.Builder(context).build()
-            exo.addListener(TrackChooser(exo, plan))
+            playing = buildPlayer(context)
+            val exo = playing.player
+            exo.addListener(TrackChooser(exo, plan, readDeviceProfile(context)))
             exo.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) { failed = true }
             })
             exo.setMediaItem(MediaItem.fromUri(connection.location))
             exo.prepare()
             exo.playWhenReady = true
-            player = exo
+            player = playing
             awaitCancellation()
         } finally {
             player = null
             // Release closes the player's request to the Provider, so only then is the connection given back.
-            exo?.release()
+            playing?.release()
             connection.close()
         }
     }
 
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        player?.let { exo -> PlayerSurface(context, exo) }
+        // A new player needs a new view: the view's ASS overlay is tied to the player's handler.
+        player?.let { playing -> key(playing) { PlayerSurface(context, playing) } }
         if (failed) {
             Text(
                 stringResource(R.string.player_failed),
@@ -90,7 +94,7 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun PlayerSurface(context: Context, player: ExoPlayer) {
+private fun PlayerSurface(context: Context, playing: Playing) {
     AndroidView(
         factory = {
             PlayerView(context).apply {
@@ -98,16 +102,16 @@ private fun PlayerSurface(context: Context, player: ExoPlayer) {
                 isFocusable = true
                 isFocusableInTouchMode = true
                 setShowSubtitleButton(true)
+                playing.showIn(this)
                 requestFocus()
             }
         },
-        update = { it.player = player },
         modifier = Modifier.fillMaxSize(),
     )
 }
 
-/** Applies the [plan]'s Track choice once, as soon as the player knows the file's Tracks. */
-private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan) : Player.Listener {
+/** Applies the [plan]'s Track choice for [device] once, as soon as the player knows the file's Tracks. */
+private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan, private val device: DeviceProfile) : Player.Listener {
     private var chosen = false
 
     override fun onTracksChanged(tracks: Tracks) {
@@ -117,8 +121,9 @@ private class TrackChooser(private val player: ExoPlayer, private val plan: Play
         val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
         val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
         val choice = plan.chooseTracks(
-            audio.map { Track(it.getTrackFormat(0).language) },
+            audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
             subtitles.map { Track(it.getTrackFormat(0).language) },
+            device,
         )
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
             choice.audio?.let { setOverrideForType(TrackSelectionOverride(audio[it].mediaTrackGroup, 0)) }

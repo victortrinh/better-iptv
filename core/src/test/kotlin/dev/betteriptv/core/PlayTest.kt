@@ -183,18 +183,85 @@ class PlayTest {
         val plan = library.playPlan(movie, listOf("fr", "en"), fullHdTv)!!
 
         // Files tag Tracks with ISO 639-2 codes as often as 639-1.
-        val choice = plan.chooseTracks(audio = tracks("spa", "eng", "fre"), subtitles = tracks("eng", "fra"))
+        val choice = plan.chooseTracks(audio = tracks("spa", "eng", "fre"), subtitles = tracks("eng", "fra"), fullHdTv)
         assertEquals(TrackChoice(audio = 2, subtitle = null), choice)
-        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("de", "en"), tracks()))
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("de", "en"), tracks(), fullHdTv))
     }
 
     @Test fun `without audio in a Content language, subtitles in the first Content language are chosen when the file has them`() = runBlocking {
         syncVersions("4K-DE-DV - Der Film (2025)" to "4K MOVIES")
         val plan = library.playPlan(movie, listOf("fr", "en"), dolbyVisionTv)!!
 
-        assertEquals(TrackChoice(audio = null, subtitle = 2), plan.chooseTracks(tracks("ger", null), tracks("eng", "ger", "fre", "fr")))
+        assertEquals(TrackChoice(audio = null, subtitle = 2), plan.chooseTracks(tracks("ger", null), tracks("eng", "ger", "fre", "fr"), dolbyVisionTv))
         // English subtitles don't stand in for French ones.
-        assertEquals(TrackChoice(audio = null, subtitle = null), plan.chooseTracks(tracks("deu"), tracks("eng", null)))
+        assertEquals(TrackChoice(audio = null, subtitle = null), plan.chooseTracks(tracks("deu"), tracks("eng", null), dolbyVisionTv))
+    }
+
+    // Audio: passed through or decoded
+
+    private val dts = "audio/vnd.dts"
+    private val dtsHd = "audio/vnd.dts.hd"
+    private val trueHd = "audio/true-hd"
+    private val ac3 = "audio/ac3"
+    private val aac = "audio/mp4a-latm"
+
+    /** A Fire stick plugged straight into a TV: it decodes Dolby and AAC itself, and the TV takes nothing but PCM. */
+    private val tvSpeakers = fullHdTv.copy(audioDecoders = setOf(aac, ac3, "audio/eac3"))
+
+    /** The same stick with a soundbar that takes every Blu-ray format as it is. */
+    private val soundbar = tvSpeakers.copy(audioPassthrough = setOf(ac3, "audio/eac3", dts, dtsHd, trueHd))
+
+    @Test fun `DTS, DTS-HD and TrueHD pass through when the Device profile reports support, and are decoded in software otherwise`() {
+        for (format in listOf(dts, dtsHd, trueHd)) {
+            assertEquals(format, AudioOutput.Passthrough, soundbar.audioOutput(format))
+            assertEquals(format, AudioOutput.SoftwareDecoder, tvSpeakers.audioOutput(format))
+        }
+    }
+
+    @Test fun `formats the stick decodes itself pass through when they can, and use the stick's decoder otherwise`() {
+        assertEquals(AudioOutput.Passthrough, soundbar.audioOutput(ac3))
+        assertEquals(AudioOutput.PlatformDecoder, tvSpeakers.audioOutput(ac3))
+        assertEquals(AudioOutput.PlatformDecoder, soundbar.audioOutput(aac))
+        // Formats the app's decoder covers too, for a stick without them.
+        assertEquals(AudioOutput.SoftwareDecoder, fullHdTv.audioOutput(ac3))
+    }
+
+    @Test fun `DTS-HD passes through as its DTS core, and Dolby Atmos as plain E-AC-3, to a soundbar that takes only those`() {
+        val coreOnly = tvSpeakers.copy(audioPassthrough = setOf(ac3, "audio/eac3", dts))
+
+        assertEquals(AudioOutput.Passthrough, coreOnly.audioOutput(dtsHd))
+        assertEquals(AudioOutput.Passthrough, coreOnly.audioOutput("audio/eac3-joc"))
+        assertEquals(AudioOutput.SoftwareDecoder, coreOnly.audioOutput(trueHd))
+    }
+
+    @Test fun `PCM audio always plays, with no decoder to go through`() {
+        assertEquals(AudioOutput.PlatformDecoder, fullHdTv.audioOutput("audio/raw"))
+    }
+
+    @Test fun `a format nothing on the device plays has no output, and one the file doesn't name is taken to play`() {
+        assertNull(tvSpeakers.audioOutput("audio/x-unknown"))
+        assertEquals(AudioOutput.PlatformDecoder, tvSpeakers.audioOutput(null))
+    }
+
+    @Test fun `in the chosen language, audio that passes through or plays on the stick's decoder beats audio decoded in software`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES")
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        // A Blu-ray rip: lossless TrueHD first, then the Dolby Digital compatibility Track.
+        val audio = listOf(Track("fre", ac3), Track("eng", trueHd), Track("eng", ac3))
+
+        assertEquals(TrackChoice(audio = 2, subtitle = null), plan.chooseTracks(audio, tracks(), tvSpeakers))
+        // A soundbar takes the lossless Track as it is.
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(audio, tracks(), soundbar))
+        // Without a choice of format, software decoding plays it.
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(listOf(Track("eng", dts), Track("fre", ac3)), tracks(), tvSpeakers))
+    }
+
+    @Test fun `audio nothing on the device plays is never chosen`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES")
+        val plan = library.playPlan(movie, listOf("en", "fr"), fullHdTv)!!
+
+        val audio = listOf(Track("eng", "audio/x-unknown"), Track("fre", ac3))
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(audio, tracks(), tvSpeakers))
     }
 
     // The connection gate
