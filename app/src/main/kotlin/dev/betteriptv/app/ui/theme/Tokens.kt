@@ -24,6 +24,8 @@ object Colors {
     val surface = Color(0x1FFFFFFF)
     /** Stronger glass: unfocused buttons, the selected tab. */
     val surfaceHigh = Color(0x33FFFFFF)
+    /** Laid under glass that carries text over a busy picture: the ground at 75%. */
+    val veil = Color(0xBF07080A)
     val ink = Color(0xFFFFFFFF)
     /** Secondary text. 8.6:1 on the ground. */
     val inkMuted = Color(0xFFA9A9AF)

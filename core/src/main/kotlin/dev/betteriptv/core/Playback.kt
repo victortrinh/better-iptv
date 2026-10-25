@@ -1,9 +1,15 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import java.io.Closeable
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * What the Viewer's stick and TV together can play, as the platform reports it. It decides which
@@ -73,13 +79,22 @@ class Connection internal constructor(val location: String, private val lease: C
 
 /**
  * Enforces the Connection limit on the device: one lease at a time, so a second stream is never
- * opened while one is in use. [lease] waits until the current lease is closed.
+ * opened while one is in use. [lease] waits until the current lease is closed, and then for
+ * [releaseGrace], because the Provider counts a closed stream as open for a moment after.
  */
-internal class ConnectionGate {
+internal class ConnectionGate(private val releaseGrace: Duration = 500.milliseconds) {
     private val semaphore = Semaphore(1)
+
+    @Volatile private var releasedAt: TimeMark? = null
 
     suspend fun lease(): Lease {
         semaphore.acquire()
+        try {
+            releasedAt?.let { delay(releaseGrace - it.elapsedNow()) }
+        } catch (e: CancellationException) {
+            semaphore.release()
+            throw e
+        }
         return Lease()
     }
 
@@ -87,7 +102,10 @@ internal class ConnectionGate {
         private val released = AtomicBoolean()
 
         override fun close() {
-            if (released.compareAndSet(false, true)) semaphore.release()
+            if (released.compareAndSet(false, true)) {
+                releasedAt = TimeSource.Monotonic.markNow()
+                semaphore.release()
+            }
         }
     }
 }

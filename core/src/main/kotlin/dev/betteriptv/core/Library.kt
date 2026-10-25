@@ -283,6 +283,9 @@ class Library private constructor(
         return Connection(location, connection.lease())
     }
 
+    /** A Playback session for [plan], playing on the player engines [engines] creates. Start it with [PlaybackSession.play]. */
+    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine) = PlaybackSession(this, plan, engines)
+
     private class Shown(val best: Candidate, val name: String, val year: Int?, val image: String?)
 
     /**
