@@ -30,7 +30,8 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 |---|---|---|
 | Sync of 150,000 generated movie Listings (~63 MB of JSON) from a local fake Provider, in a 128 MB heap | MacBook Pro (M-series), `SyncScaleTest` | 0.7 s; 1.2 s once Listings are Matched to Titles (#5); 2.2 s with suspected Mismatches found (#7), before the cloud is asked about them |
 | Sync of the 148-Listing fixture | Android TV 14 emulator on the same Mac | 3.0 s |
-| First Sync of the full real catalog (movies: 144,031 Listings) | Fire TV Stick | Not measured yet: tracked in [#23](https://github.com/victortrinh/better-iptv/issues/23) ([install guide](install-on-fire-tv.md)). The app shows the time on the Movies screen and logs it under the `Sync` tag. |
+| First Sync of the full real catalog (138,575 movie Listings, 58,120 Titles) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build | 129.4 s (#30; hours before it). The regroup by name then stopped after 385 of ~2,385 cloud batches when the Worker exceeded its CPU limit: tracked in [#32](https://github.com/victortrinh/better-iptv/issues/32). Details in [#23](https://github.com/victortrinh/better-iptv/issues/23). |
+| Scrolling the movie list, holding Down | Same stick and build | Not smooth: every frame janky, median 150 ms, p99 2 s. Debug builds are slower; tracked in [#33](https://github.com/victortrinh/better-iptv/issues/33). |
 
 ## M1: Replace TiviMate for Movies and Shows
 
