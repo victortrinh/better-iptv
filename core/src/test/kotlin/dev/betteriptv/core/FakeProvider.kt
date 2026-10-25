@@ -58,10 +58,10 @@ class FakeProvider : Closeable {
     /** Shows whose details are answered with HTTP 503. */
     val brokenShowDetails: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
-    /** Movie streams answered with HTTP 404, as the Provider answers for a dead link. */
+    /** Movie Listings whose files are answered with HTTP 404, as the Provider answers for a dead link. */
     val deadStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
-    /** Movie streams that open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
+    /** Movie Listings whose files open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
     val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     @Volatile var slowStreamDelayMillis = 1_000L
 

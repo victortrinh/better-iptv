@@ -1,6 +1,7 @@
 package dev.betteriptv.app
 
 import android.content.Context
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -67,7 +68,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Plays a [plan] full screen with Media3 through a Playback session, which falls back to Backups by
  * itself. The Version playing is named when it starts; repeated buffering brings a one-tap
- * suggestion of a lower Version; the remote's menu key opens the Versions to switch to mid-film.
+ * suggestion of a lower Version; the remote's menu key opens the Versions to switch to partway through.
  * Leaving the screen stops the player before the connection is given back.
  */
 @Composable
@@ -79,13 +80,13 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
     val state by session.state.collectAsState()
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
     var choosing by remember(plan) { mutableStateOf(false) }
-    val untagged = stringResource(R.string.language_untagged)
+    val backToPlayer = { playerView?.requestFocus() }
 
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
         PlayerSurface(context, engine.player, onView = { playerView = it }, onVersions = { choosing = true })
 
         when (val shown = state) {
-            is PlaybackState.Starting -> VersionLabel(stringResource(R.string.player_starting, shown.version.attributes.playLabel(untagged)))
+            is PlaybackState.Starting -> VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)))
             is PlaybackState.Playing -> {
                 // Named for a few seconds each time a Version starts, so a fallback to a Backup is seen.
                 var named by remember(shown.version) { mutableStateOf(true) }
@@ -93,9 +94,20 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
                     delay(NAMED_FOR)
                     named = false
                 }
-                if (named) VersionLabel(shown.version.attributes.playLabel(untagged))
-                shown.lowerVersion?.let { lower ->
-                    BufferingSuggestion(lower, untagged, onSwitch = { session.switchTo(lower) }, onDismissed = { playerView?.requestFocus() })
+                if (named) VersionLabel(context.playLabel(shown.version))
+                // Not over the Versions, whose focus it would take.
+                if (!choosing) shown.lowerVersion?.let { lower ->
+                    BufferingSuggestion(
+                        lower,
+                        onSwitch = {
+                            session.switchTo(lower)
+                            backToPlayer()
+                        },
+                        onDismiss = {
+                            session.dismissSuggestion()
+                            backToPlayer()
+                        },
+                    )
                 }
             }
             PlaybackState.Failed -> Text(
@@ -107,18 +119,17 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
         }
 
         if (choosing) {
-            val playing = (state as? PlaybackState.Playing)?.version ?: (state as? PlaybackState.Starting)?.version
             VersionsPanel(
                 plan.versions,
-                playing,
+                state.version,
                 onPick = { version ->
                     choosing = false
                     session.switchTo(version)
-                    playerView?.requestFocus()
+                    backToPlayer()
                 },
                 onClose = {
                     choosing = false
-                    playerView?.requestFocus()
+                    backToPlayer()
                 },
             )
         }
@@ -130,6 +141,9 @@ private val NAMED_FOR = 5.seconds
 
 /** How long the buffering suggestion waits for the Viewer before stepping aside. */
 private val SUGGESTED_FOR = 15.seconds
+
+/** How long after a seek filling the buffer is taken for the seek's doing. */
+private const val SEEK_GRACE_MILLIS = 2_000L
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -155,13 +169,18 @@ private fun PlayerSurface(context: Context, player: ExoPlayer?, onView: (PlayerV
     )
 }
 
+/** The player's scrim over the top of the picture: 85% ground, 60% by 12% of the screen, then clear. */
+private val topScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0.85f), 0.12f to Colors.ground.copy(alpha = 0.6f), 0.28f to Colors.ground.copy(alpha = 0f))
+
+/** The player's scrim over the bottom of the picture, 85% ground at the edge. */
+private val bottomScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f), 1f to Colors.ground.copy(alpha = 0.85f))
+
 /** Names a Version over the top of the picture, with the key that opens the others. */
 @Composable
 private fun VersionLabel(text: String) {
     Row(
-        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Colors.ground.copy(alpha = 0.85f), Colors.ground.copy(alpha = 0f))))
-            .padding(horizontal = Spacing.screenX, vertical = Spacing.screenY),
-        verticalAlignment = Alignment.CenterVertically,
+        Modifier.fillMaxSize().background(topScrim).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY),
+        verticalAlignment = Alignment.Top,
     ) {
         Text(text, style = Type.label, color = Colors.ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
         Spacer(Modifier.width(Spacing.m))
@@ -171,24 +190,18 @@ private fun VersionLabel(text: String) {
 
 /**
  * The one-tap suggestion of a [lower] Version after repeated buffering. It takes focus so one press
- * switches; Back, or waiting, dismisses it and hands focus back to the player. Nothing switches
- * without the Viewer.
+ * switches; Back, or waiting, dismisses it. Nothing switches without the Viewer.
  */
 @Composable
-private fun BufferingSuggestion(lower: Version, untagged: String, onSwitch: () -> Unit, onDismissed: () -> Unit) {
-    var dismissed by remember(lower) { mutableStateOf(false) }
-    if (dismissed) return
-    val dismiss = {
-        dismissed = true
-        onDismissed()
-    }
+private fun BufferingSuggestion(lower: Version, onSwitch: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val button = remember { FocusRequester() }
     LaunchedEffect(lower) {
         button.requestFocus()
         delay(SUGGESTED_FOR)
-        dismiss()
+        onDismiss()
     }
-    BackHandler(onBack = dismiss)
+    BackHandler(onBack = onDismiss)
     Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
         // Glass carrying text over a busy picture lays the ground under it first.
         Row(
@@ -200,7 +213,7 @@ private fun BufferingSuggestion(lower: Version, untagged: String, onSwitch: () -
         ) {
             Column {
                 Text(stringResource(R.string.player_buffering), style = Type.label, color = Colors.ink)
-                Text(stringResource(R.string.player_buffering_lower, lower.attributes.playLabel(untagged)), style = Type.caption, color = Colors.inkMuted)
+                Text(stringResource(R.string.player_buffering_lower, context.playLabel(lower)), style = Type.caption, color = Colors.inkMuted)
             }
             Spacer(Modifier.width(Spacing.m))
             NuageButton(stringResource(R.string.player_switch), onClick = onSwitch, modifier = Modifier.focusRequester(button))
@@ -208,18 +221,19 @@ private fun BufferingSuggestion(lower: Version, untagged: String, onSwitch: () -
     }
 }
 
-/** The Title's Versions over the bottom of the picture, the [playing] one marked; picking one switches to it. */
+/**
+ * The Title's Versions over the bottom of the picture; picking one switches to it. The one [playing],
+ * or the one whose Backup is playing, is marked, and picking it just closes the list.
+ */
 @Composable
 private fun VersionsPanel(versions: List<Version>, playing: Version?, onPick: (Version) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.requestFocus() }
     BackHandler(onBack = onClose)
-    Box(Modifier.fillMaxSize().background(Colors.ground.copy(alpha = 0.6f))) {
+    Box(Modifier.fillMaxSize().background(bottomScrim)) {
         Column(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f)
-                .background(Brush.verticalGradient(listOf(Colors.ground.copy(alpha = 0f), Colors.ground.copy(alpha = 0.85f))))
-                .padding(horizontal = Spacing.screenX),
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f).padding(horizontal = Spacing.screenX),
         ) {
             Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = Spacing.s))
             VersionHeader(Modifier.padding(bottom = 2.dp))
@@ -228,7 +242,7 @@ private fun VersionsPanel(versions: List<Version>, playing: Version?, onPick: (V
                 contentPadding = PaddingValues(bottom = Spacing.screenY),
             ) {
                 items(versions, key = { it.listingId }) { version ->
-                    val isPlaying = version.listingId == playing?.listingId
+                    val isPlaying = playing != null && (version.listingId == playing.listingId || version.backups.any { it.listingId == playing.listingId })
                     val line = context.versionLine(version)
                     VersionRow(
                         if (isPlaying) line.copy(note = context.getString(R.string.player_playing), noteIsCaution = false) else line,
@@ -256,24 +270,21 @@ private class Media3Engine(private val context: Context, private val plan: PlayP
         exo.addListener(TrackChooser(exo, plan))
         exo.addListener(object : Player.Listener {
             private var started = false
-            private var seeking = false
+            private var seekedAt = Long.MIN_VALUE
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
-                    Player.STATE_READY -> {
-                        seeking = false
-                        if (!started) {
-                            started = true
-                            events(PlayerEvent.Started)
-                        }
+                    Player.STATE_READY -> if (!started) {
+                        started = true
+                        events(PlayerEvent.Started)
                     }
-                    // Filling the buffer after the Viewer seeks isn't the stream struggling.
-                    Player.STATE_BUFFERING -> if (started && !seeking) events(PlayerEvent.Buffering)
+                    // Filling the buffer just after the Viewer seeks isn't the Version struggling.
+                    Player.STATE_BUFFERING -> if (started && SystemClock.elapsedRealtime() - seekedAt > SEEK_GRACE_MILLIS) events(PlayerEvent.Buffering)
                 }
             }
 
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-                if (reason == Player.DISCONTINUITY_REASON_SEEK) seeking = true
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) seekedAt = SystemClock.elapsedRealtime()
             }
 
             override fun onPlayerError(error: PlaybackException) = events(PlayerEvent.Failed)

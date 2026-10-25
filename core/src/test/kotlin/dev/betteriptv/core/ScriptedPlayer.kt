@@ -62,7 +62,7 @@ class ScriptedPlayer(private val provider: FakeProvider) : PlayerEngine {
     /** Reports that playing stalled to fill its buffer, as a slow Provider makes it. */
     fun buffer() = current?.report(PlayerEvent.Buffering)
 
-    /** Reports that the file stopped mid-film, as a Provider dropping the stream makes it. */
+    /** Reports that the file stopped partway through, as a Provider dropping the connection makes it. */
     fun fail() = current?.report(PlayerEvent.Failed)
 
     override suspend fun stop() {

@@ -58,6 +58,9 @@ fun languageName(tag: String): String {
     return locale.getDisplayName(locale).replaceFirstChar { it.titlecase(locale) }
 }
 
+/** [playLabel] for a [version], naming an Untagged one's language as unnamed. */
+fun Context.playLabel(version: Version): String = version.attributes.playLabel(getString(R.string.language_untagged))
+
 /** What a [version]'s row in a Versions list shows. */
 fun Context.versionLine(version: Version): VersionLine {
     val attributes = version.attributes

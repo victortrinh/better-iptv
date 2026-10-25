@@ -49,22 +49,27 @@ enum class PlayerEvent {
 
 /** What the Viewer sees of a [PlaybackSession]. */
 sealed interface PlaybackState {
+    /** The Version being opened or playing; null when none would start. */
+    val version: Version?
+
     /** [version] is being opened; it has a few seconds to start before its next Backup is tried. */
-    data class Starting(val version: Version) : PlaybackState
+    data class Starting(override val version: Version) : PlaybackState
 
     /**
      * [version] is playing. After repeated buffering, [lowerVersion] is a lower Version in the same
      * language to suggest; the session never switches to it by itself.
      */
-    data class Playing(val version: Version, val lowerVersion: Version? = null) : PlaybackState
+    data class Playing(override val version: Version, val lowerVersion: Version? = null) : PlaybackState
 
     /** No Version would start: the one asked for and all its Backups are dead. Switching tries another. */
-    data object Failed : PlaybackState
+    data object Failed : PlaybackState {
+        override val version: Version? get() = null
+    }
 }
 
 /**
  * Drives a [PlayerEngine] from a [plan]. A Version that fails, or doesn't start within the start
- * timeout, is closed and its next Backup is tried; one that stops mid-film gives way to a Backup at
+ * timeout, is closed and its next Backup is tried; one that stops partway through gives way to a Backup at
  * the same position. The failing stream is always closed, and the connection given back, before
  * the next one opens.
  */
@@ -80,6 +85,7 @@ class PlaybackSession internal constructor(
     private sealed interface Signal
     private class Event(val attempt: Int, val event: PlayerEvent) : Signal
     private class Switch(val version: Version) : Signal
+    private data object Dismiss : Signal
 
     private val signals = Channel<Signal>(Channel.UNLIMITED)
     private var connection: Connection? = null
@@ -93,7 +99,7 @@ class PlaybackSession internal constructor(
      * Version will start ([PlaybackState.Failed]), it waits for the Viewer to switch to another.
      */
     suspend fun run() {
-        var queue = listOf(plan.version) + plan.version.backups
+        var queue = plan.version.withBackups
         try {
             while (true) {
                 while (queue.isNotEmpty()) {
@@ -102,11 +108,11 @@ class PlaybackSession internal constructor(
                     _state.value = PlaybackState.Starting(version)
                     val switch = play(version)
                     stop()
-                    if (switch != null) queue = listOf(switch.version) + switch.version.backups
+                    if (switch != null) queue = switch.version.withBackups
                 }
                 _state.value = PlaybackState.Failed
                 val switch = awaitSwitch()
-                queue = listOf(switch.version) + switch.version.backups
+                queue = switch.version.withBackups
             }
         } finally {
             withContext(NonCancellable) { stop() }
@@ -118,11 +124,18 @@ class PlaybackSession internal constructor(
         signals.trySend(Switch(version))
     }
 
+    /** Takes back the suggestion of a lower Version; it comes again only if buffering keeps repeating. */
+    fun dismissSuggestion() {
+        signals.trySend(Dismiss)
+    }
+
     /**
      * Plays [version] until it fails, doesn't start in time, or the Viewer switches; returns the
      * switch, if that's what ended it.
      */
     private suspend fun play(version: Version): Switch? {
+        // Looking up where the file plays from counts against its time to start.
+        val opened = TimeSource.Monotonic.markNow()
         connection = try {
             connect(version)
         } catch (e: IOException) {
@@ -131,7 +144,6 @@ class PlaybackSession internal constructor(
         }
         val attempt = ++attempts
         engine.play(connection!!.location, resumeAt) { signals.trySend(Event(attempt, it)) }
-        val opened = TimeSource.Monotonic.markNow()
         var started = false
         val stalls = ArrayDeque<TimeMark>()
         while (true) {
@@ -141,6 +153,10 @@ class PlaybackSession internal constructor(
                 is Switch -> if (signal.version.listingId != version.listingId) {
                     if (started) resumeAt = engine.position
                     return signal
+                }
+                Dismiss -> (_state.value as? PlaybackState.Playing)?.let {
+                    stalls.clear()
+                    _state.value = it.copy(lowerVersion = null)
                 }
                 is Event -> if (signal.attempt == attempt) when (signal.event) {
                     PlayerEvent.Started -> if (!started) {
@@ -156,7 +172,7 @@ class PlaybackSession internal constructor(
                         while (stalls.first().elapsedNow() > BUFFERING_WINDOW) stalls.removeFirst()
                         val playing = _state.value as PlaybackState.Playing
                         if (stalls.size >= BUFFERING_REPEATS && playing.lowerVersion == null) {
-                            lowerThan(version)?.let { _state.value = playing.copy(lowerVersion = it) }
+                            lowerVersion(version, plan.versions)?.let { _state.value = playing.copy(lowerVersion = it) }
                         }
                     }
                 }
@@ -179,19 +195,7 @@ class PlaybackSession internal constructor(
             connection.close()
         }
     }
-
-    /** The best Version in [version]'s language with a lower picture, CAM and Audio-description ones aside. */
-    private fun lowerThan(version: Version): Version? {
-        val picture = version.attributes.picture ?: return null
-        val language = version.attributes.language?.value?.let(::primaryLanguage)
-        return plan.versions.firstOrNull { other ->
-            val attributes = other.attributes
-            !attributes.cam && !attributes.audioDescription &&
-                attributes.language?.value?.let(::primaryLanguage) == language &&
-                (attributes.picture ?: -1) < picture
-        }
-    }
-
-    /** Where a Version's quality ranks; null when unknown. */
-    private val VersionAttributes.picture get() = quality?.value?.ordinal
 }
+
+/** [this] Version, then its Backups: what is tried, in order, to play it. */
+private val Version.withBackups get() = listOf(this) + backups

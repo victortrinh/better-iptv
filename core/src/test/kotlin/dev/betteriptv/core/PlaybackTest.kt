@@ -20,7 +20,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
-/** A Playback session: falling back to Backups, the buffering suggestion, and switching Version mid-film. */
+/** A Playback session: falling back to Backups, the buffering suggestion, and switching Version partway through. */
 class PlaybackTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
@@ -136,7 +136,7 @@ class PlaybackTest {
         job.cancelAndJoin()
     }
 
-    @Test fun `a Version that stops mid-film gives way to a Backup at the same position`() = runBlocking {
+    @Test fun `a Version that stops partway through gives way to a Backup at the same position`() = runBlocking {
         syncWithBackups()
         val (session, job) = play()
         session.awaitPlaying(1)
@@ -173,6 +173,25 @@ class PlaybackTest {
         delay(500)
         assertEquals(listOf(1L), player.played.map { it.first })
         assertEquals(1L, (session.state.value as PlaybackState.Playing).version.listingId)
+        job.cancelAndJoin()
+    }
+
+    @Test fun `a dismissed suggestion comes back only if buffering keeps repeating`() = runBlocking {
+        syncWithBackups()
+        val (session, job) = play()
+        session.awaitPlaying(1)
+        repeat(3) { player.buffer() }
+        session.awaitState { it is PlaybackState.Playing && it.lowerVersion != null }
+
+        session.dismissSuggestion()
+        session.awaitState { it is PlaybackState.Playing && it.lowerVersion == null }
+        repeat(2) { player.buffer() }
+        delay(300)
+        assertNull((session.state.value as PlaybackState.Playing).lowerVersion)
+
+        player.buffer()
+        session.awaitState { it is PlaybackState.Playing && it.lowerVersion?.listingId == 4L }
+        assertEquals(listOf(1L), player.played.map { it.first })
         job.cancelAndJoin()
     }
 
@@ -221,7 +240,7 @@ class PlaybackTest {
 
     // Switching Version
 
-    @Test fun `a Versions switch changes Version mid-film and resumes at the same position`() = runBlocking {
+    @Test fun `a Versions switch changes Version partway through and resumes at the same position`() = runBlocking {
         provider.serveMovies(
             "4K-EN - Movie (2025)" to "4K MOVIES",
             "4K-FR - Le Film (2025)" to "4K MOVIES",
