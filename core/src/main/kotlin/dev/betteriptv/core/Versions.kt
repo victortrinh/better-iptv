@@ -62,11 +62,11 @@ internal fun withBackups(chosen: Candidate, candidates: List<Candidate>): Versio
     chosen.toVersion(backups = candidates.filter { it !== chosen && it.equivalence == chosen.equivalence }.sortedWith(BEST_FIRST).map { it.toVersion() })
 
 /** Keeps the first of each set of equivalent Versions in [ranked], with the others as its Backups. */
-private fun leadersWithBackups(ranked: List<Candidate>): List<Version> =
+internal fun leadersWithBackups(ranked: List<Candidate>): List<Version> =
     ranked.groupBy { it.equivalence }.values.map { same -> same.first().toVersion(backups = same.drop(1).map { it.toVersion() }) }
 
 /** Versions are equivalent with the same language and picture (quality and HDR), and both CAM or Audio-description or neither. */
-private val Candidate.equivalence: Any
+internal val Candidate.equivalence: Any
     get() = attributes.let { listOf(it.language?.value, it.quality?.value, it.hdr?.value, it.cam, it.audioDescription) }
 
 private fun Candidate.toVersion(backups: List<Version> = emptyList()) = Version(listing.id, listing.name, attributes, backups)

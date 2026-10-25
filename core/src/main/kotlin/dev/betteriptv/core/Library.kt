@@ -260,15 +260,29 @@ class Library private constructor(
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
         val ranked = playable(candidates(title), contentLanguages, device)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages) }
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked)) }
     }
 
     /** What playing the Version from Listing [listingId], chosen by the Viewer, starts; null for a Show or when the Title doesn't have it. */
     suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
-        candidates.find { it.listing.id == listingId }?.let { PlayPlan(id, withBackups(it, candidates), contentLanguages) }
+        candidates.find { it.listing.id == listingId }?.let { chosen ->
+            val version = withBackups(chosen, candidates)
+            // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
+            val others = leadersWithBackups(preferred(candidates, contentLanguages).filter { it.equivalence != chosen.equivalence })
+            PlayPlan(id, version, contentLanguages, listOf(version) + others)
+        }
     }
+
+    /**
+     * A Playback session for [plan] on the [engine]: it starts the plan's Version, falling back to its
+     * Backups, and switches Version when the Viewer asks. Run it with [PlaybackSession.run].
+     */
+    fun playback(plan: PlayPlan, engine: PlayerEngine): PlaybackSession = playback(plan, engine, START_TIMEOUT)
+
+    internal fun playback(plan: PlayPlan, engine: PlayerEngine, startTimeout: kotlin.time.Duration) =
+        PlaybackSession(plan, engine, ::connect, startTimeout)
 
     /**
      * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
