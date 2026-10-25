@@ -16,12 +16,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +44,7 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.Backdrop
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.CertaintyLegend
+import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.VersionHeader
 import dev.betteriptv.app.ui.components.VersionLine
@@ -50,47 +54,71 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.TitleDetails
 import dev.betteriptv.core.ShowEpisodes
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * A Title's details: what it is, and every Version grouped by language, the Viewer's languages
- * first and the rest behind "Other languages". A Show lists its seasons and Episodes first, each
- * Episode with the languages it's available in; they arrive once the Provider's show details are
- * read. TMDB's backdrop fills the screen behind them. Without one, the poster sits beside the header
- * instead: a poster blown up as a backdrop is too blurry and too bright to keep text on it readable.
+ * A Title's details: what it is, Play with the Version it will start, and every Version grouped by
+ * language, the Viewer's languages first and the rest behind "Other languages". A Show has no Play
+ * yet; it lists its seasons and Episodes first, each Episode with the languages it's available in,
+ * once the Provider's show details are read. TMDB's backdrop fills the screen behind them. Without
+ * one, the poster sits beside the header instead: a poster blown up as a backdrop is too blurry and
+ * too bright to keep text on it readable.
+ *
+ * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
+ * screen opens); choosing a Version row plays that one instead.
  */
 @Composable
-fun TitleScreen(library: Library, id: TitleId, contentLanguages: List<String>, appLanguage: String) {
-    val details by produceState<TitleDetails?>(null, id, contentLanguages, appLanguage) {
-        value = library.title(id, contentLanguages, appLanguage)
+fun TitleScreen(
+    library: Library,
+    id: TitleId,
+    contentLanguages: List<String>,
+    appLanguage: String,
+    deviceProfile: () -> DeviceProfile,
+    onPlay: (PlayPlan) -> Unit,
+) {
+    // The plan comes with the details, so first focus lands once, on Play or on the first Version.
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage) {
+        val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
+        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() })
     }
     val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages) {
         if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages)
     }
+    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        details?.let { TitleContent(it, episodes) }
+        loaded?.let { (title, plan) ->
+            TitleContent(title, plan, episodes, onPlay, onChoose = { version ->
+                scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let(onPlay) }
+            })
+        }
     }
 }
 
 @Composable
-private fun TitleContent(title: TitleDetails, episodes: ShowEpisodes?) {
+private fun TitleContent(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?, onPlay: (PlayPlan) -> Unit, onChoose: (Version) -> Unit) {
     val context = LocalContext.current
     val backdrop = rememberArtwork(title.backdrop)
     val image = rememberArtwork(title.image).takeIf { backdrop == null }
     var showOthers by rememberSaveable(title.id) { mutableStateOf(false) }
     val firstVersion = remember { FocusRequester() }
+    val play = remember { FocusRequester() }
     val firstEpisode = remember { FocusRequester() }
     val isShow = title.id.kind == TitleKind.Show
-    // The first Version takes focus at once. A Show's first Episode takes it over once the Episodes
-    // are read, unless the Viewer has moved on in the meantime.
+    // Play takes first focus. With nothing to start, or on a Show, the first Version takes it, and a
+    // Show's first Episode takes it over once the Episodes are read, unless the Viewer has moved on.
     var firstVersionFocused by remember { mutableStateOf(false) }
-    LaunchedEffect(title.id) { firstVersion.requestFocus() }
+    LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
     val hasEpisodes = episodes?.seasons?.isNotEmpty() == true
     LaunchedEffect(title.id, hasEpisodes) { if (hasEpisodes && firstVersionFocused) firstEpisode.requestFocus() }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -137,6 +165,26 @@ private fun TitleContent(title: TitleDetails, episodes: ShowEpisodes?) {
                             modifier = Modifier.padding(top = Spacing.xs),
                         )
                     }
+                    // Playing an Episode comes later.
+                    if (!isShow) {
+                        Spacer(Modifier.height(Spacing.l))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
+                            NuageButton(
+                                stringResource(R.string.play),
+                                onClick = { plan?.let(onPlay) },
+                                modifier = Modifier.focusRequester(play),
+                                icon = Icons.Filled.PlayArrow,
+                                enabled = plan != null,
+                            )
+                            Text(
+                                plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing),
+                                style = Type.label,
+                                color = Colors.inkMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 if (image != null) {
@@ -159,7 +207,7 @@ private fun TitleContent(title: TitleDetails, episodes: ShowEpisodes?) {
         }
         item { VersionHeader(Modifier.padding(bottom = 2.dp)) }
         shown.forEachIndexed { index, group ->
-            languageGroup(context, group, first = index == 0, firstVersion, onFirstFocused = { firstVersionFocused = it })
+            languageGroup(context, group, first = index == 0, firstVersion, onChoose, onFirstFocused = { firstVersionFocused = it })
         }
         if (title.languages.isNotEmpty() && title.otherLanguages.isNotEmpty()) {
             // Other languages open under this row, so it keeps focus where it is.
@@ -173,7 +221,7 @@ private fun TitleContent(title: TitleDetails, episodes: ShowEpisodes?) {
                     detail = title.otherLanguages.joinToString(", ") { group -> group.language?.let(::languageName).orEmpty() },
                 )
             }
-            if (showOthers) title.otherLanguages.forEach { languageGroup(context, it, first = false, firstVersion) }
+            if (showOthers) title.otherLanguages.forEach { languageGroup(context, it, first = false, firstVersion, onChoose) }
         }
         if (title.fromTmdb) {
             // TMDB's terms ask for this notice wherever its data is shown.
@@ -227,7 +275,14 @@ private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, fi
 private fun Context.runtime(minutes: Int): String =
     if (minutes < 60) getString(R.string.runtime_minutes, minutes) else getString(R.string.runtime_hours, minutes / 60, minutes % 60)
 
-private fun LazyListScope.languageGroup(context: Context, group: LanguageGroup, first: Boolean, firstVersion: FocusRequester, onFirstFocused: (Boolean) -> Unit = {}) {
+private fun LazyListScope.languageGroup(
+    context: Context,
+    group: LanguageGroup,
+    first: Boolean,
+    firstVersion: FocusRequester,
+    onChoose: (Version) -> Unit,
+    onFirstFocused: (Boolean) -> Unit = {},
+) {
     item(key = "language ${group.language}") {
         Text(
             "${group.language?.let(::languageName) ?: context.getString(R.string.language_untagged)} · ${group.versionCount}",
@@ -242,8 +297,7 @@ private fun LazyListScope.languageGroup(context: Context, group: LanguageGroup, 
         item(key = version.listingId) {
             VersionRow(
                 context.line(version),
-                // Playing a Version comes with the player.
-                onClick = {},
+                onClick = { onChoose(version) },
                 modifier = if (first && index == 0) Modifier.focusRequester(firstVersion).onFocusChanged { onFirstFocused(it.isFocused) } else Modifier,
             )
         }

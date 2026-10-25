@@ -39,21 +39,34 @@ internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List
     val wanted = contentLanguages.map(::primaryLanguage).distinct()
     val groups = candidates.sortedWith(BEST_FIRST)
         .groupBy { it.primaryLanguage }
-        .map { (language, versions) -> LanguageGroup(language, withBackups(versions)) }
+        .map { (language, versions) -> LanguageGroup(language, leadersWithBackups(versions)) }
     val viewers = wanted.mapNotNull { language -> groups.find { it.language == language } } + groups.filter { it.language == null }
     val others = groups.filter { it.language != null && it.language !in wanted }
         .sortedWith(compareByDescending<LanguageGroup> { it.versionCount }.thenBy { it.language })
     return viewers to others
 }
 
-/** Keeps the first of each set of equivalent Versions in [ranked], with the others as its Backups. */
-private fun withBackups(ranked: List<Candidate>): List<Version> {
-    val equivalents = LinkedHashMap<Any, MutableList<Candidate>>()
-    ranked.forEach { candidate ->
-        val a = candidate.attributes
-        equivalents.getOrPut(listOf(a.language?.value, a.quality?.value, a.hdr?.value, a.cam, a.audioDescription)) { mutableListOf() } += candidate
-    }
-    return equivalents.values.map { same -> same.first().toVersion(backups = same.drop(1).map { it.toVersion() }) }
+/**
+ * The playable Versions of a Title for Play, best first: those in the Viewer's [contentLanguages]
+ * (in their order) ahead of the rest, then [BEST_FIRST]. CAM Versions rank after every other
+ * language, and Audio-description ones and those the [device] can't display are left out.
+ */
+internal fun playable(candidates: List<Candidate>, contentLanguages: List<String>, device: DeviceProfile): List<Candidate> {
+    val wanted = contentLanguages.map(::primaryLanguage).distinct()
+    return candidates.filter { !it.attributes.audioDescription && device.canDisplay(it.attributes) }
+        .sortedWith(compareBy<Candidate>({ it.attributes.cam }, { wanted.indexOf(it.primaryLanguage).takeIf { i -> i >= 0 } ?: wanted.size }).then(BEST_FIRST))
 }
+
+/** [chosen] with the Versions equivalent to it among [candidates] as its Backups, best first. */
+internal fun withBackups(chosen: Candidate, candidates: List<Candidate>): Version =
+    chosen.toVersion(backups = candidates.filter { it !== chosen && it.equivalence == chosen.equivalence }.sortedWith(BEST_FIRST).map { it.toVersion() })
+
+/** Keeps the first of each set of equivalent Versions in [ranked], with the others as its Backups. */
+private fun leadersWithBackups(ranked: List<Candidate>): List<Version> =
+    ranked.groupBy { it.equivalence }.values.map { same -> same.first().toVersion(backups = same.drop(1).map { it.toVersion() }) }
+
+/** Versions are equivalent with the same language and picture (quality and HDR), and both CAM or Audio-description or neither. */
+private val Candidate.equivalence: Any
+    get() = attributes.let { listOf(it.language?.value, it.quality?.value, it.hdr?.value, it.cam, it.audioDescription) }
 
 private fun Candidate.toVersion(backups: List<Version> = emptyList()) = Version(listing.id, listing.name, attributes, backups)

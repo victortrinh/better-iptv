@@ -56,6 +56,9 @@
     </plurals>
 
     <string name="versions_title">Versions</string>
+    <string name="play">Play</string>
+    <string name="play_nothing">No Version this TV can display</string>
+    <string name="player_failed">This Version didn\'t start. Go back and pick another one.</string>
     <plurals name="versions_count">
         <item quantity="one">%1$d Version</item>
         <item quantity="other">%1$d Versions</item>
