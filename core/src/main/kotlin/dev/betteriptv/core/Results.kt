@@ -130,12 +130,16 @@ data class CatalogNotSaved(val detail: String) : SyncProblem
 /**
  * A finished Sync. [movieListingCount] counts the movie list, which leaves out Clutter and Sports
  * replays; [unknownPrefixes] are the Prefixes to add to the Prefix table, most common first.
+ * [rematchedListings] counts the Listings Matched by name instead of by their Provider ID:
+ * Mismatches, and Listings without an ID that TMDB found. It grows after the Sync finishes, as
+ * the cloud answers, and the Titles change with it.
  */
 data class CompletedSync(
     val finishedAt: Instant,
     val duration: Duration,
     val movieListingCount: Int,
     val unknownPrefixes: List<UnknownPrefix>,
+    val rematchedListings: Int = 0,
 )
 
 sealed interface SyncStatus {

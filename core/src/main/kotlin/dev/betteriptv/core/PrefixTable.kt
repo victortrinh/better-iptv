@@ -1,6 +1,7 @@
 package dev.betteriptv.core
 
 import java.text.Normalizer
+import java.time.Year
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -43,14 +44,18 @@ internal class PrefixTable private constructor(
     /**
      * A Listing's name without its Prefix and year, for showing until cloud metadata arrives:
      * `EN - The Godfather  (1972)` is "The Godfather" from 1972. Anything after the year (often the
-     * name again in another script) is dropped too.
+     * name again in another script) is dropped too, and so is a trailing country code (`Reacher (US)`).
      */
     fun cleanName(name: String): CleanName {
         var rest = name
         // Some names repeat their Prefix: `NL - NL - The Godfather: Part II`.
         while (true) rest = PREFIX.find(rest)?.let { rest.substring(it.range.last + 1) } ?: break
+        // A release-style name, `P-A.Méthot.Le.Party.Du.Millénaire.2022`, ends with a bare year;
+        // one still to come is part of the name (`Blade.Runner.2049`).
+        val dotted = DOTTED.matchEntire(rest.trim())?.takeIf { it.groupValues[2].toInt() <= Year.now().value + 1 }
+        if (dotted != null) return CleanName(dotted.groupValues[1].replace('.', ' '), dotted.groupValues[2].toInt())
         val year = YEAR.find(rest)
-        val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(Regex("""\s+"""), " ").trim()
+        val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(COUNTRY, "").replace(Regex("""\s+"""), " ").trim()
         return CleanName(title.ifEmpty { name.trim() }, year?.groupValues?.get(1)?.toInt())
     }
 
@@ -122,6 +127,10 @@ internal class PrefixTable private constructor(
         private val PREFIX = Regex("""^\s*((?=[A-Z0-9+=-]*[A-Z])[A-Z0-9+]+(?:[-=][A-Z0-9+]+)*)(?:\s+-\s*|-\s+|\s+\.\s+)""")
 
         private val YEAR = Regex("""\((19\d\d|20\d\d)\)""")
+
+        private val DOTTED = Regex("""(\S+?)\.(19\d\d|20\d\d)""")
+
+        private val COUNTRY = Regex("""\s*\([A-Z]{2}\)\s*$""")
 
         /** The surveyed Provider's table, bundled with the app. */
         fun bundled(): PrefixTable = parse(

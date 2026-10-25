@@ -50,6 +50,11 @@ class Library private constructor(
      * Only `player_api` requests are made, never a stream, so a Sync never takes the Viewer's connection.
      * Clutter and Sports replays are left out of the movie list, and Prefixes the Prefix table
      * doesn't know are reported in the finished Sync.
+     *
+     * Listings are Matched by their Provider's TMDB ID, except suspected Mismatches and Listings
+     * without one, which are Matched by what the cloud answered about them before. Once the new
+     * catalog shows, the cloud is asked about the rest, and the Titles are regrouped by its answers
+     * before this returns (the status shows the Sync finished in the meantime).
      */
     suspend fun sync(): SyncStatus = syncLock.withLock {
         withContext(Dispatchers.IO) {
@@ -72,15 +77,16 @@ class Library private constructor(
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
-                            staging.movieListing(id, name, categoryId, added, tmdbId, image, hidden = description.hidden != null)
+                            staging.movieListing(id, name, categoryId, added, image, hidden = description.hidden != null, question(name, description, tmdbId))
                         }
                     },
-                    completed = { count ->
+                    completed = { count, rematched ->
                         CompletedSync(
                             Instant.now(),
                             Duration.ofNanos(System.nanoTime() - started),
                             count,
                             unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
+                            rematched,
                         )
                     },
                 )
@@ -94,7 +100,41 @@ class Library private constructor(
                 // Anything else (a full disk, say) also leaves the previous catalog in place.
                 SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
+            if (_syncStatus.value is SyncStatus.Synced) matchByName()
             _syncStatus.value
+        }
+    }
+
+    /** What the cloud is asked about a movie Listing to Match it. */
+    private fun question(name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion {
+        val cleaned = prefixTable.cleanName(name)
+        return MatchQuestion(TitleKind.Movie, cleaned.name, cleaned.year, description.attributes.language?.value?.let(::primaryLanguage), tmdbId)
+    }
+
+    /**
+     * Asks the cloud about the stored catalog's suspects it hasn't answered for lately, and regroups
+     * the Titles by its answers. Without the cloud, the Provider's IDs stand until the next Sync.
+     */
+    private fun matchByName() {
+        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
+        try {
+            val now = Instant.now()
+            val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
+                .map { question(it.name, prefixTable.describe(it.name, it.category), it.providerTmdbId) }
+                .distinctBy { it.key }
+            if (questions.isEmpty()) return
+            try {
+                questions.chunked(CloudClient.MAX_MATCH_BATCH).forEach { batch ->
+                    store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
+                }
+            } catch (e: CloudException) {
+                cloudRetryAt = now + CLOUD_RETRY_AFTER
+            }
+            store.applyMatchAnswers()?.let { _syncStatus.value = SyncStatus.Synced(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The Sync itself finished: its catalog shows, Matched by the Provider's IDs.
         }
     }
 
@@ -190,6 +230,10 @@ class Library private constructor(
     companion object {
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+        /** The cloud's answers about a Listing are asked again after this, so new Titles on TMDB come through. */
+        private val MATCH_FRESH_FOR: Duration = Duration.ofDays(30)
+        /** A name TMDB found nothing for is asked about again sooner, but not every daily Sync: few Titles are added in a week. */
+        private val MATCH_NOT_FOUND_FRESH_FOR: Duration = Duration.ofDays(7)
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the

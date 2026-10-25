@@ -36,6 +36,18 @@ GROUPS = [
 ]
 SAMPLE = 30  # plus a random sample of everything else
 
+# Added after the first cut and appended to its end, so the Listings above keep their numbers.
+EXTRA_GROUPS = [
+    # `IN-GU - Mohgiben.MBBS.2023` carries Munna Bhai M.B.B.S.' TMDB ID: a Mismatch.
+    ("Mismatch under Munna Bhai M.B.B.S.", lambda m, cat: str(m.get("tmdb")) == "19625", 99),
+    # `EN - Titanic  (1996)` has no ID, and a year one off TMDB's.
+    ("Titanic", lambda m, cat: str(m.get("tmdb")) == "597" and m["name"].startswith(("EN - ", "4K-EN - ", "FR - ")), 3),
+    ("ID-less Titanic", lambda m, cat: m["name"] == "EN - Titanic  (1996)", 1),
+    # `GR - Forrest Gump (1994)` carries an IMDb ID instead.
+    ("Forrest Gump", lambda m, cat: str(m.get("tmdb")) == "13", 2),
+    ("ID-less Forrest Gump", lambda m, cat: m["name"] == "GR - Forrest Gump (1994)", 1),
+]
+
 
 def main():
     raw = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[1] == "--raw" else RAW
@@ -53,8 +65,16 @@ def main():
             seen.add(m["stream_id"])
             picked.append(m)
     rest = [m for m in movies if m["stream_id"] not in seen]
-    picked += rng.sample(rest, SAMPLE)
+    sample = rng.sample(rest, SAMPLE)
+    seen.update(m["stream_id"] for m in sample)
+    picked += sample
     rng.shuffle(picked)
+    for label, match, cap in EXTRA_GROUPS:
+        hits = sorted((m for m in movies if m["stream_id"] not in seen and match(m, categories[m["category_id"]]["category_name"])), key=lambda m: m["stream_id"])[:cap]
+        print(f"{label}: {len(hits)}")
+        for m in hits:
+            seen.add(m["stream_id"])
+            picked.append(m)
 
     category_ids = {}
     for m in picked:

@@ -154,9 +154,9 @@ class PrefixTableTest {
         val status = library.sync()
 
         val names = movies().map { it.name }
-        assertEquals(142, library.movieListingCount())
-        assertEquals(142, names.size)
-        assertEquals(142, (status as SyncStatus.Synced).last.movieListingCount)
+        assertEquals(150, library.movieListingCount())
+        assertEquals(150, names.size)
+        assertEquals(150, (status as SyncStatus.Synced).last.movieListingCount)
         assertFalse(names.any { it.startsWith("MV - ") })
         assertFalse(names.any { it.startsWith("SOC - ") })
     }

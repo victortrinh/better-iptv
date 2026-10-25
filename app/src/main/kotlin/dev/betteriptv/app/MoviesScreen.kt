@@ -68,10 +68,11 @@ fun MoviesScreen(
     onOpen: (index: Int, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    // A finished Sync swaps in a new catalog: drop the pages read from the old one.
-    val syncedAt = status.last?.finishedAt
-    val pages = remember(syncedAt, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage) }
-    val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.titleCount() } }
+    // A finished Sync swaps in a new catalog, and Listings Matched by name afterwards regroup its
+    // Titles: either way, drop the pages read before.
+    val synced = status.last
+    val pages = remember(synced, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage) }
+    val count by produceState(initialValue = 0, synced) { value = withContext(Dispatchers.IO) { library.titleCount() } }
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
