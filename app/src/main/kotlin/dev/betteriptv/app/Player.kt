@@ -1,6 +1,7 @@
 package dev.betteriptv.app
 
 import android.content.Context
+import android.os.Handler
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -8,10 +9,15 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioRendererEventListener
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
+import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegAudioRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
 import io.github.peerless2012.ass.media.factory.AssRenderersFactory
@@ -53,11 +59,7 @@ internal fun buildPlayer(context: Context): Playing {
             .setTsSubtitleFormats(listOf(Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_CEA608).build()))
         val mediaSources = DefaultMediaSourceFactory(DefaultDataSource.Factory(context), extractors.withAssMkvSupport(subtitleParsers, ass))
             .setSubtitleParserFactory(subtitleParsers)
-        // The stick's own audio path comes first, so a format is passed through, else decoded by the stick,
-        // and only then by FFmpeg: the order DeviceProfile.audioOutput assumes.
-        val renderers = DefaultRenderersFactory(context)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true)
+        val renderers = FfmpegAudioRenderersFactory(context).setEnableDecoderFallback(true)
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSources)
             .setRenderersFactory(AssRenderersFactory(ass, renderers))
@@ -67,5 +69,28 @@ internal fun buildPlayer(context: Context): Playing {
     } catch (e: Throwable) {
         ass.release()
         throw e
+    }
+}
+
+/**
+ * Media3's renderers with NextLib's FFmpeg audio decoder after the stick's own audio path, so a
+ * format is passed through, else decoded by the stick, and only then by FFmpeg: the order
+ * DeviceProfile.audioOutput assumes. NextLib's own factory also adds FFmpeg video and text
+ * renderers, which the app doesn't want.
+ */
+@OptIn(UnstableApi::class)
+private class FfmpegAudioRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildAudioRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        audioSink: AudioSink,
+        eventHandler: Handler,
+        eventListener: AudioRendererEventListener,
+        out: ArrayList<Renderer>,
+    ) {
+        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+        out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
     }
 }
