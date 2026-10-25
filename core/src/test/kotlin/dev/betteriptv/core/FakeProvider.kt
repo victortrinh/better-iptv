@@ -74,6 +74,13 @@ class FakeProvider : Closeable {
         return connection.inputStream
     }
 
+    /** Plays the stream at [location], as the player engine would; close it to end playback. */
+    fun play(location: String): InputStream {
+        val connection = URI(location).toURL().openConnection() as HttpURLConnection
+        if (connection.responseCode != 200) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
+        return connection.inputStream
+    }
+
     override fun close() = server.stop(0)
 
     private fun api(exchange: HttpExchange) {

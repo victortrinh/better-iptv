@@ -63,9 +63,12 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
 
     /**
      * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, TMDB ID,
-     * image URL). A TMDB ID that isn't a positive number (empty, `0`, an IMDb `tt…` ID) is null.
+     * image URL, file extension). A TMDB ID that isn't a positive number (empty, `0`, an IMDb `tt…`
+     * ID) is null, and so is an extension that isn't a short word (`mkv`, `mp4`).
      */
-    fun movieListings(each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?) -> Unit) = api("get_vod_streams") { json ->
+    fun movieListings(
+        each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?) -> Unit,
+    ) = api("get_vod_streams") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
@@ -73,6 +76,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             var added: Long? = null
             var tmdbId: Long? = null
             var image: String? = null
+            var container: String? = null
             while (hasNext()) when (nextName()) {
                 "stream_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
@@ -80,11 +84,16 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "added" -> added = nextScalar()?.toLongOrNull()
                 "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                "container_extension" -> container = nextScalar()?.trim()?.lowercase()?.takeIf { CONTAINER.matches(it) }
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image)
+            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image, container)
         }
     }
+
+    /** Where movie Listing [id]'s file streams from. It holds the login, so it goes to the player engine only. */
+    fun movieLocation(id: Long, container: String): String =
+        base.newBuilder().addPathSegment("movie").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
 
     private fun <T> api(action: String?, read: (JsonReader) -> T): T {
         val url = base.newBuilder()
@@ -123,6 +132,8 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     }
 
     companion object {
+        private val CONTAINER = Regex("""[a-z0-9]{1,5}""")
+
         /** Accepts a bare host, host:port, or a pasted player link, like the survey script. */
         fun baseUrl(raw: String): HttpUrl {
             val trimmed = raw.trim()

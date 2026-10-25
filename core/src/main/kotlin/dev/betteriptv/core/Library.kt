@@ -31,6 +31,7 @@ class Library private constructor(
     @Volatile private var cloudRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
+    private val connection = ConnectionGate()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
@@ -72,12 +73,12 @@ class Library private constructor(
                             categories[id] = name
                             staging.category(id, name)
                         }
-                        client.movieListings { id, name, categoryId, added, tmdbId, image ->
+                        client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
                             val description = prefixTable.describe(name, categories[categoryId].orEmpty())
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
-                            staging.movieListing(id, name, categoryId, added, image, hidden = description.hidden != null, question(name, description, tmdbId))
+                            staging.movieListing(id, name, categoryId, added, image, hidden = description.hidden != null, question(name, description, tmdbId), container)
                         }
                     },
                     completed = { count, rematched ->
@@ -178,6 +179,37 @@ class Library private constructor(
             cast = metadata?.cast.orEmpty(),
             fromTmdb = metadata != null,
         )
+    }
+
+    /**
+     * What pressing Play on a Movie starts: the Best playable Version for the Viewer's
+     * [contentLanguages] (BCP 47 tags, in order of preference) and [device], with its Backups. Null
+     * when the catalog doesn't have the Title, or has no Version the device can display other than
+     * Audio-description ones, which are never picked automatically.
+     */
+    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile): PlayPlan? = withContext(Dispatchers.IO) {
+        val title = store.title(id) ?: return@withContext null
+        val ranked = playable(candidates(title), contentLanguages, device)
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages) }
+    }
+
+    /** What playing the Version from Listing [listingId], chosen by the Viewer, starts; null when the Title doesn't have it. */
+    suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
+        val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
+        candidates.find { it.listing.id == listingId }?.let { PlayPlan(id, withBackups(it, candidates), contentLanguages) }
+    }
+
+    /**
+     * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
+     * closed: a second stream is never opened while one is in use. Close it when playback ends.
+     */
+    suspend fun connect(version: Version): Connection {
+        val location = withContext(Dispatchers.IO) {
+            val login = credentials.load() ?: throw ProviderException(WrongLogin)
+            // Most of the surveyed Provider's movies are MKV files.
+            XtreamClient(login, http).movieLocation(version.listingId, store.container(version.listingId) ?: "mkv")
+        }
+        return Connection(location, connection.lease())
     }
 
     private class Shown(val best: Candidate, val name: String, val year: Int?, val image: String?)
