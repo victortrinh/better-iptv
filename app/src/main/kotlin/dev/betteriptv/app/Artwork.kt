@@ -8,11 +8,11 @@ import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 
 /**
- * The Provider's image at [url], loaded in the background; null when there is none or it couldn't
- * be loaded, so the caller can show the Title's name instead.
+ * The artwork at [url] (TMDB's, or the Provider's), loaded in the background; null when there is
+ * none or it couldn't be loaded, so the caller can show the Title's name instead.
  */
 @Composable
-fun rememberProviderImage(url: String?): Painter? {
+fun rememberArtwork(url: String?): Painter? {
     if (url == null) return null
     val painter = rememberAsyncImagePainter(url)
     val state by painter.state.collectAsState()

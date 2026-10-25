@@ -1,0 +1,55 @@
+import { isRegistered, register } from "./devices";
+import type { Env } from "./env";
+import { MAX_BATCH, metadata } from "./metadata";
+import type { TitleKey } from "./tmdb";
+
+/**
+ * The cloud's HTTP API (test seam 2). It serves only data that is the same for every Viewer;
+ * Provider logins, stream URLs and Provider requests never come here (ADR 0001).
+ *
+ * - `POST /v1/devices`: registers a device, `201 {"token": "…"}`.
+ * - `POST /v1/metadata`, with `Authorization: Bearer <token>` and
+ *   `{"language": "fr", "titles": [{"kind": "movie", "tmdbId": 238}]}`: Title metadata in that
+ *   language, as a {@link MetadataBatch}.
+ */
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const { pathname } = new URL(request.url);
+    if (request.method === "POST" && pathname === "/v1/devices") {
+      return json({ token: await register(env.DB) }, 201);
+    }
+    if (!pathname.startsWith("/v1/")) return problem(404, "No such endpoint.");
+    if (!(await isRegistered(env.DB, request))) return problem(401, "A registered device token is required.");
+    if (request.method === "POST" && pathname === "/v1/metadata") {
+      const asked = await metadataRequest(request);
+      if (typeof asked === "string") return problem(400, asked);
+      return json(await metadata(env, asked.titles, asked.language));
+    }
+    return problem(404, "No such endpoint.");
+  },
+} satisfies ExportedHandler<Env>;
+
+/** Reads a metadata request, or says what's wrong with it. */
+async function metadataRequest(request: Request): Promise<{ language: string; titles: TitleKey[] } | string> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return "The body must be JSON.";
+  }
+  const { language, titles } = (body ?? {}) as { language?: unknown; titles?: unknown };
+  if (typeof language !== "string" || !/^[a-z]{2}$/.test(language)) return "language must be an ISO 639-1 code, such as \"fr\".";
+  if (!Array.isArray(titles) || titles.length > MAX_BATCH) return `titles must be a list of at most ${MAX_BATCH} Titles.`;
+  const keys = new Map<string, TitleKey>();
+  for (const title of titles as { kind?: unknown; tmdbId?: unknown }[]) {
+    if ((title?.kind !== "movie" && title?.kind !== "show") || !Number.isSafeInteger(title.tmdbId) || (title.tmdbId as number) <= 0) {
+      return "Each Title must be {\"kind\": \"movie\" or \"show\", \"tmdbId\": a positive integer}.";
+    }
+    keys.set(`${title.kind}/${title.tmdbId}`, { kind: title.kind, tmdbId: title.tmdbId as number });
+  }
+  return { language, titles: [...keys.values()] };
+}
+
+const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+const problem = (status: number, error: string) => json({ error }, status);

@@ -37,11 +37,13 @@ private fun Root(app: BetterIptvApp) {
         LaunchedEffect(Unit) { app.syncIfStale() }
         // Content languages default to the device's language until settings let the Viewer choose.
         val contentLanguages = remember { listOf(Locale.getDefault().toLanguageTag()) }
+        // The App language is the device's when it is French, English otherwise, until settings let the Viewer choose.
+        val appLanguage = remember { Locale.getDefault().takeIf { it.language == "fr" }?.toLanguageTag() ?: "en" }
         val grid = rememberLazyGridState()
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         when (val title = opened) {
-            null -> MoviesScreen(app.library, contentLanguages, grid, restoreFocus = returnedFrom, onSyncNow = app::sync, onOpen = { index, id ->
+            null -> MoviesScreen(app.library, contentLanguages, appLanguage, grid, restoreFocus = returnedFrom, onSyncNow = app::sync, onOpen = { index, id ->
                 opened = OpenedTitle(index, id)
             })
             else -> {
@@ -49,7 +51,7 @@ private fun Root(app: BetterIptvApp) {
                     returnedFrom = title.cardIndex
                     opened = null
                 }
-                TitleScreen(app.library, title.id, contentLanguages)
+                TitleScreen(app.library, title.id, contentLanguages, appLanguage)
             }
         }
     }

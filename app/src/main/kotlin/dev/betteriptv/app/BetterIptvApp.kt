@@ -22,7 +22,11 @@ class BetterIptvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        library = Library.open(getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path, KeystoreCredentialStore(this))
+        library = Library.open(
+            getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path,
+            KeystoreCredentialStore(this),
+            cloudAddress = BuildConfig.CLOUD_URL,
+        )
     }
 
     /** Starts a Sync unless one finished recently. The catalog on screen stays until the new one is ready. */

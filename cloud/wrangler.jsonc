@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "better-iptv-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "better-iptv",
+      "database_id": "5829598e-d3b5-4767-8593-69239a9d8923",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "TMDB_API": "https://api.themoviedb.org/3"
+  }
+  // Secrets, set with `wrangler secret put`: TMDB_TOKEN (TMDB's API read access token).
+}

@@ -17,14 +17,19 @@ import java.util.concurrent.TimeUnit
 /**
  * The core's public interface: everything the screens show comes from here.
  *
- * Reads are blocking and cheap; call them off the main thread.
+ * Plain reads are blocking and cheap; call them off the main thread. Reads that may need Title
+ * metadata from the cloud suspend.
  */
 class Library private constructor(
     private val store: CatalogStore,
     private val credentials: CredentialStore,
     private val http: OkHttpClient,
     private val prefixTable: PrefixTable,
+    private val cloud: CloudClient?,
 ) : Closeable {
+    /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
+    @Volatile private var cloudRetryAt = Instant.MIN
+
     private val syncLock = Mutex()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
@@ -106,27 +111,76 @@ class Library private constructor(
     /**
      * Title cards, newest first (by each Title's newest Listing), from [offset] (0-based). Each card
      * shows its best Version in the Viewer's [contentLanguages] (BCP 47 tags, `en` matching `en-GB`),
-     * or the best one overall when none is in them.
+     * or the best one overall when none is in them, and TMDB's name and poster in the [appLanguage].
      */
-    fun titles(offset: Int, limit: Int, contentLanguages: List<String>): List<TitleSummary> =
-        store.titles(offset, limit).map { title ->
-            val (best, name, image) = shown(candidates(title), contentLanguages)
-            TitleSummary(title.id, name.name, name.year, image, best.attributes)
+    suspend fun titles(offset: Int, limit: Int, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> = withContext(Dispatchers.IO) {
+        val titles = store.titles(offset, limit)
+        val metadata = metadata(titles.map { it.id }, appLanguage)
+        titles.map { title ->
+            val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
+            TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
         }
-
-    /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
-    fun title(id: TitleId, contentLanguages: List<String>): TitleDetails? {
-        val title = store.title(id) ?: return null
-        val candidates = candidates(title)
-        val (_, name, image) = shown(candidates, contentLanguages)
-        val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
-        return TitleDetails(id, name.name, name.year, image, languages, otherLanguages)
     }
 
-    /** What a Title shows until cloud metadata arrives: its best Version's cleaned name, and the Provider's image from the best Version that has one. */
-    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>): Triple<Candidate, PrefixTable.CleanName, String?> {
+    /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
+    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String): TitleDetails? = withContext(Dispatchers.IO) {
+        val title = store.title(id) ?: return@withContext null
+        val candidates = candidates(title)
+        val metadata = metadata(listOf(id), appLanguage)[id]
+        val shown = shown(candidates, contentLanguages, metadata, appLanguage)
+        val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
+        TitleDetails(
+            id, shown.name, shown.year, shown.image, languages, otherLanguages,
+            description = metadata?.description(appLanguage),
+            genres = metadata?.genres.orEmpty(),
+            runtimeMinutes = metadata?.runtimeMinutes,
+            backdrop = metadata?.backdrop,
+            cast = metadata?.cast.orEmpty(),
+            fromTmdb = metadata != null,
+        )
+    }
+
+    private class Shown(val best: Candidate, val name: String, val year: Int?, val image: String?)
+
+    /**
+     * What a Title's card and header show: TMDB's name, year and poster, or without them the best
+     * Version's cleaned name and the Provider's image from the best Version that has one.
+     */
+    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, metadata: TitleMetadata?, appLanguage: String): Shown {
         val ranked = preferred(candidates, contentLanguages)
-        return Triple(ranked.first(), prefixTable.cleanName(ranked.first().listing.name), ranked.firstNotNullOfOrNull { it.listing.image })
+        val cleaned = prefixTable.cleanName(ranked.first().listing.name)
+        return Shown(
+            ranked.first(),
+            metadata?.name(appLanguage) ?: cleaned.name,
+            metadata?.year ?: cleaned.year,
+            metadata?.poster ?: ranked.firstNotNullOfOrNull { it.listing.image },
+        )
+    }
+
+    /**
+     * The TMDB metadata of [ids] in [appLanguage]'s language, from the device's cache, asking the
+     * cloud for what it lacks or has kept for over a week. Without the cloud the cache is all there is.
+     */
+    private fun metadata(ids: List<TitleId>, appLanguage: String): Map<TitleId, TitleMetadata> {
+        val language = primaryLanguage(appLanguage)
+        val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
+        val cached = store.metadata(tmdbIds, language).toMutableMap()
+        val now = Instant.now()
+        val wanted = tmdbIds.filter { cached[it]?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true }
+        if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
+            try {
+                wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->
+                    val answer = cloud.metadata(language, batch)
+                    store.saveMetadata(language, answer.found, answer.notFound, now)
+                    answer.found.forEach { (id, body) -> cached[id] = StoredMetadata(body, now) }
+                    answer.notFound.forEach { cached[it] = StoredMetadata(null, now) }
+                }
+            } catch (e: CloudException) {
+                // The cards show what the Provider says until the cloud is back.
+                cloudRetryAt = now + CLOUD_RETRY_AFTER
+            }
+        }
+        return buildMap { cached.forEach { (id, stored) -> stored.body?.let { put(id, TitleMetadata(it)) } } }
     }
 
     private fun candidates(title: StoredTitle) = title.listings.map { Candidate(it, prefixTable.describe(it.name, it.category).attributes) }
@@ -134,9 +188,17 @@ class Library private constructor(
     override fun close() = store.close()
 
     companion object {
-        /** Opens the catalog at [databasePath], creating it if needed. */
-        fun open(databasePath: String, credentials: CredentialStore, http: OkHttpClient = defaultHttp()): Library =
-            Library(CatalogStore(databasePath), credentials, http, PrefixTable.bundled())
+        private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
+        private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+
+        /**
+         * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
+         * cloud at [cloudAddress]; without one, Titles show what the Provider says about them.
+         */
+        fun open(databasePath: String, credentials: CredentialStore, cloudAddress: String? = null, http: OkHttpClient = defaultHttp()): Library {
+            val store = CatalogStore(databasePath)
+            return Library(store, credentials, http, PrefixTable.bundled(), cloudAddress?.let { CloudClient(it, http, store) })
+        }
 
         private fun defaultHttp() = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

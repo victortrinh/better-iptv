@@ -264,7 +264,7 @@ Depth comes from three things: artwork behind, translucent glass on top, and one
 - **Rim** (1.5 dp border, white at 60%): keeps a focused card visible where the shadow disappears into the dark ground.
 
 ### Backdrop and scrims
-`Backdrop` (in the prototypes) crops the artwork to fill the screen, then lays two scrims of `ground` over it:
+`Backdrop` (in `ui/components/`) crops the artwork to fill the screen, then lays two scrims of `ground` over it:
 - **Horizontal:** 85% at the left, 25% at 55% of the width, transparent at the right. The hero text sits on the dark side.
 - **Vertical:** 85% at the top (under the tabs), transparent from 20% to 35%, 85% at 75% of the height, solid `ground` at the bottom. Rows sit on the dark band.
 
@@ -331,7 +331,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 ### Real screens today
 `LoginScreen` (Provider login, on the bare ground), `MoviesScreen` (one `TitleCard` per Title in a poster grid, `card-gap` apart) and `TitleScreen` (a Title's details: header, `CertaintyLegend`, `VersionHeader`, Versions grouped by language, and an "Other languages" `SettingRow` that opens the remaining groups beneath it) are the shipped surfaces. Home, player, search and settings exist only as debug prototypes with placeholder content.
 
-Until cloud metadata arrives, artwork is the Provider's poster. A card without one is glass with the Title's name on it. Details show the poster beside the header instead of as a backdrop, because a poster blown up to the full screen is too blurry and too bright to keep text on it readable. Language names in Version lists are written in their own language ("Deutsch", "Français (Québec)") so each household member finds theirs.
+Names, posters, descriptions, genres and cast come from TMDB in the App language, falling back to English. Details put TMDB's backdrop behind everything (`Backdrop`, with the scrims below) and show the description (3 lines) and the first four cast names under the metadata line. The TMDB attribution notice closes the details list, in muted caption, whenever TMDB data is on screen. Without TMDB metadata (an Unmatched Title, or the cloud out of reach), artwork is the Provider's poster and a card without one is glass with the Title's name on it. Details then show the poster beside the header instead of as a backdrop, because a poster blown up to the full screen is too blurry and too bright to keep text on it readable. Language names in Version lists are written in their own language ("Deutsch", "Français (Québec)") so each household member finds theirs.
 
 ### Running the prototypes
 Debug builds include `PrototypeActivity`:

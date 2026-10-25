@@ -33,10 +33,10 @@ class TitlesTest {
     private val ballerina = TitleId.Tmdb(TitleKind.Movie, 541671)
     private val godfather = TitleId.Tmdb(TitleKind.Movie, 238)
 
-    private fun cards(contentLanguages: List<String> = english) = library.titles(0, 1000, contentLanguages)
+    private suspend fun cards(contentLanguages: List<String> = english) = library.titles(0, 1000, contentLanguages, appLanguage = "en")
 
-    private fun title(id: TitleId, contentLanguages: List<String> = english): TitleDetails =
-        library.title(id, contentLanguages) ?: throw AssertionError("no Title $id")
+    private suspend fun title(id: TitleId, contentLanguages: List<String> = english): TitleDetails =
+        library.title(id, contentLanguages, appLanguage = "en") ?: throw AssertionError("no Title $id")
 
     /** Every Version of a Title, shown or Backup. */
     private fun TitleDetails.allVersions() = (languages + otherLanguages).flatMap { group -> group.versions.flatMap { listOf(it) + it.backups } }
@@ -93,8 +93,8 @@ class TitlesTest {
     @Test fun `Titles are keyed by kind and TMDB ID, so a Show with the same number is another Title`() = runBlocking {
         library.sync()
 
-        assertNotNull(library.title(ballerina, english))
-        assertNull(library.title(TitleId.Tmdb(TitleKind.Show, 541671), english))
+        assertNotNull(library.title(ballerina, english, "en"))
+        assertNull(library.title(TitleId.Tmdb(TitleKind.Show, 541671), english, "en"))
     }
 
     @Test fun `a Listing without a usable TMDB ID stands alone`() = runBlocking {
@@ -221,7 +221,7 @@ class TitlesTest {
         syncListings(Listing("EN - Only One (2026)", "9"))
 
         assertEquals(1, library.titleCount())
-        assertNull(library.title(ballerina, english))
+        assertNull(library.title(ballerina, english, "en"))
         assertEquals("Only One", cards().single().name)
     }
 }
