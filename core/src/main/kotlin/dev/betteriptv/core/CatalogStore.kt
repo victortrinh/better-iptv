@@ -17,8 +17,11 @@ import java.time.Instant
  * of a 144k-row list is an index lookup. Each Listing points at its Title's position, and a Title is
  * found by its key (`movie/238`, or `movie/listing/1001` for an Unmatched one).
  * Hidden Listings (Clutter, Sports replays) get no position and no Title.
+ *
+ * Title metadata from the cloud is cached here too, per Title and language, along with the
+ * device's cloud token.
  */
-internal class CatalogStore(path: String) : Closeable {
+internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
     private val writer: SQLiteConnection = driver.open(path).apply {
         execSQL("PRAGMA journal_mode=WAL")
@@ -35,6 +38,11 @@ internal class CatalogStore(path: String) : Closeable {
         execSQL(TITLE_TABLE.format("title"))
         INDEXES.forEach { execSQL(it) }
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
+        // Keyed by Title, not by Listing, so it outlives Syncs and catalog shape changes.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
+                "PRIMARY KEY (title_key, language))",
+        )
     }
     private val reader: SQLiteConnection = driver.open(path)
 
@@ -231,6 +239,54 @@ internal class CatalogStore(path: String) : Closeable {
         image = if (isNull(from + 4)) null else getText(from + 4),
     )
 
+    /** The cached metadata of [ids] in [language] (ISO 639-1), by Title. A null body means TMDB has no such Title. */
+    fun metadata(ids: List<TitleId.Tmdb>, language: String): Map<TitleId.Tmdb, StoredMetadata> = synchronized(reader) {
+        if (ids.isEmpty()) return emptyMap()
+        val byKey = ids.associateBy(::key)
+        reader.prepare(
+            "SELECT title_key, body, fetched_at FROM title_metadata WHERE language = ? AND title_key IN (${ids.joinToString(",") { "?" }})",
+        ).use {
+            it.bindText(1, language)
+            byKey.keys.forEachIndexed { i, key -> it.bindText(i + 2, key) }
+            buildMap {
+                while (it.step()) {
+                    put(byKey.getValue(it.getText(0)), StoredMetadata(if (it.isNull(1)) null else it.getText(1), Instant.ofEpochMilli(it.getLong(2))))
+                }
+            }
+        }
+    }
+
+    /** Caches what the cloud answered at [at]: [found] Titles' metadata as JSON, and the Titles TMDB doesn't have. */
+    fun saveMetadata(language: String, found: Map<TitleId.Tmdb, String>, notFound: List<TitleId.Tmdb>, at: Instant) = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            writer.prepare("INSERT OR REPLACE INTO title_metadata VALUES (?, ?, ?, ?)").use { insert ->
+                (found.entries.map { it.key to it.value } + notFound.map { it to null }).forEach { (id, body) ->
+                    insert.bindText(1, key(id))
+                    insert.bindText(2, language)
+                    if (body == null) insert.bindNull(3) else insert.bindText(3, body)
+                    insert.bindLong(4, at.toEpochMilli())
+                    insert.stepAndReset()
+                }
+            }
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    override fun deviceToken(): String? = meta(DEVICE_TOKEN)
+
+    override fun saveDeviceToken(token: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+            it.bindText(1, DEVICE_TOKEN)
+            it.bindText(2, token)
+            it.step()
+        }
+        Unit
+    }
+
     private fun meta(key: String): String? = synchronized(reader) {
         reader.prepare("SELECT value FROM meta WHERE key = ?").use {
             it.bindText(1, key)
@@ -261,11 +317,16 @@ internal class CatalogStore(path: String) : Closeable {
         const val LAST_SYNC_AT = "last_sync_at"
         const val LAST_SYNC_MILLIS = "last_sync_millis"
         const val LAST_SYNC_LISTINGS = "last_sync_movie_listings"
+        /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
+        const val DEVICE_TOKEN = "cloud_device_token"
     }
 }
 
 /** A Title as stored: its Listings, before the Prefix table describes them. */
 internal class StoredTitle(val id: TitleId, val listings: List<StoredListing>)
+
+/** A Title's cached metadata JSON (null: TMDB has no such Title) and when the cloud sent it. */
+internal class StoredMetadata(val body: String?, val fetchedAt: Instant)
 
 internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)
 

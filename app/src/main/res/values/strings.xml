@@ -62,6 +62,9 @@
     <string name="other_languages">Other languages</string>
     <string name="other_languages_show">Show %1$d</string>
     <string name="other_languages_hide">Hide</string>
+    <string name="runtime_minutes">%1$d min</string>
+    <string name="runtime_hours">%1$d h %2$02d min</string>
+    <string name="tmdb_attribution">Title details and artwork from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>

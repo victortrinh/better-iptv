@@ -53,13 +53,15 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * One card per movie Title, newest first, read from the device database a page at a time.
+ * One card per movie Title, newest first, read from the device database a page at a time, with
+ * TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
  */
 @Composable
 fun MoviesScreen(
     library: Library,
     contentLanguages: List<String>,
+    appLanguage: String,
     grid: LazyGridState,
     restoreFocus: Int,
     onSyncNow: () -> Unit,
@@ -68,7 +70,7 @@ fun MoviesScreen(
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // A finished Sync swaps in a new catalog: drop the pages read from the old one.
     val syncedAt = status.last?.finishedAt
-    val pages = remember(syncedAt, contentLanguages) { TitlePages(library, contentLanguages) }
+    val pages = remember(syncedAt, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage) }
     val count by produceState(initialValue = 0, syncedAt) { value = withContext(Dispatchers.IO) { library.titleCount() } }
     val context = LocalContext.current
 
@@ -108,7 +110,7 @@ private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: 
     val focus = remember { FocusRequester() }
     if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
     TitleCard(
-        image = rememberProviderImage(title?.image),
+        image = rememberArtwork(title?.image),
         name = title?.name.orEmpty(),
         badges = title?.best?.cardBadges().orEmpty(),
         onClick = { title?.let { onOpen(index, it.id) } },
@@ -118,7 +120,7 @@ private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: 
 
 /** Keeps a few pages of the Title list in memory around where the Viewer is. */
 @Stable
-private class TitlePages(private val library: Library, private val contentLanguages: List<String>) {
+private class TitlePages(private val library: Library, private val contentLanguages: List<String>, private val appLanguage: String) {
     private val pages = mutableStateMapOf<Int, List<TitleSummary>>()
     private val loading = mutableSetOf<Int>()
 
@@ -126,7 +128,7 @@ private class TitlePages(private val library: Library, private val contentLangua
 
     suspend fun load(page: Int) {
         if (page in pages || !loading.add(page)) return
-        val titles = withContext(Dispatchers.IO) { library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages) }
+        val titles = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage)
         loading -= page
         pages[page] = titles
         if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)

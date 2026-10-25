@@ -23,12 +23,17 @@ sealed interface TitleId {
 }
 
 /**
- * A Title's card. Until cloud metadata arrives, [name] and [year] come from the [best] Version's
- * Listing name, and [image] is the Provider's.
+ * A Title's card. [name], [year] and the [image] (a poster URL) come from TMDB in the App language,
+ * falling back to English. Without TMDB metadata (an Unmatched Title, or the cloud out of reach),
+ * they come from the [best] Version's Listing name and the Provider's image.
  */
 data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes)
 
-/** A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the rest. */
+/**
+ * A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the
+ * rest. [name], [year] and [image] are as on its card. The rest is TMDB metadata in the App language,
+ * falling back to English, and empty without it ([fromTmdb] false).
+ */
 data class TitleDetails(
     val id: TitleId,
     val name: String,
@@ -36,6 +41,15 @@ data class TitleDetails(
     val image: String?,
     val languages: List<LanguageGroup>,
     val otherLanguages: List<LanguageGroup>,
+    val description: String? = null,
+    val genres: List<String> = emptyList(),
+    val runtimeMinutes: Int? = null,
+    /** A landscape still URL, to fill the screen behind the details. */
+    val backdrop: String? = null,
+    /** The main cast's names, billing order. */
+    val cast: List<String> = emptyList(),
+    /** Whether the metadata came from TMDB, whose terms ask for attribution where it is shown. */
+    val fromTmdb: Boolean = false,
 )
 
 /**
