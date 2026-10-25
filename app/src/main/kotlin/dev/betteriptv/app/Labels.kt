@@ -17,6 +17,13 @@ fun VersionAttributes.cardBadges(): List<BadgeSpec> =
 fun VersionAttributes.versionBadges(): List<BadgeSpec> =
     pictureBadges() + listOfNotNull(if (dolbyAudio) BadgeSpec("Dolby", Certainty.Likely) else null)
 
+/**
+ * Names the Version Play will start, beside the Play button: "English · 4K · HDR · Netflix".
+ * [untagged] stands in for the language of an Untagged Version.
+ */
+fun VersionAttributes.playLabel(untagged: String): String =
+    listOfNotNull(language?.value?.let(::languageName) ?: untagged, quality?.value?.label, hdr?.value?.label, source?.value).joinToString(" · ")
+
 private fun VersionAttributes.pictureBadges() = listOfNotNull(quality?.badge { it.label }, hdr?.badge { it.label })
 
 private fun <T> Known<T>.badge(text: (T) -> String) = BadgeSpec(text(value), provenance.certainty)

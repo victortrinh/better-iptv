@@ -54,7 +54,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
 
         fun category(id: String, name: String) = insertCategory.run {
             bindText(1, id)
@@ -65,9 +65,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         /**
          * Stores a movie Listing, Matched to its Title by the Provider's TMDB ID in [match], or standing
          * alone without one, until the cloud answers [match] otherwise. A [hidden] one is kept out of
-         * the movie list and gets no Title.
+         * the movie list and gets no Title. [container] is its file's extension (`mkv`), which its
+         * stream location ends with.
          */
-        fun movieListing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion) = insertListing.run {
+        fun movieListing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String?) = insertListing.run {
             bindLong(1, id)
             bindText(2, name)
             if (categoryId == null) bindNull(3) else bindText(3, categoryId)
@@ -78,6 +79,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             if (match.tmdbId == null) bindNull(8) else bindLong(8, match.tmdbId)
             bindText(9, matchName(match.name))
             bindText(10, match.key)
+            if (container == null) bindNull(11) else bindText(11, container)
             stepAndReset()
         }
 
@@ -100,7 +102,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         writer.execSQL("CREATE TABLE staging_category (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
         writer.execSQL(
             "CREATE TABLE staging_listing (id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER)",
+                "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT)",
         )
         writer.execSQL(MOVIE_LISTING_TABLE.format("staging_movie_listing"))
         writer.execSQL(TITLE_TABLE.format("staging_title"))
@@ -134,9 +136,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
             writer.execSQL(
                 """
-                INSERT INTO staging_movie_listing (position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect)
+                INSERT INTO staging_movie_listing (position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container)
                 SELECT row_number() OVER (ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image, t.position,
-                    l.title_key, l.provider_tmdb, l.match_key, l.suspect
+                    l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container
                 FROM staging_listing l
                 LEFT JOIN staging_category c ON c.id = l.category_id
                 JOIN staging_title t ON t.key = l.title_key
@@ -335,6 +337,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** The file extension of movie Listing [id] (`mkv`), or null when the Provider didn't say or the catalog doesn't have it. */
+    fun container(id: Long): String? = synchronized(reader) {
+        reader.prepare("SELECT container FROM movie_listing WHERE id = ?").use {
+            it.bindLong(1, id)
+            if (it.step() && !it.isNull(0)) it.getText(0) else null
+        }
+    }
+
     private fun SQLiteStatement.listing(from: Int) = StoredListing(
         id = getLong(from),
         name = getText(from + 1),
@@ -405,10 +415,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
         const val MOVIE_LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (position INTEGER PRIMARY KEY, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
-                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL)"
+                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
+                "container TEXT)"
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (position INTEGER PRIMARY KEY, key TEXT NOT NULL)"
         /** Made after a swap: an index keeps its name when its table is renamed. */
         val INDEXES = listOf(
