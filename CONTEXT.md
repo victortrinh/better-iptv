@@ -70,6 +70,10 @@ _Avoid_: Merge, dedupe
 **Mismatch**:
 A Listing whose Provider-supplied TMDB ID points to the wrong Title (for example `FR - Trotro` carrying Game of Thrones' ID).
 
+**Suspect**:
+A Listing whose Match is checked by name: it has no TMDB ID, or no sibling Listing with the same ID shares its name.
+_Avoid_: Candidate, orphan
+
 **Source**:
 The streaming service a Version was copied from, according to its Prefix (`NF` is Netflix, `D+` is Disney+).
 _Avoid_: Origin, platform
