@@ -15,7 +15,7 @@ export interface TitleKey {
 export interface TitleMetadata extends TitleKey {
   originalLanguage: string | null;
   originalTitle: string;
-  /** The Title's name in every language TMDB has, for Mismatch checks and search aliases. */
+  /** The Title's name in every language TMDB has (the original name where it isn't translated), for Mismatch checks and search aliases. */
   titles: { language: string; region: string; title: string }[];
   /** Other names it is known by (working titles, regional names). */
   alternativeTitles: string[];
@@ -53,27 +53,37 @@ export async function fetchTitle(env: Env, key: TitleKey, language: string): Pro
   url.searchParams.set("language", language);
   url.searchParams.set("append_to_response", "translations,alternative_titles,credits,videos,external_ids");
   url.searchParams.set("include_video_language", `${language},en`);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  // TMDB takes its short API key as a query parameter and its read access token as a bearer token.
+  if (/^[0-9a-f]{32}$/.test(env.TMDB_TOKEN)) url.searchParams.set("api_key", env.TMDB_TOKEN);
+  else headers.Authorization = `Bearer ${env.TMDB_TOKEN}`;
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Authorization: `Bearer ${env.TMDB_TOKEN}`, Accept: "application/json" } });
+    response = await fetch(url, { headers });
   } catch (e) {
     throw new TmdbUnavailable(String(e));
   }
   if (response.status === 404) return NOT_FOUND;
-  if (!response.ok) throw new TmdbUnavailable(`TMDB answered HTTP ${response.status}`);
+  if (!response.ok) {
+    // Shows up in the Worker's logs; TMDB's message names the problem (a wrong key, a rate limit), never the key.
+    console.warn(`TMDB answered HTTP ${response.status} for ${path}/${key.tmdbId}: ${(await response.text()).slice(0, 200)}`);
+    throw new TmdbUnavailable(`TMDB answered HTTP ${response.status}`);
+  }
   return read(key, language, (await response.json()) as TmdbTitle);
 }
 
 function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
   const translations = t.translations?.translations ?? [];
   const runtime = t.runtime ?? t.episode_run_time?.[0] ?? null;
+  const originalTitle = t.original_title ?? t.original_name ?? "";
   return {
     kind: key.kind,
     tmdbId: key.tmdbId,
     originalLanguage: t.original_language || null,
-    originalTitle: t.original_title ?? t.original_name ?? "",
+    originalTitle,
+    // TMDB leaves a translation's title empty when it is the original one: France calls Ballerina "Ballerina", Québec "Ballerine".
     titles: translations
-      .map((tr) => ({ language: tr.iso_639_1, region: tr.iso_3166_1, title: (tr.data?.title ?? tr.data?.name ?? "").trim() }))
+      .map((tr) => ({ language: tr.iso_639_1, region: tr.iso_3166_1, title: (tr.data?.title ?? tr.data?.name ?? "").trim() || originalTitle }))
       .filter((tr) => tr.title !== ""),
     alternativeTitles: [...new Set((t.alternative_titles?.titles ?? t.alternative_titles?.results ?? []).map((a) => a.title.trim()).filter((a) => a !== ""))],
     descriptions: translations

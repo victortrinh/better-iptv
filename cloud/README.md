@@ -17,7 +17,7 @@ Registration is open: a token identifies a device, so it can be revoked, but it 
 
 ## Secrets
 
-- `TMDB_TOKEN`: TMDB's API read access token (from themoviedb.org → Settings → API). It lives only here, never in the APK. Set it with `npx wrangler secret put TMDB_TOKEN`.
+- `TMDB_TOKEN`: TMDB's API read access token or its short API key (from themoviedb.org → Settings → API). It lives only here, never in the APK. Set it with `npx wrangler secret put TMDB_TOKEN`.
 
 ## Develop
 

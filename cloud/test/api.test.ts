@@ -75,6 +75,8 @@ describe("Title metadata", () => {
         originalLanguage: "en",
         originalTitle: "The Godfather",
         titles: [
+          // TMDB leaves the title empty where it isn't translated.
+          { language: "en", region: "US", title: "The Godfather" },
           { language: "fr", region: "FR", title: "Le Parrain" },
           { language: "fr", region: "CA", title: "Le Parrain" },
           { language: "de", region: "DE", title: "Der Pate" },
@@ -142,6 +144,22 @@ describe("Title metadata", () => {
 
     expect(tmdb.tokens).toEqual(["Bearer test-tmdb-token"]);
     expect(await response.text()).not.toContain("test-tmdb-token");
+  });
+
+  it("also takes TMDB's short API key, which goes in the query instead", async () => {
+    const shortKey = "0123456789abcdef0123456789abcdef";
+    const token = await registerDevice();
+    const response = await worker.fetch(
+      new Request("https://cloud.example/v1/metadata", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ language: "en", titles: [theGodfather] }),
+      }),
+      { ...env, TMDB_TOKEN: shortKey },
+    );
+
+    expect(((await response.json()) as { titles: unknown[] }).titles).toHaveLength(1);
+    expect(tmdb.tokens).toEqual([`api_key=${shortKey}`]);
   });
 
   it("rejects a malformed request", async () => {

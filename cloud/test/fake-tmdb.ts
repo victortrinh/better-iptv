@@ -6,6 +6,7 @@ import { vi } from "vitest";
  */
 export class FakeTmdb {
   readonly requests: URL[] = [];
+  /** The credential each request carried: its bearer token, or its `api_key`. */
   readonly tokens: (string | null)[] = [];
   /** Answers every request with this HTTP status instead, as TMDB does when rate-limiting (429) or down. */
   failWith: number | null = null;
@@ -16,7 +17,7 @@ export class FakeTmdb {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       if (!url.href.startsWith("https://api.themoviedb.org/3/")) throw new Error(`unexpected fetch: ${url}`);
       this.requests.push(url);
-      this.tokens.push(new Headers(init?.headers).get("Authorization"));
+      this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
       if (this.failWith !== null) return new Response("{}", { status: this.failWith });
       const title = this.titles.get(url.pathname.replace("/3/", ""));
       if (title === undefined) return Response.json({ success: false, status_code: 34 }, { status: 404 });
