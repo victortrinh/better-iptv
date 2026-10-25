@@ -1,0 +1,359 @@
+{
+ "seasons": [
+  {
+   "name": "Temporada 1",
+   "episode_count": "4",
+   "air_date": "2022-02-07",
+   "season_number": 1
+  },
+  {
+   "name": "Temporada 2",
+   "episode_count": "4",
+   "air_date": "2023-08-28",
+   "season_number": 2
+  },
+  {
+   "name": "Temporada 3",
+   "episode_count": "4",
+   "air_date": "2024-12-19",
+   "season_number": 3
+  }
+ ],
+ "info": {
+  "name": "ES - The Chelsea Detective (2022) (GB)",
+  "tmdb": "156240",
+  "last_modified": "1786119900"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100033",
+    "episode_num": 1,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S01E01 - Episodio 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5303,
+     "duration": "01:28:23",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769534712",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100034",
+    "episode_num": 2,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S01E02 - Episodio 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5229,
+     "duration": "01:27:09",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769534713",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100035",
+    "episode_num": 3,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S01E03 - Episodio 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5478,
+     "duration": "01:31:18",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4520
+    },
+    "custom_sid": null,
+    "added": "1769534713",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100036",
+    "episode_num": 4,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S01E04 - Episodio 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5356,
+     "duration": "01:29:16",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769534713",
+    "season": 1,
+    "direct_source": ""
+   }
+  ],
+  "2": [
+   {
+    "id": "100037",
+    "episode_num": 1,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S02E01 - Episodio 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5362,
+     "duration": "01:29:22",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769534713",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100038",
+    "episode_num": 2,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S02E02 - Episodio 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5340,
+     "duration": "01:29:00",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769534713",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100039",
+    "episode_num": 3,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S02E03 - Episodio 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5268,
+     "duration": "01:27:48",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1769942290",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100040",
+    "episode_num": 4,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S02E04 - Episodio 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5278,
+     "duration": "01:27:58",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4260
+    },
+    "custom_sid": null,
+    "added": "1784306000",
+    "season": 2,
+    "direct_source": ""
+   }
+  ],
+  "3": [
+   {
+    "id": "100041",
+    "episode_num": 1,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S03E01 - Episodio 1",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5341,
+     "duration": "01:29:01",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4260
+    },
+    "custom_sid": null,
+    "added": "1784306038",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100042",
+    "episode_num": 2,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S03E02 - Episodio 2",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5443,
+     "duration": "01:30:43",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4519
+    },
+    "custom_sid": null,
+    "added": "1785583085",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100043",
+    "episode_num": 3,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S03E03 - Episodio 3",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5242,
+     "duration": "01:27:22",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4261
+    },
+    "custom_sid": null,
+    "added": "1786119865",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100044",
+    "episode_num": 4,
+    "title": "ES - The Chelsea Detective (2022) (GB) - S03E04 - Episodio 4",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5358,
+     "duration": "01:29:18",
+     "video": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 4261
+    },
+    "custom_sid": null,
+    "added": "1786119899",
+    "season": 3,
+    "direct_source": ""
+   }
+  ]
+ }
+}

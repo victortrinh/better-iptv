@@ -31,6 +31,7 @@ class SurveyCoverageTest {
         val last = (library.sync() as SyncStatus.Synced).last
 
         println("Movie list: ${last.movieListingCount} Listings")
+        println("Show list: ${last.showListingCount} Listings, ${library.titleCount(TitleKind.Show)} Shows, in ${last.duration.toMillis()} ms")
         println("Unknown Prefixes: ${last.unknownPrefixes.size}")
         last.unknownPrefixes.forEach { println("  ${it.prefix}\t${it.listingCount}\t${it.example}") }
     }

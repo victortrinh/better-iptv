@@ -16,6 +16,7 @@
     <string name="provider_unreachable">Couldn\'t reach your Provider. %1$s</string>
 
     <string name="movies_title">Movies</string>
+    <string name="shows_title">Shows</string>
     <plurals name="titles_count">
         <item quantity="one">%1$s Title</item>
         <item quantity="other">%1$s Titles</item>
@@ -62,6 +63,22 @@
         <item quantity="one">%1$d Version</item>
         <item quantity="other">%1$d Versions</item>
     </plurals>
+    <string name="episodes_title">Episodes</string>
+    <string name="episodes_reading">Reading the Episodes from your Provider…</string>
+    <string name="episodes_none">Your Provider lists no Episodes for this Show.</string>
+    <string name="episodes_unreachable">Couldn\'t reach your Provider to read the Episodes.</string>
+    <plurals name="episodes_unread">
+        <item quantity="one">Couldn\'t read the Episodes of %1$d Version, so some may be missing.</item>
+        <item quantity="other">Couldn\'t read the Episodes of %1$d Versions, so some may be missing.</item>
+    </plurals>
+    <string name="season_title">Season %1$d</string>
+    <string name="season_specials">Specials</string>
+    <plurals name="episodes_count">
+        <item quantity="one">%1$d Episode</item>
+        <item quantity="other">%1$d Episodes</item>
+    </plurals>
+    <string name="episode_number">Episode %1$d</string>
+    <string name="episode_named">%1$d. %2$s</string>
     <string name="other_languages">Other languages</string>
     <string name="other_languages_show">Show %1$d</string>
     <string name="other_languages_hide">Hide</string>

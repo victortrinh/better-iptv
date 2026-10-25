@@ -62,8 +62,32 @@ data class LanguageGroup(val language: String?, val versions: List<Version>) {
 }
 
 /**
- * One playable copy of a Movie, from one Listing. [backups] are the equivalent Versions (same
- * language and quality), best first, tried when this one fails to start.
+ * A Show's Episodes, merged by season and episode number across all its Versions' show details,
+ * so it has every season any Version has. [unreadVersions] counts the Versions whose details the
+ * Provider couldn't give (and that weren't kept from before): their Episodes are missing.
+ */
+data class ShowEpisodes(val seasons: List<Season>, val unreadVersions: Int)
+
+/** One season of a Show, its Episodes in order. Specials (season 0) come after the others. */
+data class Season(val number: Int, val episodes: List<Episode>)
+
+/**
+ * One Episode of a Show with its Versions grouped by language, as a Title's are: [languages] are
+ * the Viewer's, [otherLanguages] the rest, so together they are the languages it's available in.
+ * [name] is the Episode's name as the Provider gives it in the best Version, null when it gives none.
+ */
+data class Episode(
+    val season: Int,
+    val number: Int,
+    val name: String?,
+    val languages: List<LanguageGroup>,
+    val otherLanguages: List<LanguageGroup>,
+)
+
+/**
+ * One playable copy of a Movie or Episode, from one Listing (for an Episode, [listingId] is the
+ * Provider's Episode id). [backups] are the equivalent Versions (same language and quality), best
+ * first, tried when this one fails to start.
  */
 data class Version(
     val listingId: Long,
@@ -77,7 +101,7 @@ enum class Provenance {
     /** Inferred from the Prefix, the Category or the Title's original language. */
     Likely,
 
-    /** Read from the file, through a Header read or Playback. */
+    /** Read from the file, through a Header read, Playback or the Provider's Episode details. */
     Confirmed,
 }
 
@@ -128,8 +152,9 @@ data class Unreachable(val detail: String) : ProviderProblem
 data class CatalogNotSaved(val detail: String) : SyncProblem
 
 /**
- * A finished Sync. [movieListingCount] counts the movie list, which leaves out Clutter and Sports
- * replays; [unknownPrefixes] are the Prefixes to add to the Prefix table, most common first.
+ * A finished Sync. [movieListingCount] and [showListingCount] count the movie and show lists, which
+ * leave out Clutter and Sports replays; [unknownPrefixes] are the Prefixes to add to the Prefix
+ * table, most common first.
  * [rematchedListings] counts the Listings Matched by name instead of by their Provider ID:
  * Mismatches, and Listings without an ID that TMDB found. It grows after the Sync finishes, as
  * the cloud answers, and the Titles change with it.
@@ -140,6 +165,7 @@ data class CompletedSync(
     val movieListingCount: Int,
     val unknownPrefixes: List<UnknownPrefix>,
     val rematchedListings: Int = 0,
+    val showListingCount: Int = 0,
 )
 
 sealed interface SyncStatus {

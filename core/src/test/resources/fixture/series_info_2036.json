@@ -1,0 +1,180 @@
+{
+ "seasons": [],
+ "info": {
+  "name": "D+ - Dog: Impossible (US)",
+  "tmdb": "93422",
+  "last_modified": "1626297823"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100045",
+    "episode_num": 1,
+    "title": "D+ - DDog: Impossible (US) - S01E01",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2626,
+     "duration": "00:43:46",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8646
+    },
+    "custom_sid": null,
+    "added": "1626297822",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100046",
+    "episode_num": 2,
+    "title": "D+ - DDog: Impossible (US) - S01E02",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2626,
+     "duration": "00:43:46",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8648
+    },
+    "custom_sid": null,
+    "added": "1626297822",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100047",
+    "episode_num": 3,
+    "title": "D+ - DDog: Impossible (US) - S01E03",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2617,
+     "duration": "00:43:37",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8647
+    },
+    "custom_sid": null,
+    "added": "1626297822",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100048",
+    "episode_num": 4,
+    "title": "D+ - DDog: Impossible (US) - S01E04",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2609,
+     "duration": "00:43:29",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8645
+    },
+    "custom_sid": null,
+    "added": "1626297822",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100049",
+    "episode_num": 5,
+    "title": "D+ - DDog: Impossible (US) - S01E05",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2609,
+     "duration": "00:43:29",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8650
+    },
+    "custom_sid": null,
+    "added": "1626297822",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100050",
+    "episode_num": 6,
+    "title": "D+ - DDog: Impossible (US) - S01E06",
+    "container_extension": "mp4",
+    "info": {
+     "duration_secs": 2611,
+     "duration": "00:43:31",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 6,
+      "tags": {
+       "language": "eng"
+      }
+     },
+     "bitrate": 8643
+    },
+    "custom_sid": null,
+    "added": "1626297823",
+    "season": 1,
+    "direct_source": ""
+   }
+  ]
+ }
+}
