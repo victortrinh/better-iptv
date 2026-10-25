@@ -1,0 +1,352 @@
+{
+ "seasons": [],
+ "info": {
+  "name": "DE - The Chelsea Detective (2022) (GB)",
+  "tmdb": "156240",
+  "last_modified": "1792694358"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100051",
+    "episode_num": 1,
+    "title": " - S01E01 - Der Lohn der Sünde",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5315,
+     "duration": "01:28:35",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5789
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100052",
+    "episode_num": 2,
+    "title": " - S01E02 - Mrs + Mrs Romano",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5240,
+     "duration": "01:27:20",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5282
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100053",
+    "episode_num": 3,
+    "title": " - S01E03 - Spiel auf Leben und Tod",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5490,
+     "duration": "01:31:30",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5308
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100054",
+    "episode_num": 4,
+    "title": " - S01E04 - Die Schule der Lügen",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5367,
+     "duration": "01:29:27",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5158
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 1,
+    "direct_source": ""
+   }
+  ],
+  "2": [
+   {
+    "id": "100055",
+    "episode_num": 1,
+    "title": " - S02E01 - Im blauen Zimmer",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5374,
+     "duration": "01:29:34",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5357
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100056",
+    "episode_num": 2,
+    "title": " - S02E02 - Golden Years",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5351,
+     "duration": "01:29:11",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5430
+    },
+    "custom_sid": null,
+    "added": "1792694344",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100057",
+    "episode_num": 3,
+    "title": " - S02E03 - Tödliche Therapie",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5279,
+     "duration": "01:27:59",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5105
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 2,
+    "direct_source": ""
+   },
+   {
+    "id": "100058",
+    "episode_num": 4,
+    "title": " - S02E04 - Mord aus Leidenschaft",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5292,
+     "duration": "01:28:12",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5254
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 2,
+    "direct_source": ""
+   }
+  ],
+  "3": [
+   {
+    "id": "100059",
+    "episode_num": 1,
+    "title": " - S03E01 - Alle lieben Chloe",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5340,
+     "duration": "01:29:00",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5243
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100060",
+    "episode_num": 2,
+    "title": " - S03E02 - Tod im Kleingarten",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5442,
+     "duration": "01:30:42",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5542
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100061",
+    "episode_num": 3,
+    "title": " - S03E03 - Mythen und Legenden",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5243,
+     "duration": "01:27:23",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5818
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 3,
+    "direct_source": ""
+   },
+   {
+    "id": "100062",
+    "episode_num": 4,
+    "title": " - S03E04 - Zum Wohle aller",
+    "container_extension": "mkv",
+    "info": {
+     "duration_secs": 5359,
+     "duration": "01:29:19",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "deu"
+      }
+     },
+     "bitrate": 5781
+    },
+    "custom_sid": null,
+    "added": "1792694345",
+    "season": 3,
+    "direct_source": ""
+   }
+  ]
+ }
+}

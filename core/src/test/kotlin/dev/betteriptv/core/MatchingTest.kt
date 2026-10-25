@@ -88,7 +88,7 @@ class MatchingTest {
 
         library.sync()
 
-        assertEquals(listOf("Lilo et Stitch"), cloud.matchAsked.map { it["name"] })
+        assertEquals(listOf("Lilo et Stitch"), cloud.matchAsked.filter { it["kind"] == "movie" }.map { it["name"] })
     }
 
     @Test fun `the Sync counts the Listings it Matched by name instead of their Provider ID`() = runBlocking {
@@ -124,6 +124,7 @@ class MatchingTest {
 
     @Test fun `a batch the cloud fails doesn't stop the batches after it`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.showListOverride = "[]"
         // Thirty Listings without an ID ask the cloud two batches.
         provider.movieListOverride = (1..30).joinToString(",", "[", "]") { n ->
             cloud.match("Film $n", 1000L + n)
@@ -140,6 +141,7 @@ class MatchingTest {
 
     @Test fun `the Sync stops asking the cloud after a few batches fail in a row`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.showListOverride = "[]"
         provider.movieListOverride = (1..200).joinToString(",", "[", "]") { n ->
             """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""
         }
