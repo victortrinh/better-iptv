@@ -123,12 +123,19 @@ class Library private constructor(
                 .map { question(it.name, prefixTable.describe(it.name, it.category), it.providerTmdbId) }
                 .distinctBy { it.key }
             if (questions.isEmpty()) return
-            try {
-                questions.chunked(CloudClient.MAX_MATCH_BATCH).forEach { batch ->
+            // A batch can fail on its own (the cloud ran out of CPU time, say): its suspects are asked
+            // again next Sync. Several in a row mean the cloud is down.
+            var failedInARow = 0
+            for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
+                try {
                     store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
+                    failedInARow = 0
+                } catch (e: CloudException) {
+                    if (++failedInARow == MATCH_FAILURES_IN_A_ROW) {
+                        cloudRetryAt = now + CLOUD_RETRY_AFTER
+                        break
+                    }
                 }
-            } catch (e: CloudException) {
-                cloudRetryAt = now + CLOUD_RETRY_AFTER
             }
             store.applyMatchAnswers()?.let { _syncStatus.value = SyncStatus.Synced(it) }
         } catch (e: CancellationException) {
@@ -230,6 +237,7 @@ class Library private constructor(
     companion object {
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+        private const val MATCH_FAILURES_IN_A_ROW = 3
         /** The cloud's answers about a Listing are asked again after this, so new Titles on TMDB come through. */
         private val MATCH_FRESH_FOR: Duration = Duration.ofDays(30)
         /** A name TMDB found nothing for is asked about again sooner, but not every daily Sync: few Titles are added in a week. */

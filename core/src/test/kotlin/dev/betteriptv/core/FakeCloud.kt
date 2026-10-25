@@ -27,6 +27,9 @@ class FakeCloud : Closeable {
     /** Answers every request with HTTP 503, as an unreachable cloud would. */
     @Volatile var down = false
 
+    /** How many of the next `/v1/match` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
+    @Volatile var failingMatches = 0
+
     private val metadata = HashMap<String, Map<String, Any?>>()
     private val matches = HashMap<String, Long?>()
     private val tokens = HashSet<String>()
@@ -43,7 +46,11 @@ class FakeCloud : Closeable {
 
     /** The Listings the device asked to Match, as sent: kind, name, year, language and tmdbId. */
     val matchAsked: List<Map<*, *>>
-        get() = received.filter { it.path == "/v1/match" }.flatMap { request -> ((read(request.body) as Map<*, *>)["listings"] as List<*>).map { it as Map<*, *> } }
+        get() = matchRequests.flatten()
+
+    /** The same, one list per request, answered or not. */
+    val matchRequests: List<List<Map<*, *>>>
+        get() = received.filter { it.path == "/v1/match" }.map { request -> ((read(request.body) as Map<*, *>)["listings"] as List<*>).map { it as Map<*, *> } }
 
     init {
         server.executor = Executors.newCachedThreadPool()
@@ -82,6 +89,7 @@ class FakeCloud : Closeable {
             "/v1/metadata", "/v1/match" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                if (exchange.requestURI.path == "/v1/match" && synchronized(this) { (failingMatches > 0).also { if (it) failingMatches-- } }) return exchange.sendResponseHeaders(503, -1)
                 if (exchange.requestURI.path == "/v1/match") return respond(exchange, 200, mapOf("matches" to answerMatches(read(body) as Map<*, *>)))
                 val asked = read(body) as Map<*, *>
                 val language = asked["language"] as String

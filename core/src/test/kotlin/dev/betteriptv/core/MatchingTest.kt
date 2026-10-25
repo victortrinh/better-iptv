@@ -121,4 +121,33 @@ class MatchingTest {
         assertTrue("IN-GU - Mohgiben.MBBS.2023" in versionNames(munnaBhai))
         assertTrue(cards().single { it.name == "Titanic" && it.year == 1996 }.id is TitleId.Unmatched)
     }
+
+    @Test fun `a batch the cloud fails doesn't stop the batches after it`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        // Thirty Listings without an ID ask the cloud two batches.
+        provider.movieListOverride = (1..30).joinToString(",", "[", "]") { n ->
+            cloud.match("Film $n", 1000L + n)
+            """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""
+        }
+        cloud.failingMatches = 1
+
+        library.sync()
+
+        assertEquals(2, cloud.matchRequests.size)
+        val answered = cloud.matchRequests[1].map { "Film ${(it["name"] as String).substringAfter("Film ")}" }
+        assertEquals(answered.sorted(), cards().filter { it.id is TitleId.Tmdb }.map { it.name }.sorted())
+    }
+
+    @Test fun `the Sync stops asking the cloud after a few batches fail in a row`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.movieListOverride = (1..200).joinToString(",", "[", "]") { n ->
+            """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""
+        }
+        cloud.failingMatches = Int.MAX_VALUE
+
+        val status = library.sync()
+
+        assertTrue(status is SyncStatus.Synced)
+        assertEquals(3, cloud.matchRequests.size)
+    }
 }

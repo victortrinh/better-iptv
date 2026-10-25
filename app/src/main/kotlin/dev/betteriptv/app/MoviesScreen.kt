@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -46,7 +47,9 @@ import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleSummary
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
@@ -71,7 +74,8 @@ fun MoviesScreen(
     // A finished Sync swaps in a new catalog, and Listings Matched by name afterwards regroup its
     // Titles: either way, drop the pages read before.
     val synced = status.last
-    val pages = remember(synced, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage) }
+    val scope = rememberCoroutineScope()
+    val pages = remember(synced, contentLanguages, appLanguage) { TitlePages(library, contentLanguages, appLanguage, scope) }
     val count by produceState(initialValue = 0, synced) { value = withContext(Dispatchers.IO) { library.titleCount() } }
     val context = LocalContext.current
 
@@ -107,7 +111,7 @@ fun MoviesScreen(
 @Composable
 private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
     val title = pages[index]
-    if (title == null) LaunchedEffect(index / TitlePages.PAGE_SIZE) { pages.load(index / TitlePages.PAGE_SIZE) }
+    if (title == null) LaunchedEffect(pages, index / TitlePages.PAGE_SIZE) { pages.load(index / TitlePages.PAGE_SIZE) }
     val focus = remember { FocusRequester() }
     if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
     TitleCard(
@@ -121,18 +125,28 @@ private fun MovieCard(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: 
 
 /** Keeps a few pages of the Title list in memory around where the Viewer is. */
 @Stable
-private class TitlePages(private val library: Library, private val contentLanguages: List<String>, private val appLanguage: String) {
+private class TitlePages(
+    private val library: Library,
+    private val contentLanguages: List<String>,
+    private val appLanguage: String,
+    private val scope: CoroutineScope,
+) {
     private val pages = mutableStateMapOf<Int, List<TitleSummary>>()
     private val loading = mutableSetOf<Int>()
 
     operator fun get(index: Int): TitleSummary? = pages[index / PAGE_SIZE]?.getOrNull(index % PAGE_SIZE)
 
-    suspend fun load(page: Int) {
+    /** Loads [page] in the screen's scope: a card scrolled away mustn't cancel it for the cards still showing. */
+    fun load(page: Int) {
         if (page in pages || !loading.add(page)) return
-        val titles = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage)
-        loading -= page
-        pages[page] = titles
-        if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
+        scope.launch {
+            try {
+                pages[page] = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage)
+                if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
+            } finally {
+                loading -= page
+            }
+        }
     }
 
     companion object {
