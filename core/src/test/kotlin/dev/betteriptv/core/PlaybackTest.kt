@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -19,6 +20,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
 import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** The Playback session: which player engine plays a Version, and moving between Media3 and VLC. */
@@ -163,24 +166,48 @@ class PlaybackTest {
         withTimeout(1_000) { library.connect(plan.version) }.close()
     }
 
+    @Test fun `an engine that overlaps its requests, like VLC, still uses one Provider stream and never sees the login`() = runBlocking {
+        val session = library.playback(plan) { engine -> ScriptedEngine(engine, Script.Plays, overlapsRequests = true).also(created::add) }
+        val job = launch { session.play() }
+
+        val engine = session.awaitPlaying(Engine.Media3, count = 1)
+        assertEquals(0, provider.refusedStreams)
+        assertEquals(2, provider.streamRequests)
+        assertFalse(provider.username in engine.location!!)
+        assertFalse(provider.password in engine.location!!)
+        job.cancel()
+        job.join()
+        withTimeout(2_000) { library.connect(plan.version) }.close()
+    }
+
     private enum class Script { Plays, CantOpen, Breaks, Ends }
 
     /**
      * A player engine that opens the stream like a real one would, then does what its [script] says.
      * One that plays fails on cue when its [failure] is completed.
      */
-    private inner class ScriptedEngine(override val engine: Engine, private val script: Script) : PlayerEngine {
+    private inner class ScriptedEngine(
+        override val engine: Engine,
+        private val script: Script,
+        override val overlapsRequests: Boolean = false,
+    ) : PlayerEngine {
         @Volatile override var position = 0L
         @Volatile var startedFrom: Long? = null
         @Volatile var released = false
         val opened = MutableStateFlow(false)
         val failure = CompletableDeferred<Throwable>()
-        private var stream: InputStream? = null
+        @Volatile var location: String? = null
+        private val streams = CopyOnWriteArrayList<InputStream>()
 
         override suspend fun play(location: String, from: Long) {
             startedFrom = from
             position = from
-            stream = withContext(Dispatchers.IO) { provider.play(location) }
+            this.location = location
+            withContext(Dispatchers.IO) {
+                streams += provider.play(location).also { it.readNBytes(1024) }
+                // Like VLC reading the file's index at its end: a second request before closing the first.
+                if (overlapsRequests) streams += ranged(location, "bytes=1000000-").also { it.readNBytes(1024) }
+            }
             opened.value = true
             when (script) {
                 Script.Plays -> throw failure.await()
@@ -192,7 +219,14 @@ class PlaybackTest {
 
         override fun release() {
             released = true
-            stream?.close()
+            streams.forEach(InputStream::close)
         }
+    }
+
+    private fun ranged(location: String, range: String): InputStream {
+        val connection = URI(location).toURL().openConnection() as HttpURLConnection
+        connection.setRequestProperty("Range", range)
+        if (connection.responseCode !in 200..299) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
+        return connection.inputStream
     }
 }

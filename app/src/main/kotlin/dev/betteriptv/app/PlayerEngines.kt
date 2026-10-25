@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -24,6 +25,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+private const val PLAYER_TAG = "Player"
 
 /** Creates the engine a Playback session asks for, choosing a [plan]'s Tracks once the file is open. */
 fun playerEngines(context: Context, plan: PlayPlan): (Engine) -> PlayerEngine = { engine ->
@@ -50,12 +53,19 @@ class Media3Engine(context: Context, plan: PlayPlan) : PlayerEngine {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
-                // A picture or sound the stick can't decode raises no error: the file would just play without it.
-                val unplayable = listOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO).any { tracks.containsType(it) && !tracks.isTypeSupported(it) }
-                if (unplayable) finish(CantOpen("Media3 can't decode the file's picture or sound"))
+                // A picture or sound the stick has no decoder for raises no error: the file would just play
+                // without it. One that seems beyond a decoder's reported capabilities is still tried, since
+                // those reports are conservative; if decoding then fails, the error says so.
+                val unplayable = listOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO)
+                    .any { tracks.containsType(it) && !tracks.isTypeSupported(it, /* allowExceedsCapabilities = */ true) }
+                if (unplayable) return finish(CantOpen("Media3 has no decoder for the file's picture or sound"))
+                // Every Version has a picture: none means Media3 didn't recognise its format and left it out.
+                if (!tracks.isEmpty && !tracks.containsType(C.TRACK_TYPE_VIDEO)) finish(CantOpen("Media3 found no picture it can read"))
             }
 
             private fun finish(error: Throwable?) {
+                // Why the engine gave up, never where the file is: its location holds the login.
+                if (error != null) Log.w(PLAYER_TAG, "Media3 stopped: ${error.message} (${(error.cause as? PlaybackException)?.errorCodeName})")
                 player.removeListener(this)
                 if (!continuation.isActive) return
                 if (error == null) continuation.resume(Unit) else continuation.resumeWithException(error)
@@ -107,6 +117,9 @@ private class TrackChooser(private val player: ExoPlayer, private val plan: Play
  */
 class VlcEngine(context: Context, private val plan: PlayPlan) : PlayerEngine {
     override val engine = Engine.Vlc
+
+    // To read a file's index and to seek, VLC opens a new request before closing the one it has.
+    override val overlapsRequests = true
     private val vlc = LibVLC(context.applicationContext, arrayListOf("--http-reconnect"))
     private val player = MediaPlayer(vlc)
     private val attached = CompletableDeferred<Unit>()

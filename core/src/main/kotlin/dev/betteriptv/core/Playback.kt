@@ -77,12 +77,15 @@ class Connection internal constructor(val location: String, private val lease: C
     override fun toString() = "Connection(***)"
 }
 
+/** How long the Provider still counts a closed stream as open: the next one waits this long after it. */
+internal val PROVIDER_RELEASE_GRACE = 500.milliseconds
+
 /**
  * Enforces the Connection limit on the device: one lease at a time, so a second stream is never
  * opened while one is in use. [lease] waits until the current lease is closed, and then for
  * [releaseGrace], because the Provider counts a closed stream as open for a moment after.
  */
-internal class ConnectionGate(private val releaseGrace: Duration = 500.milliseconds) {
+internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELEASE_GRACE) {
     private val semaphore = Semaphore(1)
 
     @Volatile private var releasedAt: TimeMark? = null

@@ -24,6 +24,13 @@ enum class Engine {
 interface PlayerEngine {
     val engine: Engine
 
+    /**
+     * Whether the engine opens a new request for the file before closing the one it has, as VLC does
+     * to read a file's index and to seek. The session then gives it the file through a relay on the
+     * device, so the Provider still sees one stream.
+     */
+    val overlapsRequests: Boolean get() = false
+
     /** Where playback is in the file, in milliseconds; where it will start until it does. */
     val position: Long
 
@@ -113,6 +120,7 @@ class PlaybackSession internal constructor(
         }
         try {
             val player = engines(engine)
+            val relay = if (player.overlapsRequests) library.relay(connection.location) else null
             try {
                 // A press made before this engine started was meant for the one before it.
                 switches.tryReceive()
@@ -120,7 +128,7 @@ class PlaybackSession internal constructor(
                 return coroutineScope {
                     val playing = async {
                         try {
-                            player.play(connection.location, from)
+                            player.play(relay?.location ?: connection.location, from)
                             Outcome.Ended
                         } catch (e: CantOpen) {
                             Outcome.CantOpen(player.position)
@@ -140,6 +148,7 @@ class PlaybackSession internal constructor(
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Connecting
                 player.release()
+                relay?.close()
             }
         } finally {
             // Releasing closes the engine's request to the Provider, so only then is the connection given back.
