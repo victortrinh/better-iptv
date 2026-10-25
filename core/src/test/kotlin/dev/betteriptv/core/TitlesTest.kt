@@ -82,12 +82,12 @@ class TitlesTest {
     @Test fun `each Title gets one card, and Clutter and Sports replays get none`() = runBlocking {
         library.sync()
 
-        // The fixture's 142 movie Listings: 45 Titles by TMDB ID, and 7 Listings without one.
-        assertEquals(52, library.titleCount())
+        // The fixture's 150 movie Listings: 47 Titles by TMDB ID, and 9 Listings without one.
+        assertEquals(56, library.titleCount())
         val cards = cards()
-        assertEquals(52, cards.size)
-        assertEquals(52, cards.map { it.id }.distinct().size)
-        assertEquals(7, cards.count { it.id is TitleId.Unmatched })
+        assertEquals(56, cards.size)
+        assertEquals(56, cards.map { it.id }.distinct().size)
+        assertEquals(9, cards.count { it.id is TitleId.Unmatched })
     }
 
     @Test fun `Titles are keyed by kind and TMDB ID, so a Show with the same number is another Title`() = runBlocking {
@@ -127,6 +127,22 @@ class TitlesTest {
             assertEquals(Known(Quality.UHD, Provenance.Likely), it.quality)
             assertEquals(Known("en", Provenance.Likely), it.language)
         }
+    }
+
+    @Test fun `a card's name drops a country code and reads a dotted name as words`() = runBlocking {
+        syncListings(
+            Listing("EN - Reacher (US)", "108978"),
+            Listing("IN-GU - Mohgiben.MBBS.2023", "19625"),
+            Listing("QC - P-A.Méthot.Le.Party.Du.Millénaire.2022", ""),
+            Listing("NF - Mr. Right (2016) HEVC", "333385"),
+            // 2049 is part of the name: a year still to come.
+            Listing("EN - Blade.Runner.2049", "335984"),
+        )
+
+        assertEquals(
+            listOf("Reacher" to null, "Mohgiben MBBS" to 2023, "P-A Méthot Le Party Du Millénaire" to 2022, "Mr. Right" to 2016, "Blade.Runner.2049" to null),
+            cards().map { it.name to it.year },
+        )
     }
 
     @Test fun `a card uses the Provider's image, from the best Version that has one`() = runBlocking {

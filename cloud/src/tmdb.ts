@@ -48,11 +48,45 @@ const CAST_SHOWN = 12;
  * alternative titles, credits, videos and external IDs.
  */
 export async function fetchTitle(env: Env, key: TitleKey, language: string): Promise<TitleMetadata | typeof NOT_FOUND> {
-  const path = key.kind === "movie" ? "movie" : "tv";
-  const url = new URL(`${env.TMDB_API}/${path}/${key.tmdbId}`);
-  url.searchParams.set("language", language);
-  url.searchParams.set("append_to_response", "translations,alternative_titles,credits,videos,external_ids");
-  url.searchParams.set("include_video_language", `${language},en`);
+  const path = `${tmdbPath(key.kind)}/${key.tmdbId}`;
+  const response = await get(env, path, {
+    language,
+    append_to_response: "translations,alternative_titles,credits,videos,external_ids",
+    include_video_language: `${language},en`,
+  });
+  if (response === NOT_FOUND) return NOT_FOUND;
+  return read(key, language, (await response.json()) as TmdbTitle);
+}
+
+/** One result of TMDB's search: its name in the requested language, as released, and its year. */
+export interface Found {
+  tmdbId: number;
+  title: string;
+  originalTitle: string;
+  year: number | null;
+  popularity: number;
+}
+
+/** The first page of TMDB's search for [kind] Titles called [query], with names in [language] (ISO 639-1). */
+export async function search(env: Env, kind: Kind, query: string, language: string): Promise<Found[]> {
+  const response = await get(env, `search/${tmdbPath(kind)}`, { query, language, include_adult: "false" });
+  if (response === NOT_FOUND) return [];
+  const { results } = (await response.json()) as { results?: TmdbSearchResult[] };
+  return (results ?? []).map((r) => ({
+    tmdbId: r.id,
+    title: r.title ?? r.name ?? "",
+    originalTitle: r.original_title ?? r.original_name ?? "",
+    year: Number.parseInt((r.release_date ?? r.first_air_date ?? "").slice(0, 4)) || null,
+    popularity: r.popularity ?? 0,
+  }));
+}
+
+const tmdbPath = (kind: Kind) => (kind === "movie" ? "movie" : "tv");
+
+/** GETs [path] from TMDB with the cloud's key; NOT_FOUND on a 404. */
+async function get(env: Env, path: string, params: Record<string, string>): Promise<Response | typeof NOT_FOUND> {
+  const url = new URL(`${env.TMDB_API}/${path}`);
+  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
   const headers: Record<string, string> = { Accept: "application/json" };
   // TMDB takes its short API key as a query parameter and its read access token as a bearer token.
   if (/^[0-9a-f]{32}$/.test(env.TMDB_TOKEN)) url.searchParams.set("api_key", env.TMDB_TOKEN);
@@ -66,10 +100,10 @@ export async function fetchTitle(env: Env, key: TitleKey, language: string): Pro
   if (response.status === 404) return NOT_FOUND;
   if (!response.ok) {
     // Shows up in the Worker's logs; TMDB's message names the problem (a wrong key, a rate limit), never the key.
-    console.warn(`TMDB answered HTTP ${response.status} for ${path}/${key.tmdbId}: ${(await response.text()).slice(0, 200)}`);
+    console.warn(`TMDB answered HTTP ${response.status} for ${path}: ${(await response.text()).slice(0, 200)}`);
     throw new TmdbUnavailable(`TMDB answered HTTP ${response.status}`);
   }
-  return read(key, language, (await response.json()) as TmdbTitle);
+  return response;
 }
 
 function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
@@ -106,6 +140,18 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
       .sort((a, b) => Number(b.official ?? false) - Number(a.official ?? false))
       .map((v) => v.key),
   };
+}
+
+/** The parts of a TMDB movie or TV search result the cloud uses. */
+interface TmdbSearchResult {
+  id: number;
+  title?: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  popularity?: number;
 }
 
 /** The parts of TMDB's movie and TV details responses the app uses. */

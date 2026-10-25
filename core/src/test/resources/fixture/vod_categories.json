@@ -413,5 +413,15 @@
   "category_id": "83",
   "category_name": "FR - ANIMATION ⁴ᴷ ᴴᴰᴿ ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
   "parent_id": 0
+ },
+ {
+  "category_id": "84",
+  "category_name": "EN - ROMANCE",
+  "parent_id": 0
+ },
+ {
+  "category_id": "85",
+  "category_name": "EN - DRAMA",
+  "parent_id": 0
  }
 ]

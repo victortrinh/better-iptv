@@ -23,11 +23,15 @@ class MetadataTest {
 
     private lateinit var library: Library
 
+    /** What the Sync sent the cloud (its Match requests), kept apart so tests see only what showing Titles sends. */
+    private lateinit var sentBySync: List<FakeCloud.Received>
+
     @Before fun syncFixture() = runBlocking {
         library = openLibrary()
         library.logIn(provider.login)
         library.sync()
-        Unit
+        sentBySync = cloud.received.toList()
+        cloud.received.clear()
     }
 
     @After fun tearDown() {
@@ -143,9 +147,9 @@ class MetadataTest {
         library.titles(0, 1000, french, "fr")
 
         val requests = cloud.received.filter { it.path == "/v1/metadata" }
-        // The fixture's 45 Titles with a TMDB ID fit in one batch of 50.
+        // The fixture's 47 Titles with a TMDB ID fit in one batch of 50.
         assertEquals(1, requests.size)
-        assertEquals(45, cloud.metadataAsked.size)
+        assertEquals(47, cloud.metadataAsked.size)
     }
 
     @Test fun `without the cloud, cards show what the Provider says, and the cloud isn't asked again right away`() = runBlocking {
@@ -169,15 +173,17 @@ class MetadataTest {
         card(godfather, "fr")
         card(godfather, "en")
 
-        assertEquals(listOf("/v1/devices", "/v1/metadata", "/v1/metadata"), cloud.received.map { it.path })
-        val token = cloud.received[1].headers["Authorization"]
+        // It registered during the Sync, for its first Match request.
+        assertEquals("/v1/devices", sentBySync.first().path)
+        assertEquals(listOf("/v1/metadata", "/v1/metadata"), cloud.received.map { it.path })
+        val token = sentBySync[1].headers["Authorization"]
         assertTrue(token.orEmpty().single().startsWith("Bearer "))
-        assertEquals(token, cloud.received[2].headers["Authorization"])
+        assertTrue((sentBySync.drop(1) + cloud.received).all { it.headers["Authorization"] == token })
 
         // A token the cloud no longer knows is replaced.
         cloud.forgetDevices()
         card(ballerina, "de")
-        assertEquals(listOf("/v1/metadata", "/v1/devices", "/v1/metadata"), cloud.received.drop(3).map { it.path })
+        assertEquals(listOf("/v1/metadata", "/v1/devices", "/v1/metadata"), cloud.received.drop(2).map { it.path })
     }
 
     @Test fun `the cloud never sees the Provider login or address`() = runBlocking {
@@ -185,7 +191,8 @@ class MetadataTest {
         library.titles(0, 1000, french, "fr")
         details(godfather, "fr")
 
-        val sent = cloud.received.joinToString("\n") { "${it.path} ${it.headers} ${it.body}" }
+        val sent = (sentBySync + cloud.received).joinToString("\n") { "${it.path} ${it.headers} ${it.body}" }
+        assertTrue(sentBySync.any { it.path == "/v1/match" })
         assertTrue(cloud.received.isNotEmpty())
         for (secret in listOf(provider.password, provider.username, provider.url)) {
             assertFalse("the cloud was sent \"$secret\"", secret in sent)

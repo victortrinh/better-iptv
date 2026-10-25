@@ -11,6 +11,7 @@ export class FakeTmdb {
   /** Answers every request with this HTTP status instead, as TMDB does when rate-limiting (429) or down. */
   failWith: number | null = null;
   private readonly titles = new Map<string, (language: string) => object>();
+  private readonly searchable: { path: string; result: (language: string) => SearchResult }[] = [];
 
   constructor() {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -19,6 +20,18 @@ export class FakeTmdb {
       this.requests.push(url);
       this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
       if (this.failWith !== null) return new Response("{}", { status: this.failWith });
+      const search = /^\/3\/search\/(movie|tv)$/.exec(url.pathname);
+      if (search) {
+        // Like TMDB, finds a query in the title in the requested language or in the original title, punctuation aside.
+        const loose = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+        const query = loose(url.searchParams.get("query") ?? "");
+        const language = url.searchParams.get("language") ?? "en";
+        const results = this.searchable
+          .filter((entry) => entry.path === search[1])
+          .map((entry) => entry.result(language))
+          .filter((r) => [r.title, r.name, r.original_title, r.original_name].some((t) => t !== undefined && loose(t).includes(query)));
+        return Response.json({ page: 1, results, total_results: results.length });
+      }
       const title = this.titles.get(url.pathname.replace("/3/", ""));
       if (title === undefined) return Response.json({ success: false, status_code: 34 }, { status: 404 });
       return Response.json(title(url.searchParams.get("language") ?? "en"));
@@ -34,9 +47,35 @@ export class FakeTmdb {
     this.titles.set(`tv/${id}`, answer);
   }
 
+  /** A movie TMDB's search finds, with [result] building it in the requested language. */
+  searchableMovie(result: (language: string) => SearchResult) {
+    this.searchable.push({ path: "movie", result });
+  }
+
+  searchableShow(result: (language: string) => SearchResult) {
+    this.searchable.push({ path: "tv", result });
+  }
+
+  /** The search requests that reached TMDB. */
+  get searches(): URL[] {
+    return this.requests.filter((url) => url.pathname.startsWith("/3/search/"));
+  }
+
   restore() {
     vi.restoreAllMocks();
   }
+}
+
+/** One result of TMDB's movie or TV search. */
+export interface SearchResult {
+  id: number;
+  title?: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  popularity: number;
 }
 
 /** The Godfather, shaped like TMDB's movie details with everything the app appends. */
