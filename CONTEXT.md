@@ -117,6 +117,10 @@ _Avoid_: Default version, preferred version
 The highest quality the Viewer allows the app to pick.
 _Avoid_: Max quality, downgrade
 
+**Player engine**:
+What decodes and shows a Version: Media3 by default, or VLC for the rare file Media3 can't open. The Viewer can switch with "Try other player".
+_Avoid_: Backend, decoder
+
 ### Viewer, languages and region
 
 **Viewer**:

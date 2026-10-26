@@ -1,11 +1,10 @@
 package dev.betteriptv.app
 
-import android.content.Context
-import android.os.SystemClock
-import android.view.KeyEvent
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,22 +32,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
@@ -57,96 +52,105 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.Engine
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlaybackState
 import dev.betteriptv.core.PlayerEngine
-import dev.betteriptv.core.PlayerEvent
-import dev.betteriptv.core.Track
 import dev.betteriptv.core.Version
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
+import org.videolan.libvlc.util.VLCVideoLayout
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Plays a [plan] full screen with Media3 through a Playback session, which falls back to Backups by
- * itself. The Version playing is named when it starts; repeated buffering brings a one-tap
- * suggestion of a lower Version; the remote's menu key opens the Versions to switch to partway through.
- * Leaving the screen stops the player before the connection is given back.
+ * Plays a [plan]'s Version full screen through a Playback session, which falls back to the VLC
+ * engine when Media3 can't open a file and to the Version's Backups when it is dead. The Version
+ * playing is named when it starts; repeated buffering brings a one-tap suggestion of a lower Version.
+ * The remote's Menu key opens the Versions to switch to partway through, and "Try other player",
+ * which moves to the other engine at the same position. Leaving the screen stops playback and gives
+ * back the Viewer's connection; [onEnded] is called once the file plays to its end.
  */
 @Composable
-fun PlayerScreen(library: Library, plan: PlayPlan) {
+fun PlayerScreen(library: Library, plan: PlayPlan, onEnded: () -> Unit) {
     val context = LocalContext.current
-    val engine = remember(plan) { Media3Engine(context, plan) }
-    val session = remember(plan) { library.playback(plan, engine) }
-    LaunchedEffect(session) { session.run() }
+    val session = remember(plan) { library.playback(plan, playerEngines(context, plan)) }
     val state by session.state.collectAsState()
-    var playerView by remember { mutableStateOf<PlayerView?>(null) }
-    var choosing by remember(plan) { mutableStateOf(false) }
-    val backToPlayer = { playerView?.requestFocus() }
+    var menuOpen by remember(session) { mutableStateOf(false) }
+    val screen = remember { FocusRequester() }
 
-    Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        PlayerSurface(context, engine.player, onView = { playerView = it }, onVersions = { choosing = true })
+    LaunchedEffect(session) {
+        session.play()
+        onEnded()
+    }
+
+    val player = when (val current = state) {
+        is PlaybackState.Starting -> current.player
+        is PlaybackState.Playing -> current.player
+        PlaybackState.Failed, PlaybackState.Ended -> null
+    }
+    // Not over the Versions, whose focus it would take.
+    val suggested = (state as? PlaybackState.Playing)?.lowerVersion?.takeIf { !menuOpen }
+    // With no picture or button to hold it, the screen keeps focus so the Menu key still reaches it.
+    val bare = player == null && state !is PlaybackState.Failed && !menuOpen
+    LaunchedEffect(bare) { if (bare) screen.requestFocus() }
+
+    Box(
+        Modifier.fillMaxSize().background(Colors.ground).focusRequester(screen).focusable().onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown || menuOpen) return@onPreviewKeyEvent false
+            when {
+                event.key == Key.Menu -> menuOpen = state !is PlaybackState.Ended
+                // The VLC engine has no controls of its own until the player overlay (#13).
+                player is VlcEngine && suggested == null -> when (event.key) {
+                    Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> player.togglePause()
+                    Key.DirectionLeft, Key.MediaRewind -> player.seek(-SEEK_STEP)
+                    Key.DirectionRight, Key.MediaFastForward -> player.seek(SEEK_STEP)
+                    else -> return@onPreviewKeyEvent false
+                }
+                else -> return@onPreviewKeyEvent false
+            }
+            true
+        },
+    ) {
+        if (player != null) key(player) { EngineSurface(player, focused = !menuOpen && suggested == null) }
 
         when (val shown = state) {
             is PlaybackState.Starting -> VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)))
             is PlaybackState.Playing -> {
                 // Named for a few seconds each time a Version starts, so a fallback to a Backup is seen.
-                var named by remember(shown.version) { mutableStateOf(true) }
-                LaunchedEffect(shown.version) {
+                var named by remember(shown.version, shown.player) { mutableStateOf(true) }
+                LaunchedEffect(shown.version, shown.player) {
                     delay(NAMED_FOR)
                     named = false
                 }
                 if (named) VersionLabel(context.playLabel(shown.version))
-                // Not over the Versions, whose focus it would take.
-                if (!choosing) shown.lowerVersion?.let { lower ->
-                    BufferingSuggestion(
-                        lower,
-                        onSwitch = {
-                            session.switchTo(lower)
-                            backToPlayer()
-                        },
-                        onDismiss = {
-                            session.dismissSuggestion()
-                            backToPlayer()
-                        },
-                    )
+                suggested?.let { lower ->
+                    BufferingSuggestion(lower, onSwitch = { session.switchTo(lower) }, onDismiss = session::dismissSuggestion)
                 }
             }
-            PlaybackState.Failed -> {
-                // The controls hide with the last player, taking focus with them; the menu key needs it back.
-                LaunchedEffect(Unit) { backToPlayer() }
-                Text(
-                    stringResource(R.string.player_failed),
-                    style = Type.body,
-                    color = Colors.error,
-                    modifier = Modifier.align(Alignment.Center).padding(Spacing.xl),
-                )
-            }
+            PlaybackState.Failed -> Failed(onTryOtherPlayer = session::tryOtherPlayer, takeFocus = !menuOpen)
+            PlaybackState.Ended -> Unit
         }
 
-        if (choosing) {
+        if (menuOpen) {
             VersionsPanel(
                 plan.versions,
                 state.version,
+                engine = player?.engine,
+                onTryOtherPlayer = {
+                    menuOpen = false
+                    session.tryOtherPlayer()
+                },
                 onPick = { version ->
-                    choosing = false
+                    menuOpen = false
                     session.switchTo(version)
-                    backToPlayer()
                 },
-                onClose = {
-                    choosing = false
-                    backToPlayer()
-                },
+                onClose = { menuOpen = false },
             )
         }
     }
 }
+
+private const val SEEK_STEP = 10_000L
 
 /** How long a Version stays named once it starts. */
 private val NAMED_FOR = 5.seconds
@@ -154,32 +158,34 @@ private val NAMED_FOR = 5.seconds
 /** How long the buffering suggestion waits for the Viewer before stepping aside. */
 private val SUGGESTED_FOR = 15.seconds
 
-/** How long after a seek filling the buffer is taken for the seek's doing. */
-private const val SEEK_GRACE_MILLIS = 2_000L
+/** The engine's picture, taking the remote's keys while [focused]. */
+@Composable
+private fun EngineSurface(player: PlayerEngine, focused: Boolean) {
+    val takeFocus = { view: View -> if (focused && !view.hasFocus()) view.requestFocus() }
+    when (player) {
+        is Media3Engine -> Media3Surface(player, takeFocus)
+        is VlcEngine -> AndroidView(
+            factory = { context -> VLCVideoLayout(context).apply { isFocusable = true }.also(player::attach) },
+            update = { takeFocus(it) },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun PlayerSurface(context: Context, player: ExoPlayer?, onView: (PlayerView) -> Unit, onVersions: () -> Unit) {
+private fun Media3Surface(player: Media3Engine, takeFocus: (View) -> Unit) {
     AndroidView(
-        factory = {
-            object : PlayerView(context) {
-                // The menu key isn't one the controls use; it opens the Versions, even while a control has focus.
-                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-                    if (event.keyCode != KeyEvent.KEYCODE_MENU) return super.dispatchKeyEvent(event)
-                    if (event.action == KeyEvent.ACTION_UP) onVersions()
-                    return true
-                }
-            }.apply {
+        factory = { context ->
+            PlayerView(context).apply {
                 // The remote's keys reach the controls only while the view has focus.
                 isFocusable = true
                 isFocusableInTouchMode = true
                 setShowSubtitleButton(true)
-                requestFocus()
-                onView(this)
+                this.player = player.player
             }
         },
-        // Each Version gets its own player; the view stays, and keeps focus, across them.
-        update = { it.player = player },
+        update = { takeFocus(it) },
         modifier = Modifier.fillMaxSize(),
     )
 }
@@ -217,12 +223,13 @@ private fun BufferingSuggestion(lower: Version, onSwitch: () -> Unit, onDismiss:
         onDismiss()
     }
     BackHandler(onBack = onDismiss)
+    val shape = RoundedCornerShape(Corners.control)
     Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-        // Glass carrying text over a busy picture lays the ground under it first.
         Row(
+            // Glass carrying text over the picture: ground at 75% first, then glass.
             Modifier.align(Alignment.TopEnd)
-                .background(Colors.ground.copy(alpha = 0.75f), RoundedCornerShape(Corners.control))
-                .background(Colors.surface, RoundedCornerShape(Corners.control))
+                .background(Colors.veil, shape)
+                .background(Colors.surface, shape)
                 .padding(start = Spacing.l, end = Spacing.s, top = Spacing.s, bottom = Spacing.s),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -237,20 +244,36 @@ private fun BufferingSuggestion(lower: Version, onSwitch: () -> Unit, onDismiss:
 }
 
 /**
- * The Title's Versions over the bottom of the picture; picking one switches to it. The one [playing],
- * or the one whose Backup is playing, is marked, and picking it just closes the list.
+ * What the Menu key opens over the bottom of the picture: the player playing and "Try other player",
+ * then the Title's Versions; picking one switches to it. The one [playing], or the one whose Backup
+ * is playing, is marked, and picking it just closes the list. With an [engine] playing, "Try other
+ * player" takes first focus; without one, the first Version does.
  */
 @Composable
-private fun VersionsPanel(versions: List<Version>, playing: Version?, onPick: (Version) -> Unit, onClose: () -> Unit) {
+private fun VersionsPanel(
+    versions: List<Version>,
+    playing: Version?,
+    engine: Engine?,
+    onTryOtherPlayer: () -> Unit,
+    onPick: (Version) -> Unit,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
+    if (engine == null) LaunchedEffect(Unit) { first.requestFocus() }
     BackHandler(onBack = onClose)
     Box(Modifier.fillMaxSize().background(bottomScrim)) {
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f).padding(horizontal = Spacing.screenX),
         ) {
-            Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = Spacing.s))
+            Row(Modifier.fillMaxWidth().padding(bottom = Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink, modifier = Modifier.weight(1f))
+                if (engine != null) {
+                    Text(stringResource(R.string.player_engine, engineName(engine)), style = Type.caption, color = Colors.inkMuted)
+                    Spacer(Modifier.width(Spacing.m))
+                    TryOtherPlayer(onTryOtherPlayer, takeFocus = true)
+                }
+            }
             VersionHeader(Modifier.padding(bottom = 2.dp))
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -270,117 +293,32 @@ private fun VersionsPanel(versions: List<Version>, playing: Version?, onPick: (V
     }
 }
 
-/**
- * The Playback session's player engine on the stick: a new Media3 player for each file, released
- * when the session stops it. [player] is the one showing.
- */
-@OptIn(UnstableApi::class)
-private class Media3Engine(private val context: Context, private val plan: PlayPlan) : PlayerEngine {
-    private val requests = OpenRequests()
-
-    var player by mutableStateOf<ExoPlayer?>(null)
-        private set
-
-    override val position: Duration get() = player?.currentPosition?.milliseconds ?: Duration.ZERO
-
-    override fun play(location: String, from: Duration, events: (PlayerEvent) -> Unit) {
-        val exo = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(requests.counting(DefaultDataSource.Factory(context))))
-            .build()
-        exo.addListener(TrackChooser(exo, plan))
-        exo.addListener(object : Player.Listener {
-            private var started = false
-            private var seekedAt: Long? = null
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_READY -> if (!started) {
-                        started = true
-                        events(PlayerEvent.Started)
-                    }
-                    // Filling the buffer just after the Viewer seeks isn't the Version struggling.
-                    Player.STATE_BUFFERING -> if (started && !justSeeked()) events(PlayerEvent.Buffering)
-                }
-            }
-
-            private fun justSeeked() = seekedAt?.let { SystemClock.elapsedRealtime() - it < SEEK_GRACE_MILLIS } == true
-
-            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-                if (reason == Player.DISCONTINUITY_REASON_SEEK) seekedAt = SystemClock.elapsedRealtime()
-            }
-
-            override fun onPlayerError(error: PlaybackException) = events(PlayerEvent.Failed)
-        })
-        exo.setMediaItem(MediaItem.fromUri(location), from.inWholeMilliseconds)
-        exo.prepare()
-        exo.playWhenReady = true
-        player = exo
-    }
-
-    override suspend fun stop() {
-        val exo = player ?: return
-        player = null
-        exo.release()
-        // Releasing returns before the player's loading thread closes its request, and the Provider
-        // would refuse the next file while it's open. A read stuck on a stalled Provider times out.
-        withTimeoutOrNull(STOP_TIMEOUT) { requests.awaitNone() }
-    }
-}
-
-/** Longer than the player's own read timeout, so a request stuck on a stalled Provider closes first. */
-private val STOP_TIMEOUT = 10.seconds
-
-/** Counts the player's open requests to the Provider, so stopping can wait for the last one to close. */
-@OptIn(UnstableApi::class)
-private class OpenRequests {
-    private val open = MutableStateFlow(0)
-
-    fun counting(upstream: DataSource.Factory) = DataSource.Factory { Counted(upstream.createDataSource()) }
-
-    suspend fun awaitNone() {
-        open.first { it == 0 }
-    }
-
-    private inner class Counted(private val upstream: DataSource) : DataSource by upstream {
-        private var opened = false
-
-        override fun open(dataSpec: DataSpec): Long {
-            // Counted from the attempt: the player closes a source even when opening it fails.
-            if (!opened) open.update { it + 1 }
-            opened = true
-            return upstream.open(dataSpec)
-        }
-
-        override fun close() {
-            try {
-                upstream.close()
-            } finally {
-                if (opened) open.update { it - 1 }
-                opened = false
-            }
+@Composable
+private fun Failed(onTryOtherPlayer: () -> Unit, takeFocus: Boolean) {
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.align(Alignment.Center).padding(Spacing.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.l),
+        ) {
+            Text(stringResource(R.string.player_failed), style = Type.body, color = Colors.error, textAlign = TextAlign.Center)
+            TryOtherPlayer(onTryOtherPlayer, takeFocus)
         }
     }
 }
 
-/** Applies the [plan]'s Track choice once, as soon as the player knows the file's Tracks. */
-private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan) : Player.Listener {
-    private var chosen = false
-
-    override fun onTracksChanged(tracks: Tracks) {
-        if (chosen || tracks.isEmpty) return
-        chosen = true
-        // Only Tracks the stick can play: choosing one it can't would leave the picture silent.
-        val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
-        val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
-        val choice = plan.chooseTracks(
-            audio.map { Track(it.getTrackFormat(0).language) },
-            subtitles.map { Track(it.getTrackFormat(0).language) },
-        )
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
-            choice.audio?.let { setOverrideForType(TrackSelectionOverride(audio[it].mediaTrackGroup, 0)) }
-            // Without a choice, a file's "default" subtitles stay off; forced ones (for foreign dialogue) still show.
-            choice.subtitle?.let { setOverrideForType(TrackSelectionOverride(subtitles[it].mediaTrackGroup, 0)) }
-                ?: setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-        }.build()
-    }
+/** The "Try other player" button, which takes focus whenever [takeFocus] turns true. */
+@Composable
+private fun TryOtherPlayer(onClick: () -> Unit, takeFocus: Boolean) {
+    val focus = remember { FocusRequester() }
+    NuageButton(stringResource(R.string.player_try_other), onClick, Modifier.focusRequester(focus))
+    LaunchedEffect(takeFocus) { if (takeFocus) focus.requestFocus() }
 }
+
+@Composable
+private fun engineName(engine: Engine) = stringResource(
+    when (engine) {
+        Engine.Media3 -> R.string.player_engine_media3
+        Engine.Vlc -> R.string.player_engine_vlc
+    },
+)

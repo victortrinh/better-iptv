@@ -276,15 +276,6 @@ class Library private constructor(
     }
 
     /**
-     * A Playback session for [plan] on the [engine]: it starts the plan's Version, falling back to its
-     * Backups, and switches Version when the Viewer asks. Run it with [PlaybackSession.run].
-     */
-    fun playback(plan: PlayPlan, engine: PlayerEngine): PlaybackSession = playback(plan, engine, START_TIMEOUT)
-
-    internal fun playback(plan: PlayPlan, engine: PlayerEngine, startTimeout: kotlin.time.Duration) =
-        PlaybackSession(plan, engine, ::connect, startTimeout)
-
-    /**
      * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
      * closed: a second stream is never opened while one is in use. Close it when playback ends.
      */
@@ -296,6 +287,19 @@ class Library private constructor(
         }
         return Connection(location, connection.lease())
     }
+
+    /**
+     * A Playback session for [plan], playing on the player engines [engines] creates: it starts the
+     * plan's Version, falling back to the VLC engine and to its Backups, and switches Version or
+     * engine when the Viewer asks. Start it with [PlaybackSession.play].
+     */
+    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine): PlaybackSession = playback(plan, engines, START_TIMEOUT)
+
+    internal fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine, startTimeout: kotlin.time.Duration) =
+        PlaybackSession(this, plan, engines, startTimeout)
+
+    /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
+    internal fun relay(location: String) = StreamRelay(location, http)
 
     private class Shown(val best: Candidate, val name: String, val year: Int?, val image: String?)
 

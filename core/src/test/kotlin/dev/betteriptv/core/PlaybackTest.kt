@@ -1,36 +1,44 @@
 package dev.betteriptv.core
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
+import java.io.IOException
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URI
+import java.util.concurrent.CopyOnWriteArrayList
 
-/** A Playback session: falling back to Backups, the buffering suggestion, and switching Version partway through. */
+/** The Playback session: which player engine plays a Version, and moving between Media3 and VLC. */
 class PlaybackTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val player = ScriptedPlayer(provider)
     private lateinit var library: Library
+    private lateinit var plan: PlayPlan
 
-    @Before fun logIn() = runBlocking {
+    @Before fun setUp() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials())
         library.logIn(provider.login)
-        Unit
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"}]"""
+        provider.movieListOverride =
+            """[{"stream_id":1,"name":"EN - Movie (2025)","tmdb":"1","category_id":"1","added":"1700000000","container_extension":"mkv"}]"""
+        library.sync()
+        plan = library.playPlan(TitleId.Tmdb(TitleKind.Movie, 1), listOf("en"), DeviceProfile(maxHeight = 1080, hdr = emptySet()))!!
     }
 
     @After fun tearDown() {
@@ -38,256 +46,189 @@ class PlaybackTest {
         provider.close()
     }
 
-    @After fun neverOverTheConnectionLimit() {
-        assertEquals("the Provider refused a stream", 0, provider.refusedStreams)
-        assertFalse("a stream opened before the last one was closed", player.playedOverAnother)
+    /** What each engine does with the next file it's given, by engine. */
+    private val scripts = mutableMapOf(Engine.Media3 to Script.Plays, Engine.Vlc to Script.Plays)
+
+    /** Every engine the session created, in order. */
+    private val created = CopyOnWriteArrayList<ScriptedEngine>()
+
+    private fun session() = library.playback(plan) { engine -> ScriptedEngine(engine, scripts.getValue(engine)).also(created::add) }
+
+    private suspend fun PlaybackSession.awaitPlaying(engine: Engine, count: Int): ScriptedEngine = withTimeout(5_000) {
+        state.first { it is PlaybackState.Playing && it.player.engine == engine && created.size == count }
+        created.last().also { it.opened.first { opened -> opened } }
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
-    private val tv = DeviceProfile(maxHeight = 2160, hdr = emptySet())
+    @Test fun `a Version plays on Media3 first`() = runBlocking {
+        val session = session()
+        val job = launch { session.play() }
 
-    /** A 4K English Version with two Backups (2 and 3), and a lower English Version (4). */
-    private suspend fun syncWithBackups() {
-        provider.serveMovies(
-            "4K-EN - Movie (2025)" to "4K MOVIES",
-            "4K-EN - Movie (2025) " to "4K MOVIES",
-            "4K-EN - Movie (2025)  " to "4K MOVIES",
-            "EN - Movie (2025)" to "EN - MOVIES",
-        )
-        library.sync()
+        session.awaitPlaying(Engine.Media3, count = 1)
+        assertEquals(listOf(Engine.Media3), created.map { it.engine })
+        job.cancel()
     }
 
-    /** Starts a session for the Best playable Version; it runs until the test cancels it. */
-    private suspend fun CoroutineScope.play(startTimeout: Duration = 300.milliseconds): Pair<PlaybackSession, Job> {
-        val session = library.playback(library.playPlan(movie, listOf("en"), tv)!!, player, startTimeout)
-        return session to launch { session.run() }
+    @Test fun `when Media3 can't open a Version, the VLC engine takes over`() = runBlocking {
+        scripts[Engine.Media3] = Script.CantOpen
+        val session = session()
+        val job = launch { session.play() }
+
+        val vlc = session.awaitPlaying(Engine.Vlc, count = 2)
+        assertEquals(0L, vlc.startedFrom)
+        // Media3 let go of the file before VLC opened it, so the Provider never refused a stream.
+        assertTrue(created.first().released)
+        assertEquals(0, provider.refusedStreams)
+        assertEquals(2, provider.streamRequests)
+        job.cancel()
     }
 
-    private suspend fun PlaybackSession.awaitPlaying(listingId: Long): PlaybackState.Playing = withTimeout(5_000) {
-        state.first { it is PlaybackState.Playing && it.version.listingId == listingId } as PlaybackState.Playing
+    @Test fun `when the VLC engine can't open it either, playback fails`() = runBlocking {
+        scripts[Engine.Media3] = Script.CantOpen
+        scripts[Engine.Vlc] = Script.CantOpen
+        val session = session()
+        val job = launch { session.play() }
+
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Failed } }
+        assertEquals(listOf(Engine.Media3, Engine.Vlc), created.map { it.engine })
+        assertTrue(created.all { it.released })
+        job.cancel()
     }
 
-    private suspend fun PlaybackSession.awaitState(predicate: (PlaybackState) -> Boolean) = withTimeout(5_000) { state.first(predicate) }
+    @Test fun `a broken stream fails playback without trying the other player`() = runBlocking {
+        scripts[Engine.Media3] = Script.Breaks
+        val session = session()
+        val job = launch { session.play() }
 
-    // Backups
-
-    @Test fun `a dead primary Version falls back to a Backup`() = runBlocking {
-        syncWithBackups()
-        provider.deadStreams += 1
-        val (session, job) = play()
-
-        session.awaitPlaying(2)
-        assertEquals(listOf(1L, 2L), player.played.map { it.first })
-        job.cancelAndJoin()
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Failed } }
+        assertEquals(listOf(Engine.Media3), created.map { it.engine })
+        job.cancel()
     }
 
-    @Test fun `a Version that doesn't start in time is closed and the next Backup is tried`() = runBlocking {
-        syncWithBackups()
-        provider.slowStreams += 1
-        provider.slowStreamDelayMillis = 2_000
-        val (session, job) = play(startTimeout = 300.milliseconds)
+    @Test fun `Try other player switches engines and resumes at the same position`() = runBlocking {
+        val session = session()
+        val job = launch { session.play() }
+        val media3 = session.awaitPlaying(Engine.Media3, count = 1)
+        media3.position = 42 * 60_000L
 
-        session.awaitPlaying(2)
-        assertEquals(listOf(1L, 2L), player.played.map { it.first })
-        job.cancelAndJoin()
+        session.tryOtherPlayer()
+        val vlc = session.awaitPlaying(Engine.Vlc, count = 2)
+        assertEquals(42 * 60_000L, vlc.startedFrom)
+        assertTrue(media3.released)
+
+        // And back again.
+        vlc.position = 43 * 60_000L
+        session.tryOtherPlayer()
+        assertEquals(43 * 60_000L, session.awaitPlaying(Engine.Media3, count = 3).startedFrom)
+        assertEquals(0, provider.refusedStreams)
+        job.cancel()
     }
 
-    @Test fun `a Version the player can't decode gives way to the next Backup`() = runBlocking {
-        syncWithBackups()
-        player.undecodable += setOf(1L, 2L)
-        val (session, job) = play()
+    @Test fun `after a failure, Try other player tries again on the other engine`() = runBlocking {
+        scripts[Engine.Media3] = Script.Breaks
+        val session = session()
+        val job = launch { session.play() }
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Failed } }
 
-        session.awaitPlaying(3)
-        job.cancelAndJoin()
+        session.tryOtherPlayer()
+        session.awaitPlaying(Engine.Vlc, count = 2)
+        job.cancel()
     }
 
-    @Test fun `while a Version is being tried, the Viewer sees which one`() = runBlocking {
-        syncWithBackups()
-        provider.slowStreams += 1
-        val (session, job) = play(startTimeout = 2_000.milliseconds)
+    @Test fun `a file that plays to the end ends the session`() = runBlocking {
+        scripts[Engine.Media3] = Script.Ends
+        val session = session()
 
-        val starting = session.awaitState { it is PlaybackState.Starting } as PlaybackState.Starting
-        assertEquals(1L, starting.version.listingId)
-        job.cancelAndJoin()
+        withTimeout(5_000) { session.play() }
+        assertEquals(PlaybackState.Ended, session.state.value)
+        assertTrue(created.single().released)
     }
 
-    @Test fun `when every Version is dead the Viewer gets a clear error, and nothing is left open`() = runBlocking {
-        syncWithBackups()
-        provider.deadStreams += setOf(1L, 2L, 3L)
-        val (session, job) = play()
+    @Test fun `the VLC engine waits its turn at the same connection gate`() = runBlocking {
+        val session = session()
+        val job = launch { session.play() }
+        val media3 = session.awaitPlaying(Engine.Media3, count = 1)
+        // Something else queues for the Viewer's one connection while Media3 holds it.
+        val other = async { library.connect(plan.version) }
+        delay(100)
 
-        assertEquals(PlaybackState.Failed, session.awaitState { it == PlaybackState.Failed })
-        // Backups are the same language and quality only: the lower Version isn't tried.
-        assertEquals(listOf(1L, 2L, 3L), player.played.map { it.first })
-        assertEquals(0, provider.openStreamCount)
-        withTimeout(1_000) { library.connect(session.plan.version) }.close()
-        job.cancelAndJoin()
-    }
-
-    @Test fun `when every Version is dead the Viewer can still pick another one`() = runBlocking {
-        syncWithBackups()
-        provider.deadStreams += setOf(1L, 2L, 3L)
-        val (session, job) = play()
-        session.awaitState { it == PlaybackState.Failed }
-
-        session.switchTo(session.plan.versions.single { it.listingId == 4L })
-
-        session.awaitPlaying(4)
-        job.cancelAndJoin()
-    }
-
-    @Test fun `a Version that stops partway through gives way to a Backup at the same position`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-
-        player.position = 42.minutes
-        player.fail()
-
-        session.awaitPlaying(2)
-        assertEquals(2L to 42.minutes, player.played.last())
-        job.cancelAndJoin()
-    }
-
-    @Test fun `ending the session closes the stream and gives the connection back`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-        job.cancelAndJoin()
-
-        assertEquals(0, provider.openStreamCount)
-        withTimeout(1_000) { library.connect(session.plan.version) }.close()
-    }
-
-    // Buffering
-
-    @Test fun `repeated buffering suggests a lower Version, and never switches by itself`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-
-        repeat(3) { player.buffer() }
-
-        val suggested = session.awaitState { it is PlaybackState.Playing && it.lowerVersion != null } as PlaybackState.Playing
-        assertEquals(4L, suggested.lowerVersion!!.listingId)
-        delay(500)
-        assertEquals(listOf(1L), player.played.map { it.first })
-        assertEquals(1L, (session.state.value as PlaybackState.Playing).version.listingId)
-        job.cancelAndJoin()
-    }
-
-    @Test fun `a dismissed suggestion comes back only if buffering keeps repeating`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-        repeat(3) { player.buffer() }
-        session.awaitState { it is PlaybackState.Playing && it.lowerVersion != null }
-
-        session.dismissSuggestion()
-        session.awaitState { it is PlaybackState.Playing && it.lowerVersion == null }
-        repeat(2) { player.buffer() }
+        media3.failure.complete(CantOpen("scripted: Media3 can't decode the file"))
+        val held = withTimeout(2_000) { other.await() }
         delay(300)
-        assertNull((session.state.value as PlaybackState.Playing).lowerVersion)
+        // Waiting for the connection: no engine has the file yet.
+        assertEquals(PlaybackState.Starting(plan.version), session.state.value)
+        assertEquals(1, created.size)
 
-        player.buffer()
-        session.awaitState { it is PlaybackState.Playing && it.lowerVersion?.listingId == 4L }
-        assertEquals(listOf(1L), player.played.map { it.first })
-        job.cancelAndJoin()
+        held.close()
+        session.awaitPlaying(Engine.Vlc, count = 2)
+        assertEquals(0, provider.refusedStreams)
+        job.cancel()
+        job.join()
+        // Leaving playback gives the connection back.
+        withTimeout(1_000) { library.connect(plan.version) }.close()
     }
 
-    @Test fun `buffering once or twice suggests nothing`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
+    @Test fun `an engine that overlaps its requests, like VLC, still uses one Provider stream and never sees the login`() = runBlocking {
+        val session = library.playback(plan) { engine -> ScriptedEngine(engine, Script.Plays, overlapsRequests = true).also(created::add) }
+        val job = launch { session.play() }
 
-        repeat(2) { player.buffer() }
-        delay(300)
-
-        assertNull((session.state.value as PlaybackState.Playing).lowerVersion)
-        job.cancelAndJoin()
+        val engine = session.awaitPlaying(Engine.Media3, count = 1)
+        assertEquals(0, provider.refusedStreams)
+        assertEquals(2, provider.streamRequests)
+        assertFalse(provider.username in engine.location!!)
+        assertFalse(provider.password in engine.location!!)
+        job.cancel()
+        job.join()
+        withTimeout(2_000) { library.connect(plan.version) }.close()
     }
 
-    @Test fun `without a lower Version in the same language, buffering suggests nothing`() = runBlocking {
-        provider.serveMovies(
-            "EN - Movie (2025)" to "EN - MOVIES",
-            "4K-FR - Le Film (2025)" to "4K MOVIES",
-        )
-        library.sync()
-        val (session, job) = play()
-        session.awaitPlaying(1)
+    private enum class Script { Plays, CantOpen, Breaks, Ends }
 
-        repeat(5) { player.buffer() }
-        delay(300)
+    /**
+     * A player engine that opens the stream like a real one would, then does what its [script] says.
+     * One that plays fails on cue when its [failure] is completed.
+     */
+    private inner class ScriptedEngine(
+        override val engine: Engine,
+        private val script: Script,
+        override val overlapsRequests: Boolean = false,
+    ) : PlayerEngine {
+        @Volatile override var position = 0L
+        @Volatile var startedFrom: Long? = null
+        @Volatile var released = false
+        val opened = MutableStateFlow(false)
+        val failure = CompletableDeferred<Throwable>()
+        @Volatile var location: String? = null
+        private val streams = CopyOnWriteArrayList<InputStream>()
 
-        assertNull((session.state.value as PlaybackState.Playing).lowerVersion)
-        job.cancelAndJoin()
+        override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
+            startedFrom = from
+            position = from
+            this.location = location
+            withContext(Dispatchers.IO) {
+                streams += provider.play(location).also { it.readNBytes(1024) }
+                // Like VLC reading the file's index at its end: a second request before closing the first.
+                if (overlapsRequests) streams += ranged(location, "bytes=1000000-").also { it.readNBytes(1024) }
+            }
+            opened.value = true
+            if (script != Script.CantOpen) events(PlayerEvent.Started)
+            when (script) {
+                Script.Plays -> throw failure.await()
+                Script.CantOpen -> throw CantOpen("scripted: $engine can't open the file")
+                Script.Breaks -> throw IOException("scripted: the stream broke")
+                Script.Ends -> return
+            }
+        }
+
+        override suspend fun release() {
+            released = true
+            streams.forEach(InputStream::close)
+        }
     }
 
-    @Test fun `taking the suggestion switches to the lower Version at the same position`() = runBlocking {
-        syncWithBackups()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-        player.position = 12.minutes
-        repeat(3) { player.buffer() }
-        val lower = (session.awaitState { it is PlaybackState.Playing && it.lowerVersion != null } as PlaybackState.Playing).lowerVersion!!
-
-        session.switchTo(lower)
-
-        session.awaitPlaying(4)
-        assertEquals(4L to 12.minutes, player.played.last())
-        job.cancelAndJoin()
-    }
-
-    // Switching Version
-
-    @Test fun `a Versions switch changes Version partway through and resumes at the same position`() = runBlocking {
-        provider.serveMovies(
-            "4K-EN - Movie (2025)" to "4K MOVIES",
-            "4K-FR - Le Film (2025)" to "4K MOVIES",
-        )
-        library.sync()
-        val (session, job) = play()
-        session.awaitPlaying(1)
-        player.position = 61.minutes
-        val french = session.plan.versions.single { it.listingId == 2L }
-
-        session.switchTo(french)
-
-        session.awaitPlaying(2)
-        assertEquals(listOf(1L to Duration.ZERO, 2L to 61.minutes), player.played.toList())
-        job.cancelAndJoin()
-    }
-
-    @Test fun `a switched-to Version that is dead falls back to its own Backups`() = runBlocking {
-        provider.serveMovies(
-            "4K-EN - Movie (2025)" to "4K MOVIES",
-            "FR - Le Film (2025)" to "FR - FILMS",
-            "FR - Le Film (2025) " to "FR - FILMS",
-        )
-        library.sync()
-        provider.deadStreams += 2
-        val (session, job) = play()
-        session.awaitPlaying(1)
-        player.position = 5.minutes
-
-        session.switchTo(session.plan.versions.single { it.listingId == 2L })
-
-        session.awaitPlaying(3)
-        assertEquals(3L to 5.minutes, player.played.last())
-        job.cancelAndJoin()
-    }
-
-    @Test fun `the play plan offers every Version of the Title to switch to, the Viewer's languages first`() = runBlocking {
-        provider.serveMovies(
-            "FR - Le Film (2025)" to "FR - FILMS",
-            "4K-EN - Movie (2025)" to "4K MOVIES",
-            "4K-EN - Movie (2025) " to "4K MOVIES",
-            "EN - Movie (2025)" to "EN - MOVIES",
-        )
-        library.sync()
-
-        val plan = library.playPlan(movie, listOf("en"), tv)!!
-        assertEquals(listOf(2L, 4L, 1L), plan.versions.map { it.listingId })
-        assertEquals(listOf(3L), plan.versions.first().backups.map { it.listingId })
+    private fun ranged(location: String, range: String): InputStream {
+        val connection = URI(location).toURL().openConnection() as HttpURLConnection
+        connection.setRequestProperty("Range", range)
+        if (connection.responseCode !in 200..299) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
+        return connection.inputStream
     }
 }

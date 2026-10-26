@@ -75,7 +75,7 @@ private fun Root(app: BetterIptvApp) {
                 }
                 else -> {
                     BackHandler { playing = null }
-                    PlayerScreen(app.library, plan)
+                    PlayerScreen(app.library, plan, onEnded = { playing = null })
                 }
             }
         }

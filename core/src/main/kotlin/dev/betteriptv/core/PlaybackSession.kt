@@ -1,12 +1,16 @@
 package dev.betteriptv.core
 
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -14,26 +18,48 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
-/** How long a Version has to start before the next Backup is tried. */
+/** How long a Version has to start before its next Backup is tried. */
 internal val START_TIMEOUT = 8.seconds
 
 /** Buffering this many times within [BUFFERING_WINDOW] brings the suggestion of a lower Version. */
 private const val BUFFERING_REPEATS = 3
 private val BUFFERING_WINDOW = 1.minutes
 
+/** The player engines a Version can play on: Media3 by default, VLC for the rare file Media3 can't open. */
+enum class Engine {
+    Media3,
+    Vlc;
+
+    val other: Engine get() = if (this == Media3) Vlc else Media3
+}
+
 /**
- * The player that decodes and shows a Version's file: Media3 on the stick, a scripted one in tests.
- * A [PlaybackSession] calls it from one coroutine; it reports [PlayerEvent]s from any thread.
+ * A player engine as the [PlaybackSession] drives it. The app implements one per [Engine]; tests
+ * script one. A session creates a new one each time it starts a file and [release]s it afterwards.
  */
 interface PlayerEngine {
-    /** How far into the playing file the picture is. */
-    val position: Duration
+    val engine: Engine
 
-    /** Opens the file at [location] and plays it from [from], reporting what happens to [events]. */
-    fun play(location: String, from: Duration, events: (PlayerEvent) -> Unit)
+    /**
+     * Whether the engine opens a new request for the file before closing the one it has, as VLC does
+     * to read a file's index and to seek. The session then gives it the file through a relay on the
+     * device, so the Provider still sees one stream.
+     */
+    val overlapsRequests: Boolean get() = false
 
-    /** Stops and lets go of the file; returns once the player's request to the Provider is closed. */
-    suspend fun stop()
+    /** Where playback is in the file, in milliseconds; where it will start until it does. */
+    val position: Long
+
+    /**
+     * Plays the file at [location] from [from] milliseconds until it ends, reporting to [events] when
+     * the picture starts and when it stalls. Throws [CantOpen] when this engine can't open or decode
+     * the file, or an [IOException] when the stream fails. Cancelling stops playback; the session
+     * [release]s the engine afterwards.
+     */
+    suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit)
+
+    /** Stops and lets go of the file; returns once the engine's request to the Provider is closed. */
+    suspend fun release()
 }
 
 enum class PlayerEvent {
@@ -42,86 +68,76 @@ enum class PlayerEvent {
 
     /** Having started, playing stalled to fill the buffer. */
     Buffering,
-
-    /** The file couldn't be opened or decoded, or stopped coming. */
-    Failed,
 }
+
+/** Thrown by a [PlayerEngine] that can't open or decode a file another engine might play. */
+class CantOpen(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /** What the Viewer sees of a [PlaybackSession]. */
 sealed interface PlaybackState {
-    /** The Version being opened or playing; null when none would start. */
+    /** The Version being opened or playing; null when nothing plays. */
     val version: Version?
 
-    /** [version] is being opened; it has a few seconds to start before its next Backup is tried. */
-    data class Starting(override val version: Version) : PlaybackState
+    /**
+     * [version] is being opened: it has a few seconds to start before its next Backup is tried.
+     * [player] has the file once the Viewer's one connection is free; show its picture.
+     */
+    data class Starting(override val version: Version, val player: PlayerEngine? = null) : PlaybackState
 
     /**
-     * [version] is playing. After repeated buffering, [lowerVersion] is a lower Version in the same
-     * language to suggest; the session never switches to it by itself.
+     * [version] plays on [player]. After repeated buffering, [lowerVersion] is a lower Version in the
+     * same language to suggest; the session never switches to it by itself.
      */
-    data class Playing(override val version: Version, val lowerVersion: Version? = null) : PlaybackState
+    data class Playing(override val version: Version, val player: PlayerEngine, val lowerVersion: Version? = null) : PlaybackState
 
-    /** No Version would start: the one asked for and all its Backups are dead. Switching tries another. */
+    /**
+     * Nothing plays: the Version asked for and its Backups are dead, or neither engine can open them.
+     * The Viewer can try the other player or pick another Version.
+     */
     data object Failed : PlaybackState {
+        override val version: Version? get() = null
+    }
+
+    /** The file played to its end. */
+    data object Ended : PlaybackState {
         override val version: Version? get() = null
     }
 }
 
 /**
- * Drives a [PlayerEngine] from a [plan]. A Version that fails, or doesn't start within the start
- * timeout, is closed and its next Backup is tried; one that stops partway through gives way to a Backup at
- * the same position. The failing stream is always closed, and the connection given back, before
- * the next one opens.
+ * Plays a [plan]'s Version. A Version Media3 can't open moves to the VLC engine; one that is dead,
+ * breaks, or doesn't start within the start timeout gives way to its next Backup, at the same
+ * position. The Viewer can switch Version, or move to the other engine with [tryOtherPlayer], partway
+ * through. Every engine plays through the Viewer's one connection, which is given back only once the
+ * engine has let go of the file.
  */
 class PlaybackSession internal constructor(
+    private val library: Library,
     val plan: PlayPlan,
-    private val engine: PlayerEngine,
-    private val connect: suspend (Version) -> Connection,
+    private val engines: (Engine) -> PlayerEngine,
     private val startTimeout: Duration,
 ) {
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Starting(plan.version))
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
     private sealed interface Signal
-    private class Event(val attempt: Int, val event: PlayerEvent) : Signal
     private class Switch(val version: Version) : Signal
+    private data object OtherPlayer : Signal
     private data object Dismiss : Signal
 
     private val signals = Channel<Signal>(Channel.UNLIMITED)
-    private var connection: Connection? = null
-    private var attempts = 0
 
-    /** Where the next Version starts from: where the last one got to once it had started. */
-    private var resumeAt = Duration.ZERO
-
-    /**
-     * Plays until cancelled; the stream is closed and the connection given back when it is. When no
-     * Version will start ([PlaybackState.Failed]), it waits for the Viewer to switch to another.
-     */
-    suspend fun run() {
-        var queue = plan.version.withBackups
-        try {
-            while (true) {
-                while (queue.isNotEmpty()) {
-                    val version = queue.first()
-                    queue = queue.drop(1)
-                    _state.value = PlaybackState.Starting(version)
-                    val switch = play(version)
-                    stop()
-                    if (switch != null) queue = switch.version.withBackups
-                }
-                _state.value = PlaybackState.Failed
-                val switch = awaitSwitch()
-                queue = switch.version.withBackups
-            }
-        } finally {
-            withContext(NonCancellable) { stop() }
-        }
-    }
+    /** Where the next file starts from: where the last one got to. */
+    private var resumeAt = 0L
 
     /** Switches to [version] (and its Backups, should it be dead) at the current position. */
     fun switchTo(version: Version) {
         signals.trySend(Switch(version))
+    }
+
+    /** Moves playback to the other engine at the same position, or tries the other engine after a failure. */
+    fun tryOtherPlayer() {
+        signals.trySend(OtherPlayer)
     }
 
     /** Takes back the suggestion of a lower Version; it comes again only if buffering keeps repeating. */
@@ -129,71 +145,151 @@ class PlaybackSession internal constructor(
         signals.trySend(Dismiss)
     }
 
+    /** Plays until the file ends; cancel it to stop. A failure waits for the Viewer to try again. */
+    suspend fun play() {
+        // The Version the Viewer asked for; trying again after a failure starts from it.
+        var asked = plan.version
+        var queue = asked.withBackups
+        var engine = Engine.Media3
+        while (true) {
+            while (queue.isNotEmpty()) {
+                when (val outcome = attempt(queue.first(), engine)) {
+                    Outcome.Ended -> {
+                        _state.value = PlaybackState.Ended
+                        return
+                    }
+                    // VLC is the last resort for a file; failing there moves on to the next Backup.
+                    Outcome.CantOpen -> if (engine == Engine.Media3) engine = Engine.Vlc else {
+                        queue = queue.drop(1)
+                        engine = Engine.Media3
+                    }
+                    Outcome.Dead -> {
+                        queue = queue.drop(1)
+                        engine = Engine.Media3
+                    }
+                    Outcome.OtherPlayer -> engine = engine.other
+                    is Outcome.Switched -> {
+                        asked = outcome.version
+                        queue = asked.withBackups
+                        engine = Engine.Media3
+                    }
+                }
+            }
+            _state.value = PlaybackState.Failed
+            when (val choice = awaitChoice()) {
+                is Switch -> {
+                    asked = choice.version
+                    engine = Engine.Media3
+                }
+                else -> engine = engine.other
+            }
+            queue = asked.withBackups
+        }
+    }
+
     /**
-     * Plays [version] until it fails, doesn't start in time, or the Viewer switches; returns the
-     * switch, if that's what ended it.
+     * Plays [version] on [engine] until it ends, fails, doesn't start in time, or the Viewer moves
+     * elsewhere; returns which.
      */
-    private suspend fun play(version: Version): Switch? {
-        // Looking up where the file plays from counts against its time to start.
-        val opened = TimeSource.Monotonic.markNow()
-        connection = try {
-            connect(version)
+    private suspend fun attempt(version: Version, engine: Engine): Outcome {
+        _state.value = PlaybackState.Starting(version)
+        val connection = try {
+            library.connect(version)
         } catch (e: IOException) {
             // Logged out, or the catalog couldn't be read: this Version can't be opened.
-            return null
+            return Outcome.Dead
         }
-        val attempt = ++attempts
-        engine.play(connection!!.location, resumeAt) { signals.trySend(Event(attempt, it)) }
+        // Waiting for the Viewer's connection isn't the Version's doing: its time to start runs from here.
+        val opened = TimeSource.Monotonic.markNow()
+        try {
+            val player = engines(engine)
+            val relay = if (player.overlapsRequests) library.relay(connection.location) else null
+            try {
+                _state.value = PlaybackState.Starting(version, player)
+                return watch(version, player, relay?.location ?: connection.location, opened)
+            } finally {
+                resumeAt = player.position
+                // The picture lets go of the engine before it is released.
+                _state.value = PlaybackState.Starting(version)
+                withContext(NonCancellable) {
+                    player.release()
+                    relay?.close()
+                }
+            }
+        } finally {
+            // Releasing closes the engine's request to the Provider, so only then is the connection given back.
+            connection.close()
+        }
+    }
+
+    /** Watches [player] play [version] until something ends it, keeping [state] up to date meanwhile. */
+    private suspend fun watch(version: Version, player: PlayerEngine, location: String, opened: TimeMark): Outcome = coroutineScope {
+        val events = Channel<PlayerEvent>(Channel.UNLIMITED)
+        val playing = async {
+            try {
+                player.play(location, resumeAt) { events.trySend(it) }
+                Outcome.Ended
+            } catch (e: CantOpen) {
+                Outcome.CantOpen
+            } catch (e: IOException) {
+                Outcome.Dead
+            }
+        }
+        val deadline = async { delay(startTimeout - opened.elapsedNow()) }
         var started = false
         val stalls = ArrayDeque<TimeMark>()
-        while (true) {
-            val signal = if (started) signals.receive() else withTimeoutOrNull(startTimeout - opened.elapsedNow()) { signals.receive() }
-            when (signal) {
-                null -> return null
-                is Switch -> if (signal.version.listingId != version.listingId) {
-                    if (started) resumeAt = engine.position
-                    return signal
-                }
-                Dismiss -> (_state.value as? PlaybackState.Playing)?.let {
-                    stalls.clear()
-                    _state.value = it.copy(lowerVersion = null)
-                }
-                is Event -> if (signal.attempt == attempt) when (signal.event) {
-                    PlayerEvent.Started -> if (!started) {
-                        started = true
-                        _state.value = PlaybackState.Playing(version)
+        var outcome: Outcome? = null
+        while (outcome == null) {
+            outcome = select {
+                playing.onAwait { it }
+                if (!started) deadline.onAwait { Outcome.Dead }
+                events.onReceive { event ->
+                    when (event) {
+                        PlayerEvent.Started -> if (!started) {
+                            started = true
+                            _state.value = PlaybackState.Playing(version, player)
+                        }
+                        PlayerEvent.Buffering -> if (started) {
+                            stalls.addLast(TimeSource.Monotonic.markNow())
+                            while (stalls.first().elapsedNow() > BUFFERING_WINDOW) stalls.removeFirst()
+                            val shown = _state.value as PlaybackState.Playing
+                            if (stalls.size >= BUFFERING_REPEATS && shown.lowerVersion == null) {
+                                lowerVersion(version, plan.versions)?.let { _state.value = shown.copy(lowerVersion = it) }
+                            }
+                        }
                     }
-                    PlayerEvent.Failed -> {
-                        if (started) resumeAt = engine.position
-                        return null
-                    }
-                    PlayerEvent.Buffering -> if (started) {
-                        stalls.addLast(TimeSource.Monotonic.markNow())
-                        while (stalls.first().elapsedNow() > BUFFERING_WINDOW) stalls.removeFirst()
-                        val playing = _state.value as PlaybackState.Playing
-                        if (stalls.size >= BUFFERING_REPEATS && playing.lowerVersion == null) {
-                            lowerVersion(version, plan.versions)?.let { _state.value = playing.copy(lowerVersion = it) }
+                    null
+                }
+                signals.onReceive { signal ->
+                    when (signal) {
+                        is Switch -> if (signal.version.listingId != version.listingId) Outcome.Switched(signal.version) else null
+                        OtherPlayer -> Outcome.OtherPlayer
+                        Dismiss -> {
+                            (_state.value as? PlaybackState.Playing)?.let {
+                                stalls.clear()
+                                _state.value = it.copy(lowerVersion = null)
+                            }
+                            null
                         }
                     }
                 }
             }
         }
+        coroutineContext.cancelChildren()
+        outcome
     }
 
-    /** Waits for the Viewer to switch Version, ignoring what's left of the players that failed. */
-    private suspend fun awaitSwitch(): Switch {
-        while (true) (signals.receive() as? Switch)?.let { return it }
+    /** Waits for the Viewer to switch Version or try the other player, ignoring stale dismissals. */
+    private suspend fun awaitChoice(): Signal {
+        while (true) signals.receive().takeIf { it != Dismiss }?.let { return it }
     }
 
-    /** Closes the playing file, then gives the connection back. */
-    private suspend fun stop() {
-        val connection = connection ?: return
-        this.connection = null
-        try {
-            engine.stop()
-        } finally {
-            connection.close()
-        }
+    private sealed interface Outcome {
+        data object Ended : Outcome
+        data object CantOpen : Outcome
+        data object Dead : Outcome
+        data object OtherPlayer : Outcome
+        data class Switched(val version: Version) : Outcome
     }
 }
 
