@@ -19,6 +19,8 @@ android {
         versionName = "0.1.0"
         // The cloud (cloud/) the app gets Title metadata from, set in gradle.properties.
         buildConfigField("String", "CLOUD_URL", "\"${providers.gradleProperty("cloudUrl").get()}\"")
+        // The VLC engine's native code, for ARM only: the Fire TV Stick, and the emulator on an Apple-silicon Mac.
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     signingConfigs {
@@ -46,6 +48,11 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // Compressed native code (libVLC is most of it) halves the APK sideloaded over Wi-Fi; the
+        // installer unpacks only the stick's own ABI.
+        jniLibs.useLegacyPackaging = true
+        // libVLC and libass each bring the C++ runtime, but only libVLC links it: keep libVLC's copy.
+        jniLibs.pickFirsts += "lib/*/libc++_shared.so"
     }
 }
 
@@ -70,4 +77,5 @@ dependencies {
     // DTS and TrueHD audio, which Fire sticks can't decode, and ASS subtitles with their full styling.
     implementation(libs.media3.ffmpeg)
     implementation(libs.ass.media)
+    implementation(libs.libvlc)
 }
