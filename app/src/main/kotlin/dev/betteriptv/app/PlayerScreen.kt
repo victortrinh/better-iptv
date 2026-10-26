@@ -110,12 +110,16 @@ fun PlayerScreen(library: Library, plan: PlayPlan) {
                     )
                 }
             }
-            PlaybackState.Failed -> Text(
-                stringResource(R.string.player_failed),
-                style = Type.body,
-                color = Colors.error,
-                modifier = Modifier.align(Alignment.Center).padding(Spacing.xl),
-            )
+            PlaybackState.Failed -> {
+                // The controls hide with the last player, taking focus with them; the menu key needs it back.
+                LaunchedEffect(Unit) { backToPlayer() }
+                Text(
+                    stringResource(R.string.player_failed),
+                    style = Type.body,
+                    color = Colors.error,
+                    modifier = Modifier.align(Alignment.Center).padding(Spacing.xl),
+                )
+            }
         }
 
         if (choosing) {
@@ -150,15 +154,18 @@ private const val SEEK_GRACE_MILLIS = 2_000L
 private fun PlayerSurface(context: Context, player: ExoPlayer?, onView: (PlayerView) -> Unit, onVersions: () -> Unit) {
     AndroidView(
         factory = {
-            PlayerView(context).apply {
+            object : PlayerView(context) {
+                // The menu key isn't one the controls use; it opens the Versions, even while a control has focus.
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                    if (event.keyCode != KeyEvent.KEYCODE_MENU) return super.dispatchKeyEvent(event)
+                    if (event.action == KeyEvent.ACTION_UP) onVersions()
+                    return true
+                }
+            }.apply {
                 // The remote's keys reach the controls only while the view has focus.
                 isFocusable = true
                 isFocusableInTouchMode = true
                 setShowSubtitleButton(true)
-                // The menu key isn't one the controls use; it opens the Versions.
-                setOnKeyListener { _, keyCode, event ->
-                    (keyCode == KeyEvent.KEYCODE_MENU && event.action == KeyEvent.ACTION_UP).also { if (it) onVersions() }
-                }
                 requestFocus()
                 onView(this)
             }
