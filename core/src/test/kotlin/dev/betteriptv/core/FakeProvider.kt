@@ -34,6 +34,9 @@ class FakeProvider : Closeable {
     /** Answers every request with HTTP 503, as an unreachable Provider would. */
     @Volatile var down = false
 
+    /** Answers a wrong login with this HTTP status instead of `auth: 0`, as the surveyed Provider does with 513. */
+    @Volatile var wrongLoginStatus: Int? = null
+
     /** Stops sending the movie list halfway through. */
     @Volatile var cutMovieListMidway = false
 
@@ -106,6 +109,7 @@ class FakeProvider : Closeable {
         if (down) return exchange.sendResponseHeaders(503, -1)
         val query = query(exchange)
         if (query["username"] != username || query["password"] != password) {
+            wrongLoginStatus?.let { return exchange.sendResponseHeaders(it, -1) }
             return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
         when (query["action"]) {
