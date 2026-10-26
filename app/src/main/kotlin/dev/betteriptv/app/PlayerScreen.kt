@@ -128,7 +128,7 @@ private fun Media3Surface(player: Media3Engine, takeFocus: (View) -> Unit) {
                 isFocusable = true
                 isFocusableInTouchMode = true
                 setShowSubtitleButton(true)
-                this.player = player.player
+                player.showIn(this)
             }
         },
         update = { takeFocus(it) },

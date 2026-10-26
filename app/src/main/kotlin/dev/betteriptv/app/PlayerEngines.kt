@@ -10,7 +10,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import dev.betteriptv.core.CantOpen
+import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Engine
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlayerEngine
@@ -28,19 +30,29 @@ import kotlin.coroutines.resumeWithException
 
 private const val PLAYER_TAG = "Player"
 
-/** Creates the engine a Playback session asks for, choosing a [plan]'s Tracks once the file is open. */
-fun playerEngines(context: Context, plan: PlayPlan): (Engine) -> PlayerEngine = { engine ->
-    when (engine) {
-        Engine.Media3 -> Media3Engine(context, plan)
-        Engine.Vlc -> VlcEngine(context, plan)
+/**
+ * Creates the engine a Playback session asks for, choosing a [plan]'s Tracks for this stick and TV
+ * once the file is open.
+ */
+fun playerEngines(context: Context, plan: PlayPlan): (Engine) -> PlayerEngine {
+    val device = readDeviceProfile(context)
+    return { engine ->
+        when (engine) {
+            Engine.Media3 -> Media3Engine(context, plan, device)
+            Engine.Vlc -> VlcEngine(context, plan, device)
+        }
     }
 }
 
 /** Media3 (ExoPlayer), the default engine. Used on the main thread only. */
-class Media3Engine(context: Context, plan: PlayPlan) : PlayerEngine {
+class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile) : PlayerEngine {
     override val engine = Engine.Media3
-    val player: ExoPlayer = ExoPlayer.Builder(context).build().apply { addListener(TrackChooser(this, plan)) }
+    private val playing = buildPlayer(context)
+    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device)) }
     override val position: Long get() = player.currentPosition
+
+    /** Shows the player in a [view] made for it, ASS subtitles included. */
+    fun showIn(view: PlayerView) = playing.showIn(view)
 
     override suspend fun play(location: String, from: Long) = suspendCancellableCoroutine { continuation ->
         player.addListener(object : Player.Listener {
@@ -76,7 +88,7 @@ class Media3Engine(context: Context, plan: PlayPlan) : PlayerEngine {
         player.playWhenReady = true
     }
 
-    override fun release() = player.release()
+    override fun release() = playing.release()
 }
 
 /**
@@ -87,8 +99,8 @@ class Media3Engine(context: Context, plan: PlayPlan) : PlayerEngine {
 private fun PlaybackException.isTheFiles() = errorCode / 1000 in 3..5 ||
     errorCode == PlaybackException.ERROR_CODE_UNSPECIFIED || errorCode == PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK
 
-/** Applies the [plan]'s Track choice once, as soon as the player knows the file's Tracks. */
-private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan) : Player.Listener {
+/** Applies the [plan]'s Track choice for [device] once, as soon as the player knows the file's Tracks. */
+private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan, private val device: DeviceProfile) : Player.Listener {
     private var chosen = false
 
     override fun onTracksChanged(tracks: Tracks) {
@@ -98,8 +110,9 @@ private class TrackChooser(private val player: ExoPlayer, private val plan: Play
         val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
         val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
         val choice = plan.chooseTracks(
-            audio.map { Track(it.getTrackFormat(0).language) },
+            audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
             subtitles.map { Track(it.getTrackFormat(0).language) },
+            device,
         )
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
             choice.audio?.let { setOverrideForType(TrackSelectionOverride(audio[it].mediaTrackGroup, 0)) }
@@ -115,7 +128,7 @@ private class TrackChooser(private val player: ExoPlayer, private val plan: Play
  * in hardware. Its picture needs a [VLCVideoLayout]: playback starts once one is [attach]ed.
  * Used on the main thread only.
  */
-class VlcEngine(context: Context, private val plan: PlayPlan) : PlayerEngine {
+class VlcEngine(context: Context, private val plan: PlayPlan, private val device: DeviceProfile) : PlayerEngine {
     override val engine = Engine.Vlc
 
     // To read a file's index and to seek, VLC opens a new request before closing the one it has.
@@ -172,7 +185,8 @@ class VlcEngine(context: Context, private val plan: PlayPlan) : PlayerEngine {
         val audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
         val subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }
         if (audio.isEmpty()) return false
-        val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map { Track(it.language) })
+        // VLC decodes every format itself, so its Tracks' formats don't change the choice.
+        val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map { Track(it.language) }, device)
         choice.audio?.let { player.setAudioTrack(audio[it].id) }
         player.setSpuTrack(choice.subtitle?.let { subtitles[it].id } ?: -1)
         return true

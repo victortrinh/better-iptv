@@ -15,8 +15,8 @@ import dev.betteriptv.core.Hdr
 
 /**
  * What this stick and the TV it's plugged into can play, read from the platform: the TV's display
- * modes and HDR formats, the stick's hardware video decoders, and the audio formats the HDMI link
- * passes through. Read it again for each Play, since the TV or soundbar may have changed.
+ * modes and HDR formats, the stick's hardware video decoders, its audio decoders, and the audio
+ * formats the HDMI link passes through. Read it again for each Play, since the TV or soundbar may have changed.
  */
 fun readDeviceProfile(context: Context): DeviceProfile {
     val display = context.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
@@ -34,6 +34,7 @@ fun readDeviceProfile(context: Context): DeviceProfile {
         hdr = hdrFormats(display, decoders),
         videoDecoders = decoders.flatMap { it.types }.toSet(),
         audioPassthrough = audioPassthrough(context),
+        audioDecoders = audioDecoders(),
     )
 }
 
@@ -46,6 +47,12 @@ private fun hardwareVideoDecoders(): List<Decoder> = MediaCodecList(MediaCodecLi
     .filter { !it.isEncoder && it.isHardware() }
     .map { info -> Decoder(info, info.supportedTypes.filter { it.startsWith("video/") }.map { it.lowercase() }) }
     .filter { it.types.isNotEmpty() }
+
+/** Every platform audio decoder counts, software ones included: Media3 plays through them all before the app's own FFmpeg one. */
+private fun audioDecoders(): Set<String> = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+    .filter { !it.isEncoder }
+    .flatMap { info -> info.supportedTypes.filter { it.startsWith("audio/") }.map { it.lowercase() } }
+    .toSet()
 
 /** Before Android 10 there is no flag, so software decoders are told apart by their well-known names. */
 private fun MediaCodecInfo.isHardware(): Boolean =

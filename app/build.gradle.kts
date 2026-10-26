@@ -51,6 +51,8 @@ android {
         // Compressed native code (libVLC is most of it) halves the APK sideloaded over Wi-Fi; the
         // installer unpacks only the stick's own ABI.
         jniLibs.useLegacyPackaging = true
+        // libVLC and libass each bring the C++ runtime, but only libVLC links it: keep libVLC's copy.
+        jniLibs.pickFirsts += "lib/*/libc++_shared.so"
     }
 }
 
@@ -72,5 +74,8 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    // DTS and TrueHD audio, which Fire sticks can't decode, and ASS subtitles with their full styling.
+    implementation(libs.media3.ffmpeg)
+    implementation(libs.ass.media)
     implementation(libs.libvlc)
 }
