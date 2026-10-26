@@ -28,6 +28,15 @@ class LoginTest {
         assertFalse(library.isLoggedIn)
     }
 
+    @Test fun `a wrong password answered with HTTP 513 is still a wrong login`() = runBlocking {
+        provider.wrongLoginStatus = 513
+
+        val result = library.logIn(ProviderLogin(provider.url, provider.username, "wrong"))
+
+        assertEquals(WrongLogin, result)
+        assertFalse(library.isLoggedIn)
+    }
+
     @Test fun `an expired subscription reports when it expired`() = runBlocking {
         provider.expiresOn = Instant.parse("2026-01-15T00:00:00Z")
 

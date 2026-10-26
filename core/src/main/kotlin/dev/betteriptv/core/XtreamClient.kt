@@ -230,7 +230,8 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             .build()
         try {
             http.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                if (action == null && response.code in setOf(401, 403)) throw ProviderException(WrongLogin)
+                // The Viewer's Provider answers a wrong password with 513 and a missing login with 511.
+                if (action == null && response.code in setOf(401, 403, 511, 513)) throw ProviderException(WrongLogin)
                 if (!response.isSuccessful) throw ProviderException(Unreachable("The Provider answered HTTP ${response.code}."))
                 return JsonReader.of(response.body!!.source()).use(read)
             }
