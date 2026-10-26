@@ -43,7 +43,11 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
@@ -61,6 +65,10 @@ import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.Track
 import dev.betteriptv.core.Version
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -263,21 +271,26 @@ private fun VersionsPanel(versions: List<Version>, playing: Version?, onPick: (V
 }
 
 /**
- * The Playback session's player engine on the stick: a new Media3 player for each file, so releasing
- * it closes its request to the Provider before the next file opens. [player] is the one showing.
+ * The Playback session's player engine on the stick: a new Media3 player for each file, released
+ * when the session stops it. [player] is the one showing.
  */
+@OptIn(UnstableApi::class)
 private class Media3Engine(private val context: Context, private val plan: PlayPlan) : PlayerEngine {
+    private val requests = OpenRequests()
+
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
 
     override val position: Duration get() = player?.currentPosition?.milliseconds ?: Duration.ZERO
 
     override fun play(location: String, from: Duration, events: (PlayerEvent) -> Unit) {
-        val exo = ExoPlayer.Builder(context).build()
+        val exo = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(requests.counting(DefaultDataSource.Factory(context))))
+            .build()
         exo.addListener(TrackChooser(exo, plan))
         exo.addListener(object : Player.Listener {
             private var started = false
-            private var seekedAt = Long.MIN_VALUE
+            private var seekedAt: Long? = null
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
@@ -286,9 +299,11 @@ private class Media3Engine(private val context: Context, private val plan: PlayP
                         events(PlayerEvent.Started)
                     }
                     // Filling the buffer just after the Viewer seeks isn't the Version struggling.
-                    Player.STATE_BUFFERING -> if (started && SystemClock.elapsedRealtime() - seekedAt > SEEK_GRACE_MILLIS) events(PlayerEvent.Buffering)
+                    Player.STATE_BUFFERING -> if (started && !justSeeked()) events(PlayerEvent.Buffering)
                 }
             }
+
+            private fun justSeeked() = seekedAt?.let { SystemClock.elapsedRealtime() - it < SEEK_GRACE_MILLIS } == true
 
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) seekedAt = SystemClock.elapsedRealtime()
@@ -306,6 +321,44 @@ private class Media3Engine(private val context: Context, private val plan: PlayP
         val exo = player ?: return
         player = null
         exo.release()
+        // Releasing returns before the player's loading thread closes its request, and the Provider
+        // would refuse the next file while it's open. A read stuck on a stalled Provider times out.
+        withTimeoutOrNull(STOP_TIMEOUT) { requests.awaitNone() }
+    }
+}
+
+/** Longer than the player's own read timeout, so a request stuck on a stalled Provider closes first. */
+private val STOP_TIMEOUT = 10.seconds
+
+/** Counts the player's open requests to the Provider, so stopping can wait for the last one to close. */
+@OptIn(UnstableApi::class)
+private class OpenRequests {
+    private val open = MutableStateFlow(0)
+
+    fun counting(upstream: DataSource.Factory) = DataSource.Factory { Counted(upstream.createDataSource()) }
+
+    suspend fun awaitNone() {
+        open.first { it == 0 }
+    }
+
+    private inner class Counted(private val upstream: DataSource) : DataSource by upstream {
+        private var opened = false
+
+        override fun open(dataSpec: DataSpec): Long {
+            // Counted from the attempt: the player closes a source even when opening it fails.
+            if (!opened) open.update { it + 1 }
+            opened = true
+            return upstream.open(dataSpec)
+        }
+
+        override fun close() {
+            try {
+                upstream.close()
+            } finally {
+                if (opened) open.update { it - 1 }
+                opened = false
+            }
+        }
     }
 }
 
