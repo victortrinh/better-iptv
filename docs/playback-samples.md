@@ -18,6 +18,8 @@ adb logcat -s Samples
 
 ## Results
 
+Recorded on Media3 1.8.0 with Jellyfin's FFmpeg build. The player has since moved to Media3 1.11.1 with NextLib's FFmpeg, where only DTS and ASS have been rerun so far; the full rerun is #38.
+
 Fire TV Stick 4K Max (AFTKA, Fire OS 7, Android 9), on a TV that passes through AC-3 and E-AC-3 only, 2026-10-25.
 
 | Sample | Audio | Subtitles | Result |
