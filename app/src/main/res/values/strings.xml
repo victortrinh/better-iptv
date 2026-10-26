@@ -58,7 +58,11 @@
     <string name="versions_title">Versions</string>
     <string name="play">Play</string>
     <string name="play_nothing">No Version this TV can display</string>
-    <string name="player_failed">This Version didn\'t start. Go back and pick another one.</string>
+    <string name="player_failed">This Version didn\'t play. Try the other player, or go back and pick another Version.</string>
+    <string name="player_try_other">Try other player</string>
+    <string name="player_engine">Playing with %1$s</string>
+    <string name="player_engine_media3">the main player</string>
+    <string name="player_engine_vlc">VLC</string>
     <plurals name="versions_count">
         <item quantity="one">%1$d Version</item>
         <item quantity="other">%1$d Versions</item>
