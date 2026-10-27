@@ -47,7 +47,6 @@ import dev.betteriptv.app.ui.components.CertaintyLegend
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.VersionHeader
-import dev.betteriptv.app.ui.components.VersionLine
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
@@ -296,30 +295,10 @@ private fun LazyListScope.languageGroup(
     group.versions.forEachIndexed { index, version ->
         item(key = version.listingId) {
             VersionRow(
-                context.line(version),
+                context.versionLine(version),
                 onClick = { onChoose(version) },
                 modifier = if (first && index == 0) Modifier.focusRequester(firstVersion).onFocusChanged { onFirstFocused(it.isFocused) } else Modifier,
             )
         }
     }
-}
-
-private fun Context.line(version: Version): VersionLine {
-    val attributes = version.attributes
-    val none = getString(R.string.version_none)
-    return VersionLine(
-        badges = attributes.versionBadges(),
-        source = attributes.source?.value ?: none,
-        audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
-        subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
-        bitrate = null,
-        backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
-        // Both notes are cautions.
-        note = when {
-            attributes.cam -> getString(R.string.version_cam)
-            attributes.audioDescription -> getString(R.string.version_audio_description)
-            else -> null
-        },
-        noteIsCaution = true,
-    )
 }
