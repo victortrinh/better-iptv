@@ -42,7 +42,9 @@ Media3 1.11.1 with NextLib's FFmpeg (`ffmpegLavc63.1.101`) and ass-media 0.5.1. 
 | `avi_mpeg4_mp3.avi` | MP3 | | MPEG-4 video on the stick's decoder, MP3 on the stick's decoder. |
 | `ts_dts_ac3.ts` | DTS 5.1 (en), AC-3 5.1 (fr) | | DTS decoded by FFmpeg; AC-3 passed through to the TV (`ENCODING_AC3`), as predicted. Media3 1.11 lists the AC-3 Track first (`--ei audio 0`) and DTS second. Every TS file now also shows a CEA-608 Track, since the player names that caption format. |
 
-ASS is drawn by libass, in the render type the player uses (`OVERLAY_OPEN_GL`), but a screenshot (`adb exec-out screencap`) shows no subtitles, on the Media3 1.8 build too. A build switched to `OVERLAY_CANVAS` shows every style in the screenshot, attached font included, so libass itself works on 1.11; whether the GL overlay reaches the TV needs a look at the TV itself (#60).
+ASS is drawn by libass, in the render type the player uses (`OVERLAY_OPEN_GL`). A screenshot (`adb exec-out screencap`) shows no subtitles, on the Media3 1.8 build too, but the GL overlay does reach the TV: someone watching `mkv_dts_ass.mkv` there saw the red and italic words at the bottom and the rotated yellow sign (#60). So the player keeps `OVERLAY_OPEN_GL`, and checking ASS on the stick takes a look at the TV, not a screenshot. A build switched to `OVERLAY_CANVAS` shows every style in the screenshot, attached font included.
+
+The one line that didn't show on the TV is the green one at `\an7\pos(60,60)`, 60 px from the top-left corner of a 1280×720 script. The same line moved to `\pos(320,300)` showed. So it's lost at the screen's edge, likely the TV's overscan, not left undrawn; whether the TV crops the video's corner the same way wasn't checked.
 
 ### Real samples
 
