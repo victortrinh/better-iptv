@@ -1,6 +1,7 @@
 package dev.betteriptv.core
 
 import java.util.Locale
+import java.util.SortedMap
 
 /**
  * Merges a Show's Episodes across its [versions] (each show Listing as a Candidate, with the
@@ -11,6 +12,26 @@ import java.util.Locale
  * (` - S01E01 - Der Lohn der Sünde`, the Show left out).
  */
 internal fun mergeEpisodes(versions: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>): List<Season> {
+    val byEpisode = byEpisode(versions)
+    val wanted = contentLanguages.map(::primaryLanguage).toSet()
+    return byEpisode.entries.groupBy({ it.key.first }) { (key, versions) ->
+        val (languages, otherLanguages) = groupByLanguage(versions.map { it.candidate }, contentLanguages)
+        // Its name is in the language its show Listing's Prefix names, whatever its audio.
+        val named = versions.sortedWith(compareBy<EpisodeVersion> { it.show.attributes.language?.value?.let(::primaryLanguage) !in wanted }.thenBy(BEST_FIRST) { it.candidate })
+        Episode(key.first, key.second, named.firstNotNullOfOrNull { episodeName(it.title) }, languages, otherLanguages)
+    }.map { (season, episodes) -> Season(season, episodes) }
+}
+
+/**
+ * Each Episode's Versions as Candidates, by season and episode number in the order the Show lists
+ * them: seasons in order, specials (season 0) last.
+ */
+internal fun episodeCandidates(versions: List<Pair<Candidate, List<ProviderEpisode>>>): SortedMap<EpisodeNumber, List<Candidate>> =
+    byEpisode(versions).entries.associateTo(sortedMapOf(EPISODE_ORDER)) { (key, versions) -> EpisodeNumber(key.first, key.second) to versions.map { it.candidate } }
+
+private val EPISODE_ORDER = compareBy<EpisodeNumber>({ it.season == 0 }, { it.season }, { it.number })
+
+private fun byEpisode(versions: List<Pair<Candidate, List<ProviderEpisode>>>): SortedMap<Pair<Int, Int>, MutableList<EpisodeVersion>> {
     val byEpisode = sortedMapOf<Pair<Int, Int>, MutableList<EpisodeVersion>>(compareBy({ it.first == 0 }, { it.first }, { it.second }))
     versions.forEach { (show, episodes) ->
         episodes.forEach { episode ->
@@ -19,13 +40,7 @@ internal fun mergeEpisodes(versions: List<Pair<Candidate, List<ProviderEpisode>>
             byEpisode.getOrPut(episode.season to episode.number) { mutableListOf() } += EpisodeVersion(Candidate(listing, confirmed(show.attributes, episode)), show, episode.title)
         }
     }
-    val wanted = contentLanguages.map(::primaryLanguage).toSet()
-    return byEpisode.entries.groupBy({ it.key.first }) { (key, versions) ->
-        val (languages, otherLanguages) = groupByLanguage(versions.map { it.candidate }, contentLanguages)
-        // Its name is in the language its show Listing's Prefix names, whatever its audio.
-        val named = versions.sortedWith(compareBy<EpisodeVersion> { it.show.attributes.language?.value?.let(::primaryLanguage) !in wanted }.thenBy(BEST_FIRST) { it.candidate })
-        Episode(key.first, key.second, named.firstNotNullOfOrNull { episodeName(it.title) }, languages, otherLanguages)
-    }.map { (season, episodes) -> Season(season, episodes) }
+    return byEpisode
 }
 
 /** One Version of an Episode, from the [show] Listing whose show details give it this [title]. */
@@ -64,7 +79,7 @@ internal fun quality(width: Int?, height: Int?): Quality? {
  * A language code as a primary BCP 47 subtag: `ger`, `deu` and `de` are all `de`. Null when it
  * names no language (`und`, `mul`, empty) or none Java knows.
  */
-internal fun iso639(code: String?): String? {
+fun iso639(code: String?): String? {
     val folded = code?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() && it !in NO_LANGUAGE } ?: return null
     if (folded.length == 2) return folded.takeIf { it in TWO_LETTER }
     return THREE_LETTER[BIBLIOGRAPHIC[folded] ?: folded]

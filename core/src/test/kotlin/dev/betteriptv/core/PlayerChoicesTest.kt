@@ -1,0 +1,163 @@
+package dev.betteriptv.core
+
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+/** What the Viewer picks in the player, remembered for the next file, and the next Episode offered when one ends. */
+class PlayerChoicesTest {
+    @get:Rule val folder = TemporaryFolder()
+    private val provider = FakeProvider()
+    private val credentials = InMemoryCredentials()
+    private val libraries = mutableListOf<Library>()
+    private lateinit var library: Library
+
+    private fun openLibrary() = Library.open(folder.root.resolve("catalog.db").path, credentials).also { libraries += it }
+
+    @Before fun logIn() = runBlocking {
+        library = openLibrary()
+        library.logIn(provider.login)
+        Unit
+    }
+
+    @After fun tearDown() {
+        libraries.forEach { it.close() }
+        provider.close()
+    }
+
+    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val chelseaDetective = TitleId.Tmdb(TitleKind.Show, 156240)
+    private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
+    private val english = listOf("en")
+
+    private fun tracks(vararg languages: String?) = languages.map { Track(it) }
+
+    private suspend fun syncMovies() {
+        provider.serveMovies("EN - Movie (2025)" to "EN - MOVIES", "FR - Le Film (2025)" to "FR - FILMS")
+        library.sync()
+    }
+
+    // Remembered choices
+
+    @Test fun `the audio language the Viewer picks plays next time, and its Versions rank first`() = runBlocking {
+        syncMovies()
+        assertEquals("EN - Movie (2025)", library.playPlan(movie, listOf("en", "fr"), fullHdTv)!!.version.name)
+
+        library.rememberAudio("fr")
+
+        val plan = library.playPlan(movie, listOf("en", "fr"), fullHdTv)!!
+        assertEquals("FR - Le Film (2025)", plan.version.name)
+        assertEquals(listOf("FR - Le Film (2025)", "EN - Movie (2025)"), plan.versions.map { it.name })
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("eng", "fre"), tracks(), fullHdTv))
+        // Choosing a Version by hand still lists the remembered language's first after it.
+        val chosen = library.chosenPlayPlan(movie, listingId = 1, listOf("en", "fr"))!!
+        assertEquals(listOf("EN - Movie (2025)", "FR - Le Film (2025)"), chosen.versions.map { it.name })
+        assertEquals("fr", chosen.remembered.audio)
+    }
+
+    @Test fun `remembered choices outlive the app`() = runBlocking {
+        library.rememberAudio("fr")
+        library.rememberSubtitles("en")
+        library.close()
+
+        assertEquals(RememberedTracks(audio = "fr", subtitles = "en"), openLibrary().rememberedTracks())
+    }
+
+    @Test fun `the subtitles the Viewer picks turn on next time when the file has them, whatever the audio`() = runBlocking {
+        syncMovies()
+        library.rememberSubtitles("en")
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+
+        assertEquals(TrackChoice(audio = 0, subtitle = 1), plan.chooseTracks(tracks("eng"), tracks("fre", "eng"), fullHdTv))
+        // Without them, the usual choice stands: subtitles only when no audio is in a Content language.
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("eng"), tracks("fre"), fullHdTv))
+    }
+
+    @Test fun `turning subtitles off is remembered too, even for a film in another language`() = runBlocking {
+        syncMovies()
+        assertEquals(TrackChoice(audio = null, subtitle = 0), library.playPlan(movie, english, fullHdTv)!!.chooseTracks(tracks("ger"), tracks("eng"), fullHdTv))
+
+        library.rememberSubtitles(null)
+
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        assertEquals(TrackChoice(audio = null, subtitle = null), plan.chooseTracks(tracks("ger"), tracks("eng"), fullHdTv))
+    }
+
+    @Test fun `a pick made while playing applies to the next file the session opens, through what the Library remembers`() = runBlocking {
+        syncMovies()
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        library.rememberAudio("fr")
+
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("eng", "fre"), tracks(), fullHdTv, library.rememberedTracks()))
+    }
+
+    // The next Episode
+
+    private suspend fun episodePlan(season: Int, number: Int): PlayPlan {
+        library.sync()
+        // The Show's details are read once, as its details page does.
+        library.episodes(chelseaDetective, english)
+        return library.episodePlayPlan(chelseaDetective, EpisodeNumber(season, number), english, fullHdTv) ?: throw AssertionError("no S${season}E$number")
+    }
+
+    @Test fun `an Episode plays its Best playable Version`() = runBlocking {
+        val plan = episodePlan(1, 1)
+
+        assertEquals(EpisodeNumber(1, 1), plan.episode)
+        assertEquals(100001L, plan.version.listingId)
+        assertEquals("en", plan.version.attributes.language?.value)
+    }
+
+    @Test fun `the next Episode is offered when one ends, then the next season's first`() = runBlocking {
+        assertEquals(EpisodeNumber(1, 2), library.nextEpisodePlan(episodePlan(1, 1), fullHdTv)?.episode)
+        // Season 1's last Episode in any Version: the Flemish one splits it into more.
+        val seasonOneLast = library.episodes(chelseaDetective, english)!!.seasons.first { it.number == 1 }.episodes.last().number
+        assertEquals(EpisodeNumber(2, 1), library.nextEpisodePlan(episodePlan(1, seasonOneLast), fullHdTv)?.episode)
+    }
+
+    @Test fun `after the Show's last Episode nothing is offered, and a Movie has no next Episode`() = runBlocking {
+        library.sync()
+        val seasons = library.episodes(chelseaDetective, english)!!.seasons
+        val last = seasons.last().episodes.last()
+
+        assertNull(library.nextEpisodePlan(episodePlan(last.season, last.number), fullHdTv))
+        syncMovies()
+        assertNull(library.nextEpisodePlan(library.playPlan(movie, english, fullHdTv)!!, fullHdTv))
+    }
+
+    @Test fun `an Episode streams from the Provider's Shows, and ending it doesn't mark the Show watched`() = runBlocking {
+        val plan = episodePlan(1, 1)
+        val player = ScriptedPlayer(provider)
+        val session = library.playback(plan, player.engines)
+        val job = launch { session.play() }
+
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Playing } }
+        assertEquals(listOf(100001L to 0L), player.played.toList())
+        assertEquals(listOf("series"), player.locations.map { it.substringAfter("//").split('/')[1] })
+        player.end()
+        withTimeout(5_000) { session.state.first { it == PlaybackState.Ended } }
+        job.join()
+        assertEquals(emptyList<InProgress>(), (library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().flatMap { it.titles }))
+    }
+
+    // Refresh rate
+
+    @Test fun `the TV switches to the lowest refresh rate that fits the film, and stays when it already fits`() {
+        val rates = listOf(23.976025f, 24f, 25f, 29.97003f, 50f, 59.94006f, 60f)
+
+        assertEquals(23.976025f, refreshRateFor(23.976f, current = 60f, rates))
+        assertEquals(24f, refreshRateFor(24f, current = 60f, rates))
+        assertEquals(50f, refreshRateFor(25f, current = 60f, listOf(50f, 60f)))
+        assertNull(refreshRateFor(29.97f, current = 59.94006f, rates))
+        // A TV with only 60 Hz has nothing that fits a 23.976 fps film.
+        assertNull(refreshRateFor(23.976f, current = 60f, listOf(60f)))
+    }
+}

@@ -70,7 +70,7 @@ private fun Root(app: BetterIptvApp) {
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         var returnedToHome by remember { mutableStateOf<HomeCard?>(null) }
-        var playing by remember { mutableStateOf<PlayPlan?>(null) }
+        var playing by remember { mutableStateOf<NowPlaying?>(null) }
         val context = LocalContext.current
         val onTab = { selected: Browse ->
             tab = selected
@@ -105,7 +105,7 @@ private fun Root(app: BetterIptvApp) {
                     )
                 }
             }
-            else -> when (val plan = playing) {
+            else -> when (val now = playing) {
                 null -> {
                     BackHandler {
                         returnedFrom = title.cardIndex
@@ -115,17 +115,26 @@ private fun Root(app: BetterIptvApp) {
                     TitleScreen(
                         app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
                         deviceProfile = { readDeviceProfile(context) },
-                        onPlay = { playing = it },
+                        onPlay = { plan, name -> playing = NowPlaying(plan, name) },
                     )
                 }
                 else -> {
                     BackHandler { playing = null }
-                    PlayerScreen(app.library, plan, onEnded = { playing = null })
+                    PlayerScreen(
+                        app.library, now.plan, now.name, settings,
+                        deviceProfile = { readDeviceProfile(context) },
+                        onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
+                        onPlay = { playing = now.copy(plan = it) },
+                        onEnded = { playing = null },
+                    )
                 }
             }
         }
     }
 }
+
+/** What the player plays: a [plan] of the Title named [name]. */
+private data class NowPlaying(val plan: PlayPlan, val name: String)
 
 /** The Title whose details are open, and which card opened it (in a list, or on the home screen), so focus goes back there. */
 private data class OpenedTitle(val cardIndex: Int, val id: TitleId, val homeCard: HomeCard? = null)

@@ -57,6 +57,8 @@ import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.Episode
+import dev.betteriptv.core.EpisodeNumber
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.TitleDetails
@@ -71,8 +73,8 @@ import kotlinx.coroutines.withContext
 /**
  * A Title's details: what it is, Play with the Version it will start, and every Version grouped by
  * language, the Viewer's languages first and the rest behind "Other languages". A Show has no Play
- * yet; it lists its seasons and Episodes first, each Episode with the languages it's available in,
- * once the Provider's show details are read. TMDB's backdrop fills the screen behind them. Without
+ * button; it lists its seasons and Episodes first, each Episode with the languages it's available
+ * in, once the Provider's show details are read, and choosing one plays it. TMDB's backdrop fills the screen behind them. Without
  * one, the poster sits beside the header instead: a poster blown up as a backdrop is too blurry and
  * too bright to keep text on it readable.
  *
@@ -87,7 +89,7 @@ fun TitleScreen(
     appLanguage: String,
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
-    onPlay: (PlayPlan) -> Unit,
+    onPlay: (PlayPlan, String) -> Unit,
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
@@ -103,15 +105,32 @@ fun TitleScreen(
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
         loaded?.let { (title, plan) ->
-            TitleContent(title, plan, episodes, onPlay, onChoose = { version ->
-                scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let(onPlay) }
-            })
+            TitleContent(
+                title, plan, episodes,
+                onPlay = { onPlay(it, title.name) },
+                onChoose = { version ->
+                    scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { onPlay(it, title.name) } }
+                },
+                onEpisode = { episode ->
+                    scope.launch {
+                        val device = withContext(Dispatchers.Default) { deviceProfile() }
+                        library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { onPlay(it, title.name) }
+                    }
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun TitleContent(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?, onPlay: (PlayPlan) -> Unit, onChoose: (Version) -> Unit) {
+private fun TitleContent(
+    title: TitleDetails,
+    plan: PlayPlan?,
+    episodes: ShowEpisodes?,
+    onPlay: (PlayPlan) -> Unit,
+    onChoose: (Version) -> Unit,
+    onEpisode: (Episode) -> Unit,
+) {
     val context = LocalContext.current
     val backdrop = rememberArtwork(title.backdrop)
     val image = rememberArtwork(title.image).takeIf { backdrop == null }
@@ -170,7 +189,7 @@ private fun TitleContent(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpi
                             modifier = Modifier.padding(top = Spacing.xs),
                         )
                     }
-                    // Playing an Episode comes later.
+                    // A Show plays from its Episodes.
                     if (!isShow) {
                         Spacer(Modifier.height(Spacing.l))
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
@@ -202,7 +221,7 @@ private fun TitleContent(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpi
                 }
             }
         }
-        if (isShow) episodes(context, episodes, firstEpisode)
+        if (isShow) episodes(context, episodes, firstEpisode, onEpisode)
         item {
             Row(Modifier.padding(top = if (isShow) Spacing.xl else 0.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink)
@@ -239,9 +258,9 @@ private fun TitleContent(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpi
 
 /**
  * A Show's seasons, each Episode as a row naming the languages it's available in, the Viewer's
- * first. Playing an Episode comes with the player.
+ * first. Choosing one plays its Best playable Version.
  */
-private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, firstEpisode: FocusRequester) {
+private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, firstEpisode: FocusRequester, onEpisode: (Episode) -> Unit) {
     item(key = "episodes") {
         Text(stringResource(R.string.episodes_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp))
     }
@@ -268,7 +287,7 @@ private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, fi
                 SettingRow(
                     episode.name?.let { context.getString(R.string.episode_named, episode.number, it) } ?: context.getString(R.string.episode_number, episode.number),
                     (episode.languages + episode.otherLanguages).joinToString(", ") { group -> group.language?.let(::languageName) ?: context.getString(R.string.language_untagged) },
-                    onClick = {},
+                    onClick = { onEpisode(episode) },
                     modifier = if (seasonIndex == 0 && index == 0) Modifier.focusRequester(firstEpisode) else Modifier,
                 )
             }

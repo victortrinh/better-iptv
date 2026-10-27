@@ -175,6 +175,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         var width: Int? = null
         var height: Int? = null
         var audioLanguage: String? = null
+        var container: String? = null
         beginObject()
         while (hasNext()) when (nextName()) {
             "id" -> id = nextScalar()?.toLongOrNull()
@@ -182,6 +183,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             "episode_num" -> number = nextScalar()?.toIntOrNull()
             "title" -> title = nextScalar()
             "added" -> added = nextScalar()?.toLongOrNull()
+            "container_extension" -> container = nextScalar()?.trim()?.lowercase()?.takeIf { CONTAINER.matches(it) }
             // An Episode without details has `"info": []`.
             "info" -> if (peek() != JsonReader.Token.BEGIN_OBJECT) skipValue() else {
                 beginObject()
@@ -205,7 +207,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         endObject()
         val inSeason = season ?: filedUnder
         if (id == null || number == null || inSeason == null) return null
-        return ProviderEpisode(id, inSeason, number, title.orEmpty(), added, width, height, audioLanguage)
+        return ProviderEpisode(id, inSeason, number, title.orEmpty(), added, width, height, audioLanguage, container)
     }
 
     /** Reads an object's fields with [field], or skips the value when it isn't an object. */
@@ -232,6 +234,10 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     /** Where movie Listing [id]'s file streams from. It holds the login, so it goes to the player engine only. */
     fun movieLocation(id: Long, container: String): String =
         base.newBuilder().addPathSegment("movie").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
+
+    /** Where Episode [id]'s file streams from. It holds the login, so it goes to the player engine only. */
+    fun episodeLocation(id: Long, container: String): String =
+        base.newBuilder().addPathSegment("series").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
 
     private fun <T> api(action: String?, vararg parameters: Pair<String, String>, read: (JsonReader) -> T): T {
         val url = base.newBuilder()
@@ -303,6 +309,8 @@ internal class ProviderEpisode(
     val width: Int?,
     val height: Int?,
     val audioLanguage: String?,
+    /** The file's extension (`mkv`, `mp4`), which its location needs. */
+    val container: String? = null,
 )
 
 /** Reads any JSON scalar as text: the Provider sends ids and dates as strings or numbers, inconsistently. */

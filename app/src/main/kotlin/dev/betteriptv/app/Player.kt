@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.os.Handler
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -13,8 +14,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
@@ -27,9 +30,12 @@ import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 
-/** A Media3 player with the libass [ass] handler that draws its ASS subtitles. */
+/**
+ * A Media3 player with the libass [ass] handler that draws its ASS subtitles, and the [delays] its
+ * renderers play the sound and subtitles with.
+ */
 @OptIn(UnstableApi::class)
-internal class Playing(val player: ExoPlayer, val ass: AssHandler) {
+internal class Playing(val player: ExoPlayer, val ass: AssHandler, val delays: Delays) {
     /** Shows the player in a [view] made for it: ASS subtitles are drawn over the picture by libass, not by Media3's subtitle view. */
     fun showIn(view: PlayerView) {
         view.subtitleView?.withAssSupport(ass)
@@ -49,6 +55,7 @@ internal class Playing(val player: ExoPlayer, val ass: AssHandler) {
  */
 @OptIn(UnstableApi::class)
 internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = DefaultDataSource.Factory(context)): Playing {
+    val delays = Delays()
     // libass draws on the stick's GPU; the size cap keeps a 4K TV from costing four times a 1080p one.
     val ass = AssHandler(AssRenderType.OVERLAY_OPEN_GL, AssHandlerConfig(maxRenderPixels = 1920 * 1080))
     try {
@@ -60,27 +67,42 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
             .setTsSubtitleFormats(listOf(Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_CEA608).build()))
         val mediaSources = DefaultMediaSourceFactory(dataSources, extractors.withAssMkvSupport(subtitleParsers, ass))
             .setSubtitleParserFactory(subtitleParsers)
-        val renderers = FfmpegAudioRenderersFactory(context).setEnableDecoderFallback(true)
+        val renderers = FfmpegAudioRenderersFactory(context, delays).setEnableDecoderFallback(true)
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSources)
             .setRenderersFactory(AssRenderersFactory(ass, renderers))
             .build()
         ass.init(player)
-        return Playing(player, ass)
+        return Playing(player, ass, delays)
     } catch (e: Throwable) {
         ass.release()
         throw e
     }
 }
 
+/** How much later than the picture the Viewer wants the sound and the subtitles, in microseconds; negative is earlier. */
+internal class Delays {
+    @Volatile var audioUs = 0L
+    @Volatile var subtitlesUs = 0L
+}
+
 /**
  * Media3's renderers with NextLib's FFmpeg audio decoder after the stick's own audio path, so a
  * format is passed through, else decoded by the stick, and only then by FFmpeg: the order
  * DeviceProfile.audioOutput assumes. NextLib's own factory also adds FFmpeg video and text
- * renderers, which the app doesn't want.
+ * renderers, which the app doesn't want. Sound and subtitles play with the Viewer's [delays].
  */
 @OptIn(UnstableApi::class)
-private class FfmpegAudioRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+private class FfmpegAudioRenderersFactory(context: Context, private val delays: Delays) : DefaultRenderersFactory(context) {
+    override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink? =
+        super.buildAudioSink(context, enableFloatOutput, enableAudioOutputPlaybackParams)?.let { DelayedAudioSink(it, delays) }
+
+    override fun buildTextRenderers(context: Context, output: TextOutput, outputLooper: Looper, extensionRendererMode: Int, out: ArrayList<Renderer>) {
+        val built = ArrayList<Renderer>()
+        super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, built)
+        built.mapTo(out) { DelayedRenderer(it, delays) }
+    }
+
     override fun buildAudioRenderers(
         context: Context,
         extensionRendererMode: Int,
@@ -94,4 +116,27 @@ private class FfmpegAudioRenderersFactory(context: Context) : DefaultRenderersFa
         super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
         out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
     }
+}
+
+/**
+ * The audio sink, its clock moved by the audio delay. The picture follows the sound's clock, so
+ * reporting the sound [Delays.audioUs] further on shows the picture that much earlier against it.
+ */
+@OptIn(UnstableApi::class)
+private class DelayedAudioSink(sink: AudioSink, private val delays: Delays) : ForwardingAudioSink(sink) {
+    override fun getCurrentPositionUs(sourceEnded: Boolean): Long =
+        super.getCurrentPositionUs(sourceEnded).let { if (it == AudioSink.CURRENT_POSITION_NOT_SET) it else it + delays.audioUs }
+}
+
+/** A text renderer that shows each subtitle [Delays.subtitlesUs] later, by rendering that far behind the playback position. */
+@OptIn(UnstableApi::class)
+private class DelayedRenderer(private val renderer: Renderer, private val delays: Delays) : Renderer by renderer {
+    override fun render(positionUs: Long, elapsedRealtimeUs: Long) = renderer.render(positionUs - delays.subtitlesUs, elapsedRealtimeUs)
+
+    // Kotlin doesn't delegate the interface's Java default methods.
+    override fun getDurationToProgressUs(positionUs: Long, elapsedRealtimeUs: Long) = renderer.getDurationToProgressUs(positionUs, elapsedRealtimeUs)
+    override fun supportsResetPositionWithoutKeyFrameReset(positionUs: Long) = renderer.supportsResetPositionWithoutKeyFrameReset(positionUs)
+    override fun setPlaybackSpeed(currentPlaybackSpeed: Float, targetPlaybackSpeed: Float) = renderer.setPlaybackSpeed(currentPlaybackSpeed, targetPlaybackSpeed)
+    override fun enableMayRenderStartOfStream() = renderer.enableMayRenderStartOfStream()
+    override fun release() = renderer.release()
 }
