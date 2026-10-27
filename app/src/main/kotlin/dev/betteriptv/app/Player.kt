@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -44,10 +45,10 @@ internal class Playing(val player: ExoPlayer, val ass: AssHandler) {
 /**
  * A player for every format the Provider's files come in: MKV, MP4, AVI and TS (Media3's own
  * extractors), Blu-ray DTS and TrueHD audio (FFmpeg), and SRT, WebVTT, PGS, VobSub, closed captions
- * (Media3's own decoders) and ASS (libass).
+ * (Media3's own decoders) and ASS (libass). Files are read through [dataSources].
  */
 @OptIn(UnstableApi::class)
-internal fun buildPlayer(context: Context): Playing {
+internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = DefaultDataSource.Factory(context)): Playing {
     // libass draws on the stick's GPU; the size cap keeps a 4K TV from costing four times a 1080p one.
     val ass = AssHandler(AssRenderType.OVERLAY_OPEN_GL, AssHandlerConfig(maxRenderPixels = 1920 * 1080))
     try {
@@ -57,7 +58,7 @@ internal fun buildPlayer(context: Context): Playing {
             .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS)
             // Live channels carry closed captions in their video; without a caption format, Media3 drops them.
             .setTsSubtitleFormats(listOf(Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_CEA608).build()))
-        val mediaSources = DefaultMediaSourceFactory(DefaultDataSource.Factory(context), extractors.withAssMkvSupport(subtitleParsers, ass))
+        val mediaSources = DefaultMediaSourceFactory(dataSources, extractors.withAssMkvSupport(subtitleParsers, ass))
             .setSubtitleParserFactory(subtitleParsers)
         val renderers = FfmpegAudioRenderersFactory(context).setEnableDecoderFallback(true)
         val player = ExoPlayer.Builder(context)

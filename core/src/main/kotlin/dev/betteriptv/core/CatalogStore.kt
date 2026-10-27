@@ -361,6 +361,37 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories. */
+    fun forEachTitle(kind: TitleKind, each: (TitleId, List<Pair<String, String>>) -> Unit) = synchronized(reader) {
+        reader.prepare(
+            """
+            SELECT t.key, l.name, l.category FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
+            WHERE t.kind = ? ORDER BY t.position
+            """.trimIndent(),
+        ).use {
+            it.bindText(1, kindKey(kind))
+            var key: String? = null
+            val listings = mutableListOf<Pair<String, String>>()
+            while (it.step()) {
+                val next = it.getText(0)
+                if (next != key) {
+                    key?.let { done -> each(titleId(done), listings.toList()) }
+                    key = next
+                    listings.clear()
+                }
+                listings += it.getText(1) to it.getText(2)
+            }
+            key?.let { done -> each(titleId(done), listings.toList()) }
+        }
+    }
+
+    /** Calls [each] with one cached metadata JSON per Title TMDB has, in whichever language was cached. */
+    fun forEachMetadata(each: (TitleId.Tmdb, String) -> Unit) = synchronized(reader) {
+        reader.prepare("SELECT title_key, max(body) FROM title_metadata WHERE body IS NOT NULL GROUP BY title_key").use {
+            while (it.step()) (titleId(it.getText(0)) as? TitleId.Tmdb)?.let { id -> each(id, it.getText(1)) }
+        }
+    }
+
     /** The file extension of movie Listing [id] (`mkv`), or null when the Provider didn't say or the catalog doesn't have it. */
     fun container(id: Long): String? = synchronized(reader) {
         reader.prepare("SELECT container FROM listing WHERE kind = 'movie' AND id = ?").use {

@@ -155,7 +155,8 @@ class PlaybackTest {
         media3.failure.complete(CantOpen("scripted: Media3 can't decode the file"))
         val held = withTimeout(2_000) { other.await() }
         delay(300)
-        assertEquals(PlaybackState.Connecting, session.state.value)
+        // Waiting for the connection: no engine has the file yet.
+        assertEquals(PlaybackState.Starting(plan.version), session.state.value)
         assertEquals(1, created.size)
 
         held.close()
@@ -259,7 +260,7 @@ class PlaybackTest {
         @Volatile var location: String? = null
         private val streams = CopyOnWriteArrayList<InputStream>()
 
-        override suspend fun play(location: String, from: Long) {
+        override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
             startedFrom = from
             position = from
             this.location = location
@@ -269,6 +270,7 @@ class PlaybackTest {
                 if (overlapsRequests) streams += ranged(location, "bytes=1000000-").also { it.readNBytes(1024) }
             }
             opened.value = true
+            if (script != Script.CantOpen) events(PlayerEvent.Started)
             when (script) {
                 Script.Plays -> throw failure.await()
                 Script.CantOpen -> throw CantOpen("scripted: $engine can't open the file")
@@ -277,7 +279,7 @@ class PlaybackTest {
             }
         }
 
-        override fun release() {
+        override suspend fun release() {
             released = true
             streams.forEach(InputStream::close)
         }

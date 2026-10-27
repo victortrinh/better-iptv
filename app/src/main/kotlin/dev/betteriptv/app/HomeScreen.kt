@@ -36,13 +36,15 @@ import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleSummary
 
 /** The browsing screens, in tab order. */
-enum class Browse { Home, Movies, Shows }
+enum class Browse { Home, Movies, Shows, Search }
 
 /** The tabs across the top of the browsing screens. */
 @Composable
 fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier = Modifier) {
     TopTabs(
-        listOf(stringResource(R.string.home_title), stringResource(R.string.movies_title), stringResource(R.string.shows_title)),
+        listOf(
+            stringResource(R.string.home_title), stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.search_title),
+        ),
         selected = selected.ordinal,
         onSelect = { onSelect(Browse.entries[it]) },
         modifier = modifier,

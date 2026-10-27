@@ -47,6 +47,8 @@ private fun Root(app: BetterIptvApp) {
         val home = remember { HomeState() }
         val movies = rememberLazyGridState()
         val shows = rememberLazyGridState()
+        // The query stays while a Title found by it is open, so Back returns to the same results.
+        var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         var returnedToHome by remember { mutableStateOf<HomeCard?>(null) }
@@ -65,6 +67,14 @@ private fun Root(app: BetterIptvApp) {
                     onTab = onTab,
                     onOpen = { opened = OpenedTitle(-1, it.id, it) },
                 )
+                Browse.Search -> {
+                    BackHandler { onTab(Browse.Movies) }
+                    SearchScreen(
+                        app.library, query, { query = it }, contentLanguages, appLanguage,
+                        onTab = onTab,
+                        onOpen = { opened = OpenedTitle(-1, it) },
+                    )
+                }
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
                     TitlesScreen(
