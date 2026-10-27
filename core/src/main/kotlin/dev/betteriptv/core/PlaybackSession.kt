@@ -167,7 +167,8 @@ class PlaybackSession internal constructor(
             while (queue.isNotEmpty()) {
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
-                        withContext(Dispatchers.IO) { library.finished(plan.titleId) }
+                        // An Episode's progress isn't kept yet: it would count as the Show's.
+                        if (plan.episode == null) withContext(Dispatchers.IO) { library.finished(plan.titleId) }
                         _state.value = PlaybackState.Ended
                         return
                     }
@@ -207,7 +208,7 @@ class PlaybackSession internal constructor(
     private suspend fun attempt(version: Version, engine: Engine): Outcome {
         _state.value = PlaybackState.Starting(version)
         val connection = try {
-            library.connect(version)
+            library.connect(version, episode = plan.episode != null)
         } catch (e: IOException) {
             // Logged out, or the catalog couldn't be read: this Version can't be opened.
             return Outcome.Dead
@@ -223,7 +224,7 @@ class PlaybackSession internal constructor(
             } finally {
                 resumeAt = player.position
                 // A quick write, made even while the Viewer leaving cancels playback.
-                library.saveProgress(plan.titleId, resumeAt, player.duration)
+                if (plan.episode == null) library.saveProgress(plan.titleId, resumeAt, player.duration)
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
                 player.seen?.let { library.confirm(version, it) }
@@ -252,7 +253,7 @@ class PlaybackSession internal constructor(
             }
         }
         val deadline = async { delay(startTimeout - opened.elapsedNow()) }
-        launch {
+        if (plan.episode == null) launch {
             while (true) {
                 delay(RECORD_EVERY)
                 val position = player.position

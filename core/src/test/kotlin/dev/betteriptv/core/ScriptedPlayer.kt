@@ -25,6 +25,9 @@ class ScriptedPlayer(private val provider: FakeProvider) {
     /** Every location played, with where it started from in milliseconds, in order. */
     val played = CopyOnWriteArrayList<Pair<Long, Long>>()
 
+    /** Every location played, in order. */
+    val locations = CopyOnWriteArrayList<String>()
+
     /** Set when the session asked an engine to play while another still held a file. */
     @Volatile var playedOverAnother = false
 
@@ -45,18 +48,23 @@ class ScriptedPlayer(private val provider: FakeProvider) {
     /** Breaks the stream partway through, as a Provider dropping the connection does. */
     fun fail() = current?.failure?.complete(IOException("scripted: the stream broke"))
 
+    /** Plays the file to its end. */
+    fun end() = current?.failure?.complete(null)
+
     private inner class Scripted(override val engine: Engine) : PlayerEngine {
         @Volatile override var position = 0L
         @Volatile private var events: ((PlayerEvent) -> Unit)? = null
         @Volatile private var request: HttpURLConnection? = null
         @Volatile private var released = false
-        val failure = CompletableDeferred<Throwable>()
+        /** Completes with how playing stops: a failure, or null for the file's end. */
+        val failure = CompletableDeferred<Throwable?>()
 
         override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
             if (current != null) playedOverAnother = true
             current = this
             val listingId = location.substringAfterLast('/').substringBefore('.').toLong()
             played += listingId to from
+            locations += location
             position = from
             // Opened on a thread of its own, so a slow stream doesn't hold up cancelling.
             val opened = CompletableDeferred<Unit>()
@@ -75,7 +83,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
             if (listingId in undecodable) throw CantOpen("scripted: $engine can't decode the file")
             this.events = events
             events(PlayerEvent.Started)
-            throw failure.await()
+            failure.await()?.let { throw it }
         }
 
         fun report(event: PlayerEvent) {

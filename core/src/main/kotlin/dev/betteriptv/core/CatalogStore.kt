@@ -55,6 +55,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
                 "PRIMARY KEY (title_key, language))",
         )
+        // Episodes kept before their file extension was are asked again, so they can play.
+        if (prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'audio_language'").use { it.step(); it.getLong(0) } > 0 &&
+            prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'container'").use { it.step(); it.getLong(0) } == 0L
+        ) {
+            execSQL("DROP TABLE show_details")
+            execSQL("DROP TABLE episode")
+        }
         // A show Listing's show details as the Provider gave them while the Show was last changed at `modified`.
         execSQL("CREATE TABLE IF NOT EXISTS show_details (listing_id INTEGER PRIMARY KEY, modified INTEGER, fetched_at INTEGER NOT NULL)")
         // What a movie Listing's file holds, from a Header read, Playback or the cloud; a null body: its header can't be read.
@@ -64,7 +71,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL("CREATE TABLE IF NOT EXISTS movie_details (listing_id INTEGER PRIMARY KEY, bitrate INTEGER, fetched_at INTEGER NOT NULL)")
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
-                "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, PRIMARY KEY (listing_id, id))",
+                "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, container TEXT, PRIMARY KEY (listing_id, id))",
         )
         // Where the Viewer stopped in a Title, in milliseconds, out of its `duration` when the player knew it.
         execSQL(
@@ -406,6 +413,26 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** The file extension of Episode [id] (`mkv`), or null when the Provider didn't say or no kept show details list it. */
+    fun episodeContainer(id: Long): String? = synchronized(reader) {
+        reader.prepare("SELECT container FROM episode WHERE id = ? AND container IS NOT NULL LIMIT 1").use {
+            it.bindLong(1, id)
+            if (it.step()) it.getText(0) else null
+        }
+    }
+
+    /** What the Viewer last picked in the player, by kind (`audio`, `subtitles`): a language, or what turning subtitles off is kept as. */
+    fun rememberedTrack(kind: String): String? = meta(REMEMBERED_TRACK + kind)
+
+    fun rememberTrack(kind: String, value: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+            it.bindText(1, REMEMBERED_TRACK + kind)
+            it.bindText(2, value)
+            it.step()
+        }
+        Unit
+    }
+
     /** The file extension of movie Listing [id] (`mkv`), or null when the Provider didn't say or the catalog doesn't have it. */
     fun container(id: Long): String? = synchronized(reader) {
         reader.prepare("SELECT container FROM listing WHERE kind = 'movie' AND id = ?").use {
@@ -468,7 +495,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             buildMap { while (it.step()) put(it.getLong(0), (if (it.isNull(1)) null else it.getLong(1)) to Instant.ofEpochMilli(it.getLong(2))) }
         }
         val episodes = reader.prepare(
-            "SELECT listing_id, id, season, number, title, added, width, height, audio_language FROM episode WHERE listing_id IN ($marks) ORDER BY season, number, id",
+            "SELECT listing_id, id, season, number, title, added, width, height, audio_language, container FROM episode WHERE listing_id IN ($marks) ORDER BY season, number, id",
         ).use {
             listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
             val byListing = HashMap<Long, MutableList<ProviderEpisode>>()
@@ -482,6 +509,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                     width = if (it.isNull(6)) null else it.getLong(6).toInt(),
                     height = if (it.isNull(7)) null else it.getLong(7).toInt(),
                     audioLanguage = if (it.isNull(8)) null else it.getText(8),
+                    container = if (it.isNull(9)) null else it.getText(9),
                 )
             }
             byListing
@@ -503,7 +531,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 it.bindLong(1, listingId)
                 it.step()
             }
-            writer.prepare("INSERT OR REPLACE INTO episode VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
+            writer.prepare("INSERT OR REPLACE INTO episode VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
                 episodes.forEach { episode ->
                     insert.bindLong(1, listingId)
                     insert.bindLong(2, episode.id)
@@ -514,6 +542,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                     if (episode.width == null) insert.bindNull(7) else insert.bindLong(7, episode.width.toLong())
                     if (episode.height == null) insert.bindNull(8) else insert.bindLong(8, episode.height.toLong())
                     if (episode.audioLanguage == null) insert.bindNull(9) else insert.bindText(9, episode.audioLanguage)
+                    if (episode.container == null) insert.bindNull(10) else insert.bindText(10, episode.container)
                     insert.stepAndReset()
                 }
             }
@@ -666,6 +695,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val LAST_SYNC_REMATCHED = "last_sync_rematched_listings"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
+        const val REMEMBERED_TRACK = "remembered_track_"
     }
 }
 

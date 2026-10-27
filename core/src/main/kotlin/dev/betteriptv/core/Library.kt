@@ -18,6 +18,8 @@ import java.io.Closeable
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
+import java.util.SortedMap
+import java.util.TreeMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -380,9 +382,67 @@ class Library private constructor(
     suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
-        val ranked = playable(candidates(title), contentLanguages, device, qualityCap)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id)) }
+        val remembered = rememberedTracks()
+        val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered) }
     }
+
+    /**
+     * What playing a Show's [episode] starts: its Best playable Version, chosen as a Movie's is, from
+     * the Episodes [episodes] read before; it starts from the beginning. Null for a Movie, or when the
+     * Show has no such Episode or no Version of it the device can display.
+     */
+    suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? =
+        withContext(Dispatchers.IO) { episodePlans(id, contentLanguages, device, qualityCap)?.get(episode)?.invoke() }
+
+    /**
+     * What to offer once [plan]'s Episode ends: the Show's next Episode the device can play, the next
+     * season's first after a season's last, and specials after the last season. Null for a Movie, or
+     * after the Show's last Episode.
+     */
+    suspend fun nextEpisodePlan(plan: PlayPlan, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
+        val playing = plan.episode ?: return@withContext null
+        val plans = episodePlans(plan.titleId, plan.contentLanguages, device, qualityCap) ?: return@withContext null
+        plans.tailMap(playing).entries.asSequence().filter { it.key != playing }.firstNotNullOfOrNull { it.value() }
+    }
+
+    /** A Show's Episodes, in order, each with what playing it starts, from the show details kept on the device. */
+    private fun episodePlans(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap): SortedMap<EpisodeNumber, () -> PlayPlan?>? {
+        if (id.kind != TitleKind.Show) return null
+        val title = store.title(id) ?: return null
+        val kept = store.showDetails(title.listings.map { it.id })
+        val remembered = rememberedTracks()
+        val languages = rankingLanguages(remembered, contentLanguages)
+        val byEpisode = episodeCandidates(title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes })
+        val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
+        byEpisode.forEach { (episode, candidates) ->
+            plans[episode] = {
+                val ranked = playable(candidates, languages, device, qualityCap)
+                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered) }
+            }
+        }
+        return plans
+    }
+
+    /** The audio and subtitle languages the Viewer last picked in the player. */
+    fun rememberedTracks(): RememberedTracks = remembered ?: run {
+        val subtitles = store.rememberedTrack(SUBTITLES)
+        RememberedTracks(store.rememberedTrack(AUDIO), subtitles?.takeIf { it != SUBTITLES_OFF }, subtitlesOff = subtitles == SUBTITLES_OFF).also { remembered = it }
+    }
+
+    /** Remembers that the Viewer picked audio in [language] (a BCP 47 tag), so it plays next time, and its Versions rank first. */
+    suspend fun rememberAudio(language: String) = withContext(Dispatchers.IO) {
+        store.rememberTrack(AUDIO, language)
+        remembered = rememberedTracks().copy(audio = language)
+    }
+
+    /** Remembers that the Viewer picked subtitles in [language], or turned them off when null, so the next file starts the same. */
+    suspend fun rememberSubtitles(language: String?) = withContext(Dispatchers.IO) {
+        store.rememberTrack(SUBTITLES, language ?: SUBTITLES_OFF)
+        remembered = rememberedTracks().copy(subtitles = language, subtitlesOff = language == null)
+    }
+
+    @Volatile private var remembered: RememberedTracks? = null
 
     /**
      * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
@@ -393,9 +453,10 @@ class Library private constructor(
         val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
         candidates.find { it.listing.id == listingId }?.let { chosen ->
             val version = withBackups(chosen, candidates)
+            val remembered = rememberedTracks()
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
-            val others = leadersWithBackups(preferred(candidates, contentLanguages).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id))
+            val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered)
         }
     }
 
@@ -460,13 +521,16 @@ class Library private constructor(
 
     /**
      * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
-     * closed: a second stream is never opened while one is in use. Close it when playback ends.
+     * closed: a second stream is never opened while one is in use. Close it when playback ends. An
+     * [episode]'s Version streams from the Provider's Shows, not its Movies.
      */
-    suspend fun connect(version: Version): Connection {
+    suspend fun connect(version: Version, episode: Boolean = false): Connection {
         val location = withContext(Dispatchers.IO) {
             val login = credentials.load() ?: throw ProviderException(WrongLogin)
-            // Most of the surveyed Provider's movies are MKV files.
-            XtreamClient(login, http).movieLocation(version.listingId, store.container(version.listingId) ?: "mkv")
+            val client = XtreamClient(login, http)
+            // Most of the surveyed Provider's files are MKV.
+            if (episode) client.episodeLocation(version.listingId, store.episodeContainer(version.listingId) ?: "mkv")
+            else client.movieLocation(version.listingId, store.container(version.listingId) ?: "mkv")
         }
         return Connection(location, connection.lease())
     }
@@ -656,6 +720,11 @@ class Library private constructor(
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
         private const val MATCH_FAILURES_IN_A_ROW = 3
+
+        /** The kinds of Track the Viewer's last picks are kept by, and what turning subtitles off is kept as. */
+        private const val AUDIO = "audio"
+        private const val SUBTITLES = "subtitles"
+        private const val SUBTITLES_OFF = "off"
         /** The cloud's answers about a Listing are asked again after this, so new Titles on TMDB come through. */
         private val MATCH_FRESH_FOR: Duration = Duration.ofDays(30)
         /** A name TMDB found nothing for is asked about again sooner, but not every daily Sync: few Titles are added in a week. */

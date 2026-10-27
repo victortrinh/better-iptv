@@ -112,6 +112,7 @@ class FakeProvider : Closeable {
         server.executor = Executors.newCachedThreadPool()
         server.createContext("/player_api.php") { exchange -> try { api(exchange) } finally { exchange.close() } }
         server.createContext("/movie/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
+        server.createContext("/series/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
         server.start()
     }
 

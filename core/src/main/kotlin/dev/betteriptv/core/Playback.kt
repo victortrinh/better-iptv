@@ -63,33 +63,82 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
 
 /**
  * What pressing Play starts: a [version] with its [Version.backups], and the Viewer's
- * [contentLanguages], which choose its Tracks once the player has read them. [versions] are the
- * Title's Versions the player can switch to, best first and the Viewer's languages first, each with
- * its Backups; [version] is among them. Playback starts [from] milliseconds in: where the Viewer
- * stopped last time, or the start.
+ * [contentLanguages] and [remembered] choices, which choose its Tracks once the player has read
+ * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
+ * languages first, each with its Backups; [version] is among them. Playback starts [from]
+ * milliseconds in: where the Viewer stopped last time, or the start. A Show's plan plays its
+ * [episode]; a Movie's has none.
  */
-data class PlayPlan(val titleId: TitleId, val version: Version, val contentLanguages: List<String>, val versions: List<Version>, val from: Long = 0) {
+data class PlayPlan(
+    val titleId: TitleId,
+    val version: Version,
+    val contentLanguages: List<String>,
+    val versions: List<Version>,
+    val from: Long = 0,
+    val episode: EpisodeNumber? = null,
+    val remembered: RememberedTracks = RememberedTracks(),
+) {
     /**
-     * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the first
-     * Content language the file has, with no subtitles. Among that language's Tracks, one that passes
-     * through or plays on the stick's decoder beats one decoded in software (a Blu-ray rip's Dolby
-     * Digital Track over its TrueHD one, without a soundbar), and audio nothing on the device plays is
-     * never chosen. Without audio in any of them, the file's default audio plays with subtitles in
-     * the first Content language, when the file has them.
+     * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the
+     * language the Viewer last picked, else in the first Content language the file has. Among that
+     * language's Tracks, one that passes through or plays on the stick's decoder beats one decoded
+     * in software (a Blu-ray rip's Dolby Digital Track over its TrueHD one, without a soundbar), and
+     * audio nothing on the device plays is never chosen. Subtitles are the ones the Viewer last
+     * picked (or none, when they last turned them off) when the file has them; otherwise there are
+     * none, unless no audio is in any of those languages: then the file's default audio plays with
+     * subtitles in the first Content language, when the file has them.
      */
-    fun chooseTracks(audio: List<Track>, subtitles: List<Track>, device: DeviceProfile): TrackChoice {
-        val wanted = contentLanguages.map(::primaryLanguage)
+    fun chooseTracks(audio: List<Track>, subtitles: List<Track>, device: DeviceProfile, remembered: RememberedTracks = this.remembered): TrackChoice {
+        val wanted = rankingLanguages(remembered, contentLanguages).map(::primaryLanguage)
         val outputs = audio.map { device.audioOutput(it.mimeType) }
         val audioIndex = wanted.firstNotNullOfOrNull { language ->
             audio.indices.filter { audio[it].isIn(language) && outputs[it] != null }.minByOrNull { outputs[it]!!.ordinal }
         }
-        if (audioIndex != null) return TrackChoice(audioIndex, subtitle = null)
-        val subtitle = wanted.firstOrNull()?.let { language -> subtitles.indexOfFirst { it.isIn(language) }.takeIf { it >= 0 } }
-        return TrackChoice(audio = null, subtitle)
+        val picked = remembered.subtitles?.let { language -> subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 } }
+        val subtitle = when {
+            remembered.subtitlesOff -> null
+            picked != null -> picked
+            audioIndex != null -> null
+            else -> contentLanguages.firstOrNull()?.let { language -> subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 } }
+        }
+        return TrackChoice(audioIndex, subtitle)
     }
 
     private fun Track.isIn(language: String) = this.language?.let(::trackLanguage) == language
 }
+
+/** An Episode of a Show, by season and episode number. */
+data class EpisodeNumber(val season: Int, val number: Int)
+
+/**
+ * The audio and subtitle languages the Viewer last picked in the player, kept for the next file:
+ * [audio] is null until they pick one, and [subtitles] is a language, or none when they turned
+ * subtitles off ([subtitlesOff]) or never picked any.
+ */
+data class RememberedTracks(val audio: String? = null, val subtitles: String? = null, val subtitlesOff: Boolean = false)
+
+/** The languages Versions and Tracks are preferred in: the audio language the Viewer last picked, then their [contentLanguages]. */
+internal fun rankingLanguages(remembered: RememberedTracks, contentLanguages: List<String>): List<String> =
+    (listOfNotNull(remembered.audio) + contentLanguages).distinctBy(::primaryLanguage)
+
+/**
+ * The refresh rate among the TV's [rates] (in Hz) to show a film of [frameRate] frames a second
+ * without judder: the lowest that is a whole multiple of it (24 Hz, or 48, for a 24 fps film; 50 Hz
+ * for 25 fps). 24 Hz doesn't fit 23.976 fps: it would drop a frame every 42 seconds. Null when the
+ * [current] rate already fits, or no rate does.
+ */
+fun refreshRateFor(frameRate: Float, current: Float, rates: List<Float>): Float? {
+    if (frameRate <= 0) return null
+    fun fits(rate: Float): Boolean {
+        val multiple = Math.round(rate / frameRate)
+        return multiple >= 1 && kotlin.math.abs(rate - multiple * frameRate) / rate < REFRESH_RATE_TOLERANCE
+    }
+    if (fits(current)) return null
+    return rates.filter(::fits).minOrNull()
+}
+
+/** How far a refresh rate may be from a whole multiple of the frame rate, as a share of it: TVs report 23.976 Hz as 23.976025. */
+private const val REFRESH_RATE_TOLERANCE = 0.0003f
 
 /**
  * An audio or subtitle Track found in a file, with its [language] as the file tags it (ISO 639-1
