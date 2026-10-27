@@ -79,6 +79,7 @@
     <string name="track_mono">Mono</string>
     <string name="track_stereo">Stéréo</string>
     <string name="subtitle_style">Style des sous-titres</string>
+    <string name="subtitle_style_vlc">VLC utilise un nouveau style à son prochain démarrage.</string>
     <string name="subtitle_size">Taille</string>
     <string name="subtitle_small">Petite</string>
     <string name="subtitle_medium">Moyenne</string>

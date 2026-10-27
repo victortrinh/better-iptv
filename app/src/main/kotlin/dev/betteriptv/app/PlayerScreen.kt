@@ -55,6 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
@@ -596,6 +599,8 @@ private fun TracksPanel(
                 }
             }
             item { PanelHeading(stringResource(R.string.subtitle_style)) }
+            // libVLC reads the style only when it starts, and restarting it to show a change takes many seconds on the stick.
+            if (player?.engine == Engine.Vlc) item { Text(stringResource(R.string.subtitle_style_vlc), style = Type.body, color = Colors.inkMuted) }
             item {
                 StyleChoice(R.string.subtitle_size, listOf(R.string.subtitle_small, R.string.subtitle_medium, R.string.subtitle_large, R.string.subtitle_largest), style.size.ordinal) {
                     onStyle(style.copy(size = SubtitleSize.entries[it]))
@@ -631,7 +636,7 @@ private fun PanelHeading(text: String, modifier: Modifier = Modifier) {
 /** A subtitle style setting: its label in a column of its own, the choices beside it. */
 @Composable
 private fun StyleChoice(label: Int, options: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
         ChoiceRow(options.map { stringResource(it) }, selected, onSelect)
     }
@@ -640,7 +645,7 @@ private fun StyleChoice(label: Int, options: List<Int>, selected: Int, onSelect:
 /** An audio or subtitle delay, made earlier or later a step at a time. */
 @Composable
 private fun DelayRow(label: Int, delay: Long, onChange: (Long) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
         NuageButton(stringResource(R.string.delay_earlier), onClick = { onChange(delay - DELAY_STEP) })
         Text(
@@ -655,6 +660,11 @@ private fun DelayRow(label: Int, delay: Long, onChange: (Long) -> Unit) {
 }
 
 private val STYLE_LABEL = 200.dp
+
+/** Left and Right stay in this row at its ends, instead of jumping to whatever lies beside it above or below. */
+private fun Modifier.keepsSideFocus() = focusProperties {
+    onExit = { if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange() }
+}.focusGroup()
 
 /** A Track as the Viewer picks it: its language, then for audio its channels and format. */
 private fun Context.trackName(track: Track): String {
