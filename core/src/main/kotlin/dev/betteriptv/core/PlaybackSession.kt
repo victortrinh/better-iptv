@@ -1,13 +1,18 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 import java.io.IOException
+import kotlin.time.Duration.Companion.seconds
 
 /** The player engines a Version can play on: Media3 by default, VLC for the rare file Media3 can't open. */
 enum class Engine {
@@ -33,6 +38,9 @@ interface PlayerEngine {
 
     /** Where playback is in the file, in milliseconds; where it will start until it does. */
     val position: Long
+
+    /** How long the file plays, in milliseconds, or null until the engine knows. */
+    val duration: Long? get() = null
 
     /**
      * Plays the file at [location] from [from] milliseconds until it ends. Throws [CantOpen] when
@@ -63,9 +71,10 @@ sealed interface PlaybackState {
 }
 
 /**
- * Plays a [plan]'s Version on Media3, moving to the VLC engine when Media3 can't open the file, and
- * between the two when the Viewer asks to [tryOtherPlayer]. Every engine plays through the
- * Viewer's one connection, which is given back only once the engine has let go of the file.
+ * Plays a [plan]'s Version on Media3 from where the plan starts, moving to the VLC engine when Media3
+ * can't open the file, and between the two when the Viewer asks to [tryOtherPlayer]. Every engine
+ * plays through the Viewer's one connection, which is given back only once the engine has let go of
+ * the file. Where the Viewer is gets recorded as it plays and when it stops, so Play resumes there.
  */
 class PlaybackSession internal constructor(
     private val library: Library,
@@ -85,11 +94,12 @@ class PlaybackSession internal constructor(
     /** Plays until the file ends; cancel it to stop. A failure waits for the Viewer to [tryOtherPlayer]. */
     suspend fun play() {
         var engine = Engine.Media3
-        var from = 0L
+        var from = plan.from
         while (true) {
             _state.value = PlaybackState.Connecting
             when (val outcome = playOnce(engine, from)) {
                 Outcome.Ended -> {
+                    withContext(Dispatchers.IO) { library.finished(plan.titleId) }
                     _state.value = PlaybackState.Ended
                     return
                 }
@@ -126,6 +136,15 @@ class PlaybackSession internal constructor(
                 switches.tryReceive()
                 _state.value = PlaybackState.Playing(player)
                 return coroutineScope {
+                    // Recorded now and then too, so a crash or a pulled plug loses little.
+                    val recording = launch {
+                        while (true) {
+                            delay(RECORD_EVERY)
+                            val position = player.position
+                            val duration = player.duration
+                            withContext(Dispatchers.IO) { library.saveProgress(plan.titleId, position, duration) }
+                        }
+                    }
                     val playing = async {
                         try {
                             player.play(relay?.location ?: connection.location, from)
@@ -142,9 +161,11 @@ class PlaybackSession internal constructor(
                             playing.cancel()
                             Outcome.Switched(player.position)
                         }
-                    }
+                    }.also { recording.cancel() }
                 }
             } finally {
+                // A quick write, made even while the Viewer leaving cancels playback.
+                library.saveProgress(plan.titleId, player.position, player.duration)
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Connecting
                 player.release()
@@ -154,6 +175,10 @@ class PlaybackSession internal constructor(
             // Releasing closes the engine's request to the Provider, so only then is the connection given back.
             connection.close()
         }
+    }
+
+    private companion object {
+        val RECORD_EVERY = 15.seconds
     }
 
     private sealed interface Outcome {

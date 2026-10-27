@@ -12,7 +12,8 @@ import java.util.Locale
 internal class TitleMetadata(json: String) {
     private val tree = JsonReader.of(Buffer().writeUtf8(json)).use { it.readJsonValue() } as Map<*, *>
 
-    private val originalLanguage = tree["originalLanguage"] as? String
+    /** The language the Title was released in (ISO 639-1), which an Untagged Version is Likely in. */
+    val originalLanguage = tree["originalLanguage"] as? String
     private val originalTitle = (tree["originalTitle"] as? String).orEmpty()
     private val titles = texts("titles", "title")
     private val descriptions = texts("descriptions", "text")
@@ -22,6 +23,8 @@ internal class TitleMetadata(json: String) {
     val runtimeMinutes: Int? = (tree["runtimeMinutes"] as? Number)?.toInt()
     val poster: String? = image(tree["posterPath"], POSTER_SIZE)
     val backdrop: String? = image(tree["backdropPath"], BACKDROP_SIZE)
+    /** TMDB's popularity score: higher is more watched lately. */
+    val popularity: Double = (tree["popularity"] as? Number)?.toDouble() ?: 0.0
     val cast: List<String> = (tree["cast"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("name") as? String }
 
     /** The Title's name in [appLanguage], else in English, else as it was released. */

@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -180,6 +181,64 @@ class PlaybackTest {
         withTimeout(2_000) { library.connect(plan.version) }.close()
     }
 
+    private val device = DeviceProfile(maxHeight = 1080, hdr = emptySet())
+
+    private suspend fun nextPlan() = library.playPlan(plan.titleId, listOf("en"), device)!!
+
+    /** Plays [plan] until it reaches [position] of [duration], then leaves, as the Viewer pressing Back would. */
+    private suspend fun stopAt(position: Long, duration: Long? = null) = coroutineScope {
+        created.clear()
+        val session = session()
+        val job = launch { session.play() }
+        val engine = session.awaitPlaying(Engine.Media3, count = 1)
+        engine.position = position
+        engine.duration = duration
+        job.cancel()
+        job.join()
+    }
+
+    @Test fun `Play resumes where the Viewer stopped`() = runBlocking {
+        stopAt(42 * 60_000L)
+
+        plan = nextPlan()
+        assertEquals(42 * 60_000L, plan.from)
+        created.clear()
+        val session = session()
+        val job = launch { session.play() }
+        assertEquals(42 * 60_000L, session.awaitPlaying(Engine.Media3, count = 1).startedFrom)
+        job.cancel()
+    }
+
+    @Test fun `Play resumes from the Version the Viewer chose too`() = runBlocking {
+        stopAt(42 * 60_000L)
+
+        assertEquals(42 * 60_000L, library.chosenPlayPlan(plan.titleId, plan.version.listingId, listOf("en"))!!.from)
+    }
+
+    @Test fun `stopping in the first minute doesn't record a resume point`() = runBlocking {
+        stopAt(30_000L)
+
+        assertEquals(0L, nextPlan().from)
+    }
+
+    @Test fun `stopping in the credits marks the Title watched, so Play starts over`() = runBlocking {
+        stopAt(115 * 60_000L, duration = 120 * 60_000L)
+
+        assertEquals(0L, nextPlan().from)
+        assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
+    }
+
+    @Test fun `playing to the end marks the Title watched`() = runBlocking {
+        stopAt(42 * 60_000L)
+        plan = nextPlan()
+        scripts[Engine.Media3] = Script.Ends
+
+        session().play()
+
+        assertEquals(0L, nextPlan().from)
+        assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
+    }
+
     private enum class Script { Plays, CantOpen, Breaks, Ends }
 
     /**
@@ -192,6 +251,7 @@ class PlaybackTest {
         override val overlapsRequests: Boolean = false,
     ) : PlayerEngine {
         @Volatile override var position = 0L
+        @Volatile override var duration: Long? = null
         @Volatile var startedFrom: Long? = null
         @Volatile var released = false
         val opened = MutableStateFlow(false)

@@ -42,29 +42,45 @@ private fun Root(app: BetterIptvApp) {
         val contentLanguages = remember { listOf(Locale.getDefault().toLanguageTag()) }
         // The App language is the device's when it is French, English otherwise, until settings let the Viewer choose.
         val appLanguage = remember { Locale.getDefault().takeIf { it.language == "fr" }?.toLanguageTag() ?: "en" }
-        var kind by remember { mutableStateOf(TitleKind.Movie) }
-        // Each list keeps its scroll position while the other is shown.
+        var tab by remember { mutableStateOf(Browse.Home) }
+        // Each screen keeps its scroll position while another is shown.
+        val home = remember { HomeState() }
         val movies = rememberLazyGridState()
         val shows = rememberLazyGridState()
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
+        var returnedToHome by remember { mutableStateOf<HomeCard?>(null) }
         var playing by remember { mutableStateOf<PlayPlan?>(null) }
         val context = LocalContext.current
+        val onTab = { selected: Browse ->
+            tab = selected
+            returnedFrom = -1
+            returnedToHome = null
+        }
         when (val title = opened) {
-            null -> TitlesScreen(
-                app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
-                restoreFocus = returnedFrom,
-                onSyncNow = app::sync,
-                onKind = {
-                    kind = it
-                    returnedFrom = -1
-                },
-                onOpen = { index, id -> opened = OpenedTitle(index, id) },
-            )
+            null -> when (tab) {
+                Browse.Home -> HomeScreen(
+                    app.library, contentLanguages, appLanguage, home,
+                    restoreFocus = returnedToHome,
+                    onTab = onTab,
+                    onOpen = { opened = OpenedTitle(-1, it.id, it) },
+                )
+                Browse.Movies, Browse.Shows -> {
+                    val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
+                    TitlesScreen(
+                        app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
+                        restoreFocus = returnedFrom,
+                        onSyncNow = app::sync,
+                        onTab = onTab,
+                        onOpen = { index, id -> opened = OpenedTitle(index, id) },
+                    )
+                }
+            }
             else -> when (val plan = playing) {
                 null -> {
                     BackHandler {
                         returnedFrom = title.cardIndex
+                        returnedToHome = title.homeCard
                         opened = null
                     }
                     TitleScreen(
@@ -82,5 +98,5 @@ private fun Root(app: BetterIptvApp) {
     }
 }
 
-/** The Title whose details are open, and which card opened it, so focus goes back there. */
-private data class OpenedTitle(val cardIndex: Int, val id: TitleId)
+/** The Title whose details are open, and which card opened it (in a list, or on the home screen), so focus goes back there. */
+private data class OpenedTitle(val cardIndex: Int, val id: TitleId, val homeCard: HomeCard? = null)

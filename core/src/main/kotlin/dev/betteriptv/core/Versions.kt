@@ -30,6 +30,17 @@ internal fun preferred(candidates: List<Candidate>, contentLanguages: List<Strin
 }
 
 /**
+ * Whether a Title belongs in the browse rows for the Viewer's [contentLanguages]: it has a Version in
+ * one of them, or an Untagged Version Likely in one because the Title was released in it ([originalLanguage]).
+ */
+internal fun inContentLanguages(candidates: List<Candidate>, contentLanguages: List<String>, originalLanguage: String?): Boolean {
+    val wanted = contentLanguages.map(::primaryLanguage).toSet()
+    return candidates.any { candidate ->
+        candidate.primaryLanguage?.let { it in wanted } ?: (originalLanguage?.let(::primaryLanguage) in wanted)
+    }
+}
+
+/**
  * Groups [candidates] by language: the Viewer's [contentLanguages] in their order, then Untagged
  * Versions (which may well be in the Viewer's language), then the other languages, most Versions
  * first. Within a group the best Version leads, and Versions equivalent to a better one (same

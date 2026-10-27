@@ -139,6 +139,7 @@ fun tmdbTitle(
     posterPath: String? = null,
     backdropPath: String? = null,
     cast: List<String> = emptyList(),
+    popularity: Double = 10.0,
 ): Map<String, Any?> = mapOf(
     "kind" to kind,
     "tmdbId" to tmdbId,
@@ -148,7 +149,7 @@ fun tmdbTitle(
     "alternativeTitles" to emptyList<String>(),
     "descriptions" to descriptions.map { (language, region, text) -> mapOf("language" to language, "region" to region, "text" to text) },
     "genres" to genres,
-    "popularity" to 10.0,
+    "popularity" to popularity,
     "releaseDate" to releaseDate,
     "runtimeMinutes" to runtimeMinutes,
     "posterPath" to posterPath,
