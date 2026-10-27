@@ -184,10 +184,15 @@ class SearchTest {
         var started = System.nanoTime()
         library.prepareSearch()
         val built = (System.nanoTime() - started) / 1_000_000
-        started = System.nanoTime()
         val results = library.search("generated movie 12345", english, "en")
+        // Best of 3, timing only the search: a shared CI runner can stall on any one of them,
+        // which says nothing about Search itself.
+        val searched = (1..3).minOf {
+            started = System.nanoTime()
+            library.search("generated movie 12345", english, "en")
+            (System.nanoTime() - started) / 1_000_000
+        }
         library.close()
-        val searched = (System.nanoTime() - started) / 1_000_000
         println("Search index of 150,000 movie Listings on this machine: built in $built ms, searched in $searched ms")
 
         assertTrue(results.movies.isNotEmpty())
