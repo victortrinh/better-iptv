@@ -35,6 +35,7 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 | Header read of one Version on its details page (MKV: one 256 KB range request; MP4: start, plus end when the index is there) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build, against the real Provider, 2026-10-27 | About 1.1 s per MKV and 2.5 s per MP4, one after another. The first read lands 5.5 s after the page opens, behind the Provider's movie details and the cloud lookup. Reads shared through the cloud come back all at once 1.5 s after the page opens, with no stream. Play pressed during a read starts in 6.1 s with no refused stream; the interrupted read is dropped. |
 | Sync after the catalog is dropped by a schema change (138,644 movie and 36,302 show Listings) | Same stick and build, 2026-10-27 | 186 s, 472 Listings Matched by name. |
 | Search index built from the whole catalog | Same stick and build | About 70–90 s of CPU on one core. Until #51's fix, every other catalog read (a details page, the grids) waited for it. |
+| Starting a Version, and switching Version from the Menu key (#43) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build, against the real Provider, 2026-10-27 | Play to first frame: 3.8 s resuming an MKV at 7 min, 6.1 s for an MP4 while a Header read was running. Switching English (AAC) → Español (E-AC-3, passed through) → English: 3.5 s and 3.6 s from the old player's release to the new first frame, at the same scene, subtitles kept. Four 10 s seeks after: no refused stream. |
 
 ## M1: Replace TiviMate for Movies and Shows
 
