@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -411,8 +412,13 @@ private fun VersionsPanel(
     if (engine == null) LaunchedEffect(Unit) { first.requestFocus() }
     BackHandler(onBack = onClose)
     Box(Modifier.fillMaxSize().background(bottomScrim)) {
+        // The rows' muted text is over a moving picture, so one veil lies under the whole list,
+        // as high as the Versions need, a little wider than the rows and down past the screen's edge.
         Column(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f).padding(horizontal = Spacing.screenX),
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f).wrapContentHeight(Alignment.Bottom)
+                .padding(horizontal = Spacing.screenX - Spacing.m)
+                .background(Colors.veil, RoundedCornerShape(topStart = Corners.card, topEnd = Corners.card))
+                .padding(start = Spacing.m, end = Spacing.m, top = Spacing.m),
         ) {
             Row(Modifier.fillMaxWidth().padding(bottom = Spacing.s), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink, modifier = Modifier.weight(1f))
@@ -424,6 +430,7 @@ private fun VersionsPanel(
             }
             VersionHeader(Modifier.padding(bottom = 2.dp))
             LazyColumn(
+                Modifier.weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
                 contentPadding = PaddingValues(bottom = Spacing.screenY),
             ) {
