@@ -24,6 +24,7 @@
     <string name="search_title">Search</string>
     <string name="search_hint">Any language works, and accents and small typos are fine: \"pokemon\" finds Pokémon.</string>
     <string name="search_start">Type two letters to find Movies, Shows and people.</string>
+    <string name="search_searching">Searching…</string>
     <string name="search_none">Nothing matches \"%1$s\".</string>
     <string name="search_movies">Movies · %1$d</string>
     <string name="search_shows">Shows · %1$d</string>
