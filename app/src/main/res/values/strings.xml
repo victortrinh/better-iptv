@@ -95,6 +95,7 @@
     <string name="track_mono">Mono</string>
     <string name="track_stereo">Stereo</string>
     <string name="subtitle_style">Subtitle style</string>
+    <string name="subtitle_style_vlc">VLC uses a new style the next time it starts.</string>
     <string name="subtitle_size">Size</string>
     <string name="subtitle_small">Small</string>
     <string name="subtitle_medium">Medium</string>
