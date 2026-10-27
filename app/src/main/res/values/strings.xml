@@ -55,6 +55,7 @@
     <string name="version_audio">Audio</string>
     <string name="version_subtitles">Subtitles</string>
     <string name="version_bitrate">Bitrate</string>
+    <string name="version_bitrate_value">%1$.1f Mb/s</string>
     <string name="version_none">—</string>
     <string name="version_cam">Cinema recording (CAM)</string>
     <string name="version_audio_description">Audio description</string>

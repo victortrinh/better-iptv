@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.Closeable
+import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -47,6 +48,7 @@ class Library private constructor(
     private val rebuildingSearch = AtomicBoolean()
     @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
+    private val headerReader = HeaderReader(http)
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
@@ -470,6 +472,112 @@ class Library private constructor(
     }
 
     /**
+     * What a Movie's details page starts, without the page waiting for it: the bitrates from the
+     * Provider's movie details of its Versions (API calls, never a stream), what Viewers of the same
+     * Provider read before (from the cloud), then Header reads of the best unconfirmed Version in each
+     * language, the Viewer's [contentLanguages] first, one at a time while the Viewer's connection is
+     * free. Pressing Play takes the connection at once and ends the reads, and so does the Provider
+     * refusing one. Calls [changed] each time a Version's attributes change, so the page shows them.
+     * Results are kept on the device and shared through the cloud, so a Version is never read twice.
+     */
+    suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
+        if (id.kind != TitleKind.Movie) return@withContext
+        val title = store.title(id) ?: return@withContext
+        val login = credentials.load() ?: return@withContext
+        val client = XtreamClient(login, http)
+        val ids = title.listings.map { it.id }
+        val asked = store.movieBitrates(ids).keys
+        val unasked = ids.filter { it !in asked }
+        if (unasked.isNotEmpty()) {
+            val gate = Semaphore(SHOW_DETAILS_AT_ONCE)
+            val bitrates = coroutineScope {
+                unasked.map { listing ->
+                    async {
+                        gate.withPermit {
+                            try {
+                                listing to client.movieBitrate(listing)
+                            } catch (e: ProviderException) {
+                                null
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }.filterNotNull().toMap()
+            store.saveMovieBitrates(bitrates, Instant.now())
+            if (bitrates.values.any { it != null }) changed()
+        }
+        val provider = providerKey(login)
+        shareFileReads(provider)
+        if (lookUpFileReads(provider, ids)) changed()
+        for (version in unread(title, contentLanguages)) {
+            val container = store.container(version.listingId) ?: "mkv"
+            if (container !in HEADER_READABLE) continue
+            val read = try {
+                connection.whileFree { Read(headerReader.read(client.movieLocation(version.listingId, container), container)) }
+            } catch (e: IOException) {
+                // The Provider refused: no more reads for now.
+                null
+            } ?: break
+            store.saveFileRead(version.listingId, read.contents?.toJson(), Instant.now(), shared = false)
+            if (read.contents != null) changed()
+        }
+        shareFileReads(provider)
+    }
+
+    private class Read(val contents: FileContents?)
+
+    /** The best Version not yet read in each of [title]'s languages, the Viewer's [contentLanguages] first. */
+    private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
+        val read = store.fileReads(title.listings.map { it.id }).keys
+        val (languages, otherLanguages) = groupByLanguage(candidates(title), contentLanguages)
+        return (languages + otherLanguages).mapNotNull { group ->
+            group.versions.flatMap { listOf(it) + it.backups }.firstOrNull { it.listingId !in read }
+        }
+    }
+
+    /** Keeps what the cloud has of [listingIds]' file reads that the device lacks; whether there were any. */
+    private fun lookUpFileReads(provider: String, listingIds: List<Long>): Boolean {
+        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return false
+        val kept = store.fileReads(listingIds).keys
+        var found = false
+        try {
+            listingIds.filter { it !in kept }.chunked(CloudClient.MAX_BATCH).forEach { batch ->
+                cloud.fileReads(provider, batch).forEach { (id, body) ->
+                    store.saveFileRead(id, body, Instant.now(), shared = true)
+                    found = true
+                }
+            }
+        } catch (e: CloudException) {
+            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+        }
+        return found
+    }
+
+    /** Shares the file reads the cloud doesn't have yet; those it doesn't take are shared next time. */
+    private fun shareFileReads(provider: String) {
+        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
+        try {
+            store.unsharedFileReads().entries.chunked(CloudClient.MAX_BATCH).forEach { batch ->
+                val files = batch.associate { it.key to it.value }
+                cloud.shareFileReads(provider, files)
+                store.markFileReadsShared(files.keys)
+            }
+        } catch (e: CloudException) {
+            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+        }
+    }
+
+    /**
+     * Confirms what Playback of [version] found in its file. A Header read's bitrate and HDR format
+     * stand where the player didn't report them. It is shared with the cloud on the next details page.
+     */
+    internal fun confirm(version: Version, seen: FileContents) {
+        val before = store.fileReads(listOf(version.listingId))[version.listingId]
+        val file = seen.copy(hdr = seen.hdr ?: before?.hdr, bitrate = seen.bitrate ?: before?.bitrate)
+        store.saveFileRead(version.listingId, file.toJson(), Instant.now(), shared = false)
+    }
+
+    /**
      * A Playback session for [plan], playing on the player engines [engines] creates: it starts the
      * plan's Version, falling back to the VLC engine and to its Backups, and switches Version or
      * engine when the Viewer asks. Start it with [PlaybackSession.play].
@@ -526,7 +634,19 @@ class Library private constructor(
         return buildMap { cached.forEach { (id, stored) -> stored.body?.let { put(id, TitleMetadata(it)) } } }
     }
 
-    private fun candidates(title: StoredTitle) = title.listings.map(::candidates)
+    /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
+    private fun candidates(title: StoredTitle): List<Candidate> {
+        val plain = title.listings.map(::candidates)
+        if (title.id.kind != TitleKind.Movie) return plain
+        val ids = title.listings.map { it.id }
+        val reads = store.fileReads(ids)
+        val bitrates = store.movieBitrates(ids)
+        return plain.map { candidate ->
+            val id = candidate.listing.id
+            val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
+            Candidate(candidate.listing, reads[id]?.let(withBitrate::confirmedBy) ?: withBitrate)
+        }
+    }
 
     private fun candidates(listing: StoredListing) = Candidate(listing, prefixTable.describe(listing.name, listing.category).attributes)
 

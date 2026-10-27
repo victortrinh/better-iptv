@@ -216,6 +216,19 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         endObject()
     }
 
+    /**
+     * The bitrate in bits per second the Provider's movie details give for movie Listing [id], from
+     * its own reading of the file; null when they don't say. The details give kilobits per second.
+     */
+    fun movieBitrate(id: Long): Long? = api("get_vod_info", "vod_id" to id.toString()) { json ->
+        var bitrate: Long? = null
+        // A movie without details has `"info": []`.
+        json.readObject { field ->
+            if (field == "info") readObject { info -> if (info == "bitrate") bitrate = nextScalar()?.toLongOrNull()?.takeIf { it > 0 }?.times(1000) else skipValue() } else skipValue()
+        }
+        bitrate
+    }
+
     /** Where movie Listing [id]'s file streams from. It holds the login, so it goes to the player engine only. */
     fun movieLocation(id: Long, container: String): String =
         base.newBuilder().addPathSegment("movie").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()

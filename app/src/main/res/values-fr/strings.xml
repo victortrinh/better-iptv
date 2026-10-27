@@ -45,6 +45,7 @@
     <string name="version_audio">Audio</string>
     <string name="version_subtitles">Sous-titres</string>
     <string name="version_bitrate">Débit</string>
+    <string name="version_bitrate_value">%1$.1f Mb/s</string>
     <string name="version_none">—</string>
     <string name="version_cam">Enregistrement en salle (CAM)</string>
     <string name="version_audio_description">Audiodescription</string>

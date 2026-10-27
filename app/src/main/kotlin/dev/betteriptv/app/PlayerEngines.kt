@@ -6,7 +6,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -20,6 +22,8 @@ import androidx.media3.ui.PlayerView
 import dev.betteriptv.core.CantOpen
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Engine
+import dev.betteriptv.core.FileContents
+import dev.betteriptv.core.Hdr
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
@@ -65,9 +69,12 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile) : Pl
     override val engine = Engine.Media3
     private val requests = OpenRequests()
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
-    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device)) }
+    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device) { seen = it }) }
     override val position: Long get() = player.currentPosition
     override val duration: Long? get() = player.duration.takeIf { it > 0 }
+
+    @Volatile override var seen: FileContents? = null
+        private set
 
     /** Shows the player in a [view] made for it, ASS subtitles included. */
     fun showIn(view: PlayerView) = playing.showIn(view)
@@ -174,13 +181,22 @@ private class OpenRequests {
 private fun PlaybackException.isTheFiles() = errorCode / 1000 in 3..5 ||
     errorCode == PlaybackException.ERROR_CODE_UNSPECIFIED || errorCode == PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK
 
-/** Applies the [plan]'s Track choice for [device] once, as soon as the player knows the file's Tracks. */
-private class TrackChooser(private val player: ExoPlayer, private val plan: PlayPlan, private val device: DeviceProfile) : Player.Listener {
+/**
+ * Applies the [plan]'s Track choice for [device] once, as soon as the player knows the file's
+ * Tracks, and tells [onSeen] what the file holds, so Playback Confirms the Version.
+ */
+private class TrackChooser(
+    private val player: ExoPlayer,
+    private val plan: PlayPlan,
+    private val device: DeviceProfile,
+    private val onSeen: (FileContents) -> Unit,
+) : Player.Listener {
     private var chosen = false
 
     override fun onTracksChanged(tracks: Tracks) {
         if (chosen || tracks.isEmpty) return
         chosen = true
+        onSeen(tracks.contents())
         // Only Tracks the stick can play: choosing one it can't would leave the picture silent.
         val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
         val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
@@ -282,4 +298,22 @@ class VlcEngine(context: Context, private val plan: PlayPlan, private val device
         player.release()
         vlc.release()
     }
+}
+
+/** What a file holds, from every Track Media3 found in it, playable or not. */
+private fun Tracks.contents(): FileContents {
+    fun formats(type: Int) = groups.filter { it.type == type }.map { it.getTrackFormat(0) }
+    val video = formats(C.TRACK_TYPE_VIDEO).firstOrNull()
+    return FileContents(
+        audio = formats(C.TRACK_TYPE_AUDIO).map { Track(it.language, it.sampleMimeType, it.channelCount.takeIf { count -> count != Format.NO_VALUE }) },
+        subtitles = formats(C.TRACK_TYPE_TEXT).map { Track(it.language, it.sampleMimeType) },
+        width = video?.width?.takeIf { it != Format.NO_VALUE },
+        height = video?.height?.takeIf { it != Format.NO_VALUE },
+        hdr = when {
+            video == null -> null
+            video.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION -> Hdr.DolbyVision
+            video.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> Hdr.HDR10
+            else -> null
+        },
+    )
 }

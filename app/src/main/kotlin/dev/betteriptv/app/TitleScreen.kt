@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -88,8 +89,11 @@ fun TitleScreen(
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan) -> Unit,
 ) {
+    // Each Header read that Confirms something reloads the details and the plan, in place.
+    var reads by remember(id) { mutableIntStateOf(0) }
+    LaunchedEffect(id, contentLanguages) { library.readHeaders(id, contentLanguages) { reads++ } }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap) {
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads) {
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }

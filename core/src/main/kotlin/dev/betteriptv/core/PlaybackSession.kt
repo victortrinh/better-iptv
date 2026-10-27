@@ -66,6 +66,9 @@ interface PlayerEngine {
      */
     suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit)
 
+    /** What the engine found in the file once it opened it, so Playback Confirms the Version; null until then. */
+    val seen: FileContents? get() = null
+
     /** Stops and lets go of the file; returns once the engine's request to the Provider is closed. */
     suspend fun release()
 }
@@ -223,6 +226,7 @@ class PlaybackSession internal constructor(
                 library.saveProgress(plan.titleId, resumeAt, player.duration)
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
+                player.seen?.let { library.confirm(version, it) }
                 withContext(NonCancellable) {
                     player.release()
                     relay?.close()

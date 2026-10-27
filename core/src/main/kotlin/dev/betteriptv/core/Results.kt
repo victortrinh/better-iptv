@@ -119,7 +119,7 @@ enum class Provenance {
     /** Inferred from the Prefix, the Category or the Title's original language. */
     Likely,
 
-    /** Read from the file, through a Header read, Playback or the Provider's Episode details. */
+    /** Read from the file, through a Header read, Playback or the Provider's Episode or movie details. */
     Confirmed,
 }
 
@@ -144,6 +144,8 @@ data class VersionAttributes(
     val dolbyAudio: Boolean = false,
     val cam: Boolean = false,
     val audioDescription: Boolean = false,
+    /** The file's bitrate in bits per second, from a Header read or the Provider's movie details. */
+    val bitrate: Known<Long>? = null,
 )
 
 /** A Prefix the Prefix table doesn't know, seen on [listingCount] Listings such as [example]. */

@@ -70,7 +70,7 @@ fun Context.versionLine(version: Version): VersionLine {
         source = attributes.source?.value ?: none,
         audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
-        bitrate = null,
+        bitrate = attributes.bitrate?.value?.let { getString(R.string.version_bitrate_value, it / 1e6) },
         backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
         // Both notes are cautions.
         note = when {
