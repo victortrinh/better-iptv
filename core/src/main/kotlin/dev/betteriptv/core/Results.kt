@@ -29,6 +29,24 @@ sealed interface TitleId {
  */
 data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes)
 
+/** A row on the home screen. */
+sealed interface HomeRow {
+    /** The Titles the Viewer started and didn't finish, last played first. */
+    data class ContinueWatching(val titles: List<InProgress>) : HomeRow
+
+    /** Titles with recently added Listings, most popular on TMDB first. */
+    data class NewOnYourService(val titles: List<TitleSummary>) : HomeRow
+
+    /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
+    data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
+}
+
+/**
+ * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, and how far they got
+ * (0 to 1), or null when the player didn't know the file's length.
+ */
+data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?)
+
 /**
  * A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the
  * rest. [name], [year] and [image] are as on its card. The rest is TMDB metadata in the App language,

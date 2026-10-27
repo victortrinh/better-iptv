@@ -359,16 +359,20 @@ class Library private constructor(
      * What pressing Play on a Movie starts: the Best playable Version for the Viewer's
      * [contentLanguages] (BCP 47 tags, in order of preference) and [device], with its Backups. Null
      * for a Show, when the catalog doesn't have the Title, or when it has no Version the device can
-     * display other than Audio-description ones, which are never picked automatically.
+     * display other than Audio-description ones, which are never picked automatically. It starts
+     * where the Viewer stopped last time, unless they finished the Title.
      */
     suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
         val ranked = playable(candidates(title), contentLanguages, device)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked)) }
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id)) }
     }
 
-    /** What playing the Version from Listing [listingId], chosen by the Viewer, starts; null for a Show or when the Title doesn't have it. */
+    /**
+     * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
+     * stopped last time; null for a Show or when the Title doesn't have it.
+     */
     suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
@@ -376,7 +380,66 @@ class Library private constructor(
             val version = withBackups(chosen, candidates)
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, contentLanguages).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others)
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id))
+        }
+    }
+
+    /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
+    private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
+
+    /**
+     * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
+     * doesn't know it) in [id]. In the last few minutes the Title counts as watched, and under a minute
+     * in nothing is recorded, so a Title opened by mistake doesn't land in Continue watching.
+     */
+    internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
+        val watched = duration != null && position >= duration - minOf((duration * WATCHED_SHARE_LEFT).toLong(), WATCHED_TIME_LEFT)
+        if (!watched && position < MIN_RESUME_POSITION) return
+        store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
+    }
+
+    /** Records that the Viewer played [id] to its end. */
+    internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+
+    /**
+     * The home screen's rows: Continue watching, then New on your service (Titles among the most
+     * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
+     * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
+     * Untagged one Likely in one; Continue watching shows whatever the Viewer started. Genres come
+     * from the TMDB metadata of the newest Titles, so they need the cloud once a week. Rows with no
+     * Titles are left out.
+     */
+    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
+        val resumes = store.inProgress(ROW_SIZE).mapNotNull { progress -> store.title(progress.id)?.let { progress to it } }
+        val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
+        val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
+        val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
+        fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
+            val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
+            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
+        }
+        val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
+        // The newest movies, then the newest shows, in the Viewer's languages.
+        val browsable = listOf(movies, shows).map { titles ->
+            titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
+        }
+        val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst)
+        val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
+        browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
+        val genres = byGenre.entries.filter { it.value.size >= MIN_GENRE_SIZE }.sortedByDescending { it.value.size }.take(GENRE_ROWS)
+        buildList {
+            if (resumes.isNotEmpty()) {
+                add(
+                    HomeRow.ContinueWatching(
+                        resumes.map { (progress, title) ->
+                            val fraction = progress.duration?.takeIf { it > 0 }?.let { (progress.position.toFloat() / it).coerceIn(0f, 1f) }
+                            InProgress(card(title), metadata[title.id]?.backdrop, fraction)
+                        },
+                    ),
+                )
+            }
+            if (newest.isNotEmpty()) add(HomeRow.NewOnYourService(newest.take(ROW_SIZE).map { card(it) }))
+            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.sortedWith(popularFirst).take(ROW_SIZE).map { card(it) })) }
         }
     }
 
@@ -467,6 +530,21 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
+        /** A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is less: the credits. */
+        private const val WATCHED_SHARE_LEFT = 0.05
+        private const val WATCHED_TIME_LEFT = 8 * 60_000L
+        private const val MIN_RESUME_POSITION = 60_000L
+        /** How many cards a home row holds. */
+        private const val ROW_SIZE = 20
+        /** The newest Titles the home rows are picked from: their metadata is asked of the cloud 50 at a time. */
+        private const val HOME_MOVIES = 150
+        private const val HOME_SHOWS = 50
+        /** Of those, the ones New on your service is picked from. */
+        private const val NEW_MOVIES = 40
+        private const val NEW_SHOWS = 15
+        private const val GENRE_ROWS = 8
+        /** A genre with fewer Titles than this gets no row: a row of two looks broken. */
+        private const val MIN_GENRE_SIZE = 5
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10

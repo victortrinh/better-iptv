@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
@@ -9,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -24,6 +26,9 @@ internal val START_TIMEOUT = 8.seconds
 /** Buffering this many times within [BUFFERING_WINDOW] brings the suggestion of a lower Version. */
 private const val BUFFERING_REPEATS = 3
 private val BUFFERING_WINDOW = 1.minutes
+
+/** Where the Viewer is gets recorded this often while a file plays, so a crash or a pulled plug loses little. */
+private val RECORD_EVERY = 15.seconds
 
 /** The player engines a Version can play on: Media3 by default, VLC for the rare file Media3 can't open. */
 enum class Engine {
@@ -49,6 +54,9 @@ interface PlayerEngine {
 
     /** Where playback is in the file, in milliseconds; where it will start until it does. */
     val position: Long
+
+    /** How long the file plays, in milliseconds, or null until the engine knows. */
+    val duration: Long? get() = null
 
     /**
      * Plays the file at [location] from [from] milliseconds until it ends, reporting to [events] when
@@ -109,7 +117,8 @@ sealed interface PlaybackState {
  * breaks, or doesn't start within the start timeout gives way to its next Backup, at the same
  * position. The Viewer can switch Version, or move to the other engine with [tryOtherPlayer], partway
  * through. Every engine plays through the Viewer's one connection, which is given back only once the
- * engine has let go of the file.
+ * engine has let go of the file. Playback starts where the plan starts, and where the Viewer is
+ * gets recorded as it plays and when it stops, so Play resumes there.
  */
 class PlaybackSession internal constructor(
     private val library: Library,
@@ -128,7 +137,7 @@ class PlaybackSession internal constructor(
     private val signals = Channel<Signal>(Channel.UNLIMITED)
 
     /** Where the next file starts from: where the last one got to. */
-    private var resumeAt = 0L
+    private var resumeAt = plan.from
 
     /** Switches to [version] (and its Backups, should it be dead) at the current position. */
     fun switchTo(version: Version) {
@@ -155,6 +164,7 @@ class PlaybackSession internal constructor(
             while (queue.isNotEmpty()) {
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
+                        withContext(Dispatchers.IO) { library.finished(plan.titleId) }
                         _state.value = PlaybackState.Ended
                         return
                     }
@@ -209,6 +219,8 @@ class PlaybackSession internal constructor(
                 return watch(version, player, relay?.location ?: connection.location, opened)
             } finally {
                 resumeAt = player.position
+                // A quick write, made even while the Viewer leaving cancels playback.
+                library.saveProgress(plan.titleId, resumeAt, player.duration)
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
                 withContext(NonCancellable) {
@@ -236,6 +248,14 @@ class PlaybackSession internal constructor(
             }
         }
         val deadline = async { delay(startTimeout - opened.elapsedNow()) }
+        launch {
+            while (true) {
+                delay(RECORD_EVERY)
+                val position = player.position
+                val duration = player.duration
+                withContext(Dispatchers.IO) { library.saveProgress(plan.titleId, position, duration) }
+            }
+        }
         var started = false
         val stalls = ArrayDeque<TimeMark>()
         var outcome: Outcome? = null

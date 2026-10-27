@@ -24,6 +24,7 @@ import java.time.Instant
  *
  * Title metadata from the cloud is cached here too, per Title and language, along with the
  * device's cloud token, and so are show Listings' show details, until the Provider changes the Show.
+ * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -57,6 +58,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
                 "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, PRIMARY KEY (listing_id, id))",
+        )
+        // Where the Viewer stopped in a Title, in milliseconds, out of its `duration` when the player knew it.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS progress (title_key TEXT PRIMARY KEY, position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, " +
+                "updated_at INTEGER NOT NULL)",
         )
     }
     private val reader: SQLiteConnection = driver.open(path)
@@ -504,6 +510,38 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** Records that the Viewer stopped at [position] of [duration] in [id] at [at], or finished it when [watched]. */
+    fun saveProgress(id: TitleId, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?)").use {
+            it.bindText(1, key(id))
+            it.bindLong(2, position)
+            if (duration == null) it.bindNull(3) else it.bindLong(3, duration)
+            it.bindLong(4, if (watched) 1 else 0)
+            it.bindLong(5, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /** Where the Viewer stopped in [id], or null when they never played it. */
+    fun progress(id: TitleId): StoredProgress? = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE title_key = ?").use {
+            it.bindText(1, key(id))
+            if (it.step()) it.progress() else null
+        }
+    }
+
+    /** The Titles the Viewer stopped in without finishing, last played first, at most [limit]. */
+    fun inProgress(limit: Int): List<StoredProgress> = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE watched = 0 ORDER BY updated_at DESC LIMIT ?").use {
+            it.bindLong(1, limit.toLong())
+            buildList { while (it.step()) add(it.progress()) }
+        }
+    }
+
+    private fun SQLiteStatement.progress() =
+        StoredProgress(titleId(getText(0)), getLong(1), if (isNull(2)) null else getLong(2), getLong(3) != 0L)
+
     override fun deviceToken(): String? = meta(DEVICE_TOKEN)
 
     override fun saveDeviceToken(token: String) = synchronized(writer) {
@@ -572,6 +610,9 @@ internal class StoredListing(val id: Long, val name: String, val category: Strin
 
 /** A Listing whose Match is checked by name, with the TMDB ID its Provider gave it. */
 internal class StoredSuspect(val kind: TitleKind, val name: String, val category: String, val providerTmdbId: Long?)
+
+/** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
+internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
 
 /** A show Listing's kept show details: when the Provider had last changed the Show, and when they were read. */
 internal class StoredShowDetails(val modified: Long?, val fetchedAt: Instant, val episodes: List<ProviderEpisode>)

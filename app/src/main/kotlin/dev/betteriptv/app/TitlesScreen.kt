@@ -35,7 +35,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.TitleCard
-import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
@@ -58,10 +57,9 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * One card per movie or show Title ([kind], switched with the tabs), newest first, read from the
+ * One card per movie or show Title ([kind], picked with the tabs), newest first, read from the
  * device database a page at a time, with TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
- * The last tab opens search ([onSearch]).
  */
 @Composable
 fun TitlesScreen(
@@ -72,8 +70,7 @@ fun TitlesScreen(
     grid: LazyGridState,
     restoreFocus: Int,
     onSyncNow: () -> Unit,
-    onKind: (TitleKind) -> Unit,
-    onSearch: () -> Unit,
+    onTab: (Browse) -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -87,11 +84,7 @@ fun TitlesScreen(
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
-            TopTabs(
-                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.search_title)),
-                selected = KINDS.indexOf(kind),
-                onSelect = { KINDS.getOrNull(it)?.let(onKind) ?: onSearch() },
-            )
+            BrowseTabs(if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab)
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
                 Spacer(Modifier.width(Spacing.m))
@@ -164,9 +157,6 @@ private class TitlePages(
         const val PAGES_KEPT = 10
     }
 }
-
-/** The tabs, in order. */
-private val KINDS = listOf(TitleKind.Movie, TitleKind.Show)
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
     SyncStatus.NeverSynced -> getString(R.string.sync_never)

@@ -33,7 +33,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.TitleCard
-import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
@@ -48,7 +47,7 @@ import kotlinx.coroutines.delay
 /**
  * Search: the [query] typed on a D-pad keyboard on the left, results on the right as each letter
  * lands, grouped as Movies, Shows and people (each person with their Titles the Provider has).
- * The tabs switch back to the lists ([onTab] gets 0 for Movies, 1 for Shows).
+ * The tabs switch to the other browsing screens ([onTab]).
  */
 @Composable
 fun SearchScreen(
@@ -57,7 +56,7 @@ fun SearchScreen(
     onQuery: (String) -> Unit,
     contentLanguages: List<String>,
     appLanguage: String,
-    onTab: (Int) -> Unit,
+    onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -73,12 +72,7 @@ fun SearchScreen(
     LaunchedEffect(Unit) { keyboard.requestFocus() }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
-        TopTabs(
-            listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.search_title)),
-            selected = 2,
-            onSelect = { if (it != 2) onTab(it) },
-            modifier = Modifier.padding(horizontal = Spacing.screenX),
-        )
+        BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX))
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.padding(start = Spacing.screenX).width(290.dp)) {

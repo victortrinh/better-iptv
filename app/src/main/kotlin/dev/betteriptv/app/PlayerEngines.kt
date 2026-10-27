@@ -67,6 +67,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile) : Pl
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
     val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device)) }
     override val position: Long get() = player.currentPosition
+    override val duration: Long? get() = player.duration.takeIf { it > 0 }
 
     /** Shows the player in a [view] made for it, ASS subtitles included. */
     fun showIn(view: PlayerView) = playing.showIn(view)
@@ -212,6 +213,7 @@ class VlcEngine(context: Context, private val plan: PlayPlan, private val device
     private val attached = CompletableDeferred<Unit>()
     private var from = 0L
     override val position: Long get() = player.time.takeIf { it > 0 } ?: from
+    override val duration: Long? get() = player.length.takeIf { it > 0 }
 
     fun attach(layout: VLCVideoLayout) {
         player.attachViews(layout, null, true, false)
