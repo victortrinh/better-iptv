@@ -382,34 +382,48 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
-    /** Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories. */
-    fun forEachTitle(kind: TitleKind, each: (TitleId, List<Pair<String, String>>) -> Unit) = synchronized(reader) {
-        reader.prepare(
-            """
-            SELECT t.key, l.name, l.category FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
-            WHERE t.kind = ? ORDER BY t.position
-            """.trimIndent(),
-        ).use {
-            it.bindText(1, kindKey(kind))
-            var key: String? = null
-            val listings = mutableListOf<Pair<String, String>>()
-            while (it.step()) {
-                val next = it.getText(0)
-                if (next != key) {
-                    key?.let { done -> each(titleId(done), listings.toList()) }
-                    key = next
-                    listings.clear()
-                }
-                listings += it.getText(1) to it.getText(2)
-            }
-            key?.let { done -> each(titleId(done), listings.toList()) }
+    /**
+     * Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories.
+     * Read a page at a time, so other reads go on while [each] works through one.
+     */
+    fun forEachTitle(kind: TitleKind, each: (TitleId, List<Pair<String, String>>) -> Unit) {
+        val count = titleCount(kind)
+        for (offset in 0 until count step SCAN_PAGE) {
+            titleNames(kind, offset, SCAN_PAGE).forEach { (key, listings) -> each(titleId(key), listings) }
         }
     }
 
-    /** Calls [each] with one cached metadata JSON per Title TMDB has, in whichever language was cached. */
-    fun forEachMetadata(each: (TitleId.Tmdb, String) -> Unit) = synchronized(reader) {
-        reader.prepare("SELECT title_key, max(body) FROM title_metadata WHERE body IS NOT NULL GROUP BY title_key").use {
-            while (it.step()) (titleId(it.getText(0)) as? TitleId.Tmdb)?.let { id -> each(id, it.getText(1)) }
+    private fun titleNames(kind: TitleKind, offset: Int, limit: Int): Map<String, List<Pair<String, String>>> = synchronized(reader) {
+        reader.prepare(
+            """
+            SELECT t.key, l.name, l.category FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
+            WHERE t.kind = ? AND t.position > ? AND t.position <= ? ORDER BY t.position
+            """.trimIndent(),
+        ).use {
+            it.bindText(1, kindKey(kind))
+            it.bindLong(2, offset.toLong())
+            it.bindLong(3, offset.toLong() + limit)
+            val titles = LinkedHashMap<String, MutableList<Pair<String, String>>>()
+            while (it.step()) titles.getOrPut(it.getText(0)) { mutableListOf() } += it.getText(1) to it.getText(2)
+            titles
+        }
+    }
+
+    /** Calls [each] with one cached metadata JSON per Title TMDB has, in whichever language was cached, a page at a time like [forEachTitle]. */
+    fun forEachMetadata(each: (TitleId.Tmdb, String) -> Unit) {
+        var after = ""
+        while (true) {
+            val page = synchronized(reader) {
+                reader.prepare(
+                    "SELECT title_key, max(body) FROM title_metadata WHERE body IS NOT NULL AND title_key > ? GROUP BY title_key ORDER BY title_key LIMIT $SCAN_PAGE",
+                ).use {
+                    it.bindText(1, after)
+                    buildList { while (it.step()) add(it.getText(0) to it.getText(1)) }
+                }
+            }
+            page.forEach { (key, body) -> (titleId(key) as? TitleId.Tmdb)?.let { id -> each(id, body) } }
+            if (page.size < SCAN_PAGE) return
+            after = page.last().first
         }
     }
 
@@ -667,6 +681,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
         const val SCHEMA_VERSION = 4
+        /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
+        const val SCAN_PAGE = 2_000
         const val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
