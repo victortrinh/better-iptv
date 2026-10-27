@@ -90,12 +90,14 @@ fun PlayerScreen(library: Library, plan: PlayPlan, onEnded: () -> Unit) {
     }
     // Not over the Versions, whose focus it would take.
     val suggested = (state as? PlaybackState.Playing)?.lowerVersion?.takeIf { !menuOpen }
-    // With no picture or button to hold it, the screen keeps focus so the Menu key still reaches it.
-    val bare = player == null && state !is PlaybackState.Failed && !menuOpen
+    // With no picture to hold it, the screen keeps focus so the Menu key still reaches it. It keeps it
+    // under the error too, until "Try other player" asks: focus handed over as the button appears
+    // would arrive before the button can show it.
+    val bare = player == null && !menuOpen
     LaunchedEffect(bare) { if (bare) screen.requestFocus() }
 
     Box(
-        Modifier.fillMaxSize().background(Colors.ground).focusRequester(screen).focusable().onPreviewKeyEvent { event ->
+        Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown || menuOpen) return@onPreviewKeyEvent false
             when {
                 event.key == Key.Menu -> menuOpen = state !is PlaybackState.Ended
@@ -111,6 +113,8 @@ fun PlayerScreen(library: Library, plan: PlayPlan, onEnded: () -> Unit) {
             true
         },
     ) {
+        // Beside the picture, not around it: Back would spend a press moving focus up to a focusable parent.
+        if (bare) Box(Modifier.focusRequester(screen).focusable())
         if (player != null) key(player) { EngineSurface(player, focused = !menuOpen && suggested == null) }
 
         when (val shown = state) {
@@ -127,7 +131,8 @@ fun PlayerScreen(library: Library, plan: PlayPlan, onEnded: () -> Unit) {
                     BufferingSuggestion(lower, onSwitch = { session.switchTo(lower) }, onDismiss = session::dismissSuggestion)
                 }
             }
-            PlaybackState.Failed -> Failed(onTryOtherPlayer = session::tryOtherPlayer, takeFocus = !menuOpen)
+            // Under the open Versions it would show through.
+            PlaybackState.Failed -> if (!menuOpen) Failed(onTryOtherPlayer = session::tryOtherPlayer)
             PlaybackState.Ended -> Unit
         }
 
@@ -271,7 +276,7 @@ private fun VersionsPanel(
                 if (engine != null) {
                     Text(stringResource(R.string.player_engine, engineName(engine)), style = Type.caption, color = Colors.inkMuted)
                     Spacer(Modifier.width(Spacing.m))
-                    TryOtherPlayer(onTryOtherPlayer, takeFocus = true)
+                    TryOtherPlayer(onTryOtherPlayer)
                 }
             }
             VersionHeader(Modifier.padding(bottom = 2.dp))
@@ -294,7 +299,7 @@ private fun VersionsPanel(
 }
 
 @Composable
-private fun Failed(onTryOtherPlayer: () -> Unit, takeFocus: Boolean) {
+private fun Failed(onTryOtherPlayer: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier.align(Alignment.Center).padding(Spacing.xl),
@@ -302,17 +307,17 @@ private fun Failed(onTryOtherPlayer: () -> Unit, takeFocus: Boolean) {
             verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
             Text(stringResource(R.string.player_failed), style = Type.body, color = Colors.error, textAlign = TextAlign.Center)
-            TryOtherPlayer(onTryOtherPlayer, takeFocus)
+            TryOtherPlayer(onTryOtherPlayer)
         }
     }
 }
 
-/** The "Try other player" button, which takes focus whenever [takeFocus] turns true. */
+/** The "Try other player" button, which takes focus as it appears. */
 @Composable
-private fun TryOtherPlayer(onClick: () -> Unit, takeFocus: Boolean) {
+private fun TryOtherPlayer(onClick: () -> Unit) {
     val focus = remember { FocusRequester() }
     NuageButton(stringResource(R.string.player_try_other), onClick, Modifier.focusRequester(focus))
-    LaunchedEffect(takeFocus) { if (takeFocus) focus.requestFocus() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
 }
 
 @Composable
