@@ -61,12 +61,31 @@ internal fun playable(candidates: List<Candidate>, contentLanguages: List<String
 internal fun withBackups(chosen: Candidate, candidates: List<Candidate>): Version =
     chosen.toVersion(backups = candidates.filter { it !== chosen && it.equivalence == chosen.equivalence }.sortedWith(BEST_FIRST).map { it.toVersion() })
 
+/**
+ * What to suggest when [playing] keeps buffering: the best of [versions] in its language with a
+ * lower quality (unknown counts as lowest), CAM and Audio-description ones aside. Null when
+ * [playing]'s own quality isn't known.
+ */
+internal fun lowerVersion(playing: Version, versions: List<Version>): Version? {
+    val quality = playing.attributes.qualityRank ?: return null
+    val language = playing.attributes.language?.value?.let(::primaryLanguage)
+    return versions.firstOrNull { other ->
+        val attributes = other.attributes
+        !attributes.cam && !attributes.audioDescription &&
+            attributes.language?.value?.let(::primaryLanguage) == language &&
+            (attributes.qualityRank ?: -1) < quality
+    }
+}
+
+/** Where a Version's quality ranks, higher being better; null when unknown. */
+private val VersionAttributes.qualityRank get() = quality?.value?.ordinal
+
 /** Keeps the first of each set of equivalent Versions in [ranked], with the others as its Backups. */
-private fun leadersWithBackups(ranked: List<Candidate>): List<Version> =
+internal fun leadersWithBackups(ranked: List<Candidate>): List<Version> =
     ranked.groupBy { it.equivalence }.values.map { same -> same.first().toVersion(backups = same.drop(1).map { it.toVersion() }) }
 
 /** Versions are equivalent with the same language and picture (quality and HDR), and both CAM or Audio-description or neither. */
-private val Candidate.equivalence: Any
+internal val Candidate.equivalence: Any
     get() = attributes.let { listOf(it.language?.value, it.quality?.value, it.hdr?.value, it.cam, it.audioDescription) }
 
 private fun Candidate.toVersion(backups: List<Version> = emptyList()) = Version(listing.id, listing.name, attributes, backups)

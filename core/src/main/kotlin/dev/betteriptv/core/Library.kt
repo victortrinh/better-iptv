@@ -365,14 +365,19 @@ class Library private constructor(
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
         val ranked = playable(candidates(title), contentLanguages, device)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages) }
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked)) }
     }
 
     /** What playing the Version from Listing [listingId], chosen by the Viewer, starts; null for a Show or when the Title doesn't have it. */
     suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
-        candidates.find { it.listing.id == listingId }?.let { PlayPlan(id, withBackups(it, candidates), contentLanguages) }
+        candidates.find { it.listing.id == listingId }?.let { chosen ->
+            val version = withBackups(chosen, candidates)
+            // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
+            val others = leadersWithBackups(preferred(candidates, contentLanguages).filter { it.equivalence != chosen.equivalence })
+            PlayPlan(id, version, contentLanguages, listOf(version) + others)
+        }
     }
 
     /**
@@ -388,8 +393,15 @@ class Library private constructor(
         return Connection(location, connection.lease())
     }
 
-    /** A Playback session for [plan], playing on the player engines [engines] creates. Start it with [PlaybackSession.play]. */
-    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine) = PlaybackSession(this, plan, engines)
+    /**
+     * A Playback session for [plan], playing on the player engines [engines] creates: it starts the
+     * plan's Version, falling back to the VLC engine and to its Backups, and switches Version or
+     * engine when the Viewer asks. Start it with [PlaybackSession.play].
+     */
+    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine): PlaybackSession = playback(plan, engines, START_TIMEOUT)
+
+    internal fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine, startTimeout: kotlin.time.Duration) =
+        PlaybackSession(this, plan, engines, startTimeout)
 
     /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
     internal fun relay(location: String) = StreamRelay(location, http)

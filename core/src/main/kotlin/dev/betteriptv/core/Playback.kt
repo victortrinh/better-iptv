@@ -56,9 +56,11 @@ data class DeviceProfile(
 
 /**
  * What pressing Play starts: a [version] with its [Version.backups], and the Viewer's
- * [contentLanguages], which choose its Tracks once the player has read them.
+ * [contentLanguages], which choose its Tracks once the player has read them. [versions] are the
+ * Title's Versions the player can switch to, best first and the Viewer's languages first, each with
+ * its Backups; [version] is among them.
  */
-data class PlayPlan(val titleId: TitleId, val version: Version, val contentLanguages: List<String>) {
+data class PlayPlan(val titleId: TitleId, val version: Version, val contentLanguages: List<String>, val versions: List<Version>) {
     /**
      * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the first
      * Content language the file has, with no subtitles. Among that language's Tracks, one that passes
