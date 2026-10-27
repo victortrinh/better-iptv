@@ -170,6 +170,18 @@ class Library private constructor(
     fun movieListings(offset: Int, limit: Int): List<MovieListing> =
         store.movieListings(offset, limit) { name, category -> prefixTable.describe(name, category).attributes }
 
+    /**
+     * The languages the catalog has Versions in, as primary language subtags (`fr` for `fr-CA` too),
+     * most Listings first: the choices for the Viewer's Content languages. Untagged Listings aren't counted.
+     */
+    suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
+        val counts = HashMap<String, Int>()
+        store.forEachListing { name, category ->
+            prefixTable.describe(name, category).attributes.language?.value?.let { counts.merge(primaryLanguage(it), 1, Int::plus) }
+        }
+        counts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).map { it.key }
+    }
+
     /** How many Titles the movie or show list Matches its Listings to. */
     fun titleCount(kind: TitleKind = TitleKind.Movie): Int = store.titleCount(kind)
 
@@ -252,14 +264,15 @@ class Library private constructor(
 
     /**
      * What pressing Play on a Movie starts: the Best playable Version for the Viewer's
-     * [contentLanguages] (BCP 47 tags, in order of preference) and [device], with its Backups. Null
-     * for a Show, when the catalog doesn't have the Title, or when it has no Version the device can
-     * display other than Audio-description ones, which are never picked automatically.
+     * [contentLanguages] (BCP 47 tags, in order of preference) and [device] within the Viewer's
+     * [qualityCap], with its Backups. Null for a Show, when the catalog doesn't have the Title, or
+     * when it has no Version the device can display other than Audio-description ones, which are
+     * never picked automatically. A Title with nothing within the cap plays its lowest quality above it.
      */
-    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile): PlayPlan? = withContext(Dispatchers.IO) {
+    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
-        val ranked = playable(candidates(title), contentLanguages, device)
+        val ranked = playable(candidates(title), contentLanguages, device, qualityCap)
         ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages) }
     }
 

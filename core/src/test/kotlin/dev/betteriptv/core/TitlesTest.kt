@@ -129,6 +129,42 @@ class TitlesTest {
         }
     }
 
+    @Test fun `changing the Content languages changes each card's Version and the order of a Title's languages`() = runBlocking {
+        syncListings(
+            Listing("4K-EN - The Godfather  (1972)", "238"),
+            Listing("FR - Le Parrain (1972)", "238"),
+            Listing("QC - Le Parrain (1972)", "238"),
+            Listing("DE - Der Pate (1972)", "238"),
+        )
+
+        assertEquals(Known("en", Provenance.Likely), cards(english).single().best.language)
+        assertEquals(listOf("en"), title(godfather, english).languages.map { it.language })
+        assertEquals("fr", cards(listOf("fr")).single().best.language?.value)
+        assertEquals(listOf("fr", "en"), title(godfather, listOf("fr", "en")).languages.map { it.language })
+        title(godfather, listOf("de")).let { details ->
+            assertEquals(listOf("de"), details.languages.map { it.language })
+            assertEquals(listOf("fr", "en"), details.otherLanguages.map { it.language })
+        }
+    }
+
+    @Test fun `the Content language choices are the catalog's languages, most Listings first`() = runBlocking {
+        provider.showCategoriesOverride = """[{"category_id":"1","category_name":"SHOWS"}]"""
+        provider.showListOverride = """[{"series_id":1,"name":"EN - A Show","category_id":"1"}]"""
+        syncListings(
+            Listing("FR - Le Parrain (1972)", "238"),
+            Listing("QC - Le Parrain (1972)", "238"),
+            Listing("EN - The Godfather  (1972)", "238"),
+            Listing("FR - Older (2020)", "6"),
+            Listing("DE - Der Pate (1972)", "238"),
+            Listing("DE - Älter (2020)", "6"),
+            Listing("Untagged (2021)", "7"),
+        )
+
+        // Québec French counts as French; Untagged Listings add no language.
+        // Show Listings count too.
+        assertEquals(listOf("fr", "de", "en"), library.catalogLanguages())
+    }
+
     @Test fun `a card's name drops a country code and reads a dotted name as words`() = runBlocking {
         syncListings(
             Listing("EN - Reacher (US)", "108978"),

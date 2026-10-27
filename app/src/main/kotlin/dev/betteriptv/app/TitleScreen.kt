@@ -58,6 +58,7 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
+import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.TitleDetails
 import dev.betteriptv.core.ShowEpisodes
 import dev.betteriptv.core.TitleId
@@ -84,13 +85,14 @@ fun TitleScreen(
     id: TitleId,
     contentLanguages: List<String>,
     appLanguage: String,
+    qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan) -> Unit,
 ) {
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage) {
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap) {
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
-        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() })
+        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
     val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages) {
         if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages)

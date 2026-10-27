@@ -49,12 +49,22 @@ internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List
 /**
  * The playable Versions of a Title for Play, best first: those in the Viewer's [contentLanguages]
  * (in their order) ahead of the rest, then [BEST_FIRST]. CAM Versions rank after every other
- * language, and Audio-description ones and those the [device] can't display are left out.
+ * language, and Audio-description ones and those the [device] can't display are left out. Versions
+ * above the [qualityCap] rank after every other language too, the lowest quality first, so they play
+ * only when the Title has nothing within it.
  */
-internal fun playable(candidates: List<Candidate>, contentLanguages: List<String>, device: DeviceProfile): List<Candidate> {
+internal fun playable(candidates: List<Candidate>, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): List<Candidate> {
     val wanted = contentLanguages.map(::primaryLanguage).distinct()
+    val overCap = { candidate: Candidate -> candidate.attributes.quality?.value?.let { it > qualityCap.quality } == true }
     return candidates.filter { !it.attributes.audioDescription && device.canDisplay(it.attributes) }
-        .sortedWith(compareBy<Candidate>({ it.attributes.cam }, { wanted.indexOf(it.primaryLanguage).takeIf { i -> i >= 0 } ?: wanted.size }).then(BEST_FIRST))
+        .sortedWith(
+            compareBy<Candidate>(
+                { it.attributes.cam },
+                overCap,
+                { if (overCap(it)) it.attributes.quality?.value else null },
+                { wanted.indexOf(it.primaryLanguage).takeIf { i -> i >= 0 } ?: wanted.size },
+            ).then(BEST_FIRST),
+        )
 }
 
 /** [chosen] with the Versions equivalent to it among [candidates] as its Backups, best first. */

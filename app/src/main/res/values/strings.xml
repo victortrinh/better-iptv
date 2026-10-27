@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NuageTivi</string>
+    <string name="app_name" translatable="false">NuageTivi</string>
 
     <string name="login_title">Log in to your Provider</string>
     <string name="login_private">Your login stays on this device, encrypted.</string>
@@ -89,6 +89,18 @@
     <string name="runtime_minutes">%1$d min</string>
     <string name="runtime_hours">%1$d h %2$02d min</string>
     <string name="tmdb_attribution">Title details and artwork from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_languages">Languages</string>
+    <string name="settings_app_language">App language</string>
+    <string name="settings_app_language_detail">Menus, titles and descriptions</string>
+    <string name="settings_content_languages">Content languages</string>
+    <string name="settings_content_languages_detail">Cards and Play pick Versions in these first</string>
+    <string name="settings_region">Region</string>
+    <string name="settings_region_detail">Sets the Top 10 and the default leagues</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_quality_cap">Quality cap</string>
+    <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>

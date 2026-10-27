@@ -72,6 +72,7 @@ fun TitlesScreen(
     restoreFocus: Int,
     onSyncNow: () -> Unit,
     onKind: (TitleKind) -> Unit,
+    onSettings: () -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -86,9 +87,9 @@ fun TitlesScreen(
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
             TopTabs(
-                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title)),
+                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.settings_title)),
                 selected = KINDS.indexOf(kind),
-                onSelect = { onKind(KINDS[it]) },
+                onSelect = { KINDS.getOrNull(it)?.let(onKind) ?: onSettings() },
             )
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
@@ -163,7 +164,7 @@ private class TitlePages(
     }
 }
 
-/** The tabs, in order. */
+/** The tabs before Settings, in order. */
 private val KINDS = listOf(TitleKind.Movie, TitleKind.Show)
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
