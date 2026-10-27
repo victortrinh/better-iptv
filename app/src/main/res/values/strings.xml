@@ -17,6 +17,12 @@
 
     <string name="movies_title">Movies</string>
     <string name="shows_title">Shows</string>
+    <string name="search_title">Search</string>
+    <string name="search_hint">Any language works, and accents and small typos are fine: \"pokemon\" finds Pokémon.</string>
+    <string name="search_start">Type two letters to find Movies, Shows and people.</string>
+    <string name="search_none">Nothing matches \"%1$s\".</string>
+    <string name="search_movies">Movies · %1$d</string>
+    <string name="search_shows">Shows · %1$d</string>
     <plurals name="titles_count">
         <item quantity="one">%1$s Title</item>
         <item quantity="other">%1$s Titles</item>

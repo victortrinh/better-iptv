@@ -23,6 +23,10 @@ internal class TitleMetadata(json: String) {
     val poster: String? = image(tree["posterPath"], POSTER_SIZE)
     val backdrop: String? = image(tree["backdropPath"], BACKDROP_SIZE)
     val cast: List<String> = (tree["cast"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("name") as? String }
+    val popularity: Double = (tree["popularity"] as? Number)?.toDouble() ?: 0.0
+
+    /** Every name search finds the Title by: as released, in each language TMDB has, and its other names. */
+    val searchNames: List<String> get() = (listOf(originalTitle) + titles.map { it.text } + strings(tree["alternativeTitles"])).filter { it.isNotBlank() }.distinct()
 
     /** The Title's name in [appLanguage], else in English, else as it was released. */
     fun name(appLanguage: String): String =

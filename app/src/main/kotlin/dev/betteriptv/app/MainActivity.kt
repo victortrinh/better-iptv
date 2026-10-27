@@ -46,12 +46,26 @@ private fun Root(app: BetterIptvApp) {
         // Each list keeps its scroll position while the other is shown.
         val movies = rememberLazyGridState()
         val shows = rememberLazyGridState()
+        var searching by remember { mutableStateOf(false) }
+        // The query stays while a Title found by it is open, so Back returns to the same results.
+        var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         var playing by remember { mutableStateOf<PlayPlan?>(null) }
         val context = LocalContext.current
         when (val title = opened) {
-            null -> TitlesScreen(
+            null -> if (searching) {
+                BackHandler { searching = false }
+                SearchScreen(
+                    app.library, query, { query = it }, contentLanguages, appLanguage,
+                    onTab = {
+                        kind = KINDS_BY_TAB[it]
+                        returnedFrom = -1
+                        searching = false
+                    },
+                    onOpen = { opened = OpenedTitle(-1, it) },
+                )
+            } else TitlesScreen(
                 app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
                 restoreFocus = returnedFrom,
                 onSyncNow = app::sync,
@@ -59,6 +73,7 @@ private fun Root(app: BetterIptvApp) {
                     kind = it
                     returnedFrom = -1
                 },
+                onSearch = { searching = true },
                 onOpen = { index, id -> opened = OpenedTitle(index, id) },
             )
             else -> when (val plan = playing) {
@@ -81,6 +96,9 @@ private fun Root(app: BetterIptvApp) {
         }
     }
 }
+
+/** The Titles tabs, in order, as search's tabs switch to them. */
+private val KINDS_BY_TAB = listOf(TitleKind.Movie, TitleKind.Show)
 
 /** The Title whose details are open, and which card opened it, so focus goes back there. */
 private data class OpenedTitle(val cardIndex: Int, val id: TitleId)
