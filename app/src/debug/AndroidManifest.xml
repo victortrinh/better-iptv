@@ -6,5 +6,10 @@
             android:name="dev.betteriptv.app.prototype.PrototypeActivity"
             android:exported="true"
             android:screenOrientation="landscape" />
+        <!-- Plays sample files to check formats on the stick, for #10. -->
+        <activity
+            android:name="dev.betteriptv.app.prototype.SampleActivity"
+            android:exported="true"
+            android:screenOrientation="landscape" />
     </application>
 </manifest>
