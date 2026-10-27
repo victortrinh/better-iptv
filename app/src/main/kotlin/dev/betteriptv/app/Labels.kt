@@ -1,11 +1,14 @@
 package dev.betteriptv.app
 
+import android.content.Context
 import dev.betteriptv.app.ui.components.BadgeSpec
 import dev.betteriptv.app.ui.components.Certainty
+import dev.betteriptv.app.ui.components.VersionLine
 import dev.betteriptv.core.Hdr
 import dev.betteriptv.core.Known
 import dev.betteriptv.core.Provenance
 import dev.betteriptv.core.Quality
+import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
 import java.util.Locale
 
@@ -53,4 +56,28 @@ fun languageName(tag: String): String {
     val locale = Locale.forLanguageTag(tag)
     if (locale.language == "fr" && locale.country == "CA") return "Français (Québec)"
     return locale.getDisplayName(locale).replaceFirstChar { it.titlecase(locale) }
+}
+
+/** [playLabel] for a [version], naming an Untagged one's language as unnamed. */
+fun Context.playLabel(version: Version): String = version.attributes.playLabel(getString(R.string.language_untagged))
+
+/** What a [version]'s row in a Versions list shows. */
+fun Context.versionLine(version: Version): VersionLine {
+    val attributes = version.attributes
+    val none = getString(R.string.version_none)
+    return VersionLine(
+        badges = attributes.versionBadges(),
+        source = attributes.source?.value ?: none,
+        audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
+        subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
+        bitrate = null,
+        backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
+        // Both notes are cautions.
+        note = when {
+            attributes.cam -> getString(R.string.version_cam)
+            attributes.audioDescription -> getString(R.string.version_audio_description)
+            else -> null
+        },
+        noteIsCaution = true,
+    )
 }

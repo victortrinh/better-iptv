@@ -30,13 +30,11 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.SettingRow
-import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
-import dev.betteriptv.core.TitleKind
 import java.text.Collator
 import java.util.Locale
 
@@ -50,7 +48,7 @@ fun SettingsScreen(
     library: Library,
     settings: ViewerSettings,
     onChange: ((ViewerSettings) -> ViewerSettings) -> Unit,
-    onKind: (TitleKind) -> Unit,
+    onTab: (Browse) -> Unit,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     val appLanguageRow = remember { FocusRequester() }
@@ -59,12 +57,7 @@ fun SettingsScreen(
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
-        TopTabs(
-            listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.settings_title)),
-            selected = 2,
-            onSelect = { TitleKind.entries.getOrNull(it)?.let(onKind) },
-            modifier = Modifier.padding(horizontal = Spacing.screenX),
-        )
+        BrowseTabs(Browse.Settings, onTab, Modifier.padding(horizontal = Spacing.screenX))
         when (picking) {
             Picker.ContentLanguages -> {
                 BackHandler { picking = null }

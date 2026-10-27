@@ -2,13 +2,19 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import dev.betteriptv.core.CantOpen
@@ -16,9 +22,14 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Engine
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlayerEngine
+import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.Track
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -27,6 +38,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.seconds
 
 private const val PLAYER_TAG = "Player"
 
@@ -44,20 +56,43 @@ fun playerEngines(context: Context, plan: PlayPlan): (Engine) -> PlayerEngine {
     }
 }
 
+/** How long after a seek filling the buffer is taken for the seek's doing. */
+private const val SEEK_GRACE_MILLIS = 2_000L
+
 /** Media3 (ExoPlayer), the default engine. Used on the main thread only. */
+@OptIn(UnstableApi::class)
 class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile) : PlayerEngine {
     override val engine = Engine.Media3
-    private val playing = buildPlayer(context)
+    private val requests = OpenRequests()
+    private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
     val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device)) }
     override val position: Long get() = player.currentPosition
+    override val duration: Long? get() = player.duration.takeIf { it > 0 }
 
     /** Shows the player in a [view] made for it, ASS subtitles included. */
     fun showIn(view: PlayerView) = playing.showIn(view)
 
-    override suspend fun play(location: String, from: Long) = suspendCancellableCoroutine { continuation ->
+    override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) = suspendCancellableCoroutine { continuation ->
         player.addListener(object : Player.Listener {
+            private var started = false
+            private var seekedAt: Long? = null
+
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) finish(null)
+                when (playbackState) {
+                    Player.STATE_ENDED -> finish(null)
+                    Player.STATE_READY -> if (!started) {
+                        started = true
+                        events(PlayerEvent.Started)
+                    }
+                    // Filling the buffer just after the Viewer seeks isn't the Version struggling.
+                    Player.STATE_BUFFERING -> if (started && !justSeeked()) events(PlayerEvent.Buffering)
+                }
+            }
+
+            private fun justSeeked() = seekedAt?.let { SystemClock.elapsedRealtime() - it < SEEK_GRACE_MILLIS } == true
+
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) seekedAt = SystemClock.elapsedRealtime()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -88,7 +123,47 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile) : Pl
         player.playWhenReady = true
     }
 
-    override fun release() = playing.release()
+    override suspend fun release() {
+        playing.release()
+        // Releasing returns before the player's loading thread closes its request, and the Provider
+        // would refuse the next file while it's open. A read stuck on a stalled Provider times out.
+        withTimeoutOrNull(RELEASE_TIMEOUT) { requests.awaitNone() }
+    }
+}
+
+/** Longer than Media3's own read timeout, so a request stuck on a stalled Provider closes first. */
+private val RELEASE_TIMEOUT = 10.seconds
+
+/** Counts the player's open requests to the Provider, so releasing can wait for the last one to close. */
+@OptIn(UnstableApi::class)
+private class OpenRequests {
+    private val open = MutableStateFlow(0)
+
+    fun counting(upstream: DataSource.Factory) = DataSource.Factory { Counted(upstream.createDataSource()) }
+
+    suspend fun awaitNone() {
+        open.first { it == 0 }
+    }
+
+    private inner class Counted(private val upstream: DataSource) : DataSource by upstream {
+        private var opened = false
+
+        override fun open(dataSpec: DataSpec): Long {
+            // Counted from the attempt: the player closes a source even when opening it fails.
+            if (!opened) open.update { it + 1 }
+            opened = true
+            return upstream.open(dataSpec)
+        }
+
+        override fun close() {
+            try {
+                upstream.close()
+            } finally {
+                if (opened) open.update { it - 1 }
+                opened = false
+            }
+        }
+    }
 }
 
 /**
@@ -138,6 +213,7 @@ class VlcEngine(context: Context, private val plan: PlayPlan, private val device
     private val attached = CompletableDeferred<Unit>()
     private var from = 0L
     override val position: Long get() = player.time.takeIf { it > 0 } ?: from
+    override val duration: Long? get() = player.length.takeIf { it > 0 }
 
     fun attach(layout: VLCVideoLayout) {
         player.attachViews(layout, null, true, false)
@@ -152,17 +228,24 @@ class VlcEngine(context: Context, private val plan: PlayPlan, private val device
         player.setTime((player.time + by).coerceAtLeast(0))
     }
 
-    override suspend fun play(location: String, from: Long) {
+    override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
         this.from = from
         attached.await()
         suspendCancellableCoroutine { continuation ->
             var tracksChosen = false
+            var started = false
             player.setEventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.EndReached -> if (continuation.isActive) continuation.resume(Unit)
                     // VLC doesn't say whether the file or the stream failed; it's the last resort either way.
                     MediaPlayer.Event.EncounteredError -> if (continuation.isActive) continuation.resumeWithException(CantOpen("VLC can't play the file"))
-                    MediaPlayer.Event.Playing, MediaPlayer.Event.ESAdded -> if (!tracksChosen) tracksChosen = chooseTracks()
+                    MediaPlayer.Event.Playing, MediaPlayer.Event.ESAdded -> {
+                        if (!tracksChosen) tracksChosen = chooseTracks()
+                        if (event.type == MediaPlayer.Event.Playing && !started) {
+                            started = true
+                            events(PlayerEvent.Started)
+                        }
+                    }
                 }
             }
             val media = Media(vlc, Uri.parse(location))
@@ -192,7 +275,7 @@ class VlcEngine(context: Context, private val plan: PlayPlan, private val device
         return true
     }
 
-    override fun release() {
+    override suspend fun release() {
         player.setEventListener(null)
         player.stop()
         player.detachViews()

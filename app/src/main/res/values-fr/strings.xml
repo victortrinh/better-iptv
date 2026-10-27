@@ -106,6 +106,23 @@
     <string name="settings_quality_cap">Qualité maximale</string>
     <string name="settings_quality_cap_detail">La meilleure qualité que la lecture choisit. Baissez-la si l\'image saccade.</string>
 
+    <string name="home_title">Accueil</string>
+    <string name="row_continue_watching">Reprendre</string>
+    <string name="row_new">Nouveau sur votre service</string>
+    <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
+    <string name="search_title">Recherche</string>
+    <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>
+    <string name="search_start">Tapez deux lettres pour trouver des films, des séries et des personnes.</string>
+    <string name="search_none">Aucun résultat pour « %1$s ».</string>
+    <string name="search_movies">Films · %1$d</string>
+    <string name="search_shows">Séries · %1$d</string>
+    <string name="player_starting">Démarrage de %1$s</string>
+    <string name="player_versions_hint">≡ Versions</string>
+    <string name="player_playing">En lecture</string>
+    <string name="player_buffering">Mise en mémoire tampon répétée</string>
+    <string name="player_buffering_lower">%1$s devrait être plus stable</string>
+    <string name="player_switch">Changer</string>
+
     <string name="keyboard_space">Espace</string>
     <string name="keyboard_delete">Effacer</string>
 </resources>
