@@ -32,7 +32,9 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 | Sync of the 148-Listing fixture | Android TV 14 emulator on the same Mac | 3.0 s |
 | First Sync of the full real catalog (138,575 movie Listings, 58,120 Titles) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build | 129.4 s (#30; hours before it). The regroup by name then stopped after 385 of ~2,385 cloud batches when the Worker exceeded its CPU limit: tracked in [#32](https://github.com/victortrinh/better-iptv/issues/32). Details in [#23](https://github.com/victortrinh/better-iptv/issues/23). |
 | Scrolling the movie list, holding Down | Same stick and build | Not smooth: every frame janky, median 150 ms, p99 2 s. Debug builds are slower; tracked in [#33](https://github.com/victortrinh/better-iptv/issues/33). |
-| Header read of one Version on its details page (MKV: one 256 KB range request; MP4: start, plus end when the index is there) | Fire TV Stick 4K Max, against the real Provider | Not measured yet: it opens a stream on the one-stream subscription (#16). The survey's laptop test gave about 1 s for MKV and 2 s for MP4 (ADR 0005). |
+| Header read of one Version on its details page (MKV: one 256 KB range request; MP4: start, plus end when the index is there) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build, against the real Provider, 2026-10-27 | About 1.1 s per MKV and 2.5 s per MP4, one after another. The first read lands 5.5 s after the page opens, behind the Provider's movie details and the cloud lookup. Reads shared through the cloud come back all at once 1.5 s after the page opens, with no stream. Play pressed during a read starts in 6.1 s with no refused stream; the interrupted read is dropped. |
+| Sync after the catalog is dropped by a schema change (138,644 movie and 36,302 show Listings) | Same stick and build, 2026-10-27 | 186 s, 472 Listings Matched by name. |
+| Search index built from the whole catalog | Same stick and build | About 70–90 s of CPU on one core. Until #51's fix, every other catalog read (a details page, the grids) waited for it. |
 
 ## M1: Replace TiviMate for Movies and Shows
 
