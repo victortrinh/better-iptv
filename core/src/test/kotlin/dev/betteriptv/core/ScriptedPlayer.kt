@@ -28,6 +28,14 @@ class ScriptedPlayer(private val provider: FakeProvider) {
     /** Every location played, in order. */
     val locations = CopyOnWriteArrayList<String>()
 
+    /**
+     * When above 0, the VLC engine overlaps its requests like the real one, so it plays through the
+     * relay: it reads this many ranges of the file one after another before its picture starts, as
+     * VLC reads an MKV's index on the stick. Its files are then [played] as listing 0: the relay's
+     * location doesn't say which.
+     */
+    @Volatile var vlcReads = 0
+
     /** Set when the session asked an engine to play while another still held a file. */
     @Volatile var playedOverAnother = false
 
@@ -54,7 +62,8 @@ class ScriptedPlayer(private val provider: FakeProvider) {
     private inner class Scripted(override val engine: Engine) : PlayerEngine {
         @Volatile override var position = 0L
         @Volatile private var events: ((PlayerEvent) -> Unit)? = null
-        @Volatile private var request: HttpURLConnection? = null
+        override val overlapsRequests = engine == Engine.Vlc && vlcReads > 0
+        private val requests = CopyOnWriteArrayList<HttpURLConnection>()
         @Volatile private var released = false
         /** Completes with how playing stops: a failure, or null for the file's end. */
         val failure = CompletableDeferred<Throwable?>()
@@ -62,7 +71,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
             if (current != null) playedOverAnother = true
             current = this
-            val listingId = location.substringAfterLast('/').substringBefore('.').toLong()
+            val listingId = location.substringAfterLast('/').substringBefore('.').toLongOrNull() ?: 0
             played += listingId to from
             locations += location
             position = from
@@ -70,10 +79,14 @@ class ScriptedPlayer(private val provider: FakeProvider) {
             val opened = CompletableDeferred<Unit>()
             thread(isDaemon = true) {
                 try {
-                    val request = URI(location).toURL().openConnection() as HttpURLConnection
-                    this.request = request
-                    if (released) return@thread request.disconnect()
-                    if (request.responseCode != 200 || request.inputStream.read() < 0) throw IOException("the stream is dead")
+                    // Each read opens a new request before the earlier one is closed.
+                    for (read in 0 until if (overlapsRequests) vlcReads else 1) {
+                        val request = URI(location).toURL().openConnection() as HttpURLConnection
+                        if (read > 0) request.setRequestProperty("Range", "bytes=${read * 1_000_000}-")
+                        requests += request
+                        if (released) return@thread request.disconnect()
+                        if (request.responseCode !in 200..299 || request.inputStream.read() < 0) throw IOException("the stream is dead")
+                    }
                     opened.complete(Unit)
                 } catch (e: Exception) {
                     opened.completeExceptionally(e as? IOException ?: IOException(e))
@@ -93,7 +106,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         override suspend fun release() {
             released = true
             if (current == this) current = null
-            withContext(Dispatchers.IO) { request?.disconnect() }
+            withContext(Dispatchers.IO) { requests.forEach(HttpURLConnection::disconnect) }
             // The stick's engines return once their request is closed; wait until the Provider has seen it go.
             withTimeout(5_000) { while (provider.openStreamCount > 0) delay(10) }
         }

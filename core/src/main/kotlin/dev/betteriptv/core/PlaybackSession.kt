@@ -20,8 +20,17 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
-/** How long a Version has to start before its next Backup is tried. */
+/**
+ * How long a Version has to start before its next Backup is tried. Through the relay it counts from
+ * the Provider's latest answer instead, up to [RELAYED_START_TIMEOUTS] times it in all.
+ */
 internal val START_TIMEOUT = 8.seconds
+
+/**
+ * VLC opens several requests one after another before its picture starts, ~1.5 s each through the
+ * relay, so a working file can take ~12 s on the stick. While the Provider keeps answering, it may.
+ */
+private const val RELAYED_START_TIMEOUTS = 4
 
 /** Buffering this many times within [BUFFERING_WINDOW] brings the suggestion of a lower Version. */
 private const val BUFFERING_REPEATS = 3
@@ -220,7 +229,7 @@ class PlaybackSession internal constructor(
             val relay = if (player.overlapsRequests) library.relay(connection.location) else null
             try {
                 _state.value = PlaybackState.Starting(version, player)
-                return watch(version, player, relay?.location ?: connection.location, opened)
+                return watch(version, player, relay?.location ?: connection.location, opened, relay)
             } finally {
                 resumeAt = player.position
                 // A quick write, made even while the Viewer leaving cancels playback.
@@ -239,8 +248,32 @@ class PlaybackSession internal constructor(
         }
     }
 
-    /** Watches [player] play [version] until something ends it, keeping [state] up to date meanwhile. */
-    private suspend fun watch(version: Version, player: PlayerEngine, location: String, opened: TimeMark): Outcome = coroutineScope {
+    /**
+     * Returns once an engine given the file at [opened] has had its time to start: the start timeout,
+     * or through a [relay] the start timeout since the Provider last answered, up to the limit.
+     */
+    private suspend fun startDeadline(opened: TimeSource.Monotonic.ValueTimeMark, relay: StreamRelay?) {
+        val limit = opened + startTimeout * RELAYED_START_TIMEOUTS
+        var from = opened
+        while (true) {
+            delay(minOf(from + startTimeout, limit) - TimeSource.Monotonic.markNow())
+            val answered = relay?.answeredAt
+            if (answered == null || answered <= from || limit.hasPassedNow()) return
+            from = answered
+        }
+    }
+
+    /**
+     * Watches [player] play [version] until something ends it, keeping [state] up to date meanwhile.
+     * Unless it has started by its [startDeadline], it is [Outcome.Dead].
+     */
+    private suspend fun watch(
+        version: Version,
+        player: PlayerEngine,
+        location: String,
+        opened: TimeSource.Monotonic.ValueTimeMark,
+        relay: StreamRelay?,
+    ): Outcome = coroutineScope {
         val events = Channel<PlayerEvent>(Channel.UNLIMITED)
         val playing = async {
             try {
@@ -252,7 +285,7 @@ class PlaybackSession internal constructor(
                 Outcome.Dead
             }
         }
-        val deadline = async { delay(startTimeout - opened.elapsedNow()) }
+        val deadline = async { startDeadline(opened, relay) }
         if (plan.episode == null) launch {
             while (true) {
                 delay(RECORD_EVERY)
