@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -63,6 +64,7 @@ import dev.betteriptv.core.ShowEpisodes
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,8 +89,11 @@ fun TitleScreen(
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan) -> Unit,
 ) {
+    // Each Header read that Confirms something reloads the details and the plan, in place.
+    var reads by remember(id) { mutableIntStateOf(0) }
+    LaunchedEffect(id, contentLanguages) { library.readHeaders(id, contentLanguages) { reads++ } }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage) {
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, reads) {
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() })
     }
@@ -312,7 +317,7 @@ private fun Context.line(version: Version): VersionLine {
         source = attributes.source?.value ?: none,
         audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
-        bitrate = null,
+        bitrate = attributes.bitrate?.value?.let { String.format(Locale.getDefault(), "%.1f Mb/s", it / 1e6) },
         backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
         // Both notes are cautions.
         note = when {

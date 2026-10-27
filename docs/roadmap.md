@@ -32,6 +32,7 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 | Sync of the 148-Listing fixture | Android TV 14 emulator on the same Mac | 3.0 s |
 | First Sync of the full real catalog (138,575 movie Listings, 58,120 Titles) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build | 129.4 s (#30; hours before it). The regroup by name then stopped after 385 of ~2,385 cloud batches when the Worker exceeded its CPU limit: tracked in [#32](https://github.com/victortrinh/better-iptv/issues/32). Details in [#23](https://github.com/victortrinh/better-iptv/issues/23). |
 | Scrolling the movie list, holding Down | Same stick and build | Not smooth: every frame janky, median 150 ms, p99 2 s. Debug builds are slower; tracked in [#33](https://github.com/victortrinh/better-iptv/issues/33). |
+| Header read of one Version on its details page (MKV: one 256 KB range request; MP4: start, plus end when the index is there) | Fire TV Stick 4K Max, against the real Provider | Not measured yet: it opens a stream on the one-stream subscription (#16). The survey's laptop test gave about 1 s for MKV and 2 s for MP4 (ADR 0005). |
 
 ## M1: Replace TiviMate for Movies and Shows
 

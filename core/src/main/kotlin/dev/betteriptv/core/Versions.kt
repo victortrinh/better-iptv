@@ -8,12 +8,13 @@ internal class Candidate(val listing: StoredListing, val attributes: VersionAttr
 /**
  * Better Versions first. CAM Versions always rank last and Audio-description ones after the rest, so
  * neither is picked by default. Then the highest quality (4K Dolby Vision, 4K HDR, 4K, then unknown),
- * then a known Source, then the newest Listing.
+ * then the highest bitrate where it's known, then a known Source, then the newest Listing.
  */
 internal val BEST_FIRST: Comparator<Candidate> =
     compareBy<Candidate>({ it.attributes.cam }, { it.attributes.audioDescription })
         .thenByDescending { it.attributes.quality?.value }
         .thenByDescending { it.attributes.hdr?.value }
+        .thenByDescending { it.attributes.bitrate?.value }
         .thenBy { it.attributes.source == null }
         .thenByDescending { it.listing.added }
         .thenBy { it.listing.id }

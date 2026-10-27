@@ -1,7 +1,11 @@
 package dev.betteriptv.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import java.io.Closeable
 import java.util.Locale
@@ -82,10 +86,11 @@ data class PlayPlan(val titleId: TitleId, val version: Version, val contentLangu
 }
 
 /**
- * An audio or subtitle Track the player found in a file, with its [language] as the file tags it
- * (ISO 639-1 or 639-2) and its format as a [mimeType] (`audio/true-hd`), if the file names them.
+ * An audio or subtitle Track found in a file, with its [language] as the file tags it (ISO 639-1
+ * or 639-2), its format as a [mimeType] (`audio/true-hd`) and an audio Track's [channels], if the
+ * file names them.
  */
-data class Track(val language: String?, val mimeType: String? = null)
+data class Track(val language: String?, val mimeType: String? = null, val channels: Int? = null)
 
 /** How an audio Track reaches the Viewer's ears, best first: [PlayPlan.chooseTracks] ranks Tracks in this order. */
 enum class AudioOutput {
@@ -140,7 +145,12 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
 
     @Volatile private var releasedAt: TimeMark? = null
 
+    /** Cancels the Header read holding the connection, if one is. */
+    @Volatile private var preempt: (() -> Unit)? = null
+
     suspend fun lease(): Lease {
+        // Playing comes first: a Header read gives the connection up at once.
+        preempt?.invoke()
         semaphore.acquire()
         try {
             releasedAt?.let { delay(releaseGrace - it.elapsedNow()) }
@@ -149,6 +159,34 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
             throw e
         }
         return Lease()
+    }
+
+    /**
+     * Runs [read] holding the connection if it is free right now, without waiting for it. A [lease]
+     * asked for meanwhile cancels [read] at once. Null when the connection was taken, before or during [read].
+     */
+    suspend fun <T : Any> whileFree(read: suspend () -> T): T? {
+        if (!semaphore.tryAcquire()) return null
+        val lease = Lease()
+        return try {
+            coroutineScope {
+                val reading = async(start = CoroutineStart.LAZY) {
+                    releasedAt?.let { delay(releaseGrace - it.elapsedNow()) }
+                    read()
+                }
+                preempt = { reading.cancel() }
+                try {
+                    reading.await()
+                } catch (e: CancellationException) {
+                    // Rethrown when it's the caller that was cancelled, not the read.
+                    ensureActive()
+                    null
+                }
+            }
+        } finally {
+            preempt = null
+            lease.close()
+        }
     }
 
     inner class Lease : Closeable {

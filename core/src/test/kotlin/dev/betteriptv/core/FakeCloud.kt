@@ -31,6 +31,9 @@ class FakeCloud : Closeable {
     @Volatile var failingMatches = 0
 
     private val metadata = HashMap<String, Map<String, Any?>>()
+
+    /** The file reads devices shared, by `<provider key>/<listing id>`. */
+    val fileReads = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val matches = HashMap<String, Long?>()
     private val tokens = HashSet<String>()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -85,6 +88,21 @@ class FakeCloud : Closeable {
                 val token = UUID.randomUUID().toString()
                 synchronized(tokens) { tokens += token }
                 respond(exchange, 201, mapOf("token" to token))
+            }
+            "/v1/file-reads", "/v1/file-reads/lookup" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val asked = read(body) as Map<*, *>
+                val provider = asked["provider"] as String
+                if (exchange.requestURI.path == "/v1/file-reads") {
+                    (asked["files"] as List<*>).forEach { (it as Map<*, *>).let { file -> fileReads["$provider/${(file["listingId"] as Number).toLong()}"] = file["file"]!! } }
+                    return exchange.sendResponseHeaders(204, -1)
+                }
+                val files = (asked["listings"] as List<*>).mapNotNull { id ->
+                    val listing = (id as Number).toLong()
+                    fileReads["$provider/$listing"]?.let { mapOf("listingId" to listing, "file" to it) }
+                }
+                respond(exchange, 200, mapOf("files" to files))
             }
             "/v1/metadata", "/v1/match" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")

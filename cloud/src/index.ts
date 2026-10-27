@@ -1,5 +1,6 @@
 import { isRegistered, register } from "./devices";
 import type { Env } from "./env";
+import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
 import type { TitleKey } from "./tmdb";
@@ -16,6 +17,11 @@ import type { TitleKey } from "./tmdb";
  *   "language": "en", "tmdbId": 597}]}` (cleaned names; year, language and tmdbId may be null):
  *   `{"matches": [{"kind": "movie", "tmdbId": 597}]}` in the order asked. tmdbId is null when TMDB
  *   has no Title by that name, and a match is null when TMDB couldn't answer right now.
+ * - `POST /v1/file-reads/lookup`, with `{"provider": "<SHA-256 of the Provider's host>", "listings":
+ *   [123]}`: `{"files": [{"listingId": 123, "file": {…}}]}`, what Viewers of that Provider read of
+ *   those movie Listings' files. Listings nobody read are left out.
+ * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}}]}`:
+ *   keeps those reads, `204`.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -34,6 +40,17 @@ export default {
       const asked = await matchRequest(request);
       if (typeof asked === "string") return problem(400, asked);
       return json({ matches: await match(env, asked) });
+    }
+    if (request.method === "POST" && pathname === "/v1/file-reads/lookup") {
+      const asked = await fileReadsRequest(request, "listings");
+      if (typeof asked === "string") return problem(400, asked);
+      return json({ files: await fileReads(env.DB, asked.provider, asked.listings) });
+    }
+    if (request.method === "POST" && pathname === "/v1/file-reads") {
+      const asked = await fileReadsRequest(request, "files");
+      if (typeof asked === "string") return problem(400, asked);
+      await saveFileReads(env.DB, asked.provider, asked.files);
+      return new Response(null, { status: 204 });
     }
     return problem(404, "No such endpoint.");
   },
@@ -85,6 +102,28 @@ async function matchRequest(request: Request): Promise<MatchQuestion[] | string>
     questions.push({ kind, name: name.trim(), year: year as number | null, language: language as string | null, tmdbId: tmdbId as number | null });
   }
   return questions;
+}
+
+/** Reads a file-read lookup ([part] `listings`) or save ([part] `files`) request, or says what's wrong with it. */
+async function fileReadsRequest(request: Request, part: "listings" | "files"): Promise<{ provider: string; listings: number[]; files: FileRead[] } | string> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return "The body must be JSON.";
+  }
+  const { provider, listings = [], files = [] } = (body ?? {}) as { provider?: unknown; listings?: unknown; files?: unknown };
+  if (!isProviderKey(provider)) return "provider must be the SHA-256 of the Provider's host, in lowercase hex.";
+  const asked = part === "listings" ? listings : files;
+  if (!Array.isArray(asked) || asked.length > MAX_FILE_BATCH) return `${part} must be a list of at most ${MAX_FILE_BATCH}.`;
+  if (part === "listings") {
+    if (!asked.every(isListingId)) return "Each Listing must be a positive integer id.";
+    return { provider, listings: [...new Set(asked as number[])], files: [] };
+  }
+  for (const file of asked as { listingId?: unknown; file?: unknown }[]) {
+    if (!isListingId(file?.listingId) || !isFile(file.file)) return "Each file must be {\"listingId\": a positive integer, \"file\": an object of at most 8 KB}.";
+  }
+  return { provider, listings: [], files: asked as FileRead[] };
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });

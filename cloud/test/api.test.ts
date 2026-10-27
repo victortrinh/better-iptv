@@ -7,7 +7,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -225,5 +225,37 @@ describe("the metadata cache", () => {
     tmdb.failWith = null;
     const later = await metadata(token, "en", [{ kind: "show", tmdbId: 1396 }]);
     expect(later.titles.map((t) => t.tmdbId)).toEqual([1396]);
+  });
+});
+
+describe("file reads", () => {
+  const provider = "a".repeat(64);
+  const file = { audio: [{ language: "fre", codec: "audio/eac3", channels: 6 }], subtitles: [], width: 1920, height: 800, hdr: null, bitrate: 8_000_000 };
+
+  it("keeps what one device read for every Viewer of the same Provider", async () => {
+    const living = await registerDevice();
+    expect((await call("POST", "/v1/file-reads", { provider, files: [{ listingId: 12, file }] }, living)).status).toBe(204);
+
+    const bedroom = await registerDevice();
+    const response = await call("POST", "/v1/file-reads/lookup", { provider, listings: [12, 13] }, bedroom);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ files: [{ listingId: 12, file }] });
+    // Another Provider's Listing 12 is another file.
+    const other = await call("POST", "/v1/file-reads/lookup", { provider: "b".repeat(64), listings: [12] }, bedroom);
+    expect(await other.json()).toEqual({ files: [] });
+  });
+
+  it("takes a hash of the Provider's host, never the host itself", async () => {
+    const token = await registerDevice();
+    const response = await call("POST", "/v1/file-reads", { provider: "provider.example:8080", files: [{ listingId: 12, file }] }, token);
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses reads that aren't small objects", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/file-reads", { provider, files: [{ listingId: 12, file: "x" }] }, token)).status).toBe(400);
+    const huge = { audio: Array.from({ length: 500 }, () => ({ language: "eng", codec: "audio/eac3", channels: 6 })) };
+    expect((await call("POST", "/v1/file-reads", { provider, files: [{ listingId: 12, file: huge }] }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/file-reads/lookup", { provider, listings: [0] }, token)).status).toBe(400);
   });
 });

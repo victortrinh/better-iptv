@@ -24,6 +24,8 @@ import java.time.Instant
  *
  * Title metadata from the cloud is cached here too, per Title and language, along with the
  * device's cloud token, and so are show Listings' show details, until the Provider changes the Show.
+ * What movie Listings' files hold, from Header reads and Playback, and their bitrates from the
+ * Provider's movie details, are kept forever.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -54,6 +56,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         )
         // A show Listing's show details as the Provider gave them while the Show was last changed at `modified`.
         execSQL("CREATE TABLE IF NOT EXISTS show_details (listing_id INTEGER PRIMARY KEY, modified INTEGER, fetched_at INTEGER NOT NULL)")
+        // What a movie Listing's file holds, from a Header read, Playback or the cloud; a null body: its header can't be read.
+        // `shared` says whether the cloud has it. Kept forever: a Listing's file doesn't change.
+        execSQL("CREATE TABLE IF NOT EXISTS file_read (listing_id INTEGER PRIMARY KEY, body TEXT, read_at INTEGER NOT NULL, shared INTEGER NOT NULL)")
+        // The bitrate a movie Listing's Provider details give, null when they give none.
+        execSQL("CREATE TABLE IF NOT EXISTS movie_details (listing_id INTEGER PRIMARY KEY, bitrate INTEGER, fetched_at INTEGER NOT NULL)")
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
                 "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, PRIMARY KEY (listing_id, id))",
@@ -470,6 +477,63 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         } catch (e: Throwable) {
             writer.execSQL("ROLLBACK")
             throw e
+        }
+    }
+
+    /** What these movie Listings' files hold, for those read: null for one whose header can't be read. */
+    fun fileReads(listingIds: List<Long>): Map<Long, FileContents?> = synchronized(reader) {
+        if (listingIds.isEmpty()) return emptyMap()
+        reader.prepare("SELECT listing_id, body FROM file_read WHERE listing_id IN (${listingIds.joinToString(",") { "?" }})").use {
+            listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
+            buildMap { while (it.step()) put(it.getLong(0), if (it.isNull(1)) null else fileContents(it.getText(1))) }
+        }
+    }
+
+    /** Keeps what movie Listing [listingId]'s file holds ([body] as JSON, null when it can't be read), and whether the cloud has it. */
+    fun saveFileRead(listingId: Long, body: String?, at: Instant, shared: Boolean) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO file_read VALUES (?, ?, ?, ?)").use {
+            it.bindLong(1, listingId)
+            if (body == null) it.bindNull(2) else it.bindText(2, body)
+            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(4, if (shared) 1 else 0)
+            it.step()
+        }
+        Unit
+    }
+
+    /** The file reads the cloud doesn't have yet, as JSON by Listing id. */
+    fun unsharedFileReads(): Map<Long, String> = synchronized(reader) {
+        reader.prepare("SELECT listing_id, body FROM file_read WHERE shared = 0 AND body IS NOT NULL").use {
+            buildMap { while (it.step()) put(it.getLong(0), it.getText(1)) }
+        }
+    }
+
+    fun markFileReadsShared(listingIds: Collection<Long>) = synchronized(writer) {
+        writer.prepare("UPDATE file_read SET shared = 1 WHERE listing_id = ?").use { update ->
+            listingIds.forEach {
+                update.bindLong(1, it)
+                update.stepAndReset()
+            }
+        }
+    }
+
+    /** The bitrates the Provider's movie details gave for these Listings, for those asked: null when they gave none. */
+    fun movieBitrates(listingIds: List<Long>): Map<Long, Long?> = synchronized(reader) {
+        if (listingIds.isEmpty()) return emptyMap()
+        reader.prepare("SELECT listing_id, bitrate FROM movie_details WHERE listing_id IN (${listingIds.joinToString(",") { "?" }})").use {
+            listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
+            buildMap { while (it.step()) put(it.getLong(0), if (it.isNull(1)) null else it.getLong(1)) }
+        }
+    }
+
+    fun saveMovieBitrates(bitrates: Map<Long, Long?>, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO movie_details VALUES (?, ?, ?)").use { insert ->
+            bitrates.forEach { (id, bitrate) ->
+                insert.bindLong(1, id)
+                if (bitrate == null) insert.bindNull(2) else insert.bindLong(2, bitrate)
+                insert.bindLong(3, at.toEpochMilli())
+                insert.stepAndReset()
+            }
         }
     }
 

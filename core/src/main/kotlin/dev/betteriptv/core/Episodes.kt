@@ -48,7 +48,7 @@ private fun confirmed(show: VersionAttributes, episode: ProviderEpisode): Versio
 }
 
 /** The quality a picture's size makes: a letterboxed film (1920×800) is still Full HD. */
-private fun quality(width: Int?, height: Int?): Quality? {
+internal fun quality(width: Int?, height: Int?): Quality? {
     if (width == null && height == null) return null
     val w = width ?: 0
     val h = height ?: 0

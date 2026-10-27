@@ -61,6 +61,18 @@ class FakeProvider : Closeable {
     /** Shows whose details are answered with HTTP 503. */
     val brokenShowDetails: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
+    /**
+     * Movie files by Provider stream id, served with range requests like the surveyed Provider's.
+     * A movie without one streams endlessly, as if playing.
+     */
+    val movieFiles = ConcurrentHashMap<Long, ByteArray>()
+
+    /** Sends movie files a kilobyte at a time, slow enough for a Header read to be caught midway. */
+    @Volatile var slowFiles = false
+
+    /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
+    val movieDetails = ConcurrentHashMap<Long, String>()
+
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
 
@@ -77,6 +89,13 @@ class FakeProvider : Closeable {
     /** The show ids whose details were asked for, in order. */
     val showDetailsRequests: List<Long> get() = _showDetailsRequests.toList()
     val refusedStreams get() = _refusedStreams.get()
+    private val _ranges = CopyOnWriteArrayList<String>()
+
+    /** The movie file requests that asked for a range, as `<stream id>:<Range header>`, in order. */
+    val ranges: List<String> get() = _ranges.toList()
+
+    /** Streams open right now. */
+    val streamsOpen get() = openStreams.get()
     val requestsWithoutGzip get() = _requestsWithoutGzip.get()
 
     val url: String get() = "http://127.0.0.1:${server.address.port}"
@@ -123,6 +142,9 @@ class FakeProvider : Closeable {
             }
             "get_series" -> respond(exchange) { body ->
                 if (!catalogFile("series_streams.json", body)) body.write(showListOverride?.toByteArray() ?: fixture("series_streams.json"))
+            }
+            "get_vod_info" -> respond(exchange) { body ->
+                body.write((movieDetails[query["vod_id"]?.toLongOrNull()] ?: """{"info":[],"movie_data":{}}""").toByteArray())
             }
             "get_series_info" -> {
                 val id = query["series_id"]?.toLongOrNull() ?: -1
@@ -190,6 +212,8 @@ class FakeProvider : Closeable {
             return exchange.sendResponseHeaders(403, -1)
         }
         try {
+            val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { movieFiles[it] }
+            if (file != null) return sendFile(exchange, parts[4].substringBefore('.').toLong(), file)
             exchange.sendResponseHeaders(200, 0)
             val chunk = ByteArray(16 * 1024)
             // Keeps "playing" until the client goes away.
@@ -201,6 +225,26 @@ class FakeProvider : Closeable {
         } catch (_: Exception) {
         } finally {
             openStreams.decrementAndGet()
+        }
+    }
+
+    /** Sends [file], or the range of it asked for. */
+    private fun sendFile(exchange: HttpExchange, id: Long, file: ByteArray) {
+        val range = exchange.requestHeaders.getFirst("Range")
+        if (range != null) _ranges += "$id:$range"
+        val asked = range?.let { Regex("""bytes=(\d+)-(\d*)""").matchEntire(it) }
+        val from = asked?.groupValues?.get(1)?.toInt() ?: 0
+        val to = asked?.groupValues?.get(2)?.takeIf { it.isNotEmpty() }?.toInt()?.coerceAtMost(file.size - 1) ?: (file.size - 1)
+        if (asked != null) exchange.responseHeaders.add("Content-Range", "bytes $from-$to/${file.size}")
+        exchange.sendResponseHeaders(if (asked != null) 206 else 200, (to - from + 1).toLong())
+        val step = if (slowFiles) 1024 else 64 * 1024
+        var at = from
+        while (at <= to) {
+            val end = minOf(at + step, to + 1)
+            exchange.responseBody.write(file, at, end - at)
+            exchange.responseBody.flush()
+            at = end
+            if (slowFiles) Thread.sleep(20)
         }
     }
 

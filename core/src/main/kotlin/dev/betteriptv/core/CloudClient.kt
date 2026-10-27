@@ -10,10 +10,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.security.MessageDigest
 
 /**
  * Speaks the app's cloud API (cloud/src/index.ts). The device signs in with its own token, which
- * it registers for on first use; no Provider login, address or stream URL is ever sent.
+ * it registers for on first use; no Provider login, address or stream URL is ever sent. File reads
+ * are shared under a hash of the Provider's host ([providerKey]), which doesn't reveal it.
  */
 internal class CloudClient(address: String, private val http: OkHttpClient, private val tokens: DeviceTokenStore) {
     private val base: HttpUrl = address.toHttpUrl()
@@ -58,6 +60,27 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }
     }
 
+    /**
+     * What the files of [provider]'s movie Listings [listingIds] hold, as Viewers of the same Provider
+     * read them, as JSON by Listing id; at most [MAX_BATCH] at a time. [provider] is [providerKey]'s.
+     */
+    fun fileReads(provider: String, listingIds: List<Long>): Map<Long, String> {
+        require(listingIds.size <= MAX_BATCH)
+        val answer = authorized { token -> post("v1/file-reads/lookup", json.toJson(mapOf("provider" to provider, "listings" to listingIds)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return (answer["files"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { file ->
+            val id = (file["listingId"] as? Number)?.toLong() ?: return@mapNotNull null
+            (file["file"] as? Map<*, *>)?.let { id to json.toJson(it) }
+        }.toMap()
+    }
+
+    /** Shares what the files of [provider]'s movie Listings hold ([files], JSON by Listing id), at most [MAX_BATCH] at a time. */
+    fun shareFileReads(provider: String, files: Map<Long, String>) {
+        require(files.size <= MAX_BATCH)
+        val body = mapOf("provider" to provider, "files" to files.map { (id, file) -> mapOf("listingId" to id, "file" to json.fromJson(file)) })
+        authorized { token -> post("v1/file-reads", json.serializeNulls().toJson(body), token) }
+    }
+
     /** Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it. */
     private fun authorized(call: (token: String) -> Any?): Any? {
         val token = tokens.deviceToken() ?: register()
@@ -85,6 +108,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
             http.newCall(request).execute().use { response ->
                 if (response.code == 401) throw Unauthorized()
                 if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
+                if (response.code == 204) return null
                 return JsonReader.of(response.body!!.source()).use { it.readJsonValue() }
             }
         } catch (e: IOException) {
@@ -128,3 +152,10 @@ internal interface DeviceTokenStore {
     fun deviceToken(): String?
     fun saveDeviceToken(token: String)
 }
+
+/**
+ * The key Viewers of one Provider share file reads under: a SHA-256 of its host, so the cloud
+ * never learns the Provider's address.
+ */
+internal fun providerKey(login: ProviderLogin): String =
+    MessageDigest.getInstance("SHA-256").digest(XtreamClient.baseUrl(login.address).host.lowercase().toByteArray()).joinToString("") { "%02x".format(it) }
