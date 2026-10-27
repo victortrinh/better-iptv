@@ -79,7 +79,7 @@ internal fun quality(width: Int?, height: Int?): Quality? {
  * A language code as a primary BCP 47 subtag: `ger`, `deu` and `de` are all `de`. Null when it
  * names no language (`und`, `mul`, empty) or none Java knows.
  */
-internal fun iso639(code: String?): String? {
+fun iso639(code: String?): String? {
     val folded = code?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() && it !in NO_LANGUAGE } ?: return null
     if (folded.length == 2) return folded.takeIf { it in TWO_LETTER }
     return THREE_LETTER[BIBLIOGRAPHIC[folded] ?: folded]

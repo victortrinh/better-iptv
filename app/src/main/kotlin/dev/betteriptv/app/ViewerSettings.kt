@@ -17,7 +17,30 @@ data class ViewerSettings(
     val appLanguage: String,
     val region: String,
     val qualityCap: QualityCap,
+    val subtitleStyle: SubtitleStyle = SubtitleStyle(),
 )
+
+/**
+ * How the player draws subtitles that carry no style of their own (styled ASS subtitles keep
+ * theirs): their [size], [colour], what's behind them ([background]) and how high they sit ([position]).
+ */
+data class SubtitleStyle(
+    val size: SubtitleSize = SubtitleSize.Medium,
+    val colour: SubtitleColour = SubtitleColour.White,
+    val background: SubtitleBackground = SubtitleBackground.Outline,
+    val position: SubtitlePosition = SubtitlePosition.Bottom,
+)
+
+/** A subtitle size, as a share of Media3's default. */
+enum class SubtitleSize(val scale: Float) { Small(0.8f), Medium(1f), Large(1.3f), Largest(1.6f) }
+
+enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xFFFFE14D.toInt()) }
+
+/** What sits behind subtitles: a dark outline round the letters, a shadow, or a dark box. */
+enum class SubtitleBackground { Outline, Shadow, Box }
+
+/** How high subtitles sit, as a share of the picture's height from its bottom. */
+enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.08f), Raised(0.2f) }
 
 /** The app's interface languages: the App language is one of these. */
 val APP_LANGUAGES = listOf("en", "fr")
@@ -38,6 +61,10 @@ class ViewerSettingsStore(context: Context) {
             .putString(APP_LANGUAGE, new.appLanguage)
             .putString(REGION, new.region)
             .putString(QUALITY_CAP, new.qualityCap.name)
+            .putString(SUBTITLE_SIZE, new.subtitleStyle.size.name)
+            .putString(SUBTITLE_COLOUR, new.subtitleStyle.colour.name)
+            .putString(SUBTITLE_BACKGROUND, new.subtitleStyle.background.name)
+            .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
             .apply()
         _settings.value = new
     }
@@ -51,14 +78,26 @@ class ViewerSettingsStore(context: Context) {
             appLanguage = prefs.getString(APP_LANGUAGE, null) ?: device.language.takeIf { it in APP_LANGUAGES } ?: "en",
             region = prefs.getString(REGION, null) ?: device.country.takeIf { it.length == 2 } ?: "US",
             qualityCap = prefs.getString(QUALITY_CAP, null)?.let { name -> QualityCap.entries.find { it.name == name } } ?: QualityCap.UHD,
+            subtitleStyle = SubtitleStyle(
+                size = read(SUBTITLE_SIZE, SubtitleSize.entries) ?: SubtitleSize.Medium,
+                colour = read(SUBTITLE_COLOUR, SubtitleColour.entries) ?: SubtitleColour.White,
+                background = read(SUBTITLE_BACKGROUND, SubtitleBackground.entries) ?: SubtitleBackground.Outline,
+                position = read(SUBTITLE_POSITION, SubtitlePosition.entries) ?: SubtitlePosition.Bottom,
+            ),
         )
     }
+
+    private fun <T : Enum<T>> read(key: String, entries: List<T>): T? = prefs.getString(key, null)?.let { name -> entries.find { it.name == name } }
 
     private companion object {
         const val CONTENT_LANGUAGES = "content_languages"
         const val APP_LANGUAGE = "app_language"
         const val REGION = "region"
         const val QUALITY_CAP = "quality_cap"
+        const val SUBTITLE_SIZE = "subtitle_size"
+        const val SUBTITLE_COLOUR = "subtitle_colour"
+        const val SUBTITLE_BACKGROUND = "subtitle_background"
+        const val SUBTITLE_POSITION = "subtitle_position"
     }
 }
 
