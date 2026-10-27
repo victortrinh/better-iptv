@@ -61,6 +61,7 @@ import kotlin.math.abs
  * One card per movie or show Title ([kind], switched with the tabs), newest first, read from the
  * device database a page at a time, with TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
+ * The last tab opens search ([onSearch]).
  */
 @Composable
 fun TitlesScreen(
@@ -72,6 +73,7 @@ fun TitlesScreen(
     restoreFocus: Int,
     onSyncNow: () -> Unit,
     onKind: (TitleKind) -> Unit,
+    onSearch: () -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -86,9 +88,9 @@ fun TitlesScreen(
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
             TopTabs(
-                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title)),
+                listOf(stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.search_title)),
                 selected = KINDS.indexOf(kind),
-                onSelect = { onKind(KINDS[it]) },
+                onSelect = { KINDS.getOrNull(it)?.let(onKind) ?: onSearch() },
             )
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)

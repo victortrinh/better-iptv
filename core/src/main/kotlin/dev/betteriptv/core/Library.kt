@@ -18,6 +18,9 @@ import java.io.Closeable
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /**
  * The core's public interface: everything the screens show comes from here.
@@ -36,6 +39,13 @@ class Library private constructor(
     @Volatile private var cloudRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
+    private val searchLock = Any()
+    /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt before the next search. */
+    private val catalogGeneration = AtomicInteger()
+    /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
+    private val metadataGeneration = AtomicInteger()
+    private val rebuildingSearch = AtomicBoolean()
+    @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
@@ -118,7 +128,11 @@ class Library private constructor(
                 // Anything else (a full disk, say) also leaves the previous catalog in place.
                 SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
-            if (_syncStatus.value is SyncStatus.Synced) matchByName()
+            if (_syncStatus.value is SyncStatus.Synced) {
+                catalogGeneration.incrementAndGet()
+                matchByName()
+                catalogGeneration.incrementAndGet()
+            }
             _syncStatus.value
         }
     }
@@ -180,9 +194,100 @@ class Library private constructor(
      * none is in them, and TMDB's name and poster in the [appLanguage].
      */
     suspend fun titles(offset: Int, limit: Int, contentLanguages: List<String>, appLanguage: String, kind: TitleKind = TitleKind.Movie): List<TitleSummary> = withContext(Dispatchers.IO) {
-        val titles = store.titles(kind, offset, limit)
+        summaries(store.titles(kind, offset, limit), contentLanguages, appLanguage)
+    }
+
+    /**
+     * Movies, Shows and people whose names match [query], once it has two letters. Titles are found
+     * by any Listing name of their Versions and any name TMDB has for them, people by name; accents
+     * and case don't matter, and small typos are tolerated. Titles with Versions in the Viewer's
+     * [contentLanguages] come first, then closer matches, then TMDB's most popular. A person's
+     * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
+     *
+     * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
+     */
+    suspend fun search(query: String, contentLanguages: List<String>, appLanguage: String): SearchResults = withContext(Dispatchers.IO) {
+        if (SearchIndex.words(query).sumOf { it.length } < SearchIndex.MIN_LETTERS) return@withContext SearchResults.NONE
+        val index = searchIndex()
+        val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        val byRank = compareBy<SearchIndex.Hit>(
+            { index.titles[it.index].languages.none(wanted::contains) },
+            { it.distance },
+            { -index.titles[it.index].popularity },
+            { it.index },
+        )
+        val titles = index.findTitles(query).sortedWith(byRank)
+        val people = index.findPeople(query)
+            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { person -> -index.personTitles[person.index].maxOf { index.titles[it].popularity } }))
+            .take(PEOPLE_FOUND)
+            .map { person -> index.people[person.index] to index.personTitles[person.index].map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+        val shown = (TitleKind.entries.flatMap { kind -> titles.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) } + people.flatMap { it.second })
+            .map { index.titles[it.index].id }.distinct()
+        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
+        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
+        SearchResults(
+            movies = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Movie }.take(TITLES_FOUND)),
+            shows = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Show }.take(TITLES_FOUND)),
+            people = people.map { (name, hits) -> Person(name, found(hits)) },
+        )
+    }
+
+    /** Builds the search index now, so the Viewer's first letters don't wait for it. */
+    suspend fun prepareSearch() {
+        withContext(Dispatchers.IO) { rebuildSearchIndex() }
+    }
+
+    private class BuiltIndex(val catalog: Int, val metadata: Int, val index: SearchIndex)
+
+    /**
+     * The search index of the current catalog. Metadata cached since it was built (often for the
+     * results of the last search) only starts a rebuild in the background, so typing never waits on one.
+     */
+    private fun searchIndex(): SearchIndex {
+        val built = searchIndex ?: return rebuildSearchIndex()
+        if (built.catalog != catalogGeneration.get()) return rebuildSearchIndex()
+        if (built.metadata != metadataGeneration.get() && rebuildingSearch.compareAndSet(false, true)) {
+            thread(name = "search-index", isDaemon = true) {
+                try {
+                    rebuildSearchIndex()
+                } catch (e: Exception) {
+                    // The Library closed meanwhile; the next search tries again.
+                } finally {
+                    rebuildingSearch.set(false)
+                }
+            }
+        }
+        return built.index
+    }
+
+    private fun rebuildSearchIndex(): SearchIndex = synchronized(searchLock) {
+        val catalog = catalogGeneration.get()
+        val metadata = metadataGeneration.get()
+        searchIndex?.takeIf { it.catalog == catalog && it.metadata == metadata }?.index
+            ?: buildSearchIndex().also { searchIndex = BuiltIndex(catalog, metadata, it) }
+    }
+
+    /** Indexes every Title by its Versions' cleaned names and the metadata cached for it, in any language. */
+    private fun buildSearchIndex(): SearchIndex {
+        class Known(val names: List<String>, val cast: List<String>, val popularity: Double)
+        val known = HashMap<TitleId, Known>()
+        store.forEachMetadata { id, body -> TitleMetadata(body).let { known[id] = Known(it.searchNames, it.cast, it.popularity) } }
+        val builder = SearchIndex.Builder()
+        for (kind in TitleKind.entries) {
+            store.forEachTitle(kind) { id, listings ->
+                val metadata = known[id]
+                val names = listings.mapTo(HashSet()) { prefixTable.cleanName(it.first).name } + metadata?.names.orEmpty()
+                val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.describe(name, category).attributes.language?.value?.let(::primaryLanguage) }
+                builder.title(id, names, languages, metadata?.popularity ?: 0.0, metadata?.cast.orEmpty())
+            }
+        }
+        return builder.build()
+    }
+
+    /** [titles]' cards: TMDB's name and poster in the [appLanguage], and the best Version in the Viewer's [contentLanguages]. */
+    private fun summaries(titles: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> {
         val metadata = metadata(titles.map { it.id }, appLanguage)
-        titles.map { title ->
+        return titles.map { title ->
             val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
             TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
         }
@@ -333,6 +438,7 @@ class Library private constructor(
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->
                     val answer = cloud.metadata(language, batch)
                     store.saveMetadata(language, answer.found, answer.notFound, now)
+                    if (answer.found.isNotEmpty()) metadataGeneration.incrementAndGet()
                     answer.found.forEach { (id, body) -> cached[id] = StoredMetadata(body, now) }
                     answer.notFound.forEach { cached[it] = StoredMetadata(null, now) }
                 }
@@ -361,6 +467,9 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
+        /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
+        private const val TITLES_FOUND = 40
+        private const val PEOPLE_FOUND = 10
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
