@@ -71,13 +71,17 @@ export async function metadata(env: Env, keys: TitleKey[], language: string): Pr
   return batch;
 }
 
+/**
+ * Reads the cached metadata in language ?1 of a JSON array of [kind, tmdbId] pairs. A join on each key's
+ * columns, so SQLite searches the primary key instead of reading the whole table for every batch.
+ */
+export const CACHE_QUERY = `SELECT t.kind, t.tmdb_id, t.body, t.fetched_at FROM json_each(?2) j
+  JOIN title_metadata t ON t.kind = j.value ->> 0 AND t.tmdb_id = j.value ->> 1 AND t.language = ?1`;
+
 async function readCache(db: D1Database, keys: TitleKey[], language: string) {
   const rows = await db
-    .prepare(
-      `SELECT kind, tmdb_id, body, fetched_at FROM title_metadata
-       WHERE language = ?1 AND kind || '/' || tmdb_id IN (SELECT value FROM json_each(?2))`,
-    )
-    .bind(language, JSON.stringify(keys.map(id)))
+    .prepare(CACHE_QUERY)
+    .bind(language, JSON.stringify(keys.map((key) => [key.kind, key.tmdbId])))
     .all<{ kind: string; tmdb_id: number; body: string | null; fetched_at: number }>();
   const cached = new Map<string, { body: TitleMetadata | null; fetchedAt: number }>();
   for (const row of rows.results) {
