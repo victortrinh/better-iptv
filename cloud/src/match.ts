@@ -56,6 +56,13 @@ type LookupKey = [Kind, string, number, string];
 const lookupKey = (q: MatchQuestion) => JSON.stringify([q.kind, normalize(q.name), q.year ?? 0, q.language ?? ""] satisfies LookupKey);
 
 /**
+ * Reads the cached lookups of a JSON array of [LookupKey]s. A join on each key's columns, so SQLite
+ * searches the primary key instead of reading the whole table for every batch.
+ */
+export const LOOKUP_QUERY = `SELECT t.kind, t.name, t.year, t.language, t.tmdb_id, t.fetched_at FROM json_each(?1) j
+  JOIN title_lookup t ON t.kind = j.value ->> 0 AND t.name = j.value ->> 1 AND t.year = j.value ->> 2 AND t.language = j.value ->> 3`;
+
+/**
  * Looks up [questions] by name, from the cloud's cache or else from TMDB's search, caching what TMDB
  * answers. Questions TMDB couldn't answer right now are left out.
  */
@@ -64,10 +71,7 @@ async function lookUp(env: Env, questions: MatchQuestion[]): Promise<Map<string,
   if (questions.length === 0) return answers;
   const now = Date.now();
   const keys = new Map(questions.map((q) => [lookupKey(q), q]));
-  const rows = await env.DB.prepare(
-    `SELECT kind, name, year, language, tmdb_id, fetched_at FROM title_lookup
-     WHERE json_array(kind, name, year, language) IN (SELECT value FROM json_each(?1))`,
-  )
+  const rows = await env.DB.prepare(LOOKUP_QUERY)
     .bind(JSON.stringify([...keys.keys()]))
     .all<{ kind: Kind; name: string; year: number; language: string; tmdb_id: number | null; fetched_at: number }>();
   for (const row of rows.results) {
