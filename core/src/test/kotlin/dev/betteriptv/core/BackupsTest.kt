@@ -94,6 +94,36 @@ class BackupsTest {
         job.cancelAndJoin()
     }
 
+    @Test fun `VLC reading the file through the relay for longer than the start timeout still plays the Version`() = runBlocking {
+        syncWithBackups()
+        // Each read after the first waits out the Provider's release grace, so five take over 2 s, but the Provider keeps answering.
+        player.vlcReads = 5
+        val (session, job) = play(startTimeout = 1_000.milliseconds)
+        session.awaitPlaying(1)
+
+        session.tryOtherPlayer()
+
+        val vlc = session.awaitState { it is PlaybackState.Playing && it.player.engine == Engine.Vlc }
+        assertEquals(1L, vlc.version!!.listingId)
+        assertEquals(listOf(1L, 0L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
+    @Test fun `VLC on a Version the Provider stops answering gives way to the next Backup`() = runBlocking {
+        syncWithBackups()
+        player.vlcReads = 5
+        val (session, job) = play(startTimeout = 1_000.milliseconds)
+        session.awaitPlaying(1)
+        provider.slowStreams += 1
+        provider.slowStreamDelayMillis = 2_000
+
+        session.tryOtherPlayer()
+
+        session.awaitPlaying(2)
+        assertEquals(listOf(1L, 0L, 2L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
     @Test fun `a Version neither player can open gives way to the next Backup`() = runBlocking {
         syncWithBackups()
         player.undecodable += setOf(1L, 2L)

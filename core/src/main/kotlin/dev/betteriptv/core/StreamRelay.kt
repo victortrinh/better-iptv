@@ -11,6 +11,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
+import kotlin.time.TimeSource
 
 /**
  * Serves a Version's file to a player engine on this device through one Provider stream at a time.
@@ -22,6 +23,14 @@ internal class StreamRelay(private val upstream: String, private val http: OkHtt
     // Not getLoopbackAddress(): on Android that is IPv6 (::1), where an engine given 127.0.0.1 can't connect.
     private val server = ServerSocket(0, 8, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
     val location = "http://127.0.0.1:${server.localPort}/file"
+
+    /**
+     * When the Provider last started sending the file's bytes for one of the engine's requests, or null
+     * before it first did: VLC reads several parts of a file before its picture starts, and each is a
+     * sign the file is alive.
+     */
+    @Volatile var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
+        private set
 
     /** The request to the Provider in use; a new one closes it first. */
     private var current: Call? = null
@@ -81,7 +90,19 @@ internal class StreamRelay(private val upstream: String, private val http: OkHtt
             append("Connection: close\r\n\r\n")
         }
         out.write(head.toByteArray(Charsets.ISO_8859_1))
-        if (body) response.body?.byteStream()?.copyTo(out)
+        if (body) response.body?.byteStream()?.let { file ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var answered = false
+            while (true) {
+                val read = file.read(buffer)
+                if (read < 0) break
+                if (!answered) {
+                    answered = true
+                    answeredAt = TimeSource.Monotonic.markNow()
+                }
+                out.write(buffer, 0, read)
+            }
+        }
         out.flush()
     }
 
