@@ -141,6 +141,32 @@ fun refreshRateFor(frameRate: Float, current: Float, rates: List<Float>): Float?
 private const val REFRESH_RATE_TOLERANCE = 0.0003f
 
 /**
+ * A film's frames a second from the presentation times (in µs) of frames shown one after another,
+ * for files that don't name it (Media3 leaves it out of every MKV). Matroska rounds times to the
+ * millisecond, so 23.976 fps arrives as 41 and 42 ms steps: the rate is taken over the whole span,
+ * counting a dropped frame's longer step as two, and snapped to the standard rate it is closest to.
+ * Null with too few frames, or when the times don't move forward.
+ */
+fun frameRateOf(presentationTimesUs: List<Long>): Float? {
+    if (presentationTimesUs.size < MIN_FRAMES_FOR_RATE) return null
+    val steps = presentationTimesUs.zipWithNext { a, b -> b - a }
+    if (steps.any { it <= 0 }) return null
+    val median = steps.sorted()[steps.size / 2]
+    val frameUs = steps.filter { it < median * 3 / 2 }.average()
+    val frames = steps.sumOf { Math.round(it / frameUs) }
+    val measured = (frames * 1_000_000.0 / (presentationTimesUs.last() - presentationTimesUs.first())).toFloat()
+    return STANDARD_FRAME_RATES.firstOrNull { kotlin.math.abs(it - measured) / it < FRAME_RATE_SNAP } ?: measured
+}
+
+/** Enough frames (about 4 s of film) that millisecond rounding can't pass 24 fps for 23.976. */
+const val MIN_FRAMES_FOR_RATE = 96
+
+private val STANDARD_FRAME_RATES = listOf(24000f / 1001, 24f, 25f, 30000f / 1001, 30f, 48000f / 1001, 48f, 50f, 60000f / 1001, 60f)
+
+/** Half the gap between 23.976 and 24 fps, as a share of the rate. */
+private const val FRAME_RATE_SNAP = 0.0005f
+
+/**
  * An audio or subtitle Track found in a file, with its [language] as the file tags it (ISO 639-1
  * or 639-2), its format as a [mimeType] (`audio/true-hd`) and an audio Track's [channels], if the
  * file names them.
