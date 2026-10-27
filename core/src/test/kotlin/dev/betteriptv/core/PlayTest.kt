@@ -100,6 +100,18 @@ class PlayTest {
         assertEquals("4K-EN - Movie (2025) DV", picked(dolbyVisionTv, listOf("en", "de")))
     }
 
+    @Test fun `the Quality cap limits what Play picks, and above it the lowest quality plays when nothing is within it`() = runBlocking {
+        syncSpread()
+
+        assertEquals("4K-EN - Movie (2025) DV", library.playPlan(movie, english, dolbyVisionTv, QualityCap.UHD)?.version?.name)
+        assertEquals("EN - Movie (2025)", library.playPlan(movie, english, dolbyVisionTv, QualityCap.FullHD)?.version?.name)
+        // The cap comes before the Content language: German has only 4K.
+        assertEquals("EN - Movie (2025)", library.playPlan(movie, listOf("de"), dolbyVisionTv, QualityCap.FullHD)?.version?.name)
+
+        syncVersions("4K-EN - Movie (2025) DV" to "4K MOVIES", "4K-EN - Movie (2025)" to "4K MOVIES")
+        assertEquals("4K-EN - Movie (2025) DV", library.playPlan(movie, english, dolbyVisionTv, QualityCap.HD)?.version?.name)
+    }
+
     @Test fun `a known Source wins at the same quality, then the newest Listing`() = runBlocking {
         syncVersions(
             "DE - Der Film (2025)" to "DE - FILME",

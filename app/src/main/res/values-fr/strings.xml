@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="login_title">Connectez-vous à votre fournisseur</string>
+    <string name="login_private">Vos identifiants restent sur cet appareil, chiffrés.</string>
+    <string name="login_address">Adresse du fournisseur</string>
+    <string name="login_address_hint">p. ex. http://example.com:8080</string>
+    <string name="login_username">Nom d\'utilisateur</string>
+    <string name="login_password">Mot de passe</string>
+    <string name="login_button">Se connecter</string>
+    <string name="login_checking">Vérification…</string>
+    <string name="login_wrong">Votre fournisseur n\'a pas accepté ce nom d\'utilisateur et ce mot de passe.</string>
+    <string name="login_expired_on">Votre abonnement a expiré le %1$s.</string>
+    <string name="login_expired">Votre abonnement a expiré.</string>
+    <string name="provider_unreachable">Impossible de joindre votre fournisseur. %1$s</string>
+
+    <string name="movies_title">Films</string>
+    <string name="shows_title">Séries</string>
+    <plurals name="titles_count">
+        <item quantity="one">%1$s titre</item>
+        <item quantity="many">%1$s titres</item>
+        <item quantity="other">%1$s titres</item>
+    </plurals>
+    <string name="sync_now">Synchroniser</string>
+    <string name="sync_never">Pas encore synchronisé.</string>
+    <string name="sync_first">Première synchronisation de votre catalogue…</string>
+    <string name="sync_running">Synchronisation… (catalogue du %1$s affiché)</string>
+    <string name="sync_done">Synchronisé %1$s en %2$s s.</string>
+    <string name="sync_failed">Échec de la synchronisation : %1$s Catalogue du %2$s affiché.</string>
+    <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
+    <string name="sync_just_now">à l\'instant</string>
+    <string name="sync_failed_empty">Échec de la synchronisation : %1$s</string>
+    <plurals name="sync_unknown_prefixes">
+        <item quantity="one">Préfixe absent de la table des préfixes : %1$s.</item>
+        <item quantity="many">Préfixes absents de la table des préfixes : %1$s.</item>
+        <item quantity="other">Préfixes absents de la table des préfixes : %1$s.</item>
+    </plurals>
+
+    <string name="badge_confirmed">Confirmé</string>
+    <string name="badge_confirmed_meaning">lu dans le fichier</string>
+    <string name="badge_likely">Probable</string>
+    <string name="badge_likely_meaning">d\'après le nom seulement</string>
+
+    <string name="version_quality">Qualité</string>
+    <string name="version_source">Source</string>
+    <string name="version_audio">Audio</string>
+    <string name="version_subtitles">Sous-titres</string>
+    <string name="version_bitrate">Débit</string>
+    <string name="version_none">—</string>
+    <string name="version_cam">Enregistrement en salle (CAM)</string>
+    <string name="version_audio_description">Audiodescription</string>
+    <string name="subtitles_many">Plusieurs langues</string>
+    <string name="language_untagged">Langue non précisée</string>
+    <plurals name="backups_count">
+        <item quantity="one">%1$d copie de secours</item>
+        <item quantity="many">%1$d copies de secours</item>
+        <item quantity="other">%1$d copies de secours</item>
+    </plurals>
+
+    <string name="versions_title">Versions</string>
+    <string name="play">Lecture</string>
+    <string name="play_nothing">Aucune version que ce téléviseur peut afficher</string>
+    <string name="player_failed">Cette version n\'a pas joué. Essayez l\'autre lecteur, ou revenez choisir une autre version.</string>
+    <string name="player_try_other">Essayer l\'autre lecteur</string>
+    <string name="player_engine">Lecture avec %1$s</string>
+    <string name="player_engine_media3">le lecteur principal</string>
+    <string name="player_engine_vlc">VLC</string>
+    <plurals name="versions_count">
+        <item quantity="one">%1$d version</item>
+        <item quantity="many">%1$d versions</item>
+        <item quantity="other">%1$d versions</item>
+    </plurals>
+    <string name="episodes_title">Épisodes</string>
+    <string name="episodes_reading">Lecture des épisodes auprès de votre fournisseur…</string>
+    <string name="episodes_none">Votre fournisseur ne liste aucun épisode pour cette série.</string>
+    <string name="episodes_unreachable">Impossible de joindre votre fournisseur pour lire les épisodes.</string>
+    <plurals name="episodes_unread">
+        <item quantity="one">Impossible de lire les épisodes de %1$d version : certains peuvent manquer.</item>
+        <item quantity="many">Impossible de lire les épisodes de %1$d versions : certains peuvent manquer.</item>
+        <item quantity="other">Impossible de lire les épisodes de %1$d versions : certains peuvent manquer.</item>
+    </plurals>
+    <string name="season_title">Saison %1$d</string>
+    <string name="season_specials">Épisodes spéciaux</string>
+    <plurals name="episodes_count">
+        <item quantity="one">%1$d épisode</item>
+        <item quantity="many">%1$d épisodes</item>
+        <item quantity="other">%1$d épisodes</item>
+    </plurals>
+    <string name="episode_number">Épisode %1$d</string>
+    <string name="episode_named">%1$d. %2$s</string>
+    <string name="other_languages">Autres langues</string>
+    <string name="other_languages_show">Afficher %1$d</string>
+    <string name="other_languages_hide">Masquer</string>
+    <string name="runtime_minutes">%1$d min</string>
+    <string name="runtime_hours">%1$d h %2$02d min</string>
+    <string name="tmdb_attribution">Détails et illustrations des titres fournis par TMDB. Ce produit utilise l\'API TMDB, mais n\'est ni approuvé ni certifié par TMDB.</string>
+
+    <string name="settings_title">Paramètres</string>
+    <string name="settings_languages">Langues</string>
+    <string name="settings_app_language">Langue de l\'appli</string>
+    <string name="settings_app_language_detail">Menus, titres et descriptions</string>
+    <string name="settings_content_languages">Langues du contenu</string>
+    <string name="settings_content_languages_detail">Les fiches et la lecture choisissent d\'abord les versions dans ces langues</string>
+    <string name="settings_region">Région</string>
+    <string name="settings_region_detail">Détermine le Top 10 et les ligues par défaut</string>
+    <string name="settings_playback">Lecture</string>
+    <string name="settings_quality_cap">Qualité maximale</string>
+    <string name="settings_quality_cap_detail">La meilleure qualité que la lecture choisit. Baissez-la si l\'image saccade.</string>
+
+    <string name="home_title">Accueil</string>
+    <string name="row_continue_watching">Reprendre</string>
+    <string name="row_new">Nouveau sur votre service</string>
+    <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
+    <string name="search_title">Recherche</string>
+    <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>
+    <string name="search_start">Tapez deux lettres pour trouver des films, des séries et des personnes.</string>
+    <string name="search_none">Aucun résultat pour « %1$s ».</string>
+    <string name="search_movies">Films · %1$d</string>
+    <string name="search_shows">Séries · %1$d</string>
+    <string name="player_starting">Démarrage de %1$s</string>
+    <string name="player_versions_hint">≡ Versions</string>
+    <string name="player_playing">En lecture</string>
+    <string name="player_buffering">Mise en mémoire tampon répétée</string>
+    <string name="player_buffering_lower">%1$s devrait être plus stable</string>
+    <string name="player_switch">Changer</string>
+
+    <string name="keyboard_space">Espace</string>
+    <string name="keyboard_delete">Effacer</string>
+</resources>

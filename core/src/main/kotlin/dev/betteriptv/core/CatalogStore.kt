@@ -310,6 +310,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         reader.prepare("SELECT coalesce(max(position), 0) FROM listing WHERE kind = 'movie'").use { it.step(); it.getLong(0).toInt() }
     }
 
+    /** Gives [consume] the name and Category of every movie and show Listing in the lists. */
+    fun forEachListing(consume: (name: String, category: String) -> Unit) = synchronized(reader) {
+        reader.prepare("SELECT name, category FROM listing").use {
+            while (it.step()) consume(it.getText(0), it.getText(1))
+        }
+    }
+
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
         reader.prepare("SELECT id, name, category FROM listing WHERE kind = 'movie' AND position > ? AND position <= ? ORDER BY position").use {

@@ -54,6 +54,9 @@ data class DeviceProfile(
     }
 }
 
+/** The highest quality the Viewer allows Play to pick: 4K, 1080p or 720p. */
+enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.FullHD), HD(Quality.HD) }
+
 /**
  * What pressing Play starts: a [version] with its [Version.backups], and the Viewer's
  * [contentLanguages], which choose its Tracks once the player has read them. [versions] are the

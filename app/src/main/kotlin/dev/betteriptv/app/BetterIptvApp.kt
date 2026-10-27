@@ -15,6 +15,8 @@ import java.time.Instant
 class BetterIptvApp : Application() {
     lateinit var library: Library
         private set
+    lateinit var settings: ViewerSettingsStore
+        private set
 
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -22,6 +24,7 @@ class BetterIptvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        settings = ViewerSettingsStore(this)
         library = Library.open(
             getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path,
             KeystoreCredentialStore(this),
