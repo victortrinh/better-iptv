@@ -27,11 +27,13 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Engine
 import dev.betteriptv.core.FileContents
 import dev.betteriptv.core.Hdr
+import dev.betteriptv.core.MIN_FRAMES_FOR_RATE
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.RememberedTracks
 import dev.betteriptv.core.Track
+import dev.betteriptv.core.frameRateOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -48,7 +50,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration.Companion.seconds
 
-private const val PLAYER_TAG = "Player"
+internal const val PLAYER_TAG = "Player"
 
 /**
  * Creates the engine a Playback session asks for, choosing a [plan]'s Tracks for this stick and TV
@@ -115,6 +117,9 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     private val requests = OpenRequests()
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
     val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered) { seen = it }) }
+    /** The presentation times of the frames shown since playback started or the Viewer last seeked, on the playback thread. */
+    private val frameTimes = ArrayList<Long>(MIN_FRAMES_FOR_RATE)
+    @Volatile private var measuredFrameRate: Float? = null
     override val position: Long get() = player.currentPosition
     override val duration: Long? get() = player.duration.takeIf { it > 0 }
     override val isPlaying: Boolean get() = player.playWhenReady
@@ -124,6 +129,17 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
 
     @Volatile override var seen: FileContents? = null
         private set
+
+    init {
+        // Media3 leaves the frame rate out of every MKV, so it's measured from the first frames shown.
+        player.setVideoFrameMetadataListener { presentationTimeUs, _, _, _ ->
+            if (measuredFrameRate != null) return@setVideoFrameMetadataListener
+            val last = frameTimes.lastOrNull()
+            if (last != null && (presentationTimeUs <= last || presentationTimeUs - last > 1_000_000)) frameTimes.clear()
+            frameTimes += presentationTimeUs
+            if (frameTimes.size >= MIN_FRAMES_FOR_RATE) measuredFrameRate = frameRateOf(frameTimes)
+        }
+    }
 
     /** Shows the player in a [view] made for it, ASS subtitles included. */
     fun showIn(view: PlayerView) {
@@ -191,7 +207,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     }
 
     override val frameRate: Float?
-        get() = groups(C.TRACK_TYPE_VIDEO).firstOrNull { it.isSelected }?.getTrackFormat(0)?.frameRate?.takeIf { it > 0 }
+        get() = groups(C.TRACK_TYPE_VIDEO).firstOrNull { it.isSelected }?.getTrackFormat(0)?.frameRate?.takeIf { it > 0 } ?: measuredFrameRate
 
     override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) = suspendCancellableCoroutine { continuation ->
         player.addListener(object : Player.Listener {

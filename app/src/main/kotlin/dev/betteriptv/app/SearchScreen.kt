@@ -61,12 +61,15 @@ fun SearchScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     var results by remember { mutableStateOf(SearchResults.NONE) }
+    // The query [results] answer: the one being typed until the index, built on first use, has them.
+    var answered by remember { mutableStateOf("") }
     // Builds the index while the Viewer reaches for the first letters.
     LaunchedEffect(status.last) { library.prepareSearch() }
     LaunchedEffect(query, status.last, contentLanguages, appLanguage) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
         results = library.search(query, contentLanguages, appLanguage)
+        answered = query
     }
     val keyboard = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
@@ -99,15 +102,19 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(query, results, onOpen)
+            Results(query, results, searching = answered != query, onOpen)
         }
     }
 }
 
 @Composable
-private fun Results(query: String, results: SearchResults, onOpen: (TitleId) -> Unit) {
+private fun Results(query: String, results: SearchResults, searching: Boolean, onOpen: (TitleId) -> Unit) {
     if (results == SearchResults.NONE) {
-        val message = if (query.isBlank()) stringResource(R.string.search_start) else stringResource(R.string.search_none, query.trim())
+        val message = when {
+            query.isBlank() -> stringResource(R.string.search_start)
+            searching -> stringResource(R.string.search_searching)
+            else -> stringResource(R.string.search_none, query.trim())
+        }
         Text(message, style = Type.body, color = Colors.inkMuted)
         return
     }

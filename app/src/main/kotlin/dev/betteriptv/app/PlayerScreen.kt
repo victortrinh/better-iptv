@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -286,12 +287,21 @@ private fun MatchRefreshRate(player: ControlledEngine?) {
                 if (rate == null) delay(250)
             }
             rate
-        } ?: return@LaunchedEffect
+        }
+        if (frameRate == null) {
+            Log.i(PLAYER_TAG, "Frame rate unknown after $FRAME_RATE_WAIT: refresh rate left as it is")
+            return@LaunchedEffect
+        }
         val display = window.decorView.display ?: return@LaunchedEffect
         val current = display.mode
         val sameSize = display.supportedModes.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-        val rate = refreshRateFor(frameRate, current.refreshRate, sameSize.map { it.refreshRate }) ?: return@LaunchedEffect
+        val rate = refreshRateFor(frameRate, current.refreshRate, sameSize.map { it.refreshRate })
+        if (rate == null) {
+            Log.i(PLAYER_TAG, "$frameRate fps fits ${current.refreshRate} Hz, or none of ${sameSize.map { it.refreshRate }} Hz does: refresh rate left as it is")
+            return@LaunchedEffect
+        }
         val mode = sameSize.first { it.refreshRate == rate }
+        Log.i(PLAYER_TAG, "$frameRate fps: switching from ${current.refreshRate} Hz to $rate Hz")
         window.attributes = window.attributes.apply { preferredDisplayModeId = mode.modeId }
     }
 }
@@ -648,7 +658,8 @@ private val STYLE_LABEL = 200.dp
 
 /** A Track as the Viewer picks it: its language, then for audio its channels and format. */
 private fun Context.trackName(track: Track): String {
-    val language = track.language?.let { iso639(it) ?: it }?.let(::languageName) ?: getString(R.string.track_unknown_language)
+    // A Track tagged `und` (undetermined) has no name in any language.
+    val language = track.language?.let { iso639(it) ?: it }?.let(::languageName)?.takeIf { it.isNotEmpty() } ?: getString(R.string.track_unknown_language)
     val channels = when (val count = track.channels) {
         null -> null
         1 -> getString(R.string.track_mono)

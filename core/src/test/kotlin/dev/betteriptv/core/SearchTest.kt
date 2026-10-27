@@ -3,11 +3,15 @@ package dev.betteriptv.core
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /** Search across Movies, Shows and people, seen through the Library after a Sync, with TMDB metadata from the fake Cloud. */
 class SearchTest {
@@ -143,6 +147,31 @@ class SearchTest {
 
         assertTrue(search("heat").movies.isEmpty())
         assertEquals(1, search("ronin").movies.size)
+    }
+
+    @Test fun `building the search index doesn't hold up reading a Title`() = runBlocking {
+        syncFixtureWithMetadata()
+        val store = CatalogStore(folder.root.resolve("catalog.db").path)
+        val indexing = CountDownLatch(1)
+        val opened = CountDownLatch(1)
+        // Cleaning names takes about a minute on the stick: a details page opened meanwhile mustn't wait for it.
+        val index = thread {
+            store.forEachTitle(TitleKind.Movie) { _, _ ->
+                indexing.countDown()
+                opened.await(5, TimeUnit.SECONDS)
+            }
+        }
+        indexing.await()
+
+        val reading = thread { store.title(godfather) }
+        reading.join(2_000)
+        val held = reading.isAlive
+        opened.countDown()
+        index.join()
+        reading.join()
+        store.close()
+
+        assertFalse("a Title waited for the search index", held)
     }
 
     @Test fun `search stays fast on a full-size catalog`() = runBlocking {

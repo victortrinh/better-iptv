@@ -149,6 +149,7 @@
     <string name="search_title">Recherche</string>
     <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>
     <string name="search_start">Tapez deux lettres pour trouver des films, des séries et des personnes.</string>
+    <string name="search_searching">Recherche…</string>
     <string name="search_none">Aucun résultat pour « %1$s ».</string>
     <string name="search_movies">Films · %1$d</string>
     <string name="search_shows">Séries · %1$d</string>

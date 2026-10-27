@@ -160,4 +160,18 @@ class PlayerChoicesTest {
         // A TV with only 60 Hz has nothing that fits a 23.976 fps film.
         assertNull(refreshRateFor(23.976f, current = 60f, listOf(60f)))
     }
+
+    @Test fun `the frame rate is measured from frame times rounded to the millisecond, dropped frames and all`() {
+        // Matroska's times: 23.976 fps as 41 and 42 ms steps.
+        fun mkv(fps: Double, frames: Int, from: Long = 0) = (0 until frames).map { from + Math.round(it * 1000 / fps) * 1000 }
+
+        assertEquals(24000f / 1001, frameRateOf(mkv(24000.0 / 1001, 96)))
+        assertEquals(24f, frameRateOf(mkv(24.0, 96)))
+        assertEquals(25f, frameRateOf(mkv(25.0, 96, from = 3_600_000_000)))
+        assertEquals(50f, frameRateOf(mkv(50.0, 120)))
+        // A frame dropped as playback starts is a double step, not a slower film.
+        assertEquals(24000f / 1001, frameRateOf(mkv(24000.0 / 1001, 100).filterIndexed { i, _ -> i != 3 && i != 40 }))
+        assertNull(frameRateOf(mkv(24.0, 20)))
+        assertNull(frameRateOf(mkv(24.0, 96).reversed()))
+    }
 }
