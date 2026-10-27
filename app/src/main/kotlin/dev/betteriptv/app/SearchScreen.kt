@@ -136,7 +136,7 @@ private fun Group(heading: String, titles: List<TitleSummary>, onOpen: (TitleId)
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
             items(titles, key = { it.id.toString() }) { title ->
-                TitleCard(rememberArtwork(title.image), title.name, title.best.cardBadges(), onClick = { onOpen(title.id) })
+                TitleCard(rememberArtwork(title.image, card = true), title.name, title.best.cardBadges(), onClick = { onOpen(title.id) })
             }
         }
         Spacer(Modifier.height(14.dp))

@@ -2,6 +2,9 @@ package dev.betteriptv.app
 
 import android.app.Application
 import android.util.Log
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +15,7 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 
-class BetterIptvApp : Application() {
+class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     lateinit var library: Library
         private set
     lateinit var settings: ViewerSettingsStore
@@ -30,6 +33,15 @@ class BetterIptvApp : Application() {
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
         )
+    }
+
+    /** Coil's defaults, with card artwork held back while cards scroll past (see [rememberArtwork]). */
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        lateinit var loader: ImageLoader
+        loader = ImageLoader.Builder(context)
+            .components { add(SettleFirst(inMemory = { data -> loader.memoryCache?.keys?.any { it.key == data } == true })) }
+            .build()
+        return loader
     }
 
     /** Starts a Sync unless one finished recently. The catalog on screen stays until the new one is ready. */
