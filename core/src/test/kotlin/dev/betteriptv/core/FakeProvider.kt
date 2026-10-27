@@ -72,6 +72,12 @@ class FakeProvider : Closeable {
 
     /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
     val movieDetails = ConcurrentHashMap<Long, String>()
+    /** Movie Listings whose files are answered with HTTP 404, as the Provider answers for a dead link. */
+    val deadStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
+    /** Movie Listings whose files open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
+    val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+    @Volatile var slowStreamDelayMillis = 1_000L
 
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
@@ -94,8 +100,9 @@ class FakeProvider : Closeable {
     /** The movie file requests that asked for a range, as `<stream id>:<Range header>`, in order. */
     val ranges: List<String> get() = _ranges.toList()
 
-    /** Streams open right now. */
-    val streamsOpen get() = openStreams.get()
+
+    /** Streams open right now, as the Provider counts them against the Connection limit. */
+    val openStreamCount get() = openStreams.get()
     val requestsWithoutGzip get() = _requestsWithoutGzip.get()
 
     val url: String get() = "http://127.0.0.1:${server.address.port}"
@@ -121,6 +128,22 @@ class FakeProvider : Closeable {
         if (connection.responseCode != 200) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
         return connection.inputStream
     }
+
+    /**
+     * Serves these Listings of one Movie (TMDB ID 1) as the whole movie list: names with their
+     * Categories, newest first, numbered from 1.
+     */
+    fun serveMovies(vararg listings: Pair<String, String>) {
+        val categories = listings.map { it.second }.distinct()
+        movieCategoriesOverride = categories.withIndex()
+            .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
+        movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
+            """{"stream_id":${i + 1},"name":${json(listing.first)},"tmdb":"1","category_id":"${categories.indexOf(listing.second) + 1}",""" +
+                """"added":"${1_700_000_000 - i}","container_extension":"mkv"}"""
+        }
+    }
+
+    private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     override fun close() = server.stop(0)
 
@@ -206,6 +229,8 @@ class FakeProvider : Closeable {
         _streamRequests.incrementAndGet()
         val parts = exchange.requestURI.path.split("/")
         if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return exchange.sendResponseHeaders(401, -1)
+        val id = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()
+        if (id in deadStreams) return exchange.sendResponseHeaders(404, -1)
         if (openStreams.incrementAndGet() > 1) {
             openStreams.decrementAndGet()
             _refusedStreams.incrementAndGet()
@@ -215,6 +240,7 @@ class FakeProvider : Closeable {
             val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { movieFiles[it] }
             if (file != null) return sendFile(exchange, parts[4].substringBefore('.').toLong(), file)
             exchange.sendResponseHeaders(200, 0)
+            if (id in slowStreams) Thread.sleep(slowStreamDelayMillis)
             val chunk = ByteArray(16 * 1024)
             // Keeps "playing" until the client goes away.
             while (true) {

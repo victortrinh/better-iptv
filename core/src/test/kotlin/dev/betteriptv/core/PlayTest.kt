@@ -42,17 +42,9 @@ class PlayTest {
 
     /** Syncs these Listings of one Movie, newest first, numbered from 1. */
     private suspend fun syncVersions(vararg listings: Pair<String, String>): SyncStatus {
-        val categories = listings.map { it.second }.distinct()
-        provider.movieCategoriesOverride = categories.withIndex()
-            .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
-        provider.movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            """{"stream_id":${i + 1},"name":${json(listing.first)},"tmdb":"1","category_id":"${categories.indexOf(listing.second) + 1}",""" +
-                """"added":"${1_700_000_000 - i}","container_extension":"mkv"}"""
-        }
+        provider.serveMovies(*listings)
         return library.sync()
     }
-
-    private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     private suspend fun picked(device: DeviceProfile, contentLanguages: List<String> = english): String? =
         library.playPlan(movie, contentLanguages, device)?.version?.name
@@ -106,6 +98,18 @@ class PlayTest {
         // The first Content language that has a Version wins.
         assertEquals("4K-DE-DV - Der Film (2025)", picked(dolbyVisionTv, listOf("it", "de", "en")))
         assertEquals("4K-EN - Movie (2025) DV", picked(dolbyVisionTv, listOf("en", "de")))
+    }
+
+    @Test fun `the Quality cap limits what Play picks, and above it the lowest quality plays when nothing is within it`() = runBlocking {
+        syncSpread()
+
+        assertEquals("4K-EN - Movie (2025) DV", library.playPlan(movie, english, dolbyVisionTv, QualityCap.UHD)?.version?.name)
+        assertEquals("EN - Movie (2025)", library.playPlan(movie, english, dolbyVisionTv, QualityCap.FullHD)?.version?.name)
+        // The cap comes before the Content language: German has only 4K.
+        assertEquals("EN - Movie (2025)", library.playPlan(movie, listOf("de"), dolbyVisionTv, QualityCap.FullHD)?.version?.name)
+
+        syncVersions("4K-EN - Movie (2025) DV" to "4K MOVIES", "4K-EN - Movie (2025)" to "4K MOVIES")
+        assertEquals("4K-EN - Movie (2025) DV", library.playPlan(movie, english, dolbyVisionTv, QualityCap.HD)?.version?.name)
     }
 
     @Test fun `a known Source wins at the same quality, then the newest Listing`() = runBlocking {

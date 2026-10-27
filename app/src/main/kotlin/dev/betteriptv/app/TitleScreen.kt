@@ -48,7 +48,6 @@ import dev.betteriptv.app.ui.components.CertaintyLegend
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.VersionHeader
-import dev.betteriptv.app.ui.components.VersionLine
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
@@ -59,12 +58,12 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
+import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.TitleDetails
 import dev.betteriptv.core.ShowEpisodes
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,6 +85,7 @@ fun TitleScreen(
     id: TitleId,
     contentLanguages: List<String>,
     appLanguage: String,
+    qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan) -> Unit,
 ) {
@@ -93,9 +93,9 @@ fun TitleScreen(
     var reads by remember(id) { mutableIntStateOf(0) }
     LaunchedEffect(id, contentLanguages) { library.readHeaders(id, contentLanguages) { reads++ } }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, reads) {
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads) {
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
-        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() })
+        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
     val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages) {
         if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages)
@@ -301,30 +301,10 @@ private fun LazyListScope.languageGroup(
     group.versions.forEachIndexed { index, version ->
         item(key = version.listingId) {
             VersionRow(
-                context.line(version),
+                context.versionLine(version),
                 onClick = { onChoose(version) },
                 modifier = if (first && index == 0) Modifier.focusRequester(firstVersion).onFocusChanged { onFirstFocused(it.isFocused) } else Modifier,
             )
         }
     }
-}
-
-private fun Context.line(version: Version): VersionLine {
-    val attributes = version.attributes
-    val none = getString(R.string.version_none)
-    return VersionLine(
-        badges = attributes.versionBadges(),
-        source = attributes.source?.value ?: none,
-        audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
-        subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
-        bitrate = attributes.bitrate?.value?.let { String.format(Locale.getDefault(), "%.1f Mb/s", it / 1e6) },
-        backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
-        // Both notes are cautions.
-        note = when {
-            attributes.cam -> getString(R.string.version_cam)
-            attributes.audioDescription -> getString(R.string.version_audio_description)
-            else -> null
-        },
-        noteIsCaution = true,
-    )
 }

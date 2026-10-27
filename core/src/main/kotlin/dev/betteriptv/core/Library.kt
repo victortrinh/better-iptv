@@ -19,6 +19,9 @@ import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /**
  * The core's public interface: everything the screens show comes from here.
@@ -37,6 +40,13 @@ class Library private constructor(
     @Volatile private var cloudRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
+    private val searchLock = Any()
+    /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt before the next search. */
+    private val catalogGeneration = AtomicInteger()
+    /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
+    private val metadataGeneration = AtomicInteger()
+    private val rebuildingSearch = AtomicBoolean()
+    @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
@@ -120,7 +130,11 @@ class Library private constructor(
                 // Anything else (a full disk, say) also leaves the previous catalog in place.
                 SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
-            if (_syncStatus.value is SyncStatus.Synced) matchByName()
+            if (_syncStatus.value is SyncStatus.Synced) {
+                catalogGeneration.incrementAndGet()
+                matchByName()
+                catalogGeneration.incrementAndGet()
+            }
             _syncStatus.value
         }
     }
@@ -172,6 +186,18 @@ class Library private constructor(
     fun movieListings(offset: Int, limit: Int): List<MovieListing> =
         store.movieListings(offset, limit) { name, category -> prefixTable.describe(name, category).attributes }
 
+    /**
+     * The languages the catalog has Versions in, as primary language subtags (`fr` for `fr-CA` too),
+     * most Listings first: the choices for the Viewer's Content languages. Untagged Listings aren't counted.
+     */
+    suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
+        val counts = HashMap<String, Int>()
+        store.forEachListing { name, category ->
+            prefixTable.describe(name, category).attributes.language?.value?.let { counts.merge(primaryLanguage(it), 1, Int::plus) }
+        }
+        counts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).map { it.key }
+    }
+
     /** How many Titles the movie or show list Matches its Listings to. */
     fun titleCount(kind: TitleKind = TitleKind.Movie): Int = store.titleCount(kind)
 
@@ -182,9 +208,100 @@ class Library private constructor(
      * none is in them, and TMDB's name and poster in the [appLanguage].
      */
     suspend fun titles(offset: Int, limit: Int, contentLanguages: List<String>, appLanguage: String, kind: TitleKind = TitleKind.Movie): List<TitleSummary> = withContext(Dispatchers.IO) {
-        val titles = store.titles(kind, offset, limit)
+        summaries(store.titles(kind, offset, limit), contentLanguages, appLanguage)
+    }
+
+    /**
+     * Movies, Shows and people whose names match [query], once it has two letters. Titles are found
+     * by any Listing name of their Versions and any name TMDB has for them, people by name; accents
+     * and case don't matter, and small typos are tolerated. Titles with Versions in the Viewer's
+     * [contentLanguages] come first, then closer matches, then TMDB's most popular. A person's
+     * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
+     *
+     * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
+     */
+    suspend fun search(query: String, contentLanguages: List<String>, appLanguage: String): SearchResults = withContext(Dispatchers.IO) {
+        if (SearchIndex.words(query).sumOf { it.length } < SearchIndex.MIN_LETTERS) return@withContext SearchResults.NONE
+        val index = searchIndex()
+        val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        val byRank = compareBy<SearchIndex.Hit>(
+            { index.titles[it.index].languages.none(wanted::contains) },
+            { it.distance },
+            { -index.titles[it.index].popularity },
+            { it.index },
+        )
+        val titles = index.findTitles(query).sortedWith(byRank)
+        val people = index.findPeople(query)
+            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { person -> -index.personTitles[person.index].maxOf { index.titles[it].popularity } }))
+            .take(PEOPLE_FOUND)
+            .map { person -> index.people[person.index] to index.personTitles[person.index].map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+        val shown = (TitleKind.entries.flatMap { kind -> titles.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) } + people.flatMap { it.second })
+            .map { index.titles[it.index].id }.distinct()
+        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
+        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
+        SearchResults(
+            movies = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Movie }.take(TITLES_FOUND)),
+            shows = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Show }.take(TITLES_FOUND)),
+            people = people.map { (name, hits) -> Person(name, found(hits)) },
+        )
+    }
+
+    /** Builds the search index now, so the Viewer's first letters don't wait for it. */
+    suspend fun prepareSearch() {
+        withContext(Dispatchers.IO) { rebuildSearchIndex() }
+    }
+
+    private class BuiltIndex(val catalog: Int, val metadata: Int, val index: SearchIndex)
+
+    /**
+     * The search index of the current catalog. Metadata cached since it was built (often for the
+     * results of the last search) only starts a rebuild in the background, so typing never waits on one.
+     */
+    private fun searchIndex(): SearchIndex {
+        val built = searchIndex ?: return rebuildSearchIndex()
+        if (built.catalog != catalogGeneration.get()) return rebuildSearchIndex()
+        if (built.metadata != metadataGeneration.get() && rebuildingSearch.compareAndSet(false, true)) {
+            thread(name = "search-index", isDaemon = true) {
+                try {
+                    rebuildSearchIndex()
+                } catch (e: Exception) {
+                    // The Library closed meanwhile; the next search tries again.
+                } finally {
+                    rebuildingSearch.set(false)
+                }
+            }
+        }
+        return built.index
+    }
+
+    private fun rebuildSearchIndex(): SearchIndex = synchronized(searchLock) {
+        val catalog = catalogGeneration.get()
+        val metadata = metadataGeneration.get()
+        searchIndex?.takeIf { it.catalog == catalog && it.metadata == metadata }?.index
+            ?: buildSearchIndex().also { searchIndex = BuiltIndex(catalog, metadata, it) }
+    }
+
+    /** Indexes every Title by its Versions' cleaned names and the metadata cached for it, in any language. */
+    private fun buildSearchIndex(): SearchIndex {
+        class Known(val names: List<String>, val cast: List<String>, val popularity: Double)
+        val known = HashMap<TitleId, Known>()
+        store.forEachMetadata { id, body -> TitleMetadata(body).let { known[id] = Known(it.searchNames, it.cast, it.popularity) } }
+        val builder = SearchIndex.Builder()
+        for (kind in TitleKind.entries) {
+            store.forEachTitle(kind) { id, listings ->
+                val metadata = known[id]
+                val names = listings.mapTo(HashSet()) { prefixTable.cleanName(it.first).name } + metadata?.names.orEmpty()
+                val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.describe(name, category).attributes.language?.value?.let(::primaryLanguage) }
+                builder.title(id, names, languages, metadata?.popularity ?: 0.0, metadata?.cast.orEmpty())
+            }
+        }
+        return builder.build()
+    }
+
+    /** [titles]' cards: TMDB's name and poster in the [appLanguage], and the best Version in the Viewer's [contentLanguages]. */
+    private fun summaries(titles: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> {
         val metadata = metadata(titles.map { it.id }, appLanguage)
-        titles.map { title ->
+        return titles.map { title ->
             val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
             TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
         }
@@ -254,22 +371,91 @@ class Library private constructor(
 
     /**
      * What pressing Play on a Movie starts: the Best playable Version for the Viewer's
-     * [contentLanguages] (BCP 47 tags, in order of preference) and [device], with its Backups. Null
-     * for a Show, when the catalog doesn't have the Title, or when it has no Version the device can
-     * display other than Audio-description ones, which are never picked automatically.
+     * [contentLanguages] (BCP 47 tags, in order of preference) and [device] within the Viewer's
+     * [qualityCap], with its Backups. Null for a Show, when the catalog doesn't have the Title, or
+     * when it has no Version the device can display other than Audio-description ones, which are
+     * never picked automatically. A Title with nothing within the cap plays its lowest quality above
+     * it. It starts where the Viewer stopped last time, unless they finished the Title.
      */
-    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile): PlayPlan? = withContext(Dispatchers.IO) {
+    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
-        val ranked = playable(candidates(title), contentLanguages, device)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages) }
+        val ranked = playable(candidates(title), contentLanguages, device, qualityCap)
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id)) }
     }
 
-    /** What playing the Version from Listing [listingId], chosen by the Viewer, starts; null for a Show or when the Title doesn't have it. */
+    /**
+     * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
+     * stopped last time; null for a Show or when the Title doesn't have it.
+     */
     suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
-        candidates.find { it.listing.id == listingId }?.let { PlayPlan(id, withBackups(it, candidates), contentLanguages) }
+        candidates.find { it.listing.id == listingId }?.let { chosen ->
+            val version = withBackups(chosen, candidates)
+            // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
+            val others = leadersWithBackups(preferred(candidates, contentLanguages).filter { it.equivalence != chosen.equivalence })
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id))
+        }
+    }
+
+    /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
+    private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
+
+    /**
+     * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
+     * doesn't know it) in [id]. In the last few minutes the Title counts as watched, and under a minute
+     * in nothing is recorded, so a Title opened by mistake doesn't land in Continue watching.
+     */
+    internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
+        val watched = duration != null && position >= duration - minOf((duration * WATCHED_SHARE_LEFT).toLong(), WATCHED_TIME_LEFT)
+        if (!watched && position < MIN_RESUME_POSITION) return
+        store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
+    }
+
+    /** Records that the Viewer played [id] to its end. */
+    internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+
+    /**
+     * The home screen's rows: Continue watching, then New on your service (Titles among the most
+     * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
+     * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
+     * Untagged one Likely in one; Continue watching shows whatever the Viewer started. Genres come
+     * from the TMDB metadata of the newest Titles, so they need the cloud once a week. Rows with no
+     * Titles are left out.
+     */
+    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
+        val resumes = store.inProgress(ROW_SIZE).mapNotNull { progress -> store.title(progress.id)?.let { progress to it } }
+        val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
+        val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
+        val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
+        fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
+            val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
+            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
+        }
+        val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
+        // The newest movies, then the newest shows, in the Viewer's languages.
+        val browsable = listOf(movies, shows).map { titles ->
+            titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
+        }
+        val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst)
+        val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
+        browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
+        val genres = byGenre.entries.filter { it.value.size >= MIN_GENRE_SIZE }.sortedByDescending { it.value.size }.take(GENRE_ROWS)
+        buildList {
+            if (resumes.isNotEmpty()) {
+                add(
+                    HomeRow.ContinueWatching(
+                        resumes.map { (progress, title) ->
+                            val fraction = progress.duration?.takeIf { it > 0 }?.let { (progress.position.toFloat() / it).coerceIn(0f, 1f) }
+                            InProgress(card(title), metadata[title.id]?.backdrop, fraction)
+                        },
+                    ),
+                )
+            }
+            if (newest.isNotEmpty()) add(HomeRow.NewOnYourService(newest.take(ROW_SIZE).map { card(it) }))
+            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.sortedWith(popularFirst).take(ROW_SIZE).map { card(it) })) }
+        }
     }
 
     /**
@@ -391,8 +577,15 @@ class Library private constructor(
         store.saveFileRead(version.listingId, file.toJson(), Instant.now(), shared = false)
     }
 
-    /** A Playback session for [plan], playing on the player engines [engines] creates. Start it with [PlaybackSession.play]. */
-    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine) = PlaybackSession(this, plan, engines)
+    /**
+     * A Playback session for [plan], playing on the player engines [engines] creates: it starts the
+     * plan's Version, falling back to the VLC engine and to its Backups, and switches Version or
+     * engine when the Viewer asks. Start it with [PlaybackSession.play].
+     */
+    fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine): PlaybackSession = playback(plan, engines, START_TIMEOUT)
+
+    internal fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine, startTimeout: kotlin.time.Duration) =
+        PlaybackSession(this, plan, engines, startTimeout)
 
     /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
     internal fun relay(location: String) = StreamRelay(location, http)
@@ -429,6 +622,7 @@ class Library private constructor(
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->
                     val answer = cloud.metadata(language, batch)
                     store.saveMetadata(language, answer.found, answer.notFound, now)
+                    if (answer.found.isNotEmpty()) metadataGeneration.incrementAndGet()
                     answer.found.forEach { (id, body) -> cached[id] = StoredMetadata(body, now) }
                     answer.notFound.forEach { cached[it] = StoredMetadata(null, now) }
                 }
@@ -469,6 +663,24 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
+        /** A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is less: the credits. */
+        private const val WATCHED_SHARE_LEFT = 0.05
+        private const val WATCHED_TIME_LEFT = 8 * 60_000L
+        private const val MIN_RESUME_POSITION = 60_000L
+        /** How many cards a home row holds. */
+        private const val ROW_SIZE = 20
+        /** The newest Titles the home rows are picked from: their metadata is asked of the cloud 50 at a time. */
+        private const val HOME_MOVIES = 150
+        private const val HOME_SHOWS = 50
+        /** Of those, the ones New on your service is picked from. */
+        private const val NEW_MOVIES = 40
+        private const val NEW_SHOWS = 15
+        private const val GENRE_ROWS = 8
+        /** A genre with fewer Titles than this gets no row: a row of two looks broken. */
+        private const val MIN_GENRE_SIZE = 5
+        /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
+        private const val TITLES_FOUND = 40
+        private const val PEOPLE_FOUND = 10
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the

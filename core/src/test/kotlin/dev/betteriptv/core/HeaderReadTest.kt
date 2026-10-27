@@ -77,7 +77,7 @@ class HeaderReadTest {
         assertTrue(attributes.dolbyAudio)
         // About the first 256 KB, through one range request.
         assertEquals(listOf("1:bytes=0-262143"), provider.ranges)
-        assertEquals(0, provider.streamsOpen)
+        assertEquals(0, provider.openStreamCount)
     }
 
     @Test fun `an FR Version without a French Track moves to the language it really has`() = runBlocking {
@@ -157,7 +157,7 @@ class HeaderReadTest {
         provider.movieFiles[1] = matroskaFile(englishAndFrench)
         provider.slowFiles = true
         val reading = async { readHeaders() }
-        withTimeout(5_000) { while (provider.streamsOpen == 0) delay(10) }
+        withTimeout(5_000) { while (provider.openStreamCount == 0) delay(10) }
 
         val pressed = TimeSource.Monotonic.markNow()
         val plan = library.playPlan(movie, listOf("en"), fullHdTv)!!
@@ -219,9 +219,9 @@ class HeaderReadTest {
     private class SeeingEngine(override val engine: Engine, override val seen: FileContents) : PlayerEngine {
         override val position = 0L
 
-        override suspend fun play(location: String, from: Long) = Unit
+        override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) = events(PlayerEvent.Started)
 
-        override fun release() = Unit
+        override suspend fun release() = Unit
     }
 
     private infix fun Pair<String, String>.with(container: String) = Triple(first, second, container)

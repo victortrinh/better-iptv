@@ -26,6 +26,7 @@ import java.time.Instant
  * device's cloud token, and so are show Listings' show details, until the Provider changes the Show.
  * What movie Listings' files hold, from Header reads and Playback, and their bitrates from the
  * Provider's movie details, are kept forever.
+ * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -64,6 +65,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
                 "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, PRIMARY KEY (listing_id, id))",
+        )
+        // Where the Viewer stopped in a Title, in milliseconds, out of its `duration` when the player knew it.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS progress (title_key TEXT PRIMARY KEY, position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, " +
+                "updated_at INTEGER NOT NULL)",
         )
     }
     private val reader: SQLiteConnection = driver.open(path)
@@ -311,6 +317,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         reader.prepare("SELECT coalesce(max(position), 0) FROM listing WHERE kind = 'movie'").use { it.step(); it.getLong(0).toInt() }
     }
 
+    /** Gives [consume] the name and Category of every movie and show Listing in the lists. */
+    fun forEachListing(consume: (name: String, category: String) -> Unit) = synchronized(reader) {
+        reader.prepare("SELECT name, category FROM listing").use {
+            while (it.step()) consume(it.getText(0), it.getText(1))
+        }
+    }
+
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
         reader.prepare("SELECT id, name, category FROM listing WHERE kind = 'movie' AND position > ? AND position <= ? ORDER BY position").use {
@@ -359,6 +372,37 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             it.bindText(1, key(id))
             val listings = buildList { while (it.step()) add(it.listing(0)) }
             listings.takeIf { it.isNotEmpty() }?.let { StoredTitle(id, it) }
+        }
+    }
+
+    /** Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories. */
+    fun forEachTitle(kind: TitleKind, each: (TitleId, List<Pair<String, String>>) -> Unit) = synchronized(reader) {
+        reader.prepare(
+            """
+            SELECT t.key, l.name, l.category FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
+            WHERE t.kind = ? ORDER BY t.position
+            """.trimIndent(),
+        ).use {
+            it.bindText(1, kindKey(kind))
+            var key: String? = null
+            val listings = mutableListOf<Pair<String, String>>()
+            while (it.step()) {
+                val next = it.getText(0)
+                if (next != key) {
+                    key?.let { done -> each(titleId(done), listings.toList()) }
+                    key = next
+                    listings.clear()
+                }
+                listings += it.getText(1) to it.getText(2)
+            }
+            key?.let { done -> each(titleId(done), listings.toList()) }
+        }
+    }
+
+    /** Calls [each] with one cached metadata JSON per Title TMDB has, in whichever language was cached. */
+    fun forEachMetadata(each: (TitleId.Tmdb, String) -> Unit) = synchronized(reader) {
+        reader.prepare("SELECT title_key, max(body) FROM title_metadata WHERE body IS NOT NULL GROUP BY title_key").use {
+            while (it.step()) (titleId(it.getText(0)) as? TitleId.Tmdb)?.let { id -> each(id, it.getText(1)) }
         }
     }
 
@@ -501,6 +545,19 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** Records that the Viewer stopped at [position] of [duration] in [id] at [at], or finished it when [watched]. */
+    fun saveProgress(id: TitleId, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?)").use {
+            it.bindText(1, key(id))
+            it.bindLong(2, position)
+            if (duration == null) it.bindNull(3) else it.bindLong(3, duration)
+            it.bindLong(4, if (watched) 1 else 0)
+            it.bindLong(5, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
     /** The file reads the cloud doesn't have yet, as JSON by Listing id. */
     fun unsharedFileReads(): Map<Long, String> = synchronized(reader) {
         reader.prepare("SELECT listing_id, body FROM file_read WHERE shared = 0 AND body IS NOT NULL").use {
@@ -536,6 +593,24 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             }
         }
     }
+    /** Where the Viewer stopped in [id], or null when they never played it. */
+    fun progress(id: TitleId): StoredProgress? = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE title_key = ?").use {
+            it.bindText(1, key(id))
+            if (it.step()) it.progress() else null
+        }
+    }
+
+    /** The Titles the Viewer stopped in without finishing, last played first, at most [limit]. */
+    fun inProgress(limit: Int): List<StoredProgress> = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE watched = 0 ORDER BY updated_at DESC LIMIT ?").use {
+            it.bindLong(1, limit.toLong())
+            buildList { while (it.step()) add(it.progress()) }
+        }
+    }
+
+    private fun SQLiteStatement.progress() =
+        StoredProgress(titleId(getText(0)), getLong(1), if (isNull(2)) null else getLong(2), getLong(3) != 0L)
 
     override fun deviceToken(): String? = meta(DEVICE_TOKEN)
 
@@ -605,6 +680,9 @@ internal class StoredListing(val id: Long, val name: String, val category: Strin
 
 /** A Listing whose Match is checked by name, with the TMDB ID its Provider gave it. */
 internal class StoredSuspect(val kind: TitleKind, val name: String, val category: String, val providerTmdbId: Long?)
+
+/** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
+internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
 
 /** A show Listing's kept show details: when the Provider had last changed the Show, and when they were read. */
 internal class StoredShowDetails(val modified: Long?, val fetchedAt: Instant, val episodes: List<ProviderEpisode>)
