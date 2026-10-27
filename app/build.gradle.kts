@@ -34,6 +34,19 @@ android {
         }
     }
 
+    buildTypes {
+        // Release-like for measuring on the stick (#33): R8-minified and not debuggable, but signed
+        // with the checked-in debug key so it installs over the debug build and keeps its data.
+        create("benchmark") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += "release"
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -78,4 +91,7 @@ dependencies {
     implementation(libs.media3.ffmpeg)
     implementation(libs.ass.media)
     implementation(libs.libvlc)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
 }

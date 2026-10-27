@@ -123,7 +123,7 @@ fun HomeScreen(
                         if (card == focusOn) LaunchedEffect(Unit) { focus.requestFocus() }
                         val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                         TitleCard(
-                            image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image),
+                            image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
                             name = title.name,
                             badges = title.best.cardBadges(),
                             onClick = { onOpen(card) },

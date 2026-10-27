@@ -17,16 +17,16 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -48,13 +48,10 @@ import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
-import kotlin.math.abs
 
 /**
  * One card per movie or show Title ([kind], picked with the tabs), newest first, read from the
@@ -78,8 +75,15 @@ fun TitlesScreen(
     // Titles: either way, drop the pages read before.
     val synced = status.last
     val scope = rememberCoroutineScope()
-    val pages = remember(synced, kind, contentLanguages, appLanguage) { TitlePages(library, kind, contentLanguages, appLanguage, scope) }
+    val pages = remember(synced, kind, contentLanguages, appLanguage) {
+        TitlePages(scope) { offset, limit -> library.titles(offset, limit, contentLanguages, appLanguage, kind) }
+    }
     val count by produceState(initialValue = 0, synced, kind) { value = withContext(Dispatchers.IO) { library.titleCount(kind) } }
+    LaunchedEffect(pages, count) {
+        snapshotFlow { grid.layoutInfo.visibleItemsInfo.let { (it.firstOrNull()?.index ?: 0) to (it.lastOrNull()?.index ?: 0) } }
+            .collect { (first, last) -> pages.showing(first, last, count) }
+    }
+    val focus = remember(grid) { GridFocus(grid, scope) }
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
@@ -100,62 +104,28 @@ fun TitlesScreen(
         // The margins are content padding, so a focused card grows into them instead of being clipped.
         LazyVerticalGrid(
             GridCells.FixedSize(Cards.posterWidth),
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) },
             state = grid,
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
-            items(count) { index -> Card(pages, index, focusNow = index == restoreFocus, onOpen) }
+            items(count) { index -> Card(pages, focus, index, focusNow = index == restoreFocus, onOpen) }
         }
     }
 }
 
 @Composable
-private fun Card(pages: TitlePages, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
+private fun Card(pages: TitlePages<TitleSummary>, gridFocus: GridFocus, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
     val title = pages[index]
-    if (title == null) LaunchedEffect(pages, index / TitlePages.PAGE_SIZE) { pages.load(index / TitlePages.PAGE_SIZE) }
-    val focus = remember { FocusRequester() }
+    val focus = remember(index) { gridFocus.card(index) }.requester
     if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
     TitleCard(
-        image = rememberArtwork(title?.image),
+        image = rememberArtwork(title?.image, card = true),
         name = title?.name.orEmpty(),
         badges = title?.best?.cardBadges().orEmpty(),
         onClick = { title?.let { onOpen(index, it.id) } },
-        modifier = Modifier.focusRequester(focus).padding(vertical = 10.dp),
+        modifier = Modifier.focusRequester(focus).onFocusChanged { if (it.hasFocus) gridFocus.focused(index) }.padding(vertical = 10.dp),
     )
-}
-
-/** Keeps a few pages of the Title list in memory around where the Viewer is. */
-@Stable
-private class TitlePages(
-    private val library: Library,
-    private val kind: TitleKind,
-    private val contentLanguages: List<String>,
-    private val appLanguage: String,
-    private val scope: CoroutineScope,
-) {
-    private val pages = mutableStateMapOf<Int, List<TitleSummary>>()
-    private val loading = mutableSetOf<Int>()
-
-    operator fun get(index: Int): TitleSummary? = pages[index / PAGE_SIZE]?.getOrNull(index % PAGE_SIZE)
-
-    /** Loads [page] in the screen's scope: a card scrolled away mustn't cancel it for the cards still showing. */
-    fun load(page: Int) {
-        if (page in pages || !loading.add(page)) return
-        scope.launch {
-            try {
-                pages[page] = library.titles(page * PAGE_SIZE, PAGE_SIZE, contentLanguages, appLanguage, kind)
-                if (pages.size > PAGES_KEPT) pages.keys.maxBy { abs(it - page) }.let(pages::remove)
-            } finally {
-                loading -= page
-            }
-        }
-    }
-
-    companion object {
-        const val PAGE_SIZE = 60
-        const val PAGES_KEPT = 10
-    }
 }
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
