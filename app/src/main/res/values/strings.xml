@@ -36,6 +36,21 @@
     <string name="sync_never">Not synced yet.</string>
     <string name="sync_first">Syncing your catalog for the first time…</string>
     <string name="sync_running">Syncing… (showing the catalog from %1$s)</string>
+    <string name="sync_first_progress">Syncing your catalog for the first time… %1$s so far</string>
+    <string name="sync_running_progress">Syncing… %1$s (showing the catalog from %2$s)</string>
+    <plurals name="sync_movies_read">
+        <item quantity="one">%1$s movie</item>
+        <item quantity="other">%1$s movies</item>
+    </plurals>
+    <plurals name="sync_shows_read">
+        <item quantity="one">%1$s show</item>
+        <item quantity="other">%1$s shows</item>
+    </plurals>
+    <string name="sync_movies_and_shows">%1$s and %2$s</string>
+    <plurals name="sync_matching">
+        <item quantity="one">Matching %1$s of %2$s name; titles regroup when it\'s done.</item>
+        <item quantity="other">Matching %1$s of %2$s names; titles regroup when it\'s done.</item>
+    </plurals>
     <string name="sync_done">Synced %1$s in %2$s s.</string>
     <string name="sync_failed">Sync failed: %1$s Showing the catalog from %2$s.</string>
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
