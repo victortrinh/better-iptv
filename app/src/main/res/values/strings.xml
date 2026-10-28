@@ -117,6 +117,9 @@
     <string name="delay_earlier">Earlier</string>
     <string name="delay_later">Later</string>
     <string name="delay_value">%1$d ms</string>
+    <string name="delay_seconds">%1$s s</string>
+    <string name="subtitle_downloaded">%1$s · Downloaded</string>
+    <string name="subtitle_hearing_impaired">%1$s · For the hard of hearing</string>
     <plurals name="versions_count">
         <item quantity="one">%1$d Version</item>
         <item quantity="other">%1$d Versions</item>

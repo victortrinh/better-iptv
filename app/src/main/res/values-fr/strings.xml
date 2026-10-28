@@ -101,6 +101,9 @@
     <string name="delay_earlier">Plus tôt</string>
     <string name="delay_later">Plus tard</string>
     <string name="delay_value">%1$d ms</string>
+    <string name="delay_seconds">%1$s s</string>
+    <string name="subtitle_downloaded">%1$s · Téléchargés</string>
+    <string name="subtitle_hearing_impaired">%1$s · Pour sourds et malentendants</string>
     <plurals name="versions_count">
         <item quantity="one">%1$d version</item>
         <item quantity="many">%1$d versions</item>
