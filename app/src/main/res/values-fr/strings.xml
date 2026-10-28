@@ -72,6 +72,10 @@
     <string name="player_episode">%1$s · S%2$d É%3$d</string>
     <string name="player_next_episode">À suivre : saison %1$d, épisode %2$d</string>
     <string name="player_play_next">Lire l\'épisode suivant</string>
+    <string name="player_next_in">Lecture dans %1$d s</string>
+    <string name="player_play_now">Lire maintenant</string>
+    <string name="player_watch_credits">Voir le générique</string>
+    <string name="player_next">Épisode suivant</string>
     <string name="tracks_audio">Audio</string>
     <string name="tracks_subtitles">Sous-titres</string>
     <string name="subtitles_off">Désactivés</string>
@@ -142,6 +146,10 @@
     <string name="settings_playback">Lecture</string>
     <string name="settings_quality_cap">Qualité maximale</string>
     <string name="settings_quality_cap_detail">La meilleure qualité que la lecture choisit. Baissez-la si l\'image saccade.</string>
+    <string name="settings_play_next">Lire l\'épisode suivant</string>
+    <string name="settings_play_next_detail">Au générique, compte 10 s puis lit l\'épisode suivant tout seul.</string>
+    <string name="settings_on">Activé</string>
+    <string name="settings_off">Désactivé</string>
 
     <string name="home_title">Accueil</string>
     <string name="row_continue_watching">Reprendre</string>

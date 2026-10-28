@@ -18,6 +18,8 @@ data class ViewerSettings(
     val region: String,
     val qualityCap: QualityCap,
     val subtitleStyle: SubtitleStyle = SubtitleStyle(),
+    /** Whether an Episode's credits count down to the next Episode, which then plays by itself. */
+    val playNextAutomatically: Boolean = true,
 )
 
 /**
@@ -65,6 +67,7 @@ class ViewerSettingsStore(context: Context) {
             .putString(SUBTITLE_COLOUR, new.subtitleStyle.colour.name)
             .putString(SUBTITLE_BACKGROUND, new.subtitleStyle.background.name)
             .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
+            .putBoolean(PLAY_NEXT_AUTOMATICALLY, new.playNextAutomatically)
             .apply()
         _settings.value = new
     }
@@ -84,6 +87,7 @@ class ViewerSettingsStore(context: Context) {
                 background = read(SUBTITLE_BACKGROUND, SubtitleBackground.entries) ?: SubtitleBackground.Outline,
                 position = read(SUBTITLE_POSITION, SubtitlePosition.entries) ?: SubtitlePosition.Bottom,
             ),
+            playNextAutomatically = prefs.getBoolean(PLAY_NEXT_AUTOMATICALLY, true),
         )
     }
 
@@ -98,6 +102,7 @@ class ViewerSettingsStore(context: Context) {
         const val SUBTITLE_COLOUR = "subtitle_colour"
         const val SUBTITLE_BACKGROUND = "subtitle_background"
         const val SUBTITLE_POSITION = "subtitle_position"
+        const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
     }
 }
 

@@ -465,11 +465,11 @@ class Library private constructor(
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
-     * doesn't know it) in [id]. In the last few minutes the Title counts as watched, and under a minute
+     * doesn't know it) in [id]. In its credits ([inCredits]) the Title counts as watched, and under a minute
      * in nothing is recorded, so a Title opened by mistake doesn't land in Continue watching.
      */
     internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
-        val watched = duration != null && position >= duration - minOf((duration * WATCHED_SHARE_LEFT).toLong(), WATCHED_TIME_LEFT)
+        val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
         store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
     }
@@ -732,9 +732,6 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
-        /** A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is less: the credits. */
-        private const val WATCHED_SHARE_LEFT = 0.05
-        private const val WATCHED_TIME_LEFT = 8 * 60_000L
         private const val MIN_RESUME_POSITION = 60_000L
         /** How many cards a home row holds. */
         private const val ROW_SIZE = 20

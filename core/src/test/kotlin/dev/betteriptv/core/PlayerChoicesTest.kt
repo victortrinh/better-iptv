@@ -1,5 +1,7 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -11,6 +13,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import kotlin.time.Duration.Companion.seconds
 
 /** What the Viewer picks in the player, remembered for the next file, and the next Episode offered when one ends. */
 class PlayerChoicesTest {
@@ -146,6 +149,56 @@ class PlayerChoicesTest {
         withTimeout(5_000) { session.state.first { it == PlaybackState.Ended } }
         job.join()
         assertEquals(emptyList<InProgress>(), (library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().flatMap { it.titles }))
+    }
+
+    @Test fun `an Episode says when its credits begin, and seeking back out of them takes it back`() = runBlocking {
+        val plan = episodePlan(1, 1)
+        val player = ScriptedPlayer(provider)
+        val session = library.playback(plan, player.engines)
+        val job = launch { session.play() }
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Playing } }
+
+        // 45 minutes: the credits are its last 5%, from 42:45.
+        player.duration = 45 * 60_000L
+        player.position = 42 * 60_000L
+        delay(1_500)
+        assertEquals(false, (session.state.value as PlaybackState.Playing).credits)
+        player.position = 43 * 60_000L
+        withTimeout(5_000) { session.state.first { (it as? PlaybackState.Playing)?.credits == true } }
+        player.position = 10 * 60_000L
+        withTimeout(5_000) { session.state.first { (it as? PlaybackState.Playing)?.credits == false } }
+        job.cancelAndJoin()
+    }
+
+    @Test fun `a Movie never says it's in its credits`() = runBlocking {
+        syncMovies()
+        val player = ScriptedPlayer(provider)
+        val session = library.playback(library.playPlan(movie, english, fullHdTv)!!, player.engines)
+        val job = launch { session.play() }
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Playing } }
+
+        player.duration = 120 * 60_000L
+        player.position = 119 * 60_000L
+        delay(1_500)
+        assertEquals(false, (session.state.value as PlaybackState.Playing).credits)
+        job.cancelAndJoin()
+    }
+
+    @Test fun `the credits are a file's last 5 percent, or its last 8 minutes when that is less, and unknown without its length`() {
+        // A 22-minute Episode: from 20:54.
+        assertEquals(false, inCredits(20 * 60_000L + 53_000, 22 * 60_000L))
+        assertEquals(true, inCredits(20 * 60_000L + 54_000, 22 * 60_000L))
+        // A 3-hour film: 5% would be 9 minutes, so from 2:52.
+        assertEquals(false, inCredits(171 * 60_000L, 180 * 60_000L))
+        assertEquals(true, inCredits(172 * 60_000L, 180 * 60_000L))
+        assertEquals(false, inCredits(60 * 60_000L, null))
+        assertEquals(false, inCredits(0, 0))
+    }
+
+    @Test fun `the next Episode counts down when the Viewer allows it, three times in a row with no key pressed`() {
+        assertEquals(10.seconds, UpNext.COUNTDOWN)
+        assertEquals(listOf(true, true, true, false), (0..3).map { UpNext.countsDown(automatic = true, inARow = it) })
+        assertEquals(false, UpNext.countsDown(automatic = false, inARow = 0))
     }
 
     // Refresh rate

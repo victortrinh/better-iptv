@@ -48,6 +48,9 @@ class ScriptedPlayer(private val provider: FakeProvider) {
             current!!.position = value
         }
 
+    /** How long the engines say each file plays, in milliseconds; null for not knowing yet. */
+    @Volatile var duration: Long? = null
+
     val engines: (Engine) -> PlayerEngine = { Scripted(it) }
 
     /** Reports that playing stalled to fill its buffer, as a slow Provider makes it. */
@@ -61,6 +64,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
 
     private inner class Scripted(override val engine: Engine) : PlayerEngine {
         @Volatile override var position = 0L
+        override val duration get() = this@ScriptedPlayer.duration
         @Volatile private var events: ((PlayerEvent) -> Unit)? = null
         override val overlapsRequests = engine == Engine.Vlc && vlcReads > 0
         private val requests = CopyOnWriteArrayList<HttpURLConnection>()

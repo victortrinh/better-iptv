@@ -40,7 +40,7 @@ import java.util.Locale
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages and Region under
- * Languages, the Quality cap under Playback. Content languages and Region each open a list in
+ * Languages, the Quality cap and whether the next Episode plays by itself under Playback. Content languages and Region each open a list in
  * place of the column; Back returns to the row that opened it.
  */
 @Composable
@@ -117,6 +117,15 @@ fun SettingsScreen(
                             listOf("4K", "1080p", "720p"),
                             selected = QualityCap.entries.indexOf(settings.qualityCap),
                             onSelect = { index -> onChange { it.copy(qualityCap = QualityCap.entries[index]) } },
+                        )
+                    }
+                }
+                item {
+                    Labelled(stringResource(R.string.settings_play_next), stringResource(R.string.settings_play_next_detail)) {
+                        ChoiceRow(
+                            listOf(stringResource(R.string.settings_on), stringResource(R.string.settings_off)),
+                            selected = if (settings.playNextAutomatically) 0 else 1,
+                            onSelect = { index -> onChange { it.copy(playNextAutomatically = index == 0) } },
                         )
                     }
                 }
