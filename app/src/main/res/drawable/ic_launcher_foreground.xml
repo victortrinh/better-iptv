@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: the glass cloud and the white cloud. Written by scripts/app_icon.py; edit that, not this. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.12844"
+        android:scaleY="0.12844"
+        android:translateX="19.1"
+        android:translateY="11.79">
+        <path
+            android:fillColor="#FF4A4B50"
+            android:pathData="M204,414A56,56 0 0 1 206.63,302.06A102.4,102.4 0 0 1 409.4,273.33A70.4,70.4 0 0 1 413.6,414Z" />
+        <path
+            android:fillColor="#FFF2F2F4"
+            android:pathData="M119.6,472A60.2,60.2 0 0 1 122.42,351.67A110.08,110.08 0 0 1 340.41,320.77A75.68,75.68 0 0 1 344.92,472Z" />
+    </group>
+</vector>

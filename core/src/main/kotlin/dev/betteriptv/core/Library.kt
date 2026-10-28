@@ -5,9 +5,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -40,6 +44,8 @@ class Library private constructor(
 ) : Closeable {
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
     @Volatile private var cloudRetryAt = Instant.MIN
+    /** The same for TMDB's search, which fails on its own when TMDB is rate-limiting: cached metadata still comes through. */
+    @Volatile private var searchRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
     private val searchLock = Any()
@@ -220,32 +226,87 @@ class Library private constructor(
      * [contentLanguages] come first, then closer matches, then TMDB's most popular. A person's
      * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
      *
+     * The device's own matches come first, from the Listing names and the metadata it has cached.
+     * Then, for three letters or more, TMDB's search (through the cloud, ADR 0009) adds Titles the
+     * device has no metadata for and every Title of the people it finds, and the results come again.
+     * Without the cloud the first results are all there are.
+     *
      * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
      */
-    suspend fun search(query: String, contentLanguages: List<String>, appLanguage: String): SearchResults = withContext(Dispatchers.IO) {
-        if (SearchIndex.words(query).sumOf { it.length } < SearchIndex.MIN_LETTERS) return@withContext SearchResults.NONE
+    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
+        val letters = SearchIndex.words(query).sumOf { it.length }
+        if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
+        val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
+        val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
+        emit(searchResults(index, titles, people, emptyMap(), contentLanguages, appLanguage))
+
+        if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
+        // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
+        delay(TMDB_SEARCH_PAUSE_MS)
+        val found = tmdbSearch(query) ?: return@flow
+        val popularity = HashMap<Int, Double>()
+        for ((id, score) in found.titles) {
+            val position = index.position(id) ?: continue
+            titles[position] = 0
+            popularity[position] = score
+        }
+        val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNullTo(HashSet(), index::position)) }
+        val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
+            FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
+        }
+        emit(searchResults(index, titles, merged, popularity, contentLanguages, appLanguage))
+    }.flowOn(Dispatchers.IO)
+
+    /** A person search found: how close their name was, and their Titles, as positions in the search index. */
+    private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
+
+    /**
+     * Ranks [titles] (search index positions and how close they matched) and [people], and shows the
+     * best of them. TMDB's search tells the [popularity] of Titles the device has no metadata for.
+     */
+    private fun searchResults(
+        index: SearchIndex,
+        titles: Map<Int, Int>,
+        people: List<FoundPerson>,
+        popularity: Map<Int, Double>,
+        contentLanguages: List<String>,
+        appLanguage: String,
+    ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        val popularityOf = { position: Int -> maxOf(index.titles[position].popularity, popularity[position] ?: 0.0) }
         val byRank = compareBy<SearchIndex.Hit>(
             { index.titles[it.index].languages.none(wanted::contains) },
             { it.distance },
-            { -index.titles[it.index].popularity },
+            { -popularityOf(it.index) },
             { it.index },
         )
-        val titles = index.findTitles(query).sortedWith(byRank)
-        val people = index.findPeople(query)
-            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { person -> -index.personTitles[person.index].maxOf { index.titles[it].popularity } }))
+        val ranked = titles.map { (position, distance) -> SearchIndex.Hit(position, distance) }.sortedWith(byRank)
+        val shownPeople = people.filter { it.titles.isNotEmpty() }
+            .sortedWith(compareBy<FoundPerson>({ it.distance }, { person -> -person.titles.maxOf(popularityOf) }))
             .take(PEOPLE_FOUND)
-            .map { person -> index.people[person.index] to index.personTitles[person.index].map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
-        val shown = (TitleKind.entries.flatMap { kind -> titles.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) } + people.flatMap { it.second })
-            .map { index.titles[it.index].id }.distinct()
+            .map { person -> person.name to person.titles.map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+        val ofKind = { kind: TitleKind -> ranked.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) }
+        val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second }).map { index.titles[it.index].id }.distinct()
         val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
         val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
-        SearchResults(
-            movies = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Movie }.take(TITLES_FOUND)),
-            shows = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Show }.take(TITLES_FOUND)),
-            people = people.map { (name, hits) -> Person(name, found(hits)) },
+        return SearchResults(
+            movies = found(ofKind(TitleKind.Movie)),
+            shows = found(ofKind(TitleKind.Show)),
+            people = shownPeople.map { (name, hits) -> Person(name, found(hits)) },
         )
+    }
+
+    /** What TMDB's search finds for [query] through the cloud, or null when the cloud can't say right now. */
+    private fun tmdbSearch(query: String): CloudSearch? {
+        val now = Instant.now()
+        if (cloud == null || !now.isAfter(maxOf(cloudRetryAt, searchRetryAt))) return null
+        return try {
+            cloud.search(query.trim().take(MAX_TMDB_QUERY))
+        } catch (e: CloudException) {
+            searchRetryAt = now + CLOUD_RETRY_AFTER
+            null
+        }
     }
 
     /** Builds the search index now, so the Viewer's first letters don't wait for it. */
@@ -365,8 +426,9 @@ class Library private constructor(
                 read[listing.id] = episodes
             }
         }
+        val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }
         ShowEpisodes(
-            mergeEpisodes(title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }, contentLanguages),
+            mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })),
             unreadVersions = title.listings.count { it.id !in read },
         )
     }
@@ -413,7 +475,8 @@ class Library private constructor(
         val kept = store.showDetails(title.listings.map { it.id })
         val remembered = rememberedTracks()
         val languages = rankingLanguages(remembered, contentLanguages)
-        val byEpisode = episodeCandidates(title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes })
+        val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+        val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
@@ -536,48 +599,40 @@ class Library private constructor(
     }
 
     /**
-     * What a Movie's details page starts, without the page waiting for it: the bitrates from the
-     * Provider's movie details of its Versions (API calls, never a stream), what Viewers of the same
-     * Provider read before (from the cloud), then Header reads of the best unconfirmed Version in each
-     * language, the Viewer's [contentLanguages] first, one at a time while the Viewer's connection is
-     * free. Pressing Play takes the connection at once and ends the reads, and so does the Provider
+     * What a Title's details page starts, without the page waiting for it: for a Movie, the bitrates
+     * from the Provider's movie details of its Versions (API calls, never a stream); what Viewers of
+     * the same Provider read before (from the cloud); then Header reads one at a time while the
+     * Viewer's connection is free. A Movie's are of the best unconfirmed Version in each language, the
+     * Viewer's [contentLanguages] first. A Show's are of each Episode's, from the show details
+     * [episodes] kept, in the Show's order: the Viewer's languages first, and among them first the
+     * Versions whose first audio Track, as the Provider's details name it, disagrees with the Prefix.
+     * Pressing Play takes the connection at once and ends the reads, and so does the Provider
      * refusing one. Calls [changed] each time a Version's attributes change, so the page shows them.
      * Results are kept on the device and shared through the cloud, so a Version is never read twice.
      */
     suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
-        if (id.kind != TitleKind.Movie) return@withContext
         val title = store.title(id) ?: return@withContext
         val login = credentials.load() ?: return@withContext
         val client = XtreamClient(login, http)
-        val ids = title.listings.map { it.id }
-        val asked = store.movieBitrates(ids).keys
-        val unasked = ids.filter { it !in asked }
-        if (unasked.isNotEmpty()) {
-            val gate = Semaphore(SHOW_DETAILS_AT_ONCE)
-            val bitrates = coroutineScope {
-                unasked.map { listing ->
-                    async {
-                        gate.withPermit {
-                            try {
-                                listing to client.movieBitrate(listing)
-                            } catch (e: ProviderException) {
-                                null
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }.filterNotNull().toMap()
-            store.saveMovieBitrates(bitrates, Instant.now())
-            if (bitrates.values.any { it != null }) changed()
+        val shows = if (id.kind == TitleKind.Show) {
+            val kept = store.showDetails(title.listings.map { it.id })
+            title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+        } else {
+            readBitrates(client, title.listings.map { it.id }, changed)
+            null
         }
+        // The Provider numbers Movies and Episodes from one sequence, so Listing ids don't collide.
+        val ids = shows?.flatMap { (_, episodes) -> episodes.map { it.id } } ?: title.listings.map { it.id }
         val provider = providerKey(login)
         shareFileReads(provider)
         if (lookUpFileReads(provider, ids)) changed()
-        for (version in unread(title, contentLanguages)) {
-            val container = store.container(version.listingId) ?: "mkv"
+        val unread = if (shows == null) unread(title, contentLanguages) else unreadEpisodes(shows, contentLanguages)
+        for (version in unread) {
+            val container = (if (shows == null) store.container(version.listingId) else store.episodeContainer(version.listingId)) ?: "mkv"
             if (container !in HEADER_READABLE) continue
+            val location = if (shows == null) client.movieLocation(version.listingId, container) else client.episodeLocation(version.listingId, container)
             val read = try {
-                connection.whileFree { Read(headerReader.read(client.movieLocation(version.listingId, container), container)) }
+                connection.whileFree { Read(headerReader.read(location, container)) }
             } catch (e: IOException) {
                 // The Provider refused: no more reads for now.
                 null
@@ -588,16 +643,56 @@ class Library private constructor(
         shareFileReads(provider)
     }
 
+    /** Keeps the bitrates the Provider's movie details give the Movie Listings [ids] not asked before. */
+    private suspend fun readBitrates(client: XtreamClient, ids: List<Long>, changed: suspend () -> Unit) {
+        val asked = store.movieBitrates(ids).keys
+        val unasked = ids.filter { it !in asked }
+        if (unasked.isEmpty()) return
+        val gate = Semaphore(SHOW_DETAILS_AT_ONCE)
+        val bitrates = coroutineScope {
+            unasked.map { listing ->
+                async {
+                    gate.withPermit {
+                        try {
+                            listing to client.movieBitrate(listing)
+                        } catch (e: ProviderException) {
+                            null
+                        }
+                    }
+                }
+            }.awaitAll()
+        }.filterNotNull().toMap()
+        store.saveMovieBitrates(bitrates, Instant.now())
+        if (bitrates.values.any { it != null }) changed()
+    }
+
     private class Read(val contents: FileContents?)
 
     /** The best Version not yet read in each of [title]'s languages, the Viewer's [contentLanguages] first. */
     private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
         val read = store.fileReads(title.listings.map { it.id }).keys
         val (languages, otherLanguages) = groupByLanguage(candidates(title), contentLanguages)
-        return (languages + otherLanguages).mapNotNull { group ->
-            group.versions.flatMap { listOf(it) + it.backups }.firstOrNull { it.listingId !in read }
-        }
+        return (languages + otherLanguages).mapNotNull { firstUnread(it, read) }
     }
+
+    /**
+     * The best Version not yet read in each language of each of [shows]' Episodes, in the Show's order:
+     * the Viewer's [contentLanguages] first, and among them first those whose first audio Track, as
+     * the Provider's details name it, disagrees with the Prefix.
+     */
+    private fun unreadEpisodes(shows: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>): List<Version> {
+        val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
+        val disagreeing = shows.flatMap { (show, episodes) -> episodes.filter { firstTrackDisagrees(show.attributes, it) }.map { it.id } }.toSet()
+        val unread = mergeEpisodes(shows, contentLanguages, reads).flatMap { it.episodes }.flatMap { episode ->
+            episode.languages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to true } } +
+                episode.otherLanguages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to false } }
+        }
+        // A stable sort, so the Show's order stands within each.
+        return unread.sortedWith(compareBy({ (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing })).map { it.first }
+    }
+
+    private fun firstUnread(group: LanguageGroup, read: Set<Long>): Version? =
+        group.versions.flatMap { listOf(it) + it.backups }.firstOrNull { it.listingId !in read }
 
     /** Keeps what the cloud has of [listingIds]' file reads that the device lacks; whether there were any. */
     private fun lookUpFileReads(provider: String, listingIds: List<Long>): Boolean {
@@ -750,6 +845,12 @@ class Library private constructor(
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10
+        /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
+        private const val TMDB_SEARCH_LETTERS = 3
+        /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */
+        private const val TMDB_SEARCH_PAUSE_MS = 250L
+        /** The cloud searches no longer query: anything longer is no name. */
+        private const val MAX_TMDB_QUERY = 100
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
