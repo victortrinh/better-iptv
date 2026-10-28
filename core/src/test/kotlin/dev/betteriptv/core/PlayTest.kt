@@ -197,8 +197,8 @@ class PlayTest {
         val plan = library.playPlan(movie, listOf("fr", "en"), dolbyVisionTv)!!
 
         assertEquals(TrackChoice(audio = null, subtitle = 2), plan.chooseTracks(tracks("ger", null), tracks("eng", "ger", "fre", "fr"), dolbyVisionTv))
-        // English subtitles don't stand in for French ones.
-        assertEquals(TrackChoice(audio = null, subtitle = null), plan.chooseTracks(tracks("deu"), tracks("eng", null), dolbyVisionTv))
+        // English subtitles don't stand in for French ones: downloaded French ones do.
+        assertEquals(TrackChoice(audio = null, subtitle = null, downloaded = "fr"), plan.chooseTracks(tracks("deu"), tracks("eng", null), dolbyVisionTv))
     }
 
     // Audio: passed through or decoded

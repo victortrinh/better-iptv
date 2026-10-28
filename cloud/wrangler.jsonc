@@ -13,7 +13,12 @@
     }
   ],
   "vars": {
-    "TMDB_API": "https://api.themoviedb.org/3"
+    "TMDB_API": "https://api.themoviedb.org/3",
+    "OPENSUBTITLES_API": "https://api.opensubtitles.com/api/v1",
+    "OPENSUBTITLES_USER_AGENT": "BetterIPTV v1",
+    "SUBDL_API": "https://api.subdl.com/api/v1",
+    "SUBDL_DOWNLOADS": "https://dl.subdl.com"
   }
-  // Secrets, set with `wrangler secret put`: TMDB_TOKEN (TMDB's API read access token).
+  // Secrets, set with `wrangler secret put`: TMDB_TOKEN (TMDB's API read access token), and for subtitles
+  // OPENSUBTITLES_API_KEY, OPENSUBTITLES_USERNAME, OPENSUBTITLES_PASSWORD and SUBDL_API_KEY.
 }

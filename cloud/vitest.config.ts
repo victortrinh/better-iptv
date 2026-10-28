@@ -8,6 +8,10 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TMDB_TOKEN: "test-tmdb-token",
+          OPENSUBTITLES_API_KEY: "test-os-key",
+          OPENSUBTITLES_USERNAME: "test-os-user",
+          OPENSUBTITLES_PASSWORD: "test-os-password",
+          SUBDL_API_KEY: "test-subdl-key",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
         },
       },

@@ -99,6 +99,44 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         authorized { token -> post("v1/file-reads", json.serializeNulls().toJson(body), token) }
     }
 
+    /**
+     * The subtitles to download for a Movie, or a Show's [episode], in [languages] (ISO 639-1, at
+     * most [MAX_SUBTITLE_LANGUAGES]): the best few in each language, best first.
+     */
+    fun searchSubtitles(id: TitleId.Tmdb, episode: EpisodeNumber?, languages: List<String>): List<SubtitleOffer> {
+        require(languages.size in 1..MAX_SUBTITLE_LANGUAGES)
+        val body = mapOf(
+            "kind" to kindName(id.kind),
+            "tmdbId" to id.tmdbId,
+            "season" to episode?.season,
+            "episode" to episode?.number,
+            "languages" to languages,
+        )
+        val answer = authorized { token -> post("v1/subtitles", json.serializeNulls().toJson(body), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return (answer["subtitles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { offer ->
+            SubtitleOffer(
+                id = offer["id"] as? String ?: return@mapNotNull null,
+                language = offer["language"] as? String ?: return@mapNotNull null,
+                release = offer["release"] as? String ?: "",
+                hearingImpaired = offer["hearingImpaired"] == true,
+            )
+        }
+    }
+
+    /** The subtitle file a search offered as [id]; null when its service no longer has it. */
+    fun downloadSubtitle(id: String): DownloadedSubtitle? {
+        val answer = try {
+            authorized { token -> post("v1/subtitles/download", json.toJson(mapOf("id" to id)), token) } as? Map<*, *>
+        } catch (_: NotFound) {
+            return null
+        } ?: throw CloudException("The cloud sent something other than an object.")
+        val format = answer["format"] as? String
+        val text = answer["text"] as? String
+        if (format == null || text == null) throw CloudException("The cloud sent a subtitle without its format or text.")
+        return DownloadedSubtitle(format, text)
+    }
+
     /** Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it. */
     private fun authorized(call: (token: String) -> Any?): Any? {
         val token = tokens.deviceToken() ?: register()
@@ -125,6 +163,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         try {
             http.newCall(request).execute().use { response ->
                 if (response.code == 401) throw Unauthorized()
+                if (response.code == 404) throw NotFound()
                 if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
                 if (response.code == 204) return null
                 return JsonReader.of(response.body!!.source()).use { it.readJsonValue() }
@@ -144,6 +183,8 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
     private class Unauthorized : CloudException("The cloud didn't accept this device's token.")
 
+    private class NotFound : CloudException("The cloud has no such thing.")
+
     companion object {
         /** The most Titles one metadata request may ask for. */
         const val MAX_BATCH = 50
@@ -162,6 +203,12 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
 /** What the cloud answered: each found Title's metadata as JSON, and the Titles TMDB doesn't have. */
 internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound: List<TitleId.Tmdb>)
+
+/** A subtitle file the cloud found for a Movie or Episode, in [language] (ISO 639-1), named by its [release]. */
+data class SubtitleOffer(val id: String, val language: String, val release: String, val hearingImpaired: Boolean)
+
+/** A downloaded subtitle file: its [text], in its [format] (`srt`, `vtt` or `ass`). */
+class DownloadedSubtitle(val format: String, val text: String)
 
 /** What TMDB's search found: Titles with their popularity, and people by name with their Titles. */
 internal class CloudSearch(val titles: List<Pair<TitleId.Tmdb, Double>>, val people: List<Pair<String, List<TitleId.Tmdb>>>)

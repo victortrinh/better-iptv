@@ -82,6 +82,17 @@ class FakeCloud : Closeable {
         synchronized(matches) { matches[name] = tmdbId }
     }
 
+    /** A downloadable subtitle file, as the cloud's subtitle search finds it. */
+    class Subtitle(val kind: String, val tmdbId: Long, val season: Int?, val episode: Int?, val language: String, val release: String, val text: String) {
+        val id = "opensubtitles:$language:${Math.abs((kind + tmdbId + season + episode + release).hashCode())}"
+    }
+
+    val subtitles = CopyOnWriteArrayList<Subtitle>()
+
+    /** Offers [text] as a downloadable subtitle for the Movie [tmdbId] (or its [season]'s [episode]) in [language]. */
+    fun subtitle(tmdbId: Long, language: String, release: String, text: String = "1\n00:00:01,000 --> 00:00:02,000\n$release\n", kind: String = "movie", season: Int? = null, episode: Int? = null) =
+        Subtitle(kind, tmdbId, season, episode, language, release, text).also { subtitles += it }
+
     /**
      * Answers a TMDB search for [query] (any case) with [titles] (TMDB ID and popularity) and [people]
      * (name and their Titles). Other queries find nothing.
@@ -146,6 +157,26 @@ class FakeCloud : Closeable {
                     mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong())
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
+            }
+            "/v1/subtitles", "/v1/subtitles/download" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val asked = read(body) as Map<*, *>
+                if (exchange.requestURI.path == "/v1/subtitles/download") {
+                    val file = subtitles.find { it.id == asked["id"] } ?: return respond(exchange, 404, mapOf("error" to "The service no longer has that subtitle."))
+                    return respond(exchange, 200, mapOf("format" to "srt", "text" to file.text))
+                }
+                val languages = asked["languages"] as List<*>
+                val found = languages.flatMap { language ->
+                    subtitles.filter {
+                        it.kind == asked["kind"] && it.tmdbId == (asked["tmdbId"] as Number).toLong() && it.language == language &&
+                            it.season == (asked["season"] as Number?)?.toInt() && it.episode == (asked["episode"] as Number?)?.toInt()
+                    }
+                }
+                respond(exchange, 200, mapOf(
+                    "subtitles" to found.map { mapOf("id" to it.id, "language" to it.language, "source" to "opensubtitles", "release" to it.release, "hearingImpaired" to false, "downloads" to 1) },
+                    "unavailable" to emptyList<String>(),
+                ))
             }
             else -> respond(exchange, 404, mapOf("error" to "No such endpoint."))
         }
