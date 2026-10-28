@@ -55,6 +55,10 @@ _Avoid_: Series, TV show
 **Episode**:
 One episode of a Show, identified by season and episode number.
 
+**Credits**:
+The end of a Movie's or Episode's file: its last 5%, or its last 8 minutes when that is less. Providers mark none, so this rule stands in: from here a Title counts as watched, and an Episode offers the next one.
+_Avoid_: Outro, end card
+
 **Version**:
 One playable copy of a Movie or Episode, coming from one Listing (for an Episode, from the show Listing whose details list it), with its own language, quality and Source.
 _Avoid_: Duplicate, copy, variant, stream
