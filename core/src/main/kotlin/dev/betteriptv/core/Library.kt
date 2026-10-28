@@ -5,9 +5,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -40,6 +44,8 @@ class Library private constructor(
 ) : Closeable {
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
     @Volatile private var cloudRetryAt = Instant.MIN
+    /** The same for TMDB's search, which fails on its own when TMDB is rate-limiting: cached metadata still comes through. */
+    @Volatile private var searchRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
     private val searchLock = Any()
@@ -220,32 +226,87 @@ class Library private constructor(
      * [contentLanguages] come first, then closer matches, then TMDB's most popular. A person's
      * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
      *
+     * The device's own matches come first, from the Listing names and the metadata it has cached.
+     * Then, for three letters or more, TMDB's search (through the cloud, ADR 0009) adds Titles the
+     * device has no metadata for and every Title of the people it finds, and the results come again.
+     * Without the cloud the first results are all there are.
+     *
      * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
      */
-    suspend fun search(query: String, contentLanguages: List<String>, appLanguage: String): SearchResults = withContext(Dispatchers.IO) {
-        if (SearchIndex.words(query).sumOf { it.length } < SearchIndex.MIN_LETTERS) return@withContext SearchResults.NONE
+    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
+        val letters = SearchIndex.words(query).sumOf { it.length }
+        if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
+        val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
+        val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
+        emit(searchResults(index, titles, people, emptyMap(), contentLanguages, appLanguage))
+
+        if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
+        // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
+        delay(TMDB_SEARCH_PAUSE_MS)
+        val found = tmdbSearch(query) ?: return@flow
+        val popularity = HashMap<Int, Double>()
+        for ((id, score) in found.titles) {
+            val position = index.position(id) ?: continue
+            titles[position] = 0
+            popularity[position] = score
+        }
+        val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNullTo(HashSet(), index::position)) }
+        val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
+            FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
+        }
+        emit(searchResults(index, titles, merged, popularity, contentLanguages, appLanguage))
+    }.flowOn(Dispatchers.IO)
+
+    /** A person search found: how close their name was, and their Titles, as positions in the search index. */
+    private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
+
+    /**
+     * Ranks [titles] (search index positions and how close they matched) and [people], and shows the
+     * best of them. TMDB's search tells the [popularity] of Titles the device has no metadata for.
+     */
+    private fun searchResults(
+        index: SearchIndex,
+        titles: Map<Int, Int>,
+        people: List<FoundPerson>,
+        popularity: Map<Int, Double>,
+        contentLanguages: List<String>,
+        appLanguage: String,
+    ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        val popularityOf = { position: Int -> maxOf(index.titles[position].popularity, popularity[position] ?: 0.0) }
         val byRank = compareBy<SearchIndex.Hit>(
             { index.titles[it.index].languages.none(wanted::contains) },
             { it.distance },
-            { -index.titles[it.index].popularity },
+            { -popularityOf(it.index) },
             { it.index },
         )
-        val titles = index.findTitles(query).sortedWith(byRank)
-        val people = index.findPeople(query)
-            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { person -> -index.personTitles[person.index].maxOf { index.titles[it].popularity } }))
+        val ranked = titles.map { (position, distance) -> SearchIndex.Hit(position, distance) }.sortedWith(byRank)
+        val shownPeople = people.filter { it.titles.isNotEmpty() }
+            .sortedWith(compareBy<FoundPerson>({ it.distance }, { person -> -person.titles.maxOf(popularityOf) }))
             .take(PEOPLE_FOUND)
-            .map { person -> index.people[person.index] to index.personTitles[person.index].map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
-        val shown = (TitleKind.entries.flatMap { kind -> titles.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) } + people.flatMap { it.second })
-            .map { index.titles[it.index].id }.distinct()
+            .map { person -> person.name to person.titles.map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+        val ofKind = { kind: TitleKind -> ranked.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) }
+        val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second }).map { index.titles[it.index].id }.distinct()
         val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
         val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
-        SearchResults(
-            movies = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Movie }.take(TITLES_FOUND)),
-            shows = found(titles.filter { index.titles[it.index].id.kind == TitleKind.Show }.take(TITLES_FOUND)),
-            people = people.map { (name, hits) -> Person(name, found(hits)) },
+        return SearchResults(
+            movies = found(ofKind(TitleKind.Movie)),
+            shows = found(ofKind(TitleKind.Show)),
+            people = shownPeople.map { (name, hits) -> Person(name, found(hits)) },
         )
+    }
+
+    /** What TMDB's search finds for [query] through the cloud, or null when the cloud can't say right now. */
+    private fun tmdbSearch(query: String): CloudSearch? {
+        val now = Instant.now()
+        if (cloud == null || !now.isAfter(maxOf(cloudRetryAt, searchRetryAt))) return null
+        return try {
+            cloud.search(query.trim().take(MAX_TMDB_QUERY))
+        } catch (e: CloudException) {
+            searchRetryAt = now + CLOUD_RETRY_AFTER
+            null
+        }
     }
 
     /** Builds the search index now, so the Viewer's first letters don't wait for it. */
@@ -750,6 +811,12 @@ class Library private constructor(
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10
+        /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
+        private const val TMDB_SEARCH_LETTERS = 3
+        /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */
+        private const val TMDB_SEARCH_PAUSE_MS = 250L
+        /** The cloud searches no longer query: anything longer is no name. */
+        private const val MAX_TMDB_QUERY = 100
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
