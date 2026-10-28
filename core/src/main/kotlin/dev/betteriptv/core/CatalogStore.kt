@@ -601,6 +601,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** Forgets where the Viewer stopped in [id], and whether they finished it. */
+    fun forgetProgress(id: TitleId) = synchronized(writer) {
+        writer.prepare("DELETE FROM progress WHERE title_key = ?").use {
+            it.bindText(1, key(id))
+            it.step()
+        }
+        Unit
+    }
+
     /** The file reads the cloud doesn't have yet, as JSON by Listing id. */
     fun unsharedFileReads(): Map<Long, String> = synchronized(reader) {
         reader.prepare("SELECT listing_id, body FROM file_read WHERE shared = 0 AND body IS NOT NULL").use {

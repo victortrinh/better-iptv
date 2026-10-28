@@ -171,6 +171,14 @@ _Avoid_: Favourite team, followed team
 An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending, Trakt most watched), filtered to Titles the Provider has.
 _Avoid_: Trending list, top list
 
+**Continue watching**:
+The Movies the Viewer stopped partway through and hasn't Watched, last played first. Their Title page offers "Continue from 1:02:13", "Restart" and "Remove from Continue watching", which forgets where they stopped.
+_Avoid_: Resume list, in progress
+
+**Watched**:
+A Movie the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched Movie from the beginning.
+_Avoid_: Finished, completed, seen
+
 **New on your service**:
 Titles whose Listings the Provider added recently, ordered by popularity.
 _Avoid_: Recently added, new releases
