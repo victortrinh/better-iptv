@@ -379,6 +379,9 @@ class VlcEngine(
 
     override fun togglePause() = if (player.isPlaying) player.pause() else player.play()
 
+    @Volatile override var seen: FileContents? = null
+        private set
+
     override fun seek(by: Long) {
         player.setTime((player.time + by).coerceAtLeast(0))
     }
@@ -455,12 +458,16 @@ class VlcEngine(
         }
     }
 
-    /** Applies the [plan]'s Track choice; false while VLC doesn't know the file's audio Tracks yet. */
+    /**
+     * Applies the [plan]'s Track choice, and keeps what the file holds so Playback Confirms the
+     * Version; false while VLC doesn't know the file's audio Tracks yet.
+     */
     private fun chooseTracks(): Boolean {
         val tracks = mediaTracks()
         val audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
         val subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }
         if (audio.isEmpty()) return false
+        seen = vlcContents(tracks)
         // VLC decodes every format itself, so its Tracks' formats don't change the choice.
         val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map { Track(it.language) }, device, remembered())
         choice.audio?.let { player.setAudioTrack(audio[it].id) }
@@ -494,6 +501,27 @@ private fun Tracks.contents(): FileContents {
         },
     )
 }
+
+/**
+ * What a file holds, from every Track VLC found in it. VLC names no HDR format, so a Header read's
+ * stands, and knows no bitrate for a file.
+ */
+internal fun vlcContents(tracks: List<IMedia.Track>): FileContents {
+    val video = tracks.filterIsInstance<IMedia.VideoTrack>().firstOrNull()
+    return FileContents(
+        audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
+            .map { Track(it.language, VLC_AUDIO_CODECS[it.codec?.trim()], (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
+        subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }.map { Track(it.language) },
+        width = video?.width?.takeIf { it > 0 },
+        height = video?.height?.takeIf { it > 0 },
+    )
+}
+
+/** Media3's MIME types by VLC audio fourcc, as VLC names them, with trailing spaces trimmed. */
+private val VLC_AUDIO_CODECS = mapOf(
+    "mp4a" to "audio/mp4a-latm", "a52" to "audio/ac3", "eac3" to "audio/eac3", "trhd" to "audio/true-hd", "mlp" to "audio/true-hd",
+    "dts" to "audio/vnd.dts", "Opus" to "audio/opus", "flac" to "audio/flac", "mpga" to "audio/mpeg", "vorb" to "audio/vorbis",
+)
 
 /** The dark box behind subtitles, at 70%. */
 private const val SUBTITLE_BOX = 0xB3000000.toInt()

@@ -67,6 +67,9 @@ class FakeProvider : Closeable {
      */
     val movieFiles = ConcurrentHashMap<Long, ByteArray>()
 
+    /** Episode files by Provider episode id, served like [movieFiles] but only from the Provider's Shows. */
+    val episodeFiles = ConcurrentHashMap<Long, ByteArray>()
+
     /** Sends movie files a kilobyte at a time, slow enough for a Header read to be caught midway. */
     @Volatile var slowFiles = false
 
@@ -242,7 +245,8 @@ class FakeProvider : Closeable {
             return exchange.sendResponseHeaders(403, -1)
         }
         try {
-            val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { movieFiles[it] }
+            val files = if (parts.getOrNull(1) == "series") episodeFiles else movieFiles
+            val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { files[it] }
             if (file != null) return sendFile(exchange, parts[4].substringBefore('.').toLong(), file)
             exchange.sendResponseHeaders(200, 0)
             if (id in slowStreams) Thread.sleep(slowStreamDelayMillis)
