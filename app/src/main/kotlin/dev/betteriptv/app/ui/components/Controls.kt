@@ -2,6 +2,8 @@ package dev.betteriptv.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,10 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +67,43 @@ fun NuageButton(
     }
 }
 
+/**
+ * A round glass button holding only an icon, for the player's transport. [name] is what it does: it
+ * shows in a caption under the button while it has focus, so someone who has never seen the icon
+ * still learns it, and it is the icon's description. The caption's slot is always reserved, so
+ * nothing moves as focus does. [slot] centres a smaller button in a bigger one's height, so a row of
+ * them lines up their icons and their captions.
+ */
+@Composable
+fun NuageIconButton(icon: ImageVector, name: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, slot: Dp = size) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(slot)) {
+            FocusSurface(
+                onClick = onClick,
+                modifier = modifier.align(Alignment.Center).size(size),
+                weight = FocusWeight.Control,
+                corner = size / 2,
+                container = Colors.surfaceHigh,
+                focusedContainer = Colors.focus,
+                interactionSource = interaction,
+            ) { isFocused ->
+                Icon(icon, contentDescription = name, tint = if (isFocused) Colors.onFocus else Colors.ink, modifier = Modifier.align(Alignment.Center).size(size / 2))
+            }
+        }
+        Box(Modifier.width(slot).padding(top = 8.dp).height(16.dp)) {
+            if (focused) {
+                // Wider than the button: centred under it, spilling past its sides.
+                Text(name, style = Type.caption, color = Colors.ink, maxLines = 1, modifier = Modifier.align(Alignment.Center).wrapContentWidth(unbounded = true))
+            }
+        }
+    }
+}
+
+/** A destination in [TopTabs]: a word, or an icon with [name] as its description. */
+data class TopTab(val name: String, val icon: ImageVector? = null)
+
 /** The app's name. */
 @Composable
 fun Wordmark(modifier: Modifier = Modifier) {
@@ -70,10 +112,10 @@ fun Wordmark(modifier: Modifier = Modifier) {
 
 /**
  * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
- * middle, reached by pressing up.
+ * middle, reached by pressing up. A tab with an icon is a round icon the height of a word tab.
  */
 @Composable
-fun TopTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val capsule = RoundedCornerShape(50)
     Box(modifier.fillMaxWidth()) {
         Wordmark(Modifier.align(Alignment.CenterStart))
@@ -92,17 +134,18 @@ fun TopTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier
                     container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
                     focusedContainer = Colors.focus,
                 ) { focused ->
-                    Text(
-                        tab,
-                        style = Type.label,
-                        // Inactive tabs sit on glass over artwork; muted ink would drop below 4.5:1 there.
-                        color = when {
-                            focused -> Colors.onFocus
-                            index == selected -> Colors.ink
-                            else -> Colors.ink.copy(alpha = 0.85f)
-                        },
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    )
+                    // Inactive tabs sit on glass over artwork; muted ink would drop below 4.5:1 there.
+                    val ink = when {
+                        focused -> Colors.onFocus
+                        index == selected -> Colors.ink
+                        else -> Colors.ink.copy(alpha = 0.85f)
+                    }
+                    if (tab.icon != null) {
+                        // 20 dp, the label's line height, so the icon tab is as tall as the others.
+                        Icon(tab.icon, contentDescription = tab.name, tint = ink, modifier = Modifier.padding(6.dp).size(20.dp))
+                    } else {
+                        Text(tab.name, style = Type.label, color = ink, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
+                    }
                 }
             }
         }

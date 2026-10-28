@@ -2,32 +2,32 @@ package dev.betteriptv.app.prototype
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
+import dev.betteriptv.app.PlayerControls
 import dev.betteriptv.app.R
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
@@ -36,13 +36,23 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
+import kotlinx.coroutines.delay
 
 /** The player paused, with its overlay: where you are, which Version, and the controls. */
 @Composable
 fun PlayerPrototype() {
-        val title = SampleCatalog.general
+    val title = SampleCatalog.general
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
+    // Ticks like a playing film, so the time slots can be seen holding the scrubber still.
+    var playing by remember { mutableStateOf(true) }
+    var position by remember { mutableLongStateOf(3_599_000) }
+    LaunchedEffect(playing) {
+        while (playing) {
+            delay(1_000)
+            position += 1_000
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Image(painterResource(title.still), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -71,25 +81,18 @@ fun PlayerPrototype() {
             }
         }
 
-        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("0:23:41", style = Type.label, color = Colors.ink)
-                Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
-                    Box(Modifier.fillMaxSize().background(Colors.ink.copy(alpha = 0.25f), RoundedCornerShape(3.dp)))
-                    Box(Modifier.fillMaxWidth(0.42f).height(6.dp).background(Colors.ink.copy(alpha = 0.45f), RoundedCornerShape(3.dp)))
-                    Box(Modifier.fillMaxWidth(0.30f).height(6.dp).background(Colors.ink, RoundedCornerShape(3.dp)))
-                }
-                Text("1:18:52", style = Type.label, color = Colors.inkMuted)
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                NuageButton("Back 10 s", {})
-                NuageButton("Play", {}, Modifier.focusRequester(play), icon = Icons.Filled.PlayArrow)
-                NuageButton("Forward 10 s", {})
-                Spacer(Modifier.weight(1f))
-                NuageButton("Versions", {})
-                NuageButton("Audio and subtitles", {})
-            }
-        }
+        PlayerControls(
+            position = position,
+            buffered = position + 900_000,
+            duration = 4_732_000,
+            isPlaying = playing,
+            playFocus = play,
+            onBack = { position = (position - 10_000).coerceAtLeast(0) },
+            onPlayPause = { playing = !playing },
+            onForward = { position += 10_000 },
+            onVersions = {},
+            onTracks = {},
+            modifier = Modifier.align(Alignment.BottomStart),
+        )
     }
 }

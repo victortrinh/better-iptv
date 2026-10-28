@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -31,13 +33,14 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.TitleCard
+import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 
-val TABS = listOf("Home", "Movies", "Shows", "Live", "Search", "Settings")
+val TABS = listOf(TopTab("Home"), TopTab("Movies"), TopTab("Shows"), TopTab("Live"), TopTab("Search", Icons.Filled.Search), TopTab("Settings", Icons.Filled.Settings))
 
 /** A screen's ground. */
 @Composable
