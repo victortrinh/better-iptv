@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.TitleCard
+import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
@@ -46,8 +50,11 @@ enum class Browse { Home, Movies, Shows, Search, Settings }
 fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier = Modifier) {
     TopTabs(
         listOf(
-            stringResource(R.string.home_title), stringResource(R.string.movies_title), stringResource(R.string.shows_title), stringResource(R.string.search_title),
-            stringResource(R.string.settings_title),
+            TopTab(stringResource(R.string.home_title)),
+            TopTab(stringResource(R.string.movies_title)),
+            TopTab(stringResource(R.string.shows_title)),
+            TopTab(stringResource(R.string.search_title), Icons.Filled.Search),
+            TopTab(stringResource(R.string.settings_title), Icons.Filled.Settings),
         ),
         selected = selected.ordinal,
         onSelect = { onSelect(Browse.entries[it]) },

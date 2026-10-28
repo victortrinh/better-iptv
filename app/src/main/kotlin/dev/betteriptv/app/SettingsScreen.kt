@@ -35,19 +35,24 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
+import dev.betteriptv.core.UpdateState
+import dev.betteriptv.core.offered
 import java.text.Collator
 import java.util.Locale
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages and Region under
- * Languages, the Quality cap and whether the next Episode plays by itself under Playback. Content languages and Region each open a list in
- * place of the column; Back returns to the row that opened it.
+ * Languages, the Quality cap and whether the next Episode plays by itself under Playback, the App
+ * version under App, which offers the [update] when there is one ([onUpdate]). Content languages
+ * and Region each open a list in place of the column; Back returns to the row that opened it.
  */
 @Composable
 fun SettingsScreen(
     library: Library,
     settings: ViewerSettings,
+    update: UpdateState,
     onChange: ((ViewerSettings) -> ViewerSettings) -> Unit,
+    onUpdate: () -> Unit,
     onTab: (Browse) -> Unit,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
@@ -141,6 +146,19 @@ fun SettingsScreen(
                             onSelect = { index -> onChange { it.copy(playNextAutomatically = index == 0) } },
                         )
                     }
+                }
+                item { Heading(stringResource(R.string.settings_app)) }
+                item {
+                    val offered = update.offered
+                    SettingRow(
+                        stringResource(R.string.settings_version),
+                        when {
+                            offered != null -> stringResource(R.string.settings_update_to, offered.versionName)
+                            update == UpdateState.UpToDate -> stringResource(R.string.settings_up_to_date, BuildConfig.VERSION_NAME)
+                            else -> BuildConfig.VERSION_NAME
+                        },
+                        onClick = { if (offered != null) onUpdate() },
+                    )
                 }
             }
         }

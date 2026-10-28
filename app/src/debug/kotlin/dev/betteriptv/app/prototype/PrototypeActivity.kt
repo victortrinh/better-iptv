@@ -18,7 +18,7 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * The design prototypes for #3, in debug builds only, with placeholder content.
  *
- *     adb shell am start -n dev.betteriptv/dev.betteriptv.app.prototype.PrototypeActivity \
+ *     adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.PrototypeActivity \
  *         --es screen details --ez focus true
  *
  * Screens: home, details, player, search, settings. `focus` moves the first focus from the main

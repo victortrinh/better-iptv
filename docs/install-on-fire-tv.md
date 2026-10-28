@@ -1,5 +1,7 @@
 # Install a debug build on a Fire TV Stick
 
+This is for development builds. The app the household uses is the release, which updates itself: see `releases.md`.
+
 The app is sideloaded (ADR 0006). During development it goes onto the stick over Wi-Fi with `adb`; the stick and the computer must be on the same network.
 
 ## Once, on the stick
@@ -36,12 +38,12 @@ Install, replacing any earlier build:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Every build is signed with the debug key checked in at `app/debug.keystore`, so builds from CI and from any computer replace each other without uninstalling (which would delete the synced catalog and the saved login).
+Every debug build is signed with the debug key checked in at `app/debug.keystore`, so builds from CI and from any computer replace each other without uninstalling (which would delete the synced catalog and the saved login). Debug builds are their own app, `dev.betteriptv.debug` ("NuageTivi debug"), beside the release app that updates itself from GitHub (see `releases.md`).
 
 The app appears under **Your Apps & Channels**; start it from there, or with:
 
 ```bash
-adb shell am start -n dev.betteriptv/dev.betteriptv.app.MainActivity
+adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.MainActivity
 ```
 
 ## Reading what Sync did

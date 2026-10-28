@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/** The commits on HEAD: each release's versionCode. CI fetches the whole history for it. */
+val commitCount: Int = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+    .standardOutput.asText.get().trim().toInt()
+
 android {
     namespace = "dev.betteriptv.app"
     compileSdk = 36
@@ -15,34 +19,61 @@ android {
         // Fire OS 6 (Android 7.1) and later.
         minSdk = 25
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        // Every push to main is a release (#21): the commits on main count builds, so each one is newer
+        // than the last and a local build of the same commit gets the same number.
+        versionCode = commitCount
+        versionName = "0.1.$commitCount"
         // The cloud (cloud/) the app gets Title metadata from, set in gradle.properties.
         buildConfigField("String", "CLOUD_URL", "\"${providers.gradleProperty("cloudUrl").get()}\"")
+        // The update manifest release builds check on launch (#21), set in gradle.properties; empty turns the check off.
+        buildConfigField("String", "UPDATE_URL", "\"${providers.gradleProperty("updateUrl").get()}\"")
         // The VLC engine's native code, for ARM only: the Fire TV Stick, and the emulator on an Apple-silicon Mac.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     signingConfigs {
         // Checked in so builds from CI and from any machine can replace each other on the stick.
-        // A debug key is not a secret; release signing comes with the in-app updater (#21).
+        // A debug key is not a secret, so debug builds are a separate app (see buildTypes).
         getByName("debug") {
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // The release key only the Viewer holds, given to CI as secrets (docs/releases.md). Without
+        // it, release builds come out unsigned.
+        val releaseKeystore = providers.environmentVariable("RELEASE_KEYSTORE").orNull
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.environmentVariable("RELEASE_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
+        // Signed with the public debug key, so a separate app beside the released one: an adb
+        // install never clashes with the release key, and never takes the release's data.
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "UPDATE_URL", "\"\"")
+        }
+        // What CI publishes and the in-app updater installs.
+        release {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
+        }
         // Release-like for measuring on the stick (#33): R8-minified and not debuggable, but signed
         // with the checked-in debug key so it installs over the debug build and keeps its data.
         create("benchmark") {
             initWith(getByName("release"))
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            applicationIdSuffix = ".debug"
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
+            buildConfigField("String", "UPDATE_URL", "\"\"")
             matchingFallbacks += "release"
         }
     }

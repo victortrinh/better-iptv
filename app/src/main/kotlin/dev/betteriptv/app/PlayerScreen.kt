@@ -6,6 +6,12 @@ import android.util.Log
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import dev.betteriptv.app.ui.components.NuageIconButton
+import dev.betteriptv.app.ui.components.NuageIcons
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -584,7 +590,6 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
         }
     }
     val (position, buffered, isPlaying) = now
-    val duration = player.duration
     Box(Modifier.fillMaxSize().background(topScrim).background(bottomScrim)) {
         Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
             Text(
@@ -605,42 +610,123 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
                 }
             }
         }
-        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-            if (!live) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(clock(position), style = Type.label, color = Colors.ink)
-                Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
-                    val shape = RoundedCornerShape(3.dp)
-                    fun share(at: Long) = if (duration == null) 0f else (at.toFloat() / duration).coerceIn(0f, 1f)
-                    Box(Modifier.fillMaxSize().background(Colors.ink.copy(alpha = 0.25f), shape))
-                    Box(Modifier.fillMaxWidth(share(buffered)).fillMaxHeight().background(Colors.ink.copy(alpha = 0.45f), shape))
-                    Box(Modifier.fillMaxWidth(share(position)).fillMaxHeight().background(Colors.ink, shape))
+        PlayerControls(
+            position = position,
+            buffered = buffered,
+            duration = player.duration,
+            isPlaying = isPlaying,
+            live = live,
+            playFocus = play,
+            onBack = { player.seek(-SEEK_STEP) },
+            onPlayPause = player::togglePause,
+            onForward = { player.seek(SEEK_STEP) },
+            onNext = onNext,
+            onVersions = onVersions,
+            onTracks = onTracks,
+            modifier = Modifier.align(Alignment.BottomStart),
+        )
+    }
+}
+
+/**
+ * The bottom of the player overlay: elapsed time, the scrubber and the time left, then Back 10 s,
+ * Play/Pause and Forward 10 s as round icons in the middle (then Next Episode, when there is one to
+ * play, [onNext]), between Versions on the left and Audio and subtitles on the right.
+ * The times sit in fixed slots in tabular digits, so the scrubber stays still as they tick (#70).
+ * A [live] Channel has no scrubber and no jumps: Play/Pause stays alone in the middle.
+ */
+@Composable
+internal fun PlayerControls(
+    position: Long,
+    buffered: Long,
+    duration: Long?,
+    isPlaying: Boolean,
+    live: Boolean,
+    playFocus: FocusRequester,
+    onBack: () -> Unit,
+    onPlayPause: () -> Unit,
+    onForward: () -> Unit,
+    onVersions: () -> Unit,
+    onTracks: () -> Unit,
+    modifier: Modifier = Modifier,
+    onNext: (() -> Unit)? = null,
+) {
+    val time = Type.label.copy(fontFeatureSettings = "tnum")
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val slot = clockSlot(maxOf(duration ?: 0, position))
+    val slotWidth = with(density) { measurer.measure("\u2212$slot", time).size.width.toDp() }
+    Column(modifier.fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
+        if (!live) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(clock(position), style = time, color = Colors.ink, textAlign = TextAlign.End, modifier = Modifier.width(slotWidth))
+            Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
+                val shape = RoundedCornerShape(3.dp)
+                fun share(at: Long) = if (duration == null) 0f else (at.toFloat() / duration).coerceIn(0f, 1f)
+                Box(Modifier.fillMaxSize().background(Colors.ink.copy(alpha = 0.25f), shape))
+                Box(Modifier.fillMaxWidth(share(buffered)).fillMaxHeight().background(Colors.ink.copy(alpha = 0.45f), shape))
+                Box(Modifier.fillMaxWidth(share(position)).fillMaxHeight().background(Colors.ink, shape))
+            }
+            Text(duration?.let { "\u2212" + clock((it - position).coerceAtLeast(0)) } ?: "", style = time, color = Colors.inkMuted, modifier = Modifier.width(slotWidth))
+        }
+        Spacer(Modifier.height(Spacing.l))
+        ControlsRow(
+            start = { NuageButton(stringResource(R.string.versions_title), onClick = onVersions, icon = Icons.AutoMirrored.Filled.List) },
+            transport = {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
+                    if (!live) NuageIconButton(NuageIcons.Replay10, stringResource(R.string.player_back), onBack, slot = PLAY_SIZE)
+                    NuageIconButton(
+                        if (isPlaying) NuageIcons.Pause else Icons.Filled.PlayArrow,
+                        stringResource(if (isPlaying) R.string.player_pause else R.string.play),
+                        onPlayPause,
+                        Modifier.focusRequester(playFocus),
+                        size = PLAY_SIZE,
+                    )
+                    if (!live) NuageIconButton(NuageIcons.Forward10, stringResource(R.string.player_forward), onForward, slot = PLAY_SIZE)
+                    if (onNext != null) NuageIconButton(NuageIcons.SkipNext, stringResource(R.string.player_next), onNext, slot = PLAY_SIZE)
                 }
-                Text(duration?.let { "-" + clock((it - position).coerceAtLeast(0)) } ?: "", style = Type.label, color = Colors.inkMuted)
-            }
-            Spacer(Modifier.height(Spacing.l))
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
-                if (!live) NuageButton(stringResource(R.string.player_back), onClick = { player.seek(-SEEK_STEP) })
-                NuageButton(
-                    stringResource(if (isPlaying) R.string.player_pause else R.string.play),
-                    onClick = player::togglePause,
-                    modifier = Modifier.focusRequester(play),
-                    icon = if (isPlaying) null else Icons.Filled.PlayArrow,
-                )
-                if (!live) NuageButton(stringResource(R.string.player_forward), onClick = { player.seek(SEEK_STEP) })
-                if (onNext != null) NuageButton(stringResource(R.string.player_next), onClick = onNext)
-                Spacer(Modifier.weight(1f))
-                NuageButton(stringResource(R.string.versions_title), onClick = onVersions)
-                NuageButton(stringResource(R.string.player_tracks), onClick = onTracks)
-            }
+            },
+            end = { NuageButton(stringResource(R.string.player_tracks), onClick = onTracks, icon = NuageIcons.Subtitles) },
+        )
+    }
+}
+
+/** Play/Pause, a step bigger than the buttons beside it. */
+private val PLAY_SIZE = 52.dp
+
+/**
+ * The transport centred on the screen, with [start] at the left and [end] at the right, level with
+ * Play/Pause. Should a long label reach the middle, the transport gives way to keep [Spacing.xl]
+ * from it instead of overlapping.
+ */
+@Composable
+private fun ControlsRow(start: @Composable () -> Unit, transport: @Composable () -> Unit, end: @Composable () -> Unit) {
+    Layout(contents = listOf(start, transport, end)) { (startMeasurables, transportMeasurables, endMeasurables), constraints ->
+        val width = constraints.maxWidth
+        val gap = Spacing.xl.roundToPx()
+        val loose = constraints.copy(minWidth = 0)
+        val left = startMeasurables.first().measure(loose)
+        val right = endMeasurables.first().measure(loose)
+        val middle = transportMeasurables.first().measure(loose.copy(maxWidth = (width - left.width - right.width - 2 * gap).coerceAtLeast(0)))
+        val play = PLAY_SIZE.roundToPx()
+        layout(width, maxOf(middle.height, left.height, right.height)) {
+            left.place(0, (play - left.height) / 2)
+            middle.place(((width - middle.width) / 2).coerceIn(left.width + gap, width - right.width - gap - middle.width), 0)
+            right.place(width - right.width, (play - right.height) / 2)
         }
     }
 }
 
 /** `1:18:52`, or `23:41` under an hour. */
-private fun clock(millis: Long): String {
+internal fun clock(millis: Long): String {
     val seconds = millis / 1000
     return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
 }
+
+/**
+ * The widest [clock] of any time up to [longest], in zeros. In tabular digits every clock up to
+ * [longest] fits in it, so a slot this wide never changes size as playback moves.
+ */
+internal fun clockSlot(longest: Long): String = clock(longest).replace(Regex("[0-9]"), "0")
 
 /**
  * Audio and subtitles, over the bottom of the picture: the file's audio Tracks and subtitle Tracks

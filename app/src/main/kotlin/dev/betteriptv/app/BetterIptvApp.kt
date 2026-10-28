@@ -5,6 +5,7 @@ import android.util.Log
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import dev.betteriptv.core.AppUpdates
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,10 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     lateinit var settings: ViewerSettingsStore
         private set
 
+    /** The in-app updater (#21), checked on launch; null in builds that don't update themselves (debug, benchmark). */
+    var updates: AppUpdates? = null
+        private set
+
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var syncJob: Job? = null
@@ -33,6 +38,20 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
         )
+        if (BuildConfig.UPDATE_URL.isNotEmpty()) {
+            updates = AppUpdates(
+                BuildConfig.UPDATE_URL,
+                BuildConfig.VERSION_CODE.toLong(),
+                cacheDir.resolve("updates"),
+                AndroidApkInstaller(this),
+            ).also { scope.launch { it.check() } }
+        }
+    }
+
+    /** The Viewer confirmed the offered update: downloads and installs it, or first asks for the install permission. */
+    fun update() {
+        val updates = updates ?: return
+        scope.launch { updates.update() }
     }
 
     /** Coil's defaults, with card artwork held back while cards scroll past (see [rememberArtwork]). */
