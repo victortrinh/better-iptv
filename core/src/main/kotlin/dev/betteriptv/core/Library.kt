@@ -380,8 +380,9 @@ class Library private constructor(
                 read[listing.id] = episodes
             }
         }
+        val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }
         ShowEpisodes(
-            mergeEpisodes(title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }, contentLanguages),
+            mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })),
             unreadVersions = title.listings.count { it.id !in read },
         )
     }
@@ -428,7 +429,8 @@ class Library private constructor(
         val kept = store.showDetails(title.listings.map { it.id })
         val remembered = rememberedTracks()
         val languages = rankingLanguages(remembered, contentLanguages)
-        val byEpisode = episodeCandidates(title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes })
+        val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+        val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
@@ -551,16 +553,18 @@ class Library private constructor(
     }
 
     /**
-     * What a Movie's details page starts, without the page waiting for it: the bitrates from the
-     * Provider's movie details of its Versions (API calls, never a stream), what Viewers of the same
-     * Provider read before (from the cloud), then Header reads of the best unconfirmed Version in each
-     * language, the Viewer's [contentLanguages] first, one at a time while the Viewer's connection is
-     * free. Pressing Play takes the connection at once and ends the reads, and so does the Provider
+     * What a Title's details page starts, without the page waiting for it: for a Movie, the bitrates
+     * from the Provider's movie details of its Versions (API calls, never a stream); what Viewers of
+     * the same Provider read before (from the cloud); then Header reads one at a time while the
+     * Viewer's connection is free. A Movie's are of the best unconfirmed Version in each language, the
+     * Viewer's [contentLanguages] first. A Show's are of each Episode's, from the show details
+     * [episodes] kept, in the Show's order: the Viewer's languages first, and among them first the
+     * Versions whose first audio Track, as the Provider's details name it, disagrees with the Prefix.
+     * Pressing Play takes the connection at once and ends the reads, and so does the Provider
      * refusing one. Calls [changed] each time a Version's attributes change, so the page shows them.
      * Results are kept on the device and shared through the cloud, so a Version is never read twice.
      */
     suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
-        if (id.kind != TitleKind.Movie) return@withContext
         detailsReading.incrementAndGet()
         try {
             readDetailsHeaders(id, contentLanguages, changed)
@@ -573,37 +577,27 @@ class Library private constructor(
         val title = store.title(id) ?: return
         val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
-        val ids = title.listings.map { it.id }
-        val asked = store.movieBitrates(ids).keys
-        val unasked = ids.filter { it !in asked }
-        if (unasked.isNotEmpty()) {
-            val gate = Semaphore(SHOW_DETAILS_AT_ONCE)
-            val bitrates = coroutineScope {
-                unasked.map { listing ->
-                    async {
-                        gate.withPermit {
-                            try {
-                                listing to client.movieBitrate(listing)
-                            } catch (e: ProviderException) {
-                                null
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }.filterNotNull().toMap()
-            store.saveMovieBitrates(bitrates, Instant.now())
-            if (bitrates.values.any { it != null }) changed()
+        val shows = if (id.kind == TitleKind.Show) {
+            val kept = store.showDetails(title.listings.map { it.id })
+            title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+        } else {
+            readBitrates(client, title.listings.map { it.id }, changed)
+            null
         }
+        // The Provider numbers Movies and Episodes from one sequence, so Listing ids don't collide.
+        val ids = shows?.flatMap { (_, episodes) -> episodes.map { it.id } } ?: title.listings.map { it.id }
         val provider = providerKey(login)
         shareFileReads(provider)
         if (lookUpFileReads(provider, ids)) changed()
         // This page's Versions come before Background reading's.
         connection.cancelRead()
-        for (version in unread(title, contentLanguages)) {
-            val container = store.container(version.listingId) ?: "mkv"
+        val unread = if (shows == null) unread(title, contentLanguages) else unreadEpisodes(shows, contentLanguages)
+        for (version in unread) {
+            val container = (if (shows == null) store.container(version.listingId) else store.episodeContainer(version.listingId)) ?: "mkv"
             if (container !in HEADER_READABLE) continue
+            val location = if (shows == null) client.movieLocation(version.listingId, container) else client.episodeLocation(version.listingId, container)
             val read = try {
-                reads.withLock { connection.whileFree { Read(headerReader.read(client.movieLocation(version.listingId, container), container)) } }
+                reads.withLock { connection.whileFree { Read(headerReader.read(location, container)) } }
             } catch (e: IOException) {
                 // The Provider refused: no more reads for now, nor Background reading today.
                 if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
@@ -613,6 +607,29 @@ class Library private constructor(
             if (read.contents != null) changed()
         }
         shareFileReads(provider)
+    }
+
+    /** Keeps the bitrates the Provider's movie details give the Movie Listings [ids] not asked before. */
+    private suspend fun readBitrates(client: XtreamClient, ids: List<Long>, changed: suspend () -> Unit) {
+        val asked = store.movieBitrates(ids).keys
+        val unasked = ids.filter { it !in asked }
+        if (unasked.isEmpty()) return
+        val gate = Semaphore(SHOW_DETAILS_AT_ONCE)
+        val bitrates = coroutineScope {
+            unasked.map { listing ->
+                async {
+                    gate.withPermit {
+                        try {
+                            listing to client.movieBitrate(listing)
+                        } catch (e: ProviderException) {
+                            null
+                        }
+                    }
+                }
+            }.awaitAll()
+        }.filterNotNull().toMap()
+        store.saveMovieBitrates(bitrates, Instant.now())
+        if (bitrates.values.any { it != null }) changed()
     }
 
     private class Read(val contents: FileContents?)
@@ -684,10 +701,27 @@ class Library private constructor(
     private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
         val read = store.fileReads(title.listings.map { it.id }).keys
         val (languages, otherLanguages) = groupByLanguage(candidates(title), contentLanguages)
-        return (languages + otherLanguages).mapNotNull { group ->
-            group.versions.flatMap { listOf(it) + it.backups }.firstOrNull { it.listingId !in read }
-        }
+        return (languages + otherLanguages).mapNotNull { firstUnread(it, read) }
     }
+
+    /**
+     * The best Version not yet read in each language of each of [shows]' Episodes, in the Show's order:
+     * the Viewer's [contentLanguages] first, and among them first those whose first audio Track, as
+     * the Provider's details name it, disagrees with the Prefix.
+     */
+    private fun unreadEpisodes(shows: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>): List<Version> {
+        val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
+        val disagreeing = shows.flatMap { (show, episodes) -> episodes.filter { firstTrackDisagrees(show.attributes, it) }.map { it.id } }.toSet()
+        val unread = mergeEpisodes(shows, contentLanguages, reads).flatMap { it.episodes }.flatMap { episode ->
+            episode.languages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to true } } +
+                episode.otherLanguages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to false } }
+        }
+        // A stable sort, so the Show's order stands within each.
+        return unread.sortedWith(compareBy({ (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing })).map { it.first }
+    }
+
+    private fun firstUnread(group: LanguageGroup, read: Set<Long>): Version? =
+        group.versions.flatMap { listOf(it) + it.backups }.firstOrNull { it.listingId !in read }
 
     /** Keeps what the cloud has of [listingIds]' file reads that the device lacks; whether there were any. */
     private fun lookUpFileReads(provider: String, listingIds: List<Long>): Boolean {

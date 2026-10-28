@@ -257,6 +257,52 @@ class BackupsTest {
         job.cancelAndJoin()
     }
 
+    @Test fun `on a 1080p TV, repeated buffering suggests the other Version the player tells apart, and never switches by itself`() = runBlocking {
+        // Neither Version's quality is known before Play, so the second is the first's Backup.
+        provider.serveMovies(
+            "EN - Movie (2025)" to "EN - MOVIES",
+            "EN - Movie (2025) " to "EN - MOVIES",
+        )
+        library.sync()
+        player.files[1] = FileContents(audio = listOf(Track("eng")), subtitles = emptyList(), width = 1920, height = 1080)
+        val session = library.playback(library.playPlan(movie, listOf("en"), DeviceProfile(maxHeight = 1080, hdr = emptySet()))!!, player.engines, 300.milliseconds)
+        val job = launch { session.play() }
+        session.awaitPlaying(1)
+
+        repeat(3) { player.buffer() }
+
+        val suggested = session.awaitState { it is PlaybackState.Playing && it.lowerVersion != null } as PlaybackState.Playing
+        assertEquals(2L, suggested.lowerVersion!!.listingId)
+        delay(500)
+        assertEquals(listOf(1L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
+    @Test fun `a Backup known to be as good is not suggested`() = runBlocking {
+        provider.serveMovies(
+            "EN - Movie (2025)" to "EN - MOVIES",
+            "EN - Movie (2025) " to "EN - MOVIES",
+        )
+        library.sync()
+        val fullHd = FileContents(audio = listOf(Track("eng")), subtitles = emptyList(), width = 1920, height = 1080)
+        player.files[1] = fullHd
+        player.files[2] = fullHd
+        // Playing both once Confirms them Full HD.
+        val (earlier, played) = play()
+        earlier.awaitPlaying(1)
+        earlier.switchTo(earlier.plan.version.backups.single())
+        earlier.awaitPlaying(2)
+        played.cancelAndJoin()
+        val (session, job) = play()
+        session.awaitState { it is PlaybackState.Playing }
+
+        repeat(5) { player.buffer() }
+        delay(300)
+
+        assertNull((session.state.value as PlaybackState.Playing).lowerVersion)
+        job.cancelAndJoin()
+    }
+
     @Test fun `taking the suggestion switches to the lower Version at the same position`() = runBlocking {
         syncWithBackups()
         val (session, job) = play()
