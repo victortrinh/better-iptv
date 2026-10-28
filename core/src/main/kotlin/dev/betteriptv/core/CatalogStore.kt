@@ -27,6 +27,10 @@ import java.time.Instant
  * What movie Listings' files hold, from Header reads and Playback, and their bitrates from the
  * Provider's movie details, are kept forever.
  * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
+ *
+ * Channels (live Listings, Clutter left out) are swapped in with the movie and show Listings, in
+ * the Provider's order. Favourites are kept by Provider stream id, so they outlive Syncs; one the
+ * Provider drops comes back if it lists the Channel again.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -41,12 +45,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             execSQL("DROP TABLE IF EXISTS title")
             execSQL("DROP TABLE IF EXISTS show_details")
             execSQL("DROP TABLE IF EXISTS episode")
+            execSQL("DROP TABLE IF EXISTS channel")
             execSQL("DELETE FROM meta")
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
         execSQL(LISTING_TABLE.format("listing"))
         execSQL(TITLE_TABLE.format("title"))
+        execSQL(CHANNEL_TABLE.format("channel"))
         INDEXES.forEach { execSQL(it) }
+        // The Channels the Viewer saved, by Provider stream id, so they outlive Syncs.
+        execSQL("CREATE TABLE IF NOT EXISTS favourite (id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL)")
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
@@ -84,6 +92,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
         private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?)")
+        private var channelPosition = 0L
 
         /** Stores a Category of [kind]'s Listings: movie and show Categories are numbered apart. */
         fun category(kind: TitleKind, id: String, name: String) = insertCategory.run {
@@ -116,14 +126,28 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             stepAndReset()
         }
 
+        /**
+         * Stores a Channel (a live Listing that isn't Clutter), in the Provider's order. [eventStart]
+         * is when the Game an Event channel carries starts, so it drops out of the lists once finished.
+         */
+        fun channel(id: Long, name: String, image: String?, eventStart: Instant?) = insertChannel.run {
+            bindLong(1, id)
+            bindLong(2, ++channelPosition)
+            bindText(3, name)
+            if (image == null) bindNull(4) else bindText(4, image)
+            if (eventStart == null) bindNull(5) else bindLong(5, eventStart.epochSecond)
+            stepAndReset()
+        }
+
         internal fun close() {
             insertCategory.close()
             insertListing.close()
+            insertChannel.close()
         }
     }
 
     /**
-     * Replaces the movie and show Listings with what [fill] writes, Matching suspects by the answers
+     * Replaces the movie and show Listings and the Channels with what [fill] writes, Matching suspects by the answers
      * kept. [completed] runs just before the swap, with the new Listing counts and how many Listings
      * were Matched by name, and the Sync it returns is recorded in the same transaction.
      */
@@ -132,6 +156,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         writer.execSQL("DROP TABLE IF EXISTS staging_listing")
         writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
         writer.execSQL("DROP TABLE IF EXISTS staging_title")
+        writer.execSQL("DROP TABLE IF EXISTS staging_channel")
+        writer.execSQL(CHANNEL_TABLE.format("staging_channel"))
         writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
         writer.execSQL(
             "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
@@ -181,6 +207,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             if (writer.inTransaction()) writer.execSQL("ROLLBACK")
             writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
             writer.execSQL("DROP TABLE IF EXISTS staging_title")
+            writer.execSQL("DROP TABLE IF EXISTS staging_channel")
             throw e
         }
 
@@ -196,6 +223,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("DROP TABLE title")
             writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
             writer.execSQL("ALTER TABLE staging_title RENAME TO title")
+            writer.execSQL("DROP TABLE channel")
+            writer.execSQL("ALTER TABLE staging_channel RENAME TO channel")
             INDEXES.forEach { writer.execSQL(it) }
             // Show details of Listings the Provider no longer has won't be asked for again.
             writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
@@ -330,6 +359,67 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             while (it.step()) consume(it.getText(0), it.getText(1))
         }
     }
+
+    /** Gives [each] every Channel's id and name, in the Provider's order, a page at a time like [forEachTitle]. */
+    fun forEachChannel(each: (id: Long, name: String) -> Unit) {
+        var after = 0L
+        while (true) {
+            val page = synchronized(reader) {
+                reader.prepare("SELECT position, id, name FROM channel WHERE position > ? ORDER BY position LIMIT $SCAN_PAGE").use {
+                    it.bindLong(1, after)
+                    buildList { while (it.step()) add(Triple(it.getLong(0), it.getLong(1), it.getText(2))) }
+                }
+            }
+            page.forEach { (_, id, name) -> each(id, name) }
+            if (page.size < SCAN_PAGE) return
+            after = page.last().first
+        }
+    }
+
+    /** The Channels among [ids] that are on: every one but Event channels whose Game started before [startedBefore]. */
+    fun channels(ids: Collection<Long>, startedBefore: Instant): Map<Long, Channel> = synchronized(reader) {
+        if (ids.isEmpty()) return emptyMap()
+        ids.chunked(MAX_BOUND).flatMap { chunk ->
+            reader.prepare(
+                "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.id = c.id " +
+                    "WHERE (c.event_start IS NULL OR c.event_start >= ?) AND c.id IN (${chunk.joinToString(",") { "?" }})",
+            ).use {
+                it.bindLong(1, startedBefore.epochSecond)
+                chunk.forEachIndexed { i, id -> it.bindLong(i + 2, id) }
+                buildList { while (it.step()) add(it.channel()) }
+            }
+        }.associateBy { it.id }
+    }
+
+    /** The Viewer's Favourites that are on (as [channels] tells), in the order they were added. */
+    fun favourites(startedBefore: Instant): List<Channel> = synchronized(reader) {
+        reader.prepare(
+            "SELECT $CHANNEL_COLUMNS FROM favourite f JOIN channel c ON c.id = f.id " +
+                "WHERE c.event_start IS NULL OR c.event_start >= ? ORDER BY f.added_at, f.id",
+        ).use {
+            it.bindLong(1, startedBefore.epochSecond)
+            buildList { while (it.step()) add(it.channel()) }
+        }
+    }
+
+    /** The ids of the Viewer's Favourites, whether or not the Provider still has them. */
+    fun favouriteIds(): Set<Long> = synchronized(reader) {
+        reader.prepare("SELECT id FROM favourite").use { buildSet { while (it.step()) add(it.getLong(0)) } }
+    }
+
+    /** Saves Channel [id] as a Favourite at [at], or forgets it. */
+    fun setFavourite(id: Long, favourite: Boolean, at: Instant) = synchronized(writer) {
+        // Two added within a millisecond still keep their order.
+        val insert = "INSERT OR IGNORE INTO favourite VALUES (?, max(?, (SELECT coalesce(max(added_at), 0) + 1 FROM favourite)))"
+        writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE id = ?").use {
+            it.bindLong(1, id)
+            if (favourite) it.bindLong(2, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    private fun SQLiteStatement.channel() = Channel(getLong(0), getText(1), if (isNull(2)) null else getText(2), !isNull(3))
 
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
@@ -708,11 +798,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
                 "container TEXT, PRIMARY KEY (kind, position))"
+        const val CHANNEL_TABLE =
+            "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER)"
+        const val CHANNEL_COLUMNS = "c.id, c.name, c.image, f.id"
+        /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
+        const val MAX_BOUND = 900
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (kind, position))"
         /** Made after a swap: an index keeps its name when its table is renamed. */
         val INDEXES = listOf(
             "CREATE INDEX IF NOT EXISTS listing_title ON listing (kind, title)",
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
+            "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */
