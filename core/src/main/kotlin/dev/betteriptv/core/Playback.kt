@@ -67,10 +67,10 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
  * languages first, each with its Backups; [version] is among them. Playback starts [from]
  * milliseconds in: where the Viewer stopped last time, or the start. A Show's plan plays its
- * [episode]; a Movie's has none.
+ * [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
  */
 data class PlayPlan(
-    val titleId: TitleId,
+    val titleId: TitleId?,
     val version: Version,
     val contentLanguages: List<String>,
     val versions: List<Version>,
@@ -78,6 +78,12 @@ data class PlayPlan(
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
 ) {
+    /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
+    val live: Boolean get() = titleId == null
+
+    /** The Movie whose progress Playback records, so Play resumes there; an Episode's would count as the Show's. */
+    internal val resumable: TitleId? get() = titleId?.takeIf { episode == null }
+
     /**
      * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the
      * language the Viewer last picked, else in the first Content language the file has. Among that

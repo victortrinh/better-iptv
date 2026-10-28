@@ -34,6 +34,9 @@ sealed interface HomeRow {
     /** The Titles the Viewer started and didn't finish, last played first. */
     data class ContinueWatching(val titles: List<InProgress>) : HomeRow
 
+    /** The Channels the Viewer saved, in the order they were added. */
+    data class Favourites(val channels: List<Channel>) : HomeRow
+
     /** Titles with recently added Listings, most popular on TMDB first. */
     data class NewOnYourService(val titles: List<TitleSummary>) : HomeRow
 
@@ -106,12 +109,16 @@ data class Episode(
  * One playable copy of a Movie or Episode, from one Listing (for an Episode, [listingId] is the
  * Provider's Episode id). [backups] are the equivalent Versions (same language and quality), best
  * first, tried when this one fails to start.
+ *
+ * A Channel plays as a Version too, [listingId] being its stream id, with a [liveFormat]: `ts` for
+ * MPEG-TS, with the same stream as HLS (`m3u8`) as its Backup.
  */
 data class Version(
     val listingId: Long,
     val name: String,
     val attributes: VersionAttributes,
     val backups: List<Version> = emptyList(),
+    val liveFormat: String? = null,
 )
 
 /** How the app knows a Version attribute. */

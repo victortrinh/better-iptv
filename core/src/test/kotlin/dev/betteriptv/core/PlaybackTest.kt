@@ -184,7 +184,7 @@ class PlaybackTest {
 
     private val device = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
-    private suspend fun nextPlan() = library.playPlan(plan.titleId, listOf("en"), device)!!
+    private suspend fun nextPlan() = library.playPlan(plan.titleId!!, listOf("en"), device)!!
 
     /** Plays [plan] until it reaches [position] of [duration], then leaves, as the Viewer pressing Back would. */
     private suspend fun stopAt(position: Long, duration: Long? = null) = coroutineScope {
@@ -213,7 +213,7 @@ class PlaybackTest {
     @Test fun `Play resumes from the Version the Viewer chose too`() = runBlocking {
         stopAt(42 * 60_000L)
 
-        assertEquals(42 * 60_000L, library.chosenPlayPlan(plan.titleId, plan.version.listingId, listOf("en"))!!.from)
+        assertEquals(42 * 60_000L, library.chosenPlayPlan(plan.titleId!!, plan.version.listingId, listOf("en"))!!.from)
     }
 
     @Test fun `stopping in the first minute doesn't record a resume point`() = runBlocking {
