@@ -1,5 +1,8 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -39,7 +42,7 @@ class SearchTest {
     private val gameOfThrones = TitleId.Tmdb(TitleKind.Show, 1399)
 
     private suspend fun search(query: String, contentLanguages: List<String> = english, appLanguage: String = "en") =
-        library.search(query, contentLanguages, appLanguage)
+        library.search(query, contentLanguages, appLanguage).last()
 
     /** Syncs the fixture with TMDB metadata for both Godfathers, and caches it as browsing the cards would. */
     private suspend fun syncFixtureWithMetadata() {
@@ -139,6 +142,56 @@ class SearchTest {
         assertEquals(listOf("Marlon Brando"), search("marlon brnado").people.map { it.name })
     }
 
+    @Test fun `TMDB's search finds a Title by a name the device has no metadata for`() = runBlocking {
+        syncMovies("EN - The Godfather (1972)" to 238, "EN - Heat (1995)" to 949)
+        cloud.search("der pate", titles = listOf(godfather to 120.0, TitleId.Tmdb(TitleKind.Movie, 999_999) to 300.0))
+
+        val (local, withTmdb) = library.search("der pate", english, "en").toList()
+
+        assertTrue(local.movies.isEmpty())
+        // The Provider has no Title 999999, so it isn't shown.
+        assertEquals(listOf(godfather), withTmdb.movies.map { it.id })
+        assertEquals(listOf("der pate"), cloud.searchAsked)
+    }
+
+    @Test fun `TMDB's search finds every Title of a person the Provider has`() = runBlocking {
+        syncMovies("EN - The Godfather (1972)" to 238, "EN - Heat (1995)" to 949, "EN - Ronin (1998)" to 8195)
+        cloud.search("de niro", people = listOf("Robert De Niro" to listOf(TitleId.Tmdb(TitleKind.Movie, 949), TitleId.Tmdb(TitleKind.Movie, 8195), TitleId.Tmdb(TitleKind.Movie, 1))))
+
+        val deNiro = search("de niro").people.single()
+
+        assertEquals("Robert De Niro", deNiro.name)
+        assertEquals(setOf(949L, 8195L), deNiro.titles.map { (it.id as TitleId.Tmdb).tmdbId }.toSet())
+    }
+
+    @Test fun `a person found on the device and by TMDB is shown once, with the Titles of both`() = runBlocking {
+        syncFixtureWithMetadata()
+        cloud.search("pacino", people = listOf("Al Pacino" to listOf(godfather, gameOfThrones)))
+
+        val pacino = search("pacino").people.single()
+
+        assertEquals(setOf(godfather, godfatherPartTwo, gameOfThrones), pacino.titles.map { it.id }.toSet())
+    }
+
+    @Test fun `TMDB is asked from three letters, and only once typing has paused`() = runBlocking {
+        syncMovies("EN - Heat (1995)" to 949)
+
+        search("he")
+        // The Viewer typed on: the results of "hea" are replaced before TMDB is asked.
+        library.search("hea", english, "en").first()
+
+        assertEquals(emptyList<String>(), cloud.searchAsked)
+        search("heat")
+        assertEquals(listOf("heat"), cloud.searchAsked)
+    }
+
+    @Test fun `without the cloud, the device's own matches are the results`() = runBlocking {
+        syncMovies("EN - Heat (1995)" to 949)
+        cloud.down = true
+
+        assertEquals(listOf(TitleId.Tmdb(TitleKind.Movie, 949)), library.search("heat", english, "en").toList().single().movies.map { it.id })
+    }
+
     @Test fun `a new Sync is searched at once`() = runBlocking {
         syncMovies("EN - Heat (1995)" to 949)
         assertEquals(1, search("heat").movies.size)
@@ -184,12 +237,12 @@ class SearchTest {
         var started = System.nanoTime()
         library.prepareSearch()
         val built = (System.nanoTime() - started) / 1_000_000
-        val results = library.search("generated movie 12345", english, "en")
+        val results = library.search("generated movie 12345", english, "en").last()
         // Best of 3, timing only the search: a shared CI runner can stall on any one of them,
         // which says nothing about Search itself.
         val searched = (1..3).minOf {
             started = System.nanoTime()
-            library.search("generated movie 12345", english, "en")
+            library.search("generated movie 12345", english, "en").last()
             (System.nanoTime() - started) / 1_000_000
         }
         library.close()

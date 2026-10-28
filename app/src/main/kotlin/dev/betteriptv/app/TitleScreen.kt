@@ -96,7 +96,6 @@ fun TitleScreen(
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
-    LaunchedEffect(id, contentLanguages) { library.readHeaders(id, contentLanguages) { reads++ } }
     // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
     var removals by remember(id) { mutableIntStateOf(0) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
@@ -104,9 +103,12 @@ fun TitleScreen(
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
-    val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages) {
+    val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages, reads) {
         if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages)
     }
+    // A Show's reads need its show details, so they start once its Episodes are in.
+    val readable = id.kind == TitleKind.Movie || episodes != null
+    LaunchedEffect(id, contentLanguages, readable) { if (readable) library.readHeaders(id, contentLanguages) { reads++ } }
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
         loaded?.let { (title, plan) ->
