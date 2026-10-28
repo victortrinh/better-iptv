@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,7 +81,8 @@ import kotlinx.coroutines.withContext
  * too bright to keep text on it readable.
  *
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
- * screen opens); choosing a Version row plays that one instead.
+ * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
+ * Play becomes "Continue from 1:02:13" beside Restart and "Remove from Continue watching".
  */
 @Composable
 fun TitleScreen(
@@ -93,8 +96,10 @@ fun TitleScreen(
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
+    // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
+    var removals by remember(id) { mutableIntStateOf(0) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads) {
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads, removals) {
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
@@ -110,6 +115,7 @@ fun TitleScreen(
             TitleContent(
                 title, plan, episodes,
                 onPlay = { onPlay(it, title.name) },
+                onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
                 onChoose = { version ->
                     scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { onPlay(it, title.name) } }
                 },
@@ -130,6 +136,7 @@ private fun TitleContent(
     plan: PlayPlan?,
     episodes: ShowEpisodes?,
     onPlay: (PlayPlan) -> Unit,
+    onRemove: () -> Unit,
     onChoose: (Version) -> Unit,
     onEpisode: (Episode) -> Unit,
 ) {
@@ -145,6 +152,13 @@ private fun TitleContent(
     // Show's first Episode takes it over once the Episodes are read, unless the Viewer has moved on.
     var firstVersionFocused by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
+    // Removing it from Continue watching takes its button away, so focus goes back to Play.
+    val resumable = plan != null && plan.from > 0
+    var wasResumable by remember(title.id) { mutableStateOf(resumable) }
+    LaunchedEffect(resumable) {
+        if (wasResumable && !resumable) play.requestFocus()
+        wasResumable = resumable
+    }
     val hasEpisodes = episodes?.seasons?.isNotEmpty() == true
     LaunchedEffect(title.id, hasEpisodes) { if (hasEpisodes && firstVersionFocused) firstEpisode.requestFocus() }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -194,21 +208,30 @@ private fun TitleContent(
                     // A Show plays from its Episodes.
                     if (!isShow) {
                         Spacer(Modifier.height(Spacing.l))
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
+                        val label = plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing)
+                        // Continue, Restart and Remove are wider than the text column, so they may run past it.
+                        Row(
+                            if (resumable) Modifier.wrapContentWidth(Alignment.Start, unbounded = true) else Modifier,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             NuageButton(
-                                stringResource(R.string.play),
+                                if (resumable) stringResource(R.string.play_continue, clock(plan!!.from)) else stringResource(R.string.play),
                                 onClick = { plan?.let(onPlay) },
                                 modifier = Modifier.focusRequester(play),
                                 icon = Icons.Filled.PlayArrow,
                                 enabled = plan != null,
                             )
-                            Text(
-                                plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing),
-                                style = Type.label,
-                                color = Colors.inkMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            if (resumable) {
+                                NuageButton(stringResource(R.string.play_restart), onClick = { plan?.let { onPlay(it.fromStart()) } }, icon = Icons.Filled.Refresh)
+                                NuageButton(stringResource(R.string.continue_watching_remove), onClick = onRemove)
+                            } else {
+                                PlayLabel(label)
+                            }
+                        }
+                        if (resumable) {
+                            Spacer(Modifier.height(Spacing.s))
+                            PlayLabel(label)
                         }
                     }
                 }
@@ -295,6 +318,19 @@ private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, fi
             }
         }
     }
+}
+
+/** The muted line naming the Version Play starts. */
+@Composable
+private fun PlayLabel(text: String) {
+    Text(text, style = Type.label, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+/** [millis] as a clock: `1:02:13`, or `48:05` under an hour. */
+private fun clock(millis: Long): String {
+    val seconds = millis / 1000
+    val (h, m, s) = Triple(seconds / 3600, seconds / 60 % 60, seconds % 60)
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 /** `2 h 55 min`, or `48 min` under an hour. */

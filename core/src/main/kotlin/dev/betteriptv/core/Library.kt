@@ -540,6 +540,9 @@ class Library private constructor(
     /** Records that the Viewer played [id] to its end. */
     internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
 
+    /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
+    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
+
     /**
      * The home screen's rows: Continue watching, then New on your service (Titles among the most
      * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
@@ -827,9 +830,12 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
-        /** A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is less: the credits. */
-        private const val WATCHED_SHARE_LEFT = 0.05
-        private const val WATCHED_TIME_LEFT = 8 * 60_000L
+        /**
+         * A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is
+         * less: about where a film's credits start (see CONTEXT.md, Watched).
+         */
+        private const val WATCHED_SHARE_LEFT = 0.10
+        private const val WATCHED_TIME_LEFT = 10 * 60_000L
         private const val MIN_RESUME_POSITION = 60_000L
         /** How many cards a home row holds. */
         private const val ROW_SIZE = 20
