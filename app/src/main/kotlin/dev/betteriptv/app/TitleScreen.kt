@@ -326,13 +326,6 @@ private fun PlayLabel(text: String) {
     Text(text, style = Type.label, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
-/** [millis] as a clock: `1:02:13`, or `48:05` under an hour. */
-private fun clock(millis: Long): String {
-    val seconds = millis / 1000
-    val (h, m, s) = Triple(seconds / 3600, seconds / 60 % 60, seconds % 60)
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
-}
-
 /** `2 h 55 min`, or `48 min` under an hour. */
 private fun Context.runtime(minutes: Int): String =
     if (minutes < 60) getString(R.string.runtime_minutes, minutes) else getString(R.string.runtime_hours, minutes / 60, minutes % 60)
