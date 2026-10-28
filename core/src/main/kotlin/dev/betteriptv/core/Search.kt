@@ -36,6 +36,11 @@ internal class SearchIndex private constructor(
     /** A match and how close it was: 0 for whole words or words being typed, 1 for a tolerated typo. */
     class Hit(val index: Int, val distance: Int)
 
+    private val positions: Map<TitleId, Int> = titles.withIndex().associate { (index, entry) -> entry.id to index }
+
+    /** Where [id] is in [titles], or null when the catalog has no such Title. */
+    fun position(id: TitleId): Int? = positions[id]
+
     fun findTitles(query: String): List<Hit> = find(query, titleWords)
 
     fun findPeople(query: String): List<Hit> = find(query, personWords)

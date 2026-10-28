@@ -117,6 +117,10 @@ _Avoid_: Default version, preferred version
 The highest quality the Viewer allows the app to pick.
 _Avoid_: Max quality, downgrade
 
+**Lower Version**:
+What the player suggests after repeated buffering: a Version in the playing one's language with a lower quality, or one whose quality isn't known. The playing Version's quality is what the player found in its file, so a Movie whose Prefix says nothing still gets one. Never switched to by itself.
+_Avoid_: Downgrade, fallback
+
 **Player engine**:
 What decodes and shows a Version: Media3 by default, or VLC for the rare file Media3 can't open. The Viewer can switch with "Try other player".
 _Avoid_: Backend, decoder

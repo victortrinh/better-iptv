@@ -31,6 +31,11 @@ class FakeCloud : Closeable {
     @Volatile var failingMatches = 0
 
     private val metadata = HashMap<String, Map<String, Any?>>()
+    private val searches = HashMap<String, Map<String, Any?>>()
+
+    /** The queries the device sent to `/v1/search`, as sent. */
+    val searchAsked: List<String>
+        get() = received.filter { it.path == "/v1/search" }.map { (read(it.body) as Map<*, *>)["query"] as String }
 
     /** The file reads devices shared, by `<provider key>/<listing id>`. */
     val fileReads = java.util.concurrent.ConcurrentHashMap<String, Any>()
@@ -74,6 +79,20 @@ class FakeCloud : Closeable {
         synchronized(matches) { matches[name] = tmdbId }
     }
 
+    /**
+     * Answers a TMDB search for [query] (any case) with [titles] (TMDB ID and popularity) and [people]
+     * (name and their Titles). Other queries find nothing.
+     */
+    fun search(query: String, titles: List<Pair<TitleId.Tmdb, Double>> = emptyList(), people: List<Pair<String, List<TitleId.Tmdb>>> = emptyList()) {
+        val key = { id: TitleId.Tmdb -> mapOf("kind" to if (id.kind == TitleKind.Movie) "movie" else "show", "tmdbId" to id.tmdbId) }
+        synchronized(searches) {
+            searches[query.lowercase()] = mapOf(
+                "titles" to titles.map { (id, popularity) -> key(id) + ("popularity" to popularity) },
+                "people" to people.map { (name, ids) -> mapOf("name" to name, "titles" to ids.map(key)) },
+            )
+        }
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -103,6 +122,12 @@ class FakeCloud : Closeable {
                     fileReads["$provider/$listing"]?.let { mapOf("listingId" to listing, "file" to it) }
                 }
                 respond(exchange, 200, mapOf("files" to files))
+            }
+            "/v1/search" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val query = ((read(body) as Map<*, *>)["query"] as String).lowercase()
+                respond(exchange, 200, synchronized(searches) { searches[query] } ?: mapOf("titles" to emptyList<Any>(), "people" to emptyList<Any>()))
             }
             "/v1/metadata", "/v1/match" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
