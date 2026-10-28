@@ -245,7 +245,9 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 
 **Search.** A 290 dp left column holds the query field, a caption hint and the `RemoteKeyboard`. Results sit 40 dp to its right, grouped as "Movies · n" and "Shows · n" with poster cards, then "Channels · n" with `ChannelCard`s. That row starts `m` further left, so a focused wide card isn't clipped by the column's edge.
 
-**Settings.** A single column 760 dp wide, 8 dp between rows, grouped under headline headings. Exclusive options use a label column (320 dp) with a `ChoiceRow` beside it. `SettingsScreen` is the last of the `TopTabs`: App language and Quality cap are `ChoiceRow`s, and Content languages and Region are `SettingRow`s that each open a list of `SettingRow`s in place of the column, the chosen ones marked with a check; Back returns focus to the row that opened it. Changing the App language recreates the screen in the new language, focus back on its row.
+**Settings.** A single column 760 dp wide, 8 dp between rows, grouped under headline headings. Exclusive options use a label column (320 dp) with a `ChoiceRow` beside it. `SettingsScreen` is the last of the `TopTabs`: App language and Quality cap are `ChoiceRow`s, and Content languages and Region are `SettingRow`s that each open a list of `SettingRow`s in place of the column, the chosen ones marked with a check; Back returns focus to the row that opened it. Changing the App language recreates the screen in the new language, focus back on its row. An "App" heading closes the column with an "App version" `SettingRow`: the installed version ("0.1.95 · Up to date"), or "Update to 0.1.96", which starts the update.
+
+**Update.** When a newer release exists, the `UpdateScreen` comes before everything else on launch, centred on the bare ground in a 560 dp column: a headline, a muted body line, then capsule buttons 12 dp apart, the main one focused ("Update now", then "Later"). The same screen carries each step: the first update's guide to allowing installs ("Open settings", with the Fire OS path in muted caption below), the download with a 6 dp bar drawn like the player's scrubber, and "Install" to reopen Android's installer. Failures are Failure Red body text with "Try again". Back and "Later" go on to the app until the next launch.
 
 **EdgeScroll.** `NuageTheme` provides `EdgeScroll` as the `LocalBringIntoViewSpec`, so every lazy list in the app gets it. Compose for TV's default keeps the focused item at a fixed pivot, which moves the screen on every press. EdgeScroll leaves the list still while the focused item sits between 10% of the viewport from the leading edge and 22% from the trailing edge. When focus leaves that band, the list scrolls just enough to put the item back on the nearer line. The trailing band is larger because a card's name and badges appear below it. An item too big for the band aligns to the leading line.
 
@@ -350,7 +352,7 @@ Names, posters, descriptions, genres and cast come from TMDB in the App language
 Debug builds include `PrototypeActivity`:
 
 ```
-adb shell am start -n dev.betteriptv/dev.betteriptv.app.prototype.PrototypeActivity --es screen <home|details|player|search|settings> [--ez focus true]
+adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.PrototypeActivity --es screen <home|details|player|search|settings> [--ez focus true]
 ```
 
 `focus true` moves first focus from the main button to the first card (home) or the first Version (details). Prototypes carry a "Sample content" caption so nobody takes the made-up Versions for real ones. The design has only been checked on the emulator; checking it on the Fire TV Stick is tracked in victortrinh/better-iptv#23.

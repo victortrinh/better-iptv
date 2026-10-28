@@ -1,0 +1,64 @@
+name: Release
+
+# Every push to main becomes a release the in-app updater offers (#21, docs/releases.md): the
+# release APK, signed with the key only the Viewer holds, and update.json beside it on a GitHub
+# release, which the app reads at releases/latest/download/update.json.
+
+on:
+  push:
+    branches: [main]
+
+concurrency: release
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The versionCode is the number of commits, so the whole history is needed.
+          fetch-depth: 0
+      - name: Unpack the release key
+        id: key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::warning::No release key in the repository secrets yet (docs/releases.md), so nothing is released."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          fi
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.key.outputs.skip != 'true'
+      - name: Test and build the release APK
+        if: steps.key.outputs.skip != 'true'
+        run: ./gradlew test assembleRelease
+        env:
+          RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      - name: Publish the APK and update.json
+        if: steps.key.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(git rev-list --count HEAD)
+          name="0.1.$code"
+          apk="better-iptv-$name.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          jq -n --argjson code "$code" --arg name "$name" --arg apk "$apk" \
+            --arg sha256 "$(sha256sum "$apk" | cut -d' ' -f1)" --argjson size "$(stat -c%s "$apk")" \
+            '{versionCode: $code, versionName: $name, apk: $apk, sha256: $sha256, size: $size}' > update.json
+          cat update.json
+          gh release create "build-$code" "$apk" update.json \
+            --target "$GITHUB_SHA" --title "$name" --generate-notes --latest

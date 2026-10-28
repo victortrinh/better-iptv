@@ -50,7 +50,7 @@ fi
 $ffmpeg $video $surround $surround -map 0 -map 1 -map 2 $h264 -c:a:0 dca -c:a:1 ac3 -strict -2 \
     -metadata:s:a:0 language=eng -metadata:s:a:1 language=fre ts_dts_ac3.ts
 
-dir=/sdcard/Android/data/dev.betteriptv/files/samples
+dir=/sdcard/Android/data/dev.betteriptv.debug/files/samples
 serial=${2:+-s $2}
 adb $serial shell mkdir -p $dir </dev/null
 for file in *.mkv *.mp4 *.avi *.ts plain.vtt; do adb $serial push "$file" $dir/ </dev/null; done

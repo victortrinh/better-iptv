@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">NuageTivi</string>
+    <!-- The name under the launcher icon; debug builds add "debug". -->
+    <string name="launcher_name" translatable="false">NuageTivi</string>
 
     <string name="login_title">Log in to your Provider</string>
     <string name="login_private">Your login stays on this device, encrypted.</string>
@@ -189,4 +191,24 @@
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>
+
+    <string name="update_title">Update available</string>
+    <string name="update_version">Version %1$s (you have %2$s)</string>
+    <string name="update_now">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading… %1$d%%</string>
+    <string name="update_installing">Confirm with Install on the next screen.</string>
+    <string name="update_install">Install</string>
+    <string name="update_failed">The update didn\'t download. %1$s</string>
+    <string name="update_retry">Try again</string>
+    <string name="update_allow_title">Allow NuageTivi to install its updates</string>
+    <string name="update_allow_steps">Android asks once. Open settings, turn on NuageTivi, then press Back.</string>
+    <string name="update_allow_fire">If settings open elsewhere: Settings → My Fire TV → Developer options → Install unknown apps → NuageTivi: On.</string>
+    <string name="update_allow_old">Settings → My Fire TV → Developer options → Apps from Unknown Sources: On, then come back here.</string>
+    <string name="update_open_settings">Open settings</string>
+
+    <string name="settings_app">App</string>
+    <string name="settings_version">App version</string>
+    <string name="settings_up_to_date">%1$s · Up to date</string>
+    <string name="settings_update_to">Update to %1$s</string>
 </resources>

@@ -28,7 +28,7 @@ import dev.betteriptv.app.readDeviceProfile
  * without the Provider. It logs (tag `Samples`) each Track, the audio output DeviceProfile.audioOutput
  * predicts, the path Media3 actually took, and subtitle cues.
  *
- *     adb shell am start -n dev.betteriptv/dev.betteriptv.app.prototype.SampleActivity \
+ *     adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.SampleActivity \
  *         -d http://192.168.4.20:8000/dts.mkv --ei audio 0 --ei subtitle 1
  *
  * `audio` and `subtitle` pick Tracks by index among the file's audio and subtitle Tracks; `sidecar`

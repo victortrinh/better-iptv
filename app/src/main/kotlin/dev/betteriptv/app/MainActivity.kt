@@ -24,6 +24,9 @@ import dev.betteriptv.core.Channel
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
+import dev.betteriptv.core.UpdateState
+import dev.betteriptv.core.offered
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -66,7 +69,16 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun Root(app: BetterIptvApp) {
     var loggedIn by remember { mutableStateOf(app.library.isLoggedIn) }
-    if (!loggedIn) {
+    val update by (app.updates?.state ?: NO_UPDATES).collectAsStateWithLifecycle()
+    // "Later" puts the offered update away until the next launch, or until it's asked for in Settings.
+    var updateLater by rememberSaveable { mutableStateOf(false) }
+    val onUpdate = {
+        updateLater = false
+        app.update()
+    }
+    if (!updateLater && update.offered != null) {
+        UpdateScreen(update, onUpdate = onUpdate, onLater = { updateLater = true })
+    } else if (!loggedIn) {
         LoginScreen(app.library, onLoggedIn = {
             loggedIn = true
             app.sync()
@@ -127,7 +139,7 @@ private fun Root(app: BetterIptvApp) {
                         onWatch = watch,
                     )
                 }
-                Browse.Settings -> SettingsScreen(app.library, settings, onChange = app.settings::update, onTab = onTab)
+                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onTab = onTab)
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
                     TitlesScreen(
@@ -154,6 +166,9 @@ private fun Root(app: BetterIptvApp) {
         }
     }
 }
+
+/** What builds without the in-app updater show: nothing to offer. */
+private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 
 /** What the player plays: a [plan] of the Title or Channel named [name]. */
 private data class NowPlaying(val plan: PlayPlan, val name: String)
