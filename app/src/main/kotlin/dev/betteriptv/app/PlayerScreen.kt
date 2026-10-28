@@ -536,7 +536,8 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
 
 /**
  * The bottom of the player overlay: elapsed time, the scrubber and the time left, then Back 10 s,
- * Play/Pause and Forward 10 s as round icons in the middle and the panels' buttons on the right.
+ * Play/Pause and Forward 10 s as round icons in the middle, between Versions on the left and Audio
+ * and subtitles on the right.
  * The times sit in fixed slots in tabular digits, so the scrubber stays still as they tick (#70).
  */
 @Composable
@@ -557,7 +558,7 @@ internal fun PlayerControls(
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val slot = clockSlot(maxOf(duration ?: 0, position))
-    val slotWidth = with(density) { measurer.measure("-$slot", time).size.width.toDp() }
+    val slotWidth = with(density) { measurer.measure("\u2212$slot", time).size.width.toDp() }
     Column(modifier.fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(clock(position), style = time, color = Colors.ink, textAlign = TextAlign.End, modifier = Modifier.width(slotWidth))
@@ -568,10 +569,11 @@ internal fun PlayerControls(
                 Box(Modifier.fillMaxWidth(share(buffered)).fillMaxHeight().background(Colors.ink.copy(alpha = 0.45f), shape))
                 Box(Modifier.fillMaxWidth(share(position)).fillMaxHeight().background(Colors.ink, shape))
             }
-            Text(duration?.let { "-" + clock((it - position).coerceAtLeast(0)) } ?: "", style = time, color = Colors.inkMuted, modifier = Modifier.width(slotWidth))
+            Text(duration?.let { "\u2212" + clock((it - position).coerceAtLeast(0)) } ?: "", style = time, color = Colors.inkMuted, modifier = Modifier.width(slotWidth))
         }
         Spacer(Modifier.height(Spacing.l))
         ControlsRow(
+            start = { NuageButton(stringResource(R.string.versions_title), onClick = onVersions, icon = Icons.AutoMirrored.Filled.List) },
             transport = {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
                     NuageIconButton(NuageIcons.Replay10, stringResource(R.string.player_back), onBack, slot = PLAY_SIZE)
@@ -585,12 +587,7 @@ internal fun PlayerControls(
                     NuageIconButton(NuageIcons.Forward10, stringResource(R.string.player_forward), onForward, slot = PLAY_SIZE)
                 }
             },
-            panels = {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                    NuageButton(stringResource(R.string.versions_title), onClick = onVersions, icon = Icons.AutoMirrored.Filled.List)
-                    NuageButton(stringResource(R.string.player_tracks), onClick = onTracks, icon = NuageIcons.Subtitles)
-                }
-            },
+            end = { NuageButton(stringResource(R.string.player_tracks), onClick = onTracks, icon = NuageIcons.Subtitles) },
         )
     }
 }
@@ -599,20 +596,24 @@ internal fun PlayerControls(
 private val PLAY_SIZE = 52.dp
 
 /**
- * The transport centred on the screen and the panels' buttons at the right, level with Play/Pause.
- * When the panels' French labels reach the middle, the transport moves left to keep [Spacing.xl]
- * from them instead of overlapping.
+ * The transport centred on the screen, with [start] at the left and [end] at the right, level with
+ * Play/Pause. Should a long label reach the middle, the transport gives way to keep [Spacing.xl]
+ * from it instead of overlapping.
  */
 @Composable
-private fun ControlsRow(transport: @Composable () -> Unit, panels: @Composable () -> Unit) {
-    Layout(contents = listOf(transport, panels)) { (transportMeasurables, panelMeasurables), constraints ->
+private fun ControlsRow(start: @Composable () -> Unit, transport: @Composable () -> Unit, end: @Composable () -> Unit) {
+    Layout(contents = listOf(start, transport, end)) { (startMeasurables, transportMeasurables, endMeasurables), constraints ->
         val width = constraints.maxWidth
         val gap = Spacing.xl.roundToPx()
-        val panel = panelMeasurables.first().measure(constraints.copy(minWidth = 0))
-        val left = transportMeasurables.first().measure(constraints.copy(minWidth = 0, maxWidth = (width - panel.width - gap).coerceAtLeast(0)))
-        layout(width, maxOf(left.height, panel.height)) {
-            left.place(minOf((width - left.width) / 2, width - panel.width - gap - left.width), 0)
-            panel.place(width - panel.width, (PLAY_SIZE.roundToPx() - panel.height) / 2)
+        val loose = constraints.copy(minWidth = 0)
+        val left = startMeasurables.first().measure(loose)
+        val right = endMeasurables.first().measure(loose)
+        val middle = transportMeasurables.first().measure(loose.copy(maxWidth = (width - left.width - right.width - 2 * gap).coerceAtLeast(0)))
+        val play = PLAY_SIZE.roundToPx()
+        layout(width, maxOf(middle.height, left.height, right.height)) {
+            left.place(0, (play - left.height) / 2)
+            middle.place(((width - middle.width) / 2).coerceIn(left.width + gap, width - right.width - gap - middle.width), 0)
+            right.place(width - right.width, (play - right.height) / 2)
         }
     }
 }
