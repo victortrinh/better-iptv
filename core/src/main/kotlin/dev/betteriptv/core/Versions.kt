@@ -84,16 +84,17 @@ internal fun withBackups(chosen: Candidate, candidates: List<Candidate>): Versio
     chosen.toVersion(backups = candidates.filter { it !== chosen && it.equivalence == chosen.equivalence }.sortedWith(BEST_FIRST).map { it.toVersion() })
 
 /**
- * What to suggest when [playing] keeps buffering: the best of [versions] in its language with a
- * lower quality (unknown counts as lowest), CAM and Audio-description ones aside. Null when
- * [playing]'s own quality isn't known.
+ * What to suggest when [playing] keeps buffering: the best of [versions] and their Backups in its
+ * language with a lower quality (unknown counts as lowest), CAM and Audio-description ones aside.
+ * Backups count because they were grouped before Play: one whose quality wasn't known then may not
+ * match what the player has since learned of [playing]. Null when [playing]'s own quality isn't known.
  */
 internal fun lowerVersion(playing: Version, versions: List<Version>): Version? {
     val quality = playing.attributes.qualityRank ?: return null
     val language = playing.attributes.language?.value?.let(::primaryLanguage)
-    return versions.firstOrNull { other ->
+    return versions.flatMap { listOf(it) + it.backups }.firstOrNull { other ->
         val attributes = other.attributes
-        !attributes.cam && !attributes.audioDescription &&
+        other.listingId != playing.listingId && !attributes.cam && !attributes.audioDescription &&
             attributes.language?.value?.let(::primaryLanguage) == language &&
             (attributes.qualityRank ?: -1) < quality
     }

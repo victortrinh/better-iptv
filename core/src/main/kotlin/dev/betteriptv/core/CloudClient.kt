@@ -61,6 +61,24 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
+     * What TMDB's search finds for [query] (ADR 0009): Titles by any of their names, with their
+     * popularity, and people with every Title they acted in or directed.
+     */
+    fun search(query: String): CloudSearch {
+        val answer = authorized { token -> post("v1/search", json.toJson(mapOf("query" to query)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return CloudSearch(
+            titles = (answer["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title ->
+                titleId(title)?.let { it to ((title["popularity"] as? Number)?.toDouble() ?: 0.0) }
+            },
+            people = (answer["people"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { person ->
+                val name = person["name"] as? String ?: return@mapNotNull null
+                name to (person["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull(::titleId)
+            },
+        )
+    }
+
+    /**
      * What the files of [provider]'s movie Listings [listingIds] hold, as Viewers of the same Provider
      * read them, as JSON by Listing id; at most [MAX_BATCH] at a time. [provider] is [providerKey]'s.
      */
@@ -144,6 +162,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
 /** What the cloud answered: each found Title's metadata as JSON, and the Titles TMDB doesn't have. */
 internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound: List<TitleId.Tmdb>)
+
+/** What TMDB's search found: Titles with their popularity, and people by name with their Titles. */
+internal class CloudSearch(val titles: List<Pair<TitleId.Tmdb, Double>>, val people: List<Pair<String, List<TitleId.Tmdb>>>)
 
 internal open class CloudException(message: String) : IOException(message)
 
