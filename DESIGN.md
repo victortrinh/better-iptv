@@ -339,7 +339,7 @@ Names, posters, descriptions, genres and cast come from TMDB in the App language
 Debug builds include `PrototypeActivity`:
 
 ```
-adb shell am start -n dev.betteriptv/dev.betteriptv.app.prototype.PrototypeActivity --es screen <home|details|player|search|settings> [--ez focus true]
+adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.PrototypeActivity --es screen <home|details|player|search|settings> [--ez focus true]
 ```
 
 `focus true` moves first focus from the main button to the first card (home) or the first Version (details). Prototypes carry a "Sample content" caption so nobody takes the made-up Versions for real ones. The design has only been checked on the emulator; checking it on the Fire TV Stick is tracked in victortrinh/better-iptv#23.

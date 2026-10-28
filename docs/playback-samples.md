@@ -7,7 +7,7 @@ scripts/playback_samples.sh /tmp/samples 192.168.4.98:5555
 ```
 
 ```bash
-adb shell am start -f 0x10008000 -n dev.betteriptv/dev.betteriptv.app.prototype.SampleActivity -d file:///sdcard/Android/data/dev.betteriptv/files/samples/mkv_dts_ass.mkv --ei audio 0 --ei subtitle 0
+adb shell am start -f 0x10008000 -n dev.betteriptv.debug/dev.betteriptv.app.prototype.SampleActivity -d file:///sdcard/Android/data/dev.betteriptv.debug/files/samples/mkv_dts_ass.mkv --ei audio 0 --ei subtitle 0
 ```
 
 ```bash

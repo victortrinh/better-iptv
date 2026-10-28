@@ -41,7 +41,7 @@ Every build is signed with the debug key checked in at `app/debug.keystore`, so 
 The app appears under **Your Apps & Channels**; start it from there, or with:
 
 ```bash
-adb shell am start -n dev.betteriptv/dev.betteriptv.app.MainActivity
+adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.MainActivity
 ```
 
 ## Reading what Sync did
