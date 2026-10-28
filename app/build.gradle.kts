@@ -95,5 +95,7 @@ dependencies {
     implementation(libs.libvlc)
 
     testImplementation(libs.junit)
+    // A real android.net.Uri for the Media3 classes the player's policies are tested with.
+    testImplementation(libs.robolectric)
     testImplementation(libs.coroutines.test)
 }

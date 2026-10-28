@@ -229,6 +229,48 @@ class PlaybackTest {
         assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
     }
 
+    @Test fun `stopping as a film's credits start, 10 minutes from the end, marks it watched`() = runBlocking {
+        stopAt(110 * 60_000L, duration = 120 * 60_000L)
+
+        assertEquals(0L, nextPlan().from)
+    }
+
+    @Test fun `stopping just before the last 10 minutes keeps the resume point`() = runBlocking {
+        stopAt(109 * 60_000L, duration = 120 * 60_000L)
+
+        assertEquals(109 * 60_000L, nextPlan().from)
+    }
+
+    @Test fun `a short film counts as watched in its last tenth`() = runBlocking {
+        stopAt(27 * 60_000L, duration = 30 * 60_000L)
+        assertEquals(0L, nextPlan().from)
+
+        stopAt(26 * 60_000L, duration = 30 * 60_000L)
+        assertEquals(26 * 60_000L, nextPlan().from)
+    }
+
+    @Test fun `removing a Movie from Continue watching forgets where the Viewer stopped`() = runBlocking {
+        stopAt(42 * 60_000L, duration = 120 * 60_000L)
+
+        library.removeFromContinueWatching(plan.titleId!!)
+
+        assertEquals(0L, nextPlan().from)
+        assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
+    }
+
+    @Test fun `Restart plays from the beginning, and keeps the old resume point until the first minute passes`() = runBlocking {
+        stopAt(42 * 60_000L, duration = 120 * 60_000L)
+        plan = nextPlan().fromStart()
+
+        stopAt(30_000L, duration = 120 * 60_000L)
+        assertEquals(0L, created.single().startedFrom)
+        assertEquals(42 * 60_000L, nextPlan().from)
+
+        plan = nextPlan().fromStart()
+        stopAt(5 * 60_000L, duration = 120 * 60_000L)
+        assertEquals(5 * 60_000L, nextPlan().from)
+    }
+
     @Test fun `playing to the end marks the Title watched`() = runBlocking {
         stopAt(42 * 60_000L)
         plan = nextPlan()

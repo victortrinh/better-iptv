@@ -112,7 +112,7 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(query, results, searching = answered != query, onOpen, onWatch) { channel, favourite ->
+            Results(library, contentLanguages, query, results, searching = answered != query, onOpen, onWatch) { channel, favourite ->
                 scope.launch {
                     library.setFavourite(channel.id, favourite)
                     results = results.copy(channels = results.channels.map { if (it.id == channel.id) it.copy(favourite = favourite) else it })
@@ -124,6 +124,8 @@ fun SearchScreen(
 
 @Composable
 private fun Results(
+    library: Library,
+    contentLanguages: List<String>,
     query: String,
     results: SearchResults,
     searching: Boolean,
@@ -142,8 +144,8 @@ private fun Results(
     }
     // The right margin is content padding, so cards scroll under the edge instead of being clipped.
     LazyColumn(contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
-        if (results.movies.isNotEmpty()) item { Group(stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
-        if (results.shows.isNotEmpty()) item { Group(stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
+        if (results.movies.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
+        if (results.shows.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
         if (results.channels.isNotEmpty()) item {
             Column {
                 Text(stringResource(R.string.search_channels, results.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -159,13 +161,13 @@ private fun Results(
                 Spacer(Modifier.height(14.dp))
             }
         }
-        items(results.people, key = { "person/${it.name}" }) { person -> Group(person.name, person.titles, onOpen) }
+        items(results.people, key = { "person/${it.name}" }) { person -> Group(library, contentLanguages, person.name, person.titles, onOpen) }
     }
 }
 
 /** A headline over a row of cards. */
 @Composable
-private fun Group(heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit) {
+private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit) {
     Column {
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         LazyRow(
@@ -173,7 +175,7 @@ private fun Group(heading: String, titles: List<TitleSummary>, onOpen: (TitleId)
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
             items(titles, key = { it.id.toString() }) { title ->
-                TitleCard(rememberArtwork(title.image, card = true), title.name, title.best.cardBadges(), onClick = { onOpen(title.id) })
+                TitleCard(rememberArtwork(title.image, card = true), title.name, cardBest(library, title, contentLanguages).cardBadges(), onClick = { onOpen(title.id) })
             }
         }
         Spacer(Modifier.height(14.dp))

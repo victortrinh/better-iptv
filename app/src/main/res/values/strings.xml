@@ -74,6 +74,9 @@
 
     <string name="versions_title">Versions</string>
     <string name="play">Play</string>
+    <string name="play_continue">Continue from %1$s</string>
+    <string name="play_restart">Restart</string>
+    <string name="continue_watching_remove">Remove from Continue watching</string>
     <string name="play_nothing">No Version this TV can display</string>
     <string name="player_failed">This Version and its Backups didn\'t play. Try the other player, or press ≡ to pick another Version.</string>
     <string name="player_starting">Starting %1$s</string>
@@ -160,6 +163,11 @@
     <string name="settings_playback">Playback</string>
     <string name="settings_quality_cap">Quality cap</string>
     <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>
+    <string name="settings_background_reading">Background reading</string>
+    <string name="settings_background_reading_detail">While nothing plays, checks Versions\' files so cards show their real languages and quality</string>
+    <string name="settings_background_reading_off">Off</string>
+    <string name="settings_background_reading_gentle">Gentle</string>
+    <string name="settings_background_reading_normal">Normal</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>
