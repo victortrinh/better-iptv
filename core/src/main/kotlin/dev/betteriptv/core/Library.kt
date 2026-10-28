@@ -460,6 +460,30 @@ class Library private constructor(
         }
     }
 
+    /**
+     * The subtitles that can be downloaded for [plan]'s Movie or Episode in [languages] (ISO 639-1),
+     * the best few in each language first. Empty for a Title without a TMDB ID, or when the cloud
+     * can't answer: the Viewer plays on without them.
+     */
+    suspend fun subtitleOffers(plan: PlayPlan, languages: List<String>): List<SubtitleOffer> = withContext(Dispatchers.IO) {
+        val id = plan.titleId as? TitleId.Tmdb
+        if (cloud == null || id == null || languages.isEmpty()) return@withContext emptyList()
+        try {
+            cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+        } catch (e: CloudException) {
+            emptyList()
+        }
+    }
+
+    /** Downloads the subtitle file [offer] names, through the cloud; null when it can't be had now. */
+    suspend fun downloadSubtitle(offer: SubtitleOffer): DownloadedSubtitle? = withContext(Dispatchers.IO) {
+        try {
+            cloud?.downloadSubtitle(offer.id)
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
     /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
     private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
 
