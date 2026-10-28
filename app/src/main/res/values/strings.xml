@@ -158,6 +158,11 @@
     <string name="settings_playback">Playback</string>
     <string name="settings_quality_cap">Quality cap</string>
     <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>
+    <string name="settings_background_reading">Background reading</string>
+    <string name="settings_background_reading_detail">While nothing plays, checks Versions\' files so cards show their real languages and quality</string>
+    <string name="settings_background_reading_off">Off</string>
+    <string name="settings_background_reading_gentle">Gentle</string>
+    <string name="settings_background_reading_normal">Normal</string>
 
     <string name="keyboard_space">Space</string>
     <string name="keyboard_delete">Delete</string>
