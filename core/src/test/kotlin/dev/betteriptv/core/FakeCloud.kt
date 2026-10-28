@@ -30,6 +30,9 @@ class FakeCloud : Closeable {
     /** How many of the next `/v1/match` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
     @Volatile var failingMatches = 0
 
+    /** Called when a `/v1/match` request arrives, before it is answered. */
+    @Volatile var onMatch: (() -> Unit)? = null
+
     private val metadata = HashMap<String, Map<String, Any?>>()
 
     /** The file reads devices shared, by `<provider key>/<listing id>`. */
@@ -107,6 +110,7 @@ class FakeCloud : Closeable {
             "/v1/metadata", "/v1/match" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                if (exchange.requestURI.path == "/v1/match") onMatch?.invoke()
                 if (exchange.requestURI.path == "/v1/match" && synchronized(this) { (failingMatches > 0).also { if (it) failingMatches-- } }) return exchange.sendResponseHeaders(503, -1)
                 if (exchange.requestURI.path == "/v1/match") return respond(exchange, 200, mapOf("matches" to answerMatches(read(body) as Map<*, *>)))
                 val asked = read(body) as Map<*, *>

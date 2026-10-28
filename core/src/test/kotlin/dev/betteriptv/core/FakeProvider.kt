@@ -79,6 +79,9 @@ class FakeProvider : Closeable {
     val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     @Volatile var slowStreamDelayMillis = 1_000L
 
+    /** Called with each `player_api` request's action (null for the account) before it is answered. */
+    @Volatile var onRequest: ((action: String?) -> Unit)? = null
+
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
 
@@ -155,6 +158,7 @@ class FakeProvider : Closeable {
             wrongLoginStatus?.let { return exchange.sendResponseHeaders(it, -1) }
             return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
+        onRequest?.invoke(query["action"])
         when (query["action"]) {
             null -> respond(exchange) { it.write(account().toByteArray()) }
             "get_vod_categories" -> respond(exchange) { body ->

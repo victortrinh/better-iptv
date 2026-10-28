@@ -74,7 +74,8 @@ class Library private constructor(
      * Listings are Matched by their Provider's TMDB ID, except suspected Mismatches and Listings
      * without one, which are Matched by what the cloud answered about them before. Once the new
      * catalog shows, the cloud is asked about the rest, and the Titles are regrouped by its answers
-     * before this returns (the status shows the Sync finished in the meantime).
+     * before this returns (the status shows the Sync finished in the meantime, then how many names
+     * have been asked). While it runs, the status counts the Listings read.
      */
     suspend fun sync(): SyncStatus = syncLock.withLock {
         withContext(Dispatchers.IO) {
@@ -85,6 +86,8 @@ class Library private constructor(
                 val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
                 client.account()
                 val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
+                var moviesRead = 0
+                var showsRead = 0
                 store.replaceListings(
                     fill = { staging ->
                         val movieCategories = HashMap<String, String>()
@@ -94,7 +97,12 @@ class Library private constructor(
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
-                            staging.listing(id, name, categoryId, added, image, hidden = description.hidden != null, question(kind, name, description, tmdbId), container)
+                            val hidden = description.hidden != null
+                            staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                            if (!hidden) {
+                                if (kind == TitleKind.Movie) moviesRead++ else showsRead++
+                                _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
+                            }
                         }
                         client.movieCategories { id, name ->
                             movieCategories[id] = name
@@ -153,6 +161,7 @@ class Library private constructor(
      */
     private fun matchByName() {
         if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
+        val synced = _syncStatus.value as? SyncStatus.Synced ?: return
         try {
             val now = Instant.now()
             val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
@@ -162,6 +171,8 @@ class Library private constructor(
             // A batch can fail on its own (the cloud ran out of CPU time, say): its suspects are asked
             // again next Sync. Several in a row mean the cloud is down.
             var failedInARow = 0
+            var asked = 0
+            _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
             for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
                 try {
                     store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
@@ -172,12 +183,16 @@ class Library private constructor(
                         break
                     }
                 }
+                asked += batch.size
+                _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
             }
             store.applyMatchAnswers()?.let { _syncStatus.value = SyncStatus.Synced(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // The Sync itself finished: its catalog shows, Matched by the Provider's IDs.
+        } finally {
+            if (_syncStatus.value is SyncStatus.Matching) _syncStatus.value = synced
         }
     }
 

@@ -196,9 +196,31 @@ sealed interface SyncStatus {
         override val last: CompletedSync? = null
     }
 
-    data class Running(override val last: CompletedSync?) : SyncStatus
+    /**
+     * A Sync is reading the Provider's catalog: [moviesRead] movie and [showsRead] show Listings so
+     * far, Clutter and Sports replays left out. The Provider sends movies first, and never a total.
+     */
+    data class Running(override val last: CompletedSync?, val moviesRead: Int = 0, val showsRead: Int = 0) : SyncStatus {
+        /** How far through, judged by [last]'s Listing counts; below 1 until the Sync finishes, null without them. */
+        val fraction: Float?
+            get() {
+                val expected = (last ?: return null).let { it.movieListingCount + it.showListingCount }
+                if (expected == 0) return null
+                return ((moviesRead + showsRead).toFloat() / expected).coerceAtMost(MAX_RUNNING_FRACTION)
+            }
+
+        private companion object {
+            const val MAX_RUNNING_FRACTION = 0.99f
+        }
+    }
 
     data class Synced(override val last: CompletedSync) : SyncStatus
+
+    /**
+     * The Sync finished and its catalog shows, and the cloud is being asked about [of] names to Match
+     * suspects, [asked] so far. Their Titles regroup once every name is asked.
+     */
+    data class Matching(override val last: CompletedSync, val asked: Int, val of: Int) : SyncStatus
 
     /** The Sync failed; the catalog from [last] is still shown. */
     data class Failed(val problem: SyncProblem, override val last: CompletedSync?) : SyncStatus
