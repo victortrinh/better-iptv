@@ -68,8 +68,11 @@ fun SearchScreen(
     LaunchedEffect(query, status.last, contentLanguages, appLanguage) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
-        results = library.search(query, contentLanguages, appLanguage)
-        answered = query
+        // The device's own matches, then again with what TMDB's search adds.
+        library.search(query, contentLanguages, appLanguage).collect {
+            results = it
+            answered = query
+        }
     }
     val keyboard = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
