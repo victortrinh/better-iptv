@@ -73,6 +73,15 @@ class FakeProvider : Closeable {
     /** Sends movie files a kilobyte at a time, slow enough for a Header read to be caught midway. */
     @Volatile var slowFiles = false
 
+    /**
+     * After this many range requests, answers the rest with HTTP 429, as a Provider's flood
+     * protection does. Null never limits.
+     */
+    @Volatile var refuseRangesAfter: Int? = null
+
+    /** Closes movie file requests without answering, as an unreachable Provider does. */
+    @Volatile var unansweredFiles = false
+
     /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
     val movieDetails = ConcurrentHashMap<Long, String>()
     /** Movie Listings whose files are answered with HTTP 404, as the Provider answers for a dead link. */
@@ -235,6 +244,10 @@ class FakeProvider : Closeable {
         if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return exchange.sendResponseHeaders(401, -1)
         val id = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()
         if (id in deadStreams) return exchange.sendResponseHeaders(404, -1)
+        // Closed by the caller without a status line.
+        if (unansweredFiles) return
+        val limit = refuseRangesAfter
+        if (limit != null && exchange.requestHeaders.getFirst("Range") != null && _ranges.size >= limit) return exchange.sendResponseHeaders(429, -1)
         if (openStreams.incrementAndGet() > 1) {
             openStreams.decrementAndGet()
             _refusedStreams.incrementAndGet()

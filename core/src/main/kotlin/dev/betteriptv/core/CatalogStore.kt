@@ -435,6 +435,18 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** Background reading's day ([ReadingDay.kept]), or null before its first read. */
+    fun readingDay(): String? = meta(READING_DAY)
+
+    fun saveReadingDay(day: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+            it.bindText(1, READING_DAY)
+            it.bindText(2, day)
+            it.step()
+        }
+        Unit
+    }
+
     /** What the Viewer last picked in the player, by kind (`audio`, `subtitles`): a language, or what turning subtitles off is kept as. */
     fun rememberedTrack(kind: String): String? = meta(REMEMBERED_TRACK + kind)
 
@@ -601,6 +613,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** Forgets where the Viewer stopped in [id], and whether they finished it. */
+    fun forgetProgress(id: TitleId) = synchronized(writer) {
+        writer.prepare("DELETE FROM progress WHERE title_key = ?").use {
+            it.bindText(1, key(id))
+            it.step()
+        }
+        Unit
+    }
+
     /** The file reads the cloud doesn't have yet, as JSON by Listing id. */
     fun unsharedFileReads(): Map<Long, String> = synchronized(reader) {
         reader.prepare("SELECT listing_id, body FROM file_read WHERE shared = 0 AND body IS NOT NULL").use {
@@ -712,6 +733,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val REMEMBERED_TRACK = "remembered_track_"
+        const val READING_DAY = "reading_day"
     }
 }
 

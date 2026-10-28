@@ -105,13 +105,13 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(query, results, searching = answered != query, onOpen)
+            Results(library, contentLanguages, query, results, searching = answered != query, onOpen)
         }
     }
 }
 
 @Composable
-private fun Results(query: String, results: SearchResults, searching: Boolean, onOpen: (TitleId) -> Unit) {
+private fun Results(library: Library, contentLanguages: List<String>, query: String, results: SearchResults, searching: Boolean, onOpen: (TitleId) -> Unit) {
     if (results == SearchResults.NONE) {
         val message = when {
             query.isBlank() -> stringResource(R.string.search_start)
@@ -123,15 +123,15 @@ private fun Results(query: String, results: SearchResults, searching: Boolean, o
     }
     // The right margin is content padding, so cards scroll under the edge instead of being clipped.
     LazyColumn(contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
-        if (results.movies.isNotEmpty()) item { Group(stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
-        if (results.shows.isNotEmpty()) item { Group(stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
-        items(results.people, key = { "person/${it.name}" }) { person -> Group(person.name, person.titles, onOpen) }
+        if (results.movies.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
+        if (results.shows.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
+        items(results.people, key = { "person/${it.name}" }) { person -> Group(library, contentLanguages, person.name, person.titles, onOpen) }
     }
 }
 
 /** A headline over a row of cards. */
 @Composable
-private fun Group(heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit) {
+private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit) {
     Column {
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         LazyRow(
@@ -139,7 +139,7 @@ private fun Group(heading: String, titles: List<TitleSummary>, onOpen: (TitleId)
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
             items(titles, key = { it.id.toString() }) { title ->
-                TitleCard(rememberArtwork(title.image, card = true), title.name, title.best.cardBadges(), onClick = { onOpen(title.id) })
+                TitleCard(rememberArtwork(title.image, card = true), title.name, cardBest(library, title, contentLanguages).cardBadges(), onClick = { onOpen(title.id) })
             }
         }
         Spacer(Modifier.height(14.dp))

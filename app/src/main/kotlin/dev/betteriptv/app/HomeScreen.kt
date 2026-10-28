@@ -132,7 +132,7 @@ fun HomeScreen(
                         TitleCard(
                             image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
                             name = title.name,
-                            badges = title.best.cardBadges(),
+                            badges = cardBest(library, title, contentLanguages).cardBadges(),
                             onClick = { onOpen(card) },
                             modifier = Modifier.focusRequester(focus),
                             wide = wide,

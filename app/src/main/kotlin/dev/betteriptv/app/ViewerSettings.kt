@@ -3,6 +3,7 @@ package dev.betteriptv.app
 import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
+import dev.betteriptv.core.BackgroundPace
 import dev.betteriptv.core.QualityCap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,11 @@ data class ViewerSettings(
     val region: String,
     val qualityCap: QualityCap,
     val subtitleStyle: SubtitleStyle = SubtitleStyle(),
+    val backgroundReading: BackgroundReading = BackgroundReading.Gentle,
 )
+
+/** How fast Background reading goes; [pace] is null when it is off. */
+enum class BackgroundReading(val pace: BackgroundPace?) { Off(null), Gentle(BackgroundPace.Gentle), Normal(BackgroundPace.Normal) }
 
 /**
  * How the player draws subtitles that carry no style of their own (styled ASS subtitles keep
@@ -65,6 +70,7 @@ class ViewerSettingsStore(context: Context) {
             .putString(SUBTITLE_COLOUR, new.subtitleStyle.colour.name)
             .putString(SUBTITLE_BACKGROUND, new.subtitleStyle.background.name)
             .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
+            .putString(BACKGROUND_READING, new.backgroundReading.name)
             .apply()
         _settings.value = new
     }
@@ -84,6 +90,7 @@ class ViewerSettingsStore(context: Context) {
                 background = read(SUBTITLE_BACKGROUND, SubtitleBackground.entries) ?: SubtitleBackground.Outline,
                 position = read(SUBTITLE_POSITION, SubtitlePosition.entries) ?: SubtitlePosition.Bottom,
             ),
+            backgroundReading = read(BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
         )
     }
 
@@ -98,6 +105,7 @@ class ViewerSettingsStore(context: Context) {
         const val SUBTITLE_COLOUR = "subtitle_colour"
         const val SUBTITLE_BACKGROUND = "subtitle_background"
         const val SUBTITLE_POSITION = "subtitle_position"
+        const val BACKGROUND_READING = "background_reading"
     }
 }
 

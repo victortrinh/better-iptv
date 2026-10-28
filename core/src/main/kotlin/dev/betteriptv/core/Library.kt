@@ -7,8 +7,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -20,8 +23,10 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.Closeable
 import java.io.IOException
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
@@ -57,6 +62,15 @@ class Library private constructor(
     @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
+    /** One Header read at a time, a details page's or Background reading's. */
+    private val reads = Mutex()
+    /** Details pages reading right now: Background reading waits for them. */
+    private val detailsReading = AtomicInteger()
+    @Volatile private var cardsOnScreen: List<TitleId> = emptyList()
+    private val _confirmations = MutableSharedFlow<TitleId>(extraBufferCapacity = 64)
+
+    /** The Titles whose card's Version Background reading just Confirmed, so their badges update. */
+    val confirmations: SharedFlow<TitleId> = _confirmations.asSharedFlow()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
@@ -540,6 +554,9 @@ class Library private constructor(
     /** Records that the Viewer played [id] to its end. */
     internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
 
+    /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
+    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
+
     /**
      * The home screen's rows: Continue watching, then New on your service (Titles among the most
      * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
@@ -611,8 +628,17 @@ class Library private constructor(
      * Results are kept on the device and shared through the cloud, so a Version is never read twice.
      */
     suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
-        val title = store.title(id) ?: return@withContext
-        val login = credentials.load() ?: return@withContext
+        detailsReading.incrementAndGet()
+        try {
+            readDetailsHeaders(id, contentLanguages, changed)
+        } finally {
+            detailsReading.decrementAndGet()
+        }
+    }
+
+    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) {
+        val title = store.title(id) ?: return
+        val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
         val shows = if (id.kind == TitleKind.Show) {
             val kept = store.showDetails(title.listings.map { it.id })
@@ -626,15 +652,18 @@ class Library private constructor(
         val provider = providerKey(login)
         shareFileReads(provider)
         if (lookUpFileReads(provider, ids)) changed()
+        // This page's Versions come before Background reading's.
+        connection.cancelRead()
         val unread = if (shows == null) unread(title, contentLanguages) else unreadEpisodes(shows, contentLanguages)
         for (version in unread) {
             val container = (if (shows == null) store.container(version.listingId) else store.episodeContainer(version.listingId)) ?: "mkv"
             if (container !in HEADER_READABLE) continue
             val location = if (shows == null) client.movieLocation(version.listingId, container) else client.episodeLocation(version.listingId, container)
             val read = try {
-                connection.whileFree { Read(headerReader.read(location, container)) }
+                reads.withLock { connection.whileFree { Read(headerReader.read(location, container)) } }
             } catch (e: IOException) {
-                // The Provider refused: no more reads for now.
+                // The Provider refused: no more reads for now, nor Background reading today.
+                if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
                 null
             } ?: break
             store.saveFileRead(version.listingId, read.contents?.toJson(), Instant.now(), shared = false)
@@ -667,6 +696,69 @@ class Library private constructor(
     }
 
     private class Read(val contents: FileContents?)
+
+    /** The Titles whose cards show right now, in the order Background reading should read them. */
+    fun onScreen(ids: List<TitleId>) {
+        cardsOnScreen = ids
+    }
+
+    /** The attributes of the Version [id]'s card shows, with what reads Confirmed; null when the catalog no longer has it. */
+    fun cardBest(id: TitleId, contentLanguages: List<String>): VersionAttributes? =
+        store.title(id)?.let { preferred(candidates(it), contentLanguages).firstOrNull()?.attributes }
+
+    /**
+     * Background reading at [pace], until cancelled: a Header read of the Version a Movie's card
+     * shows, one at a time and only while the connection is free, so never during Playback nor while
+     * a details page reads. Cards on screen come first ([onScreen]), then Continue watching, then the
+     * newest Movies in the Viewer's [contentLanguages]. A Provider answering with an error stops it
+     * until the next day, and one not answering pauses it for a quarter of an hour. Each read that
+     * Confirms a card's Version is announced in [confirmations].
+     */
+    suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace) =
+        readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE)
+
+    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration) = withContext(Dispatchers.IO) {
+        var pausedUntil = Instant.MIN
+        while (true) {
+            delay(pace.gap)
+            val day = ReadingDay.of(store.readingDay(), LocalDate.now(clock))
+            if (day.refused || day.reads >= pace.perDay || clock.instant().isBefore(pausedUntil) || detailsReading.get() > 0) continue
+            val login = credentials.load() ?: continue
+            val next = nextBackgroundRead(contentLanguages) ?: continue
+            if (!reads.tryLock()) continue
+            val read = try {
+                connection.whileFree { Read(headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)) }
+            } catch (e: HeaderReadRefused) {
+                store.saveReadingDay(day.copy(refused = true).kept())
+                continue
+            } catch (e: IOException) {
+                pausedUntil = clock.instant() + offlinePause
+                continue
+            } finally {
+                reads.unlock()
+            }
+            // Null when Play or a details page took the connection.
+            read ?: continue
+            store.saveFileRead(next.listingId, read.contents?.toJson(), Instant.now(), shared = false)
+            store.saveReadingDay(day.copy(reads = day.reads + 1).kept())
+            if (read.contents != null) _confirmations.emit(next.id)
+        }
+    }
+
+    private class BackgroundRead(val id: TitleId, val listingId: Long, val container: String)
+
+    /** The first Movie, in Background reading's order, whose card shows a Version not yet read. */
+    private fun nextBackgroundRead(contentLanguages: List<String>): BackgroundRead? {
+        val newest = store.titles(TitleKind.Movie, 0, NEW_MOVIES).filter { inContentLanguages(candidates(it), contentLanguages, null) }.map { it.id }
+        val order = cardsOnScreen.asSequence() + store.inProgress(ROW_SIZE).asSequence().map { it.id } + newest.asSequence()
+        return order.filter { it.kind == TitleKind.Movie }.distinct().firstNotNullOfOrNull { id ->
+            val title = store.title(id) ?: return@firstNotNullOfOrNull null
+            val shown = preferred(candidates(title), contentLanguages).firstOrNull()?.listing ?: return@firstNotNullOfOrNull null
+            val container = store.container(shown.id) ?: "mkv"
+            if (container !in HEADER_READABLE || store.fileReads(listOf(shown.id)).containsKey(shown.id)) null
+            else BackgroundRead(id, shown.id, container)
+        }
+    }
 
     /** The best Version not yet read in each of [title]'s languages, the Viewer's [contentLanguages] first. */
     private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
@@ -814,6 +906,8 @@ class Library private constructor(
     companion object {
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+        /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
+        private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
         private const val MATCH_FAILURES_IN_A_ROW = 3
 
         /** The kinds of Track the Viewer's last picks are kept by, and what turning subtitles off is kept as. */
@@ -827,9 +921,12 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
-        /** A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is less: the credits. */
-        private const val WATCHED_SHARE_LEFT = 0.05
-        private const val WATCHED_TIME_LEFT = 8 * 60_000L
+        /**
+         * A Title counts as watched with this share of it left, or [WATCHED_TIME_LEFT], whichever is
+         * less: about where a film's credits start (see CONTEXT.md, Watched).
+         */
+        private const val WATCHED_SHARE_LEFT = 0.10
+        private const val WATCHED_TIME_LEFT = 10 * 60_000L
         private const val MIN_RESUME_POSITION = 60_000L
         /** How many cards a home row holds. */
         private const val ROW_SIZE = 20

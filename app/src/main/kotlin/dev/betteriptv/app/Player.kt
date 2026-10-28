@@ -4,11 +4,13 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
@@ -18,6 +20,8 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.text.TextOutput
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
@@ -67,6 +71,7 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
             .setTsSubtitleFormats(listOf(Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_CEA608).build()))
         val mediaSources = DefaultMediaSourceFactory(dataSources, extractors.withAssMkvSupport(subtitleParsers, ass))
             .setSubtitleParserFactory(subtitleParsers)
+            .setLoadErrorHandlingPolicy(ProviderLoadErrorPolicy())
         val renderers = FfmpegAudioRenderersFactory(context, delays).setEnableDecoderFallback(true)
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSources)
@@ -79,6 +84,26 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
         throw e
     }
 }
+
+/**
+ * Media3's retries, except for an answer the Provider won't change on a retry: a 4xx (a dead
+ * Listing answers 404) or a refused login (511, 513). Such a Version fails at once, so its Backup
+ * starts instead of waiting out about 3 s of retries. Timeouts and other 5xx answers can be passing
+ * trouble, and are still retried; so are 403 and 429, which may be the Provider refusing a stream
+ * over the Connection limit while it still counts the one Media3 closed to seek.
+ */
+@OptIn(UnstableApi::class)
+internal class ProviderLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorInfo): Long {
+        val answer = generateSequence<Throwable>(loadErrorInfo.exception) { it.cause }.filterIsInstance<InvalidResponseCodeException>().firstOrNull()
+        return if (answer != null && answer.responseCode.isFinal()) C.TIME_UNSET else super.getRetryDelayMsFor(loadErrorInfo)
+    }
+
+    private fun Int.isFinal() = (this in 400..499 && this !in PASSING_4XX) || this == 511 || this == 513
+}
+
+/** The 4xx answers that can change on a retry: refused for now, timed out, too many requests. */
+private val PASSING_4XX = setOf(403, 408, 429)
 
 /** How much later than the picture the Viewer wants the sound and the subtitles, in microseconds; negative is earlier. */
 internal class Delays {

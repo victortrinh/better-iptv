@@ -78,6 +78,9 @@ data class PlayPlan(
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
 ) {
+    /** This plan from the beginning, for Restart. Where the Viewer stopped stays kept until they pass the first minute. */
+    fun fromStart(): PlayPlan = copy(from = 0)
+
     /**
      * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the
      * language the Viewer last picked, else in the first Content language the file has. Among that
@@ -240,6 +243,11 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
             throw e
         }
         return Lease()
+    }
+
+    /** Cancels the Header read holding the connection, if one is, as a [lease] would. */
+    fun cancelRead() {
+        preempt?.invoke()
     }
 
     /**

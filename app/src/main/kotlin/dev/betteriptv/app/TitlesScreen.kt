@@ -109,20 +109,28 @@ fun TitlesScreen(
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
         ) {
-            items(count) { index -> Card(pages, focus, index, focusNow = index == restoreFocus, onOpen) }
+            items(count) { index -> Card(library, contentLanguages, pages, focus, index, focusNow = index == restoreFocus, onOpen) }
         }
     }
 }
 
 @Composable
-private fun Card(pages: TitlePages<TitleSummary>, gridFocus: GridFocus, index: Int, focusNow: Boolean, onOpen: (index: Int, TitleId) -> Unit) {
+private fun Card(
+    library: Library,
+    contentLanguages: List<String>,
+    pages: TitlePages<TitleSummary>,
+    gridFocus: GridFocus,
+    index: Int,
+    focusNow: Boolean,
+    onOpen: (index: Int, TitleId) -> Unit,
+) {
     val title = pages[index]
     val focus = remember(index) { gridFocus.card(index) }.requester
     if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
     TitleCard(
         image = rememberArtwork(title?.image, card = true),
         name = title?.name.orEmpty(),
-        badges = title?.best?.cardBadges().orEmpty(),
+        badges = title?.let { cardBest(library, it, contentLanguages) }?.cardBadges().orEmpty(),
         onClick = { title?.let { onOpen(index, it.id) } },
         modifier = Modifier.focusRequester(focus).onFocusChanged { if (it.hasFocus) gridFocus.focused(index) }.padding(vertical = 10.dp),
     )
