@@ -219,5 +219,6 @@ NO EVENT STREAMING
 # A slot dated with the Provider's placeholder: "US (ESPN+ 526) |  (2098-12-31 08:00:34)"
 \(2098-
 # Radio stations filed with TV ("UK: BBC RADIO CUMBRIA", "T2: GRUNN FM"), but not TV named after
-# a radio ("ICI RADIO-CANADA TÉLÉ", "RADIO BREMEN TV", "T2: REGIO FM TV").
-(?iU)^(?!.*\b(TV|TELE|TÉLÉ)\b).*\b(RADIO|FM)\b
+# a radio ("ICI RADIO-CANADA TÉLÉ", "RADIO BREMEN TV", "T2: REGIO FM TV"). Android's regex engine
+# has no (?U) flag, so word edges are spelled out to count É as a letter.
+(?i)^(?!.*(?<![\p{L}\p{N}])(TV|T[EÉé]L[EÉé])(?![\p{L}\p{N}])).*(?<![\p{L}\p{N}])(RADIO|FM)(?![\p{L}\p{N}])

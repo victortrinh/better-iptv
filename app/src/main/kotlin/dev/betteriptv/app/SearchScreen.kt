@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +39,10 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
+import kotlinx.coroutines.launch
 import dev.betteriptv.core.SearchResults
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleSummary
@@ -46,8 +50,9 @@ import kotlinx.coroutines.delay
 
 /**
  * Search: the [query] typed on a D-pad keyboard on the left, results on the right as each letter
- * lands, grouped as Movies, Shows and people (each person with their Titles the Provider has).
- * The tabs switch to the other browsing screens ([onTab]).
+ * lands, grouped as Movies, Shows, Channels and people (each person with their Titles the
+ * Provider has). A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its
+ * menu key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]).
  */
 @Composable
 fun SearchScreen(
@@ -58,7 +63,9 @@ fun SearchScreen(
     appLanguage: String,
     onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
+    onWatch: (Channel) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     val status by library.syncStatus.collectAsStateWithLifecycle()
     var results by remember { mutableStateOf(SearchResults.NONE) }
     // The query [results] answer: the one being typed until the index, built on first use, has them.
@@ -105,13 +112,25 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(query, results, searching = answered != query, onOpen)
+            Results(query, results, searching = answered != query, onOpen, onWatch) { channel, favourite ->
+                scope.launch {
+                    library.setFavourite(channel.id, favourite)
+                    results = results.copy(channels = results.channels.map { if (it.id == channel.id) it.copy(favourite = favourite) else it })
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun Results(query: String, results: SearchResults, searching: Boolean, onOpen: (TitleId) -> Unit) {
+private fun Results(
+    query: String,
+    results: SearchResults,
+    searching: Boolean,
+    onOpen: (TitleId) -> Unit,
+    onWatch: (Channel) -> Unit,
+    onFavourite: (Channel, Boolean) -> Unit,
+) {
     if (results == SearchResults.NONE) {
         val message = when {
             query.isBlank() -> stringResource(R.string.search_start)
@@ -125,6 +144,21 @@ private fun Results(query: String, results: SearchResults, searching: Boolean, o
     LazyColumn(contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
         if (results.movies.isNotEmpty()) item { Group(stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
         if (results.shows.isNotEmpty()) item { Group(stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
+        if (results.channels.isNotEmpty()) item {
+            Column {
+                Text(stringResource(R.string.search_channels, results.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // A wide card grows past the column's edge when focused: the row starts that much
+                // further left, so the card isn't clipped, and its cards still line up with the heading.
+                LazyRow(
+                    contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
+                    horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+                    modifier = Modifier.offset(x = -Spacing.m),
+                ) {
+                    items(results.channels, key = { "channel/${it.id}" }) { channel -> ChannelCard(channel, onWatch, onFavourite) }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
         items(results.people, key = { "person/${it.name}" }) { person -> Group(person.name, person.titles, onOpen) }
     }
 }

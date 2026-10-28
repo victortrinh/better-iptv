@@ -226,7 +226,9 @@ class PlaybackSession internal constructor(
         val opened = TimeSource.Monotonic.markNow()
         try {
             val player = engines(engine)
-            val relay = if (player.overlapsRequests) library.relay(connection.location) else null
+            // A live stream has no index to read and nowhere to seek, and an HLS playlist's segments
+            // are fetched beside it, which the relay's one location can't serve: VLC plays it as it is.
+            val relay = if (player.overlapsRequests && !plan.live) library.relay(connection.location) else null
             try {
                 _state.value = PlaybackState.Starting(version, player)
                 return watch(version, player, relay?.location ?: connection.location, opened, relay)

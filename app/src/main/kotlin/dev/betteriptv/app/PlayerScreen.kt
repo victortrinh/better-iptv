@@ -166,13 +166,14 @@ fun PlayerScreen(
             when {
                 event.key == Key.Menu -> panel = if (state is PlaybackState.Ended) Panel.None else Panel.Versions
                 event.key == Key.MediaPlayPause -> player?.togglePause()
-                event.key == Key.MediaRewind -> player?.seek(-SEEK_STEP)
-                event.key == Key.MediaFastForward -> player?.seek(SEEK_STEP)
+                // A Channel is live: there is nowhere to seek to.
+                event.key == Key.MediaRewind -> if (!plan.live) player?.seek(-SEEK_STEP)
+                event.key == Key.MediaFastForward -> if (!plan.live) player?.seek(SEEK_STEP)
                 // With the overlay up, its buttons take the keys.
                 overlay || suggested != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
-                    Key.DirectionLeft -> player.seek(-SEEK_STEP).also { overlay = true }
-                    Key.DirectionRight -> player.seek(SEEK_STEP).also { overlay = true }
+                    Key.DirectionLeft -> { if (!plan.live) player.seek(-SEEK_STEP); overlay = true }
+                    Key.DirectionRight -> { if (!plan.live) player.seek(SEEK_STEP); overlay = true }
                     Key.DirectionCenter, Key.Enter, Key.DirectionUp, Key.DirectionDown -> overlay = true
                     else -> return@onPreviewKeyEvent false
                 }
@@ -209,6 +210,7 @@ fun PlayerScreen(
                 episode = plan.episode,
                 version = state.version,
                 player = player,
+                live = plan.live,
                 onVersions = { panel = Panel.Versions },
                 onTracks = { panel = Panel.Tracks },
             )
@@ -480,10 +482,11 @@ private fun engineName(engine: Engine) = stringResource(
 
 /**
  * The player overlay: the Title, its Episode and the Version playing at the top; where playback is,
- * the transport and the panels' buttons at the bottom. Play/Pause takes first focus.
+ * the transport and the panels' buttons at the bottom. Play/Pause takes first focus. A [live]
+ * Channel has no scrubber and no jumps.
  */
 @Composable
-private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, onVersions: () -> Unit, onTracks: () -> Unit) {
+private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, onVersions: () -> Unit, onTracks: () -> Unit) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
@@ -507,14 +510,17 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             )
             if (version != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                    BadgeRow(version.attributes.cardBadges())
-                    Spacer(Modifier.width(Spacing.s))
+                    // A Channel has no badges: its label stands alone.
+                    if (!live) {
+                        BadgeRow(version.attributes.cardBadges())
+                        Spacer(Modifier.width(Spacing.s))
+                    }
                     Text(context.playLabel(version), style = Type.caption, color = Colors.ink, maxLines = 1)
                 }
             }
         }
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!live) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(clock(position), style = Type.label, color = Colors.ink)
                 Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
                     val shape = RoundedCornerShape(3.dp)
@@ -527,14 +533,14 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             }
             Spacer(Modifier.height(Spacing.l))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
-                NuageButton(stringResource(R.string.player_back), onClick = { player.seek(-SEEK_STEP) })
+                if (!live) NuageButton(stringResource(R.string.player_back), onClick = { player.seek(-SEEK_STEP) })
                 NuageButton(
                     stringResource(if (isPlaying) R.string.player_pause else R.string.play),
                     onClick = player::togglePause,
                     modifier = Modifier.focusRequester(play),
                     icon = if (isPlaying) null else Icons.Filled.PlayArrow,
                 )
-                NuageButton(stringResource(R.string.player_forward), onClick = { player.seek(SEEK_STEP) })
+                if (!live) NuageButton(stringResource(R.string.player_forward), onClick = { player.seek(SEEK_STEP) })
                 Spacer(Modifier.weight(1f))
                 NuageButton(stringResource(R.string.versions_title), onClick = onVersions)
                 NuageButton(stringResource(R.string.player_tracks), onClick = onTracks)
