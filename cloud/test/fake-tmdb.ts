@@ -10,8 +10,12 @@ export class FakeTmdb {
   readonly tokens: (string | null)[] = [];
   /** Answers every request with this HTTP status instead, as TMDB does when rate-limiting (429) or down. */
   failWith: number | null = null;
+  /** Answers only the requests this picks with HTTP 503. */
+  failWhen: ((url: URL) => boolean) | null = null;
   private readonly titles = new Map<string, (language: string) => object>();
   private readonly searchable: { path: string; result: (language: string) => SearchResult }[] = [];
+  private readonly multi: { names: string[]; result: object }[] = [];
+  private readonly people = new Map<number, { cast: object[]; crew: object[] }>();
 
   constructor() {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -20,6 +24,7 @@ export class FakeTmdb {
       this.requests.push(url);
       this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
       if (this.failWith !== null) return new Response("{}", { status: this.failWith });
+      if (this.failWhen?.(url)) return new Response("{}", { status: 503 });
       const search = /^\/3\/search\/(movie|tv)$/.exec(url.pathname);
       if (search) {
         // Like TMDB, finds a query in the title in the requested language or in the original title, punctuation aside.
@@ -31,6 +36,18 @@ export class FakeTmdb {
           .map((entry) => entry.result(language))
           .filter((r) => [r.title, r.name, r.original_title, r.original_name].some((t) => t !== undefined && loose(t).includes(query)));
         return Response.json({ page: 1, results, total_results: results.length });
+      }
+      if (url.pathname === "/3/search/multi") {
+        // Like TMDB, finds a query in any of a result's names, in every language.
+        const query = (url.searchParams.get("query") ?? "").toLowerCase();
+        const results = this.multi.filter((entry) => entry.names.some((name) => name.toLowerCase().includes(query))).map((entry) => entry.result);
+        return Response.json({ page: 1, results, total_results: results.length });
+      }
+      const person = /^\/3\/person\/(\d+)\/combined_credits$/.exec(url.pathname);
+      if (person) {
+        const credits = this.people.get(Number(person[1]));
+        if (credits === undefined) return Response.json({ success: false, status_code: 34 }, { status: 404 });
+        return Response.json({ id: Number(person[1]), ...credits });
       }
       const title = this.titles.get(url.pathname.replace("/3/", ""));
       if (title === undefined) return Response.json({ success: false, status_code: 34 }, { status: 404 });
@@ -54,6 +71,21 @@ export class FakeTmdb {
 
   searchableShow(result: (language: string) => SearchResult) {
     this.searchable.push({ path: "tv", result });
+  }
+
+  /** A movie TMDB's multi search finds by any of [names]. */
+  multiMovie(id: number, popularity: number, ...names: string[]) {
+    this.multi.push({ names, result: { media_type: "movie", id, title: names[0], popularity } });
+  }
+
+  multiShow(id: number, popularity: number, ...names: string[]) {
+    this.multi.push({ names, result: { media_type: "tv", id, name: names[0], popularity } });
+  }
+
+  /** A person TMDB's multi search finds by [name], with their combined credits. */
+  person(id: number, name: string, popularity: number, credits: { cast?: object[]; crew?: object[] }) {
+    this.multi.push({ names: [name], result: { media_type: "person", id, name, popularity, known_for: [] } });
+    this.people.set(id, { cast: credits.cast ?? [], crew: credits.crew ?? [] });
   }
 
   /** The search requests that reached TMDB. */
