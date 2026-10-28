@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             app.settings.settings.collect { if (it.appLanguage != appLanguage) recreate() }
         }
+        // Only Titles, never a location: it holds the login.
+        lifecycleScope.launch { app.library.confirmations.collect { Log.i("BackgroundReading", "Confirmed $it") } }
         // Only while the app shows: the Viewer may be watching in another app.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
