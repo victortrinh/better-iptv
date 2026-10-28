@@ -142,6 +142,11 @@
     <string name="settings_playback">Lecture</string>
     <string name="settings_quality_cap">Qualité maximale</string>
     <string name="settings_quality_cap_detail">La meilleure qualité que la lecture choisit. Baissez-la si l\'image saccade.</string>
+    <string name="settings_background_reading">Lecture en arrière-plan</string>
+    <string name="settings_background_reading_detail">Quand rien ne joue, vérifie les fichiers des versions pour que les cartes montrent leurs vraies langues et qualité</string>
+    <string name="settings_background_reading_off">Désactivée</string>
+    <string name="settings_background_reading_gentle">Douce</string>
+    <string name="settings_background_reading_normal">Normale</string>
 
     <string name="home_title">Accueil</string>
     <string name="row_continue_watching">Reprendre</string>

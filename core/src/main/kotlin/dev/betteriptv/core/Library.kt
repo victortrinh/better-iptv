@@ -5,8 +5,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -16,8 +20,10 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.Closeable
 import java.io.IOException
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
@@ -51,6 +57,15 @@ class Library private constructor(
     @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
+    /** One Header read at a time, a details page's or Background reading's. */
+    private val reads = Mutex()
+    /** Details pages reading right now: Background reading waits for them. */
+    private val detailsReading = AtomicInteger()
+    @Volatile private var cardsOnScreen: List<TitleId> = emptyList()
+    private val _confirmations = MutableSharedFlow<TitleId>(extraBufferCapacity = 64)
+
+    /** The Titles whose card's Version Background reading just Confirmed, so their badges update. */
+    val confirmations: SharedFlow<TitleId> = _confirmations.asSharedFlow()
     private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
@@ -546,8 +561,17 @@ class Library private constructor(
      */
     suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext
-        val title = store.title(id) ?: return@withContext
-        val login = credentials.load() ?: return@withContext
+        detailsReading.incrementAndGet()
+        try {
+            readDetailsHeaders(id, contentLanguages, changed)
+        } finally {
+            detailsReading.decrementAndGet()
+        }
+    }
+
+    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) {
+        val title = store.title(id) ?: return
+        val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
         val ids = title.listings.map { it.id }
         val asked = store.movieBitrates(ids).keys
@@ -573,13 +597,16 @@ class Library private constructor(
         val provider = providerKey(login)
         shareFileReads(provider)
         if (lookUpFileReads(provider, ids)) changed()
+        // This page's Versions come before Background reading's.
+        connection.cancelRead()
         for (version in unread(title, contentLanguages)) {
             val container = store.container(version.listingId) ?: "mkv"
             if (container !in HEADER_READABLE) continue
             val read = try {
-                connection.whileFree { Read(headerReader.read(client.movieLocation(version.listingId, container), container)) }
+                reads.withLock { connection.whileFree { Read(headerReader.read(client.movieLocation(version.listingId, container), container)) } }
             } catch (e: IOException) {
-                // The Provider refused: no more reads for now.
+                // The Provider refused: no more reads for now, nor Background reading today.
+                if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
                 null
             } ?: break
             store.saveFileRead(version.listingId, read.contents?.toJson(), Instant.now(), shared = false)
@@ -589,6 +616,69 @@ class Library private constructor(
     }
 
     private class Read(val contents: FileContents?)
+
+    /** The Titles whose cards show right now, in the order Background reading should read them. */
+    fun onScreen(ids: List<TitleId>) {
+        cardsOnScreen = ids
+    }
+
+    /** The attributes of the Version [id]'s card shows, with what reads Confirmed; null when the catalog no longer has it. */
+    fun cardBest(id: TitleId, contentLanguages: List<String>): VersionAttributes? =
+        store.title(id)?.let { preferred(candidates(it), contentLanguages).firstOrNull()?.attributes }
+
+    /**
+     * Background reading at [pace], until cancelled: a Header read of the Version a Movie's card
+     * shows, one at a time and only while the connection is free, so never during Playback nor while
+     * a details page reads. Cards on screen come first ([onScreen]), then Continue watching, then the
+     * newest Movies in the Viewer's [contentLanguages]. A Provider answering with an error stops it
+     * until the next day, and one not answering pauses it for a quarter of an hour. Each read that
+     * Confirms a card's Version is announced in [confirmations].
+     */
+    suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace) =
+        readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE)
+
+    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration) = withContext(Dispatchers.IO) {
+        var pausedUntil = Instant.MIN
+        while (true) {
+            delay(pace.gap)
+            val day = ReadingDay.of(store.readingDay(), LocalDate.now(clock))
+            if (day.refused || day.reads >= pace.perDay || clock.instant().isBefore(pausedUntil) || detailsReading.get() > 0) continue
+            val login = credentials.load() ?: continue
+            val next = nextBackgroundRead(contentLanguages) ?: continue
+            if (!reads.tryLock()) continue
+            val read = try {
+                connection.whileFree { Read(headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)) }
+            } catch (e: HeaderReadRefused) {
+                store.saveReadingDay(day.copy(refused = true).kept())
+                continue
+            } catch (e: IOException) {
+                pausedUntil = clock.instant() + offlinePause
+                continue
+            } finally {
+                reads.unlock()
+            }
+            // Null when Play or a details page took the connection.
+            read ?: continue
+            store.saveFileRead(next.listingId, read.contents?.toJson(), Instant.now(), shared = false)
+            store.saveReadingDay(day.copy(reads = day.reads + 1).kept())
+            if (read.contents != null) _confirmations.emit(next.id)
+        }
+    }
+
+    private class BackgroundRead(val id: TitleId, val listingId: Long, val container: String)
+
+    /** The first Movie, in Background reading's order, whose card shows a Version not yet read. */
+    private fun nextBackgroundRead(contentLanguages: List<String>): BackgroundRead? {
+        val newest = store.titles(TitleKind.Movie, 0, NEW_MOVIES).filter { inContentLanguages(candidates(it), contentLanguages, null) }.map { it.id }
+        val order = cardsOnScreen.asSequence() + store.inProgress(ROW_SIZE).asSequence().map { it.id } + newest.asSequence()
+        return order.filter { it.kind == TitleKind.Movie }.distinct().firstNotNullOfOrNull { id ->
+            val title = store.title(id) ?: return@firstNotNullOfOrNull null
+            val shown = preferred(candidates(title), contentLanguages).firstOrNull()?.listing ?: return@firstNotNullOfOrNull null
+            val container = store.container(shown.id) ?: "mkv"
+            if (container !in HEADER_READABLE || store.fileReads(listOf(shown.id)).containsKey(shown.id)) null
+            else BackgroundRead(id, shown.id, container)
+        }
+    }
 
     /** The best Version not yet read in each of [title]'s languages, the Viewer's [contentLanguages] first. */
     private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
@@ -719,6 +809,8 @@ class Library private constructor(
     companion object {
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+        /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
+        private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
         private const val MATCH_FAILURES_IN_A_ROW = 3
 
         /** The kinds of Track the Viewer's last picks are kept by, and what turning subtitles off is kept as. */

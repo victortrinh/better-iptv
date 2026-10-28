@@ -242,6 +242,11 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
         return Lease()
     }
 
+    /** Cancels the Header read holding the connection, if one is, as a [lease] would. */
+    fun cancelRead() {
+        preempt?.invoke()
+    }
+
     /**
      * Runs [read] holding the connection if it is free right now, without waiting for it. A [lease]
      * asked for meanwhile cancels [read] at once. Null when the connection was taken, before or during [read].
