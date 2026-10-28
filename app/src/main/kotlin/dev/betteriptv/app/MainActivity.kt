@@ -114,7 +114,8 @@ private fun Root(app: BetterIptvApp) {
                 app.library, now.plan, now.name, settings,
                 deviceProfile = { readDeviceProfile(context) },
                 onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
-                onPlay = { playing = now.copy(plan = it) },
+                inARow = now.inARow,
+                onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
                 onEnded = { playing = null },
             )
         } else when (val title = opened) {
@@ -170,8 +171,11 @@ private fun Root(app: BetterIptvApp) {
 /** What builds without the in-app updater show: nothing to offer. */
 private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 
-/** What the player plays: a [plan] of the Title or Channel named [name]. */
-private data class NowPlaying(val plan: PlayPlan, val name: String)
+/**
+ * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
+ * row to start by itself since a key was pressed.
+ */
+private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0)
 
 /** The Title whose details are open, and which card opened it (in a list, or on the home screen), so focus goes back there. */
 private data class OpenedTitle(val cardIndex: Int, val id: TitleId, val homeCard: HomeCard? = null)

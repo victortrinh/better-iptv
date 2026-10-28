@@ -149,6 +149,24 @@ object NuageIcons {
         }
     }
 
+    val SkipNext: ImageVector by lazy {
+        materialIcon(name = "Filled.SkipNext") {
+            materialPath {
+                moveTo(6.0f, 18.0f)
+                lineToRelative(8.5f, -6.0f)
+                lineTo(6.0f, 6.0f)
+                verticalLineToRelative(12.0f)
+                close()
+                moveTo(16.0f, 6.0f)
+                verticalLineToRelative(12.0f)
+                horizontalLineToRelative(2.0f)
+                lineTo(18.0f, 6.0f)
+                horizontalLineToRelative(-2.0f)
+                close()
+            }
+        }
+    }
+
     val Subtitles: ImageVector by lazy {
         materialIcon(name = "Filled.Subtitles") {
             materialPath {

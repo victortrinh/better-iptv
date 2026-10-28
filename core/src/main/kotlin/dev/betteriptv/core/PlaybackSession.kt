@@ -39,6 +39,9 @@ private val BUFFERING_WINDOW = 1.minutes
 /** Where the Viewer is gets recorded this often while a file plays, so a crash or a pulled plug loses little. */
 private val RECORD_EVERY = 15.seconds
 
+/** How often an Episode's position is checked for its credits, so the next one is offered as they begin. */
+private val CREDITS_EVERY = 1.seconds
+
 /** The player engines a Version can play on: Media3 by default, VLC for the rare file Media3 can't open. */
 enum class Engine {
     Media3,
@@ -106,9 +109,10 @@ sealed interface PlaybackState {
 
     /**
      * [version] plays on [player]. After repeated buffering, [lowerVersion] is a lower Version in the
-     * same language to suggest; the session never switches to it by itself.
+     * same language to suggest; the session never switches to it by itself. An Episode is in its
+     * [credits] while its position is ([inCredits]), so the next one can be offered.
      */
-    data class Playing(override val version: Version, val player: PlayerEngine, val lowerVersion: Version? = null) : PlaybackState
+    data class Playing(override val version: Version, val player: PlayerEngine, val lowerVersion: Version? = null, val credits: Boolean = false) : PlaybackState
 
     /**
      * Nothing plays: the Version asked for and its Backups are dead, or neither engine can open them.
@@ -130,7 +134,8 @@ sealed interface PlaybackState {
  * position. The Viewer can switch Version, or move to the other engine with [tryOtherPlayer], partway
  * through. Every engine plays through the Viewer's one connection, which is given back only once the
  * engine has let go of the file. Playback starts where the plan starts, and where the Viewer is
- * gets recorded as it plays and when it stops, so Play resumes there.
+ * gets recorded as it plays and when it stops, so Play resumes there. An Episode says when it is in
+ * its credits.
  */
 class PlaybackSession internal constructor(
     private val library: Library,
@@ -296,6 +301,14 @@ class PlaybackSession internal constructor(
                 val position = player.position
                 val duration = player.duration
                 withContext(Dispatchers.IO) { library.saveProgress(resumable, position, duration) }
+            }
+        }
+        if (plan.episode != null) launch {
+            while (true) {
+                delay(CREDITS_EVERY)
+                val shown = _state.value as? PlaybackState.Playing ?: continue
+                val credits = inCredits(player.position, player.duration)
+                if (credits != shown.credits) _state.value = shown.copy(credits = credits)
             }
         }
         var started = false

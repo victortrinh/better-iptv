@@ -113,6 +113,10 @@
     <string name="player_episode">%1$s · S%2$d E%3$d</string>
     <string name="player_next_episode">Next: Season %1$d, Episode %2$d</string>
     <string name="player_play_next">Play next Episode</string>
+    <string name="player_next_in">Plays in %1$d s</string>
+    <string name="player_play_now">Play now</string>
+    <string name="player_watch_credits">Watch credits</string>
+    <string name="player_next">Next Episode</string>
     <string name="tracks_audio">Audio</string>
     <string name="tracks_subtitles">Subtitles</string>
     <string name="subtitles_off">Off</string>
@@ -183,6 +187,10 @@
     <string name="settings_playback">Playback</string>
     <string name="settings_quality_cap">Quality cap</string>
     <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>
+    <string name="settings_play_next">Play next Episode</string>
+    <string name="settings_play_next_detail">At the credits, counts down 10 s, then plays the next Episode by itself.</string>
+    <string name="settings_on">On</string>
+    <string name="settings_off">Off</string>
     <string name="settings_background_reading">Background reading</string>
     <string name="settings_background_reading_detail">While nothing plays, checks Versions\' files so cards show their real languages and quality</string>
     <string name="settings_background_reading_off">Off</string>

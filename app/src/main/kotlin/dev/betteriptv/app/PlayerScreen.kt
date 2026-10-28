@@ -30,7 +30,9 @@ import dev.betteriptv.core.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import dev.betteriptv.core.iso639
 import dev.betteriptv.core.refreshRateFor
+import dev.betteriptv.core.UpNext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -107,9 +109,12 @@ import kotlin.time.Duration.Companion.seconds
  * remembered for the next file, styles subtitles ([settings]' style, changed through
  * [onSubtitleStyle]) and delays the sound or subtitles. The remote's Menu key opens the Versions
  * directly, with "Try other player". The TV switches to the film's refresh rate where it can.
- * Leaving the screen stops playback and gives back the Viewer's connection. When an Episode ends
- * the next one is offered, and choosing it calls [onPlay]; otherwise [onEnded] is called once the
- * file plays to its end.
+ * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
+ * has "Next Episode", and from its credits a card offers the next one, counting down to play it by
+ * itself (see [UpNext]) when [settings] allow and it isn't the [inARow]th to start by itself with no
+ * key pressed; the card stays when the Episode ends. Playing the next Episode calls [onPlay] with
+ * how many have now started by themselves in a row; otherwise [onEnded] is called once the file
+ * plays to its end.
  */
 @Composable
 fun PlayerScreen(
@@ -119,7 +124,8 @@ fun PlayerScreen(
     settings: ViewerSettings,
     deviceProfile: () -> DeviceProfile,
     onSubtitleStyle: (SubtitleStyle) -> Unit,
-    onPlay: (PlayPlan) -> Unit,
+    inARow: Int,
+    onPlay: (PlayPlan, inARow: Int) -> Unit,
     onEnded: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -131,15 +137,22 @@ fun PlayerScreen(
     // Each key press while the overlay shows keeps it up a while longer.
     var pressed by remember(session) { mutableIntStateOf(0) }
     var next by remember(session) { mutableStateOf<PlayPlan?>(null) }
+    // Whether a key was pressed since this Episode started, and whether its credits are on screen
+    // (still so once it ends); the Viewer can turn the next Episode's card away until they leave them.
+    var touched by remember(session) { mutableStateOf(false) }
+    var atCredits by remember(session) { mutableStateOf(false) }
+    var dismissed by remember(session) { mutableStateOf(false) }
     var audioDelay by remember { mutableLongStateOf(0L) }
     var subtitleDelay by remember { mutableLongStateOf(0L) }
     val screen = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(session) {
+        // Looked up as the Episode starts, so the overlay and the credits can offer it.
+        val lookup = async { if (plan.episode == null) null else library.nextEpisodePlan(plan, withContext(Dispatchers.Default) { deviceProfile() }, settings.qualityCap) }
+        launch { next = lookup.await() }
         session.play()
-        next = if (plan.episode == null) null else library.nextEpisodePlan(plan, withContext(Dispatchers.Default) { deviceProfile() }, settings.qualityCap)
-        if (next == null) onEnded()
+        if (lookup.await() == null) onEnded()
     }
 
     val player = when (val current = state) {
@@ -148,6 +161,32 @@ fun PlayerScreen(
         PlaybackState.Failed, PlaybackState.Ended -> null
     } as? ControlledEngine
     val playing = state is PlaybackState.Playing
+    val ended = state == PlaybackState.Ended
+    LaunchedEffect(state) {
+        // Starting between files keeps what was on screen: switching Version in the credits stays in them.
+        when (val shown = state) {
+            is PlaybackState.Playing -> atCredits = shown.credits
+            PlaybackState.Ended -> atCredits = true
+            PlaybackState.Failed -> atCredits = false
+            is PlaybackState.Starting -> Unit
+        }
+        if (!atCredits) dismissed = false
+    }
+    // Once the Episode ends the next one stays offered, counting down only if the Viewer didn't turn it away.
+    val upNext = next?.takeIf { atCredits && (ended || !dismissed) }
+    val counting = upNext != null && !dismissed && UpNext.countsDown(settings.playNextAutomatically, inARow)
+    var left by remember(session) { mutableIntStateOf(UpNext.COUNTDOWN.inWholeSeconds.toInt()) }
+    LaunchedEffect(counting) {
+        if (!counting) return@LaunchedEffect
+        left = UpNext.COUNTDOWN.inWholeSeconds.toInt()
+        while (left > 0) {
+            delay(1.seconds)
+            left--
+        }
+        upNext?.let { onPlay(it, if (touched) 1 else inARow + 1) }
+    }
+    val card = upNext?.takeIf { !ended && panel == Panel.None }
+    LaunchedEffect(card != null) { if (card != null) overlay = false }
     LaunchedEffect(player, audioDelay, subtitleDelay) { player?.delay(audioDelay, subtitleDelay) }
 
     // Downloaded subtitles, for a file without subtitles in the Viewer's languages: searched for once per
@@ -185,18 +224,19 @@ fun PlayerScreen(
             overlay = false
         }
     }
-    // Not over a panel, whose focus it would take.
-    val suggested = (state as? PlaybackState.Playing)?.lowerVersion?.takeIf { panel == Panel.None }
+    // Not over a panel or the next Episode's card, whose focus it would take.
+    val suggested = (state as? PlaybackState.Playing)?.lowerVersion?.takeIf { panel == Panel.None && card == null }
     // The screen holds focus whenever nothing on it asks for it, so the remote's keys still reach it.
     // It keeps it under the error too, until "Try other player" asks: focus handed over as the button
     // appears would arrive before the button can show it.
-    val bare = panel == Panel.None && !overlay && suggested == null && next == null
+    val bare = panel == Panel.None && !overlay && suggested == null && upNext == null
     LaunchedEffect(bare) { if (bare) screen.requestFocus() }
     if (overlay && panel == Panel.None) BackHandler { overlay = false }
 
     Box(
         Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown || panel != Panel.None || next != null) return@onPreviewKeyEvent false
+            if (event.type == KeyEventType.KeyDown) touched = true
+            if (event.type != KeyEventType.KeyDown || panel != Panel.None || (ended && upNext != null)) return@onPreviewKeyEvent false
             pressed++
             when {
                 event.key == Key.Menu -> panel = if (state is PlaybackState.Ended) Panel.None else Panel.Versions
@@ -204,8 +244,8 @@ fun PlayerScreen(
                 // A Channel is live: there is nowhere to seek to.
                 event.key == Key.MediaRewind -> if (!plan.live) player?.seek(-SEEK_STEP)
                 event.key == Key.MediaFastForward -> if (!plan.live) player?.seek(SEEK_STEP)
-                // With the overlay up, its buttons take the keys.
-                overlay || suggested != null || player == null -> return@onPreviewKeyEvent false
+                // With the overlay or a card up, its buttons take the keys.
+                overlay || suggested != null || card != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
                     Key.DirectionLeft -> { if (!plan.live) player.seek(-SEEK_STEP); overlay = true }
                     Key.DirectionRight -> { if (!plan.live) player.seek(SEEK_STEP); overlay = true }
@@ -237,8 +277,9 @@ fun PlayerScreen(
             }
             // Under the open Versions it would show through.
             PlaybackState.Failed -> if (panel == Panel.None) Failed(onTryOtherPlayer = session::tryOtherPlayer)
-            PlaybackState.Ended -> next?.let { NextEpisode(it, onPlay = { onPlay(it) }) }
+            PlaybackState.Ended -> upNext?.let { NextEpisode(it, left.takeIf { counting }, onPlay = { onPlay(it, 0) }) }
         }
+        card?.let { UpNextCard(it, left.takeIf { counting }, onPlay = { onPlay(it, 0) }, onDismiss = { dismissed = true }) }
 
         if (overlay && panel == Panel.None && player != null && playing) {
             Overlay(
@@ -247,6 +288,7 @@ fun PlayerScreen(
                 version = state.version,
                 player = player,
                 live = plan.live,
+                onNext = next?.let { { onPlay(it, 0) } },
                 onVersions = { panel = Panel.Versions },
                 onTracks = { panel = Panel.Tracks },
             )
@@ -532,11 +574,11 @@ private fun engineName(engine: Engine) = stringResource(
 
 /**
  * The player overlay: the Title, its Episode and the Version playing at the top; where playback is,
- * the transport and the panels' buttons at the bottom. Play/Pause takes first focus. A [live]
- * Channel has no scrubber and no jumps.
+ * the transport (with "Next Episode" when there is one, [onNext]) and the panels' buttons at the
+ * bottom. Play/Pause takes first focus. A [live] Channel has no scrubber and no jumps.
  */
 @Composable
-private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, onVersions: () -> Unit, onTracks: () -> Unit) {
+private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, onNext: (() -> Unit)?, onVersions: () -> Unit, onTracks: () -> Unit) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
@@ -578,6 +620,7 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             onBack = { player.seek(-SEEK_STEP) },
             onPlayPause = player::togglePause,
             onForward = { player.seek(SEEK_STEP) },
+            onNext = onNext,
             onVersions = onVersions,
             onTracks = onTracks,
             modifier = Modifier.align(Alignment.BottomStart),
@@ -587,8 +630,8 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
 
 /**
  * The bottom of the player overlay: elapsed time, the scrubber and the time left, then Back 10 s,
- * Play/Pause and Forward 10 s as round icons in the middle, between Versions on the left and Audio
- * and subtitles on the right.
+ * Play/Pause and Forward 10 s as round icons in the middle (then Next Episode, when there is one to
+ * play, [onNext]), between Versions on the left and Audio and subtitles on the right.
  * The times sit in fixed slots in tabular digits, so the scrubber stays still as they tick (#70).
  * A [live] Channel has no scrubber and no jumps: Play/Pause stays alone in the middle.
  */
@@ -606,6 +649,7 @@ internal fun PlayerControls(
     onVersions: () -> Unit,
     onTracks: () -> Unit,
     modifier: Modifier = Modifier,
+    onNext: (() -> Unit)? = null,
 ) {
     val time = Type.label.copy(fontFeatureSettings = "tnum")
     val measurer = rememberTextMeasurer()
@@ -638,6 +682,7 @@ internal fun PlayerControls(
                         size = PLAY_SIZE,
                     )
                     if (!live) NuageIconButton(NuageIcons.Forward10, stringResource(R.string.player_forward), onForward, slot = PLAY_SIZE)
+                    if (onNext != null) NuageIconButton(NuageIcons.SkipNext, stringResource(R.string.player_next), onNext, slot = PLAY_SIZE)
                 }
             },
             end = { NuageButton(stringResource(R.string.player_tracks), onClick = onTracks, icon = NuageIcons.Subtitles) },
@@ -860,9 +905,12 @@ private fun formatName(mimeType: String): String? = when (mimeType) {
     else -> null
 }
 
-/** Offered once an Episode ends: the [next] one, which one press plays. Back leaves the player. */
+/**
+ * Offered once an Episode ends: the [next] one, which one press plays, or which plays by itself in
+ * [left] seconds when it counts down. Back leaves the player.
+ */
 @Composable
-private fun NextEpisode(next: PlayPlan, onPlay: () -> Unit) {
+private fun NextEpisode(next: PlayPlan, left: Int?, onPlay: () -> Unit) {
     val button = remember { FocusRequester() }
     LaunchedEffect(next) { button.requestFocus() }
     val episode = next.episode ?: return
@@ -873,7 +921,39 @@ private fun NextEpisode(next: PlayPlan, onPlay: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(Spacing.l),
         ) {
             Text(stringResource(R.string.player_next_episode, episode.season, episode.number), style = Type.headline, color = Colors.ink, textAlign = TextAlign.Center)
+            if (left != null) Text(stringResource(R.string.player_next_in, left), style = Type.body, color = Colors.inkMuted)
             NuageButton(stringResource(R.string.player_play_next), onPlay, Modifier.focusRequester(button), icon = Icons.Filled.PlayArrow)
+        }
+    }
+}
+
+/**
+ * Offered over an Episode's credits, bottom right: the [next] one, with "Play now", which takes
+ * focus, and "Watch credits", which turns it away, as Back does. When it counts down, it says it
+ * plays by itself in [left] seconds.
+ */
+@Composable
+private fun UpNextCard(next: PlayPlan, left: Int?, onPlay: () -> Unit, onDismiss: () -> Unit) {
+    val episode = next.episode ?: return
+    val button = remember { FocusRequester() }
+    LaunchedEffect(next) { button.requestFocus() }
+    BackHandler(onBack = onDismiss)
+    val shape = RoundedCornerShape(Corners.card)
+    Box(Modifier.fillMaxSize().background(bottomScrim).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
+        Column(
+            // Glass carrying text over the picture: ground at 75% first, then glass.
+            Modifier.align(Alignment.BottomEnd)
+                .background(Colors.veil, shape)
+                .background(Colors.surface, shape)
+                .padding(Spacing.l),
+        ) {
+            Text(stringResource(R.string.player_next_episode, episode.season, episode.number), style = Type.label, color = Colors.ink)
+            if (left != null) Text(stringResource(R.string.player_next_in, left), style = Type.caption, color = Colors.inkMuted)
+            Spacer(Modifier.height(Spacing.m))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
+                NuageButton(stringResource(R.string.player_play_now), onPlay, Modifier.focusRequester(button), icon = Icons.Filled.PlayArrow)
+                NuageButton(stringResource(R.string.player_watch_credits), onDismiss)
+            }
         }
     }
 }
