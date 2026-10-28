@@ -325,7 +325,9 @@ class PlaybackSession internal constructor(
                             while (stalls.first().elapsedNow() > BUFFERING_WINDOW) stalls.removeFirst()
                             val shown = _state.value as PlaybackState.Playing
                             if (stalls.size >= BUFFERING_REPEATS && shown.lowerVersion == null) {
-                                lowerVersion(version, plan.versions)?.let { _state.value = shown.copy(lowerVersion = it) }
+                                // What the player found in the file tells a Movie's quality the Prefix seldom does.
+                                val known = player.seen?.let { version.copy(attributes = version.attributes.confirmedBy(it)) } ?: version
+                                lowerVersion(known, plan.versions)?.let { _state.value = shown.copy(lowerVersion = it) }
                             }
                         }
                     }

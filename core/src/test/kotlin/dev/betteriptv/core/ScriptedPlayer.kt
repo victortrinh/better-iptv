@@ -25,6 +25,9 @@ class ScriptedPlayer(private val provider: FakeProvider) {
     /** Every location played, with where it started from in milliseconds, in order. */
     val played = CopyOnWriteArrayList<Pair<Long, Long>>()
 
+    /** What each Listing's file holds, as the engine playing it reports once its picture starts. */
+    val files: MutableMap<Long, FileContents> = ConcurrentHashMap()
+
     /** Every location played, in order. */
     val locations = CopyOnWriteArrayList<String>()
 
@@ -69,6 +72,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         override val overlapsRequests = engine == Engine.Vlc && vlcReads > 0
         private val requests = CopyOnWriteArrayList<HttpURLConnection>()
         @Volatile private var released = false
+        @Volatile override var seen: FileContents? = null
         /** Completes with how playing stops: a failure, or null for the file's end. */
         val failure = CompletableDeferred<Throwable?>()
 
@@ -99,6 +103,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
             opened.await()
             if (listingId in undecodable) throw CantOpen("scripted: $engine can't decode the file")
             this.events = events
+            seen = files[listingId]
             events(PlayerEvent.Started)
             failure.await()?.let { throw it }
         }
