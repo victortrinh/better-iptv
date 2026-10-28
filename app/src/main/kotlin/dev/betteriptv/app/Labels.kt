@@ -58,8 +58,13 @@ fun languageName(tag: String): String {
     return locale.getDisplayName(locale).replaceFirstChar { it.titlecase(locale) }
 }
 
-/** [playLabel] for a [version], naming an Untagged one's language as unnamed. */
-fun Context.playLabel(version: Version): String = version.attributes.playLabel(getString(R.string.language_untagged))
+/** [playLabel] for a [version], naming an Untagged one's language as unnamed; a Channel's says how it streams. */
+fun Context.playLabel(version: Version): String = when (version.liveFormat) {
+    null -> version.attributes.playLabel(getString(R.string.language_untagged))
+    // A Channel says nothing of its language or quality, only how it streams.
+    "ts" -> getString(R.string.player_live, "MPEG-TS")
+    else -> getString(R.string.player_live, "HLS")
+}
 
 /** What a [version]'s row in a Versions list shows. */
 fun Context.versionLine(version: Version): VersionLine {

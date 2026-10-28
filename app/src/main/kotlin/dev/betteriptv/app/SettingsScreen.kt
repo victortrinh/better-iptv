@@ -125,6 +125,19 @@ fun SettingsScreen(
                         )
                     }
                 }
+                item {
+                    Labelled(stringResource(R.string.settings_background_reading), stringResource(R.string.settings_background_reading_detail)) {
+                        ChoiceRow(
+                            listOf(
+                                stringResource(R.string.settings_background_reading_off),
+                                stringResource(R.string.settings_background_reading_gentle),
+                                stringResource(R.string.settings_background_reading_normal),
+                            ),
+                            selected = BackgroundReading.entries.indexOf(settings.backgroundReading),
+                            onSelect = { index -> onChange { it.copy(backgroundReading = BackgroundReading.entries[index]) } },
+                        )
+                    }
+                }
                 item { Heading(stringResource(R.string.settings_app)) }
                 item {
                     val offered = update.offered

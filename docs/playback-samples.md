@@ -26,7 +26,7 @@ adb shell input keyevent BACK
 adb shell dumpsys media.audio_flinger | grep -A12 OFFLOAD
 ```
 
-Don't `am force-stop dev.betteriptv` while a sample passes audio through: on Fire OS 7 the audio server keeps the killed process's direct output until a reboot, and every later passthrough sample then fails with `AUDIO_TRACK_INIT_FAILED`. If a track is stuck, `adb reboot`.
+Don't `am force-stop dev.betteriptv.debug` while a sample passes audio through: on Fire OS 7 the audio server keeps the killed process's direct output until a reboot, and every later passthrough sample then fails with `AUDIO_TRACK_INIT_FAILED`. If a track is stuck, `adb reboot`.
 
 ## Results
 

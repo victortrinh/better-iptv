@@ -55,6 +55,13 @@ class FakeProvider : Closeable {
     /** Replaces the fixture's show Categories with these ones. */
     @Volatile var showCategoriesOverride: String? = null
 
+    /** The live Categories and Listings, served instead of none. */
+    @Volatile var liveCategoriesOverride: String? = null
+    @Volatile var liveListOverride: String? = null
+
+    /** Live stream formats (`ts`, `m3u8`) answered with HTTP 404, as for a Provider that doesn't send one. */
+    val deadLiveFormats: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     /** Show details by Provider show id, served instead of the fixture's. */
     val showDetailsOverride = ConcurrentHashMap<Long, String>()
 
@@ -73,6 +80,15 @@ class FakeProvider : Closeable {
     /** Sends movie files a kilobyte at a time, slow enough for a Header read to be caught midway. */
     @Volatile var slowFiles = false
 
+    /**
+     * After this many range requests, answers the rest with HTTP 429, as a Provider's flood
+     * protection does. Null never limits.
+     */
+    @Volatile var refuseRangesAfter: Int? = null
+
+    /** Closes movie file requests without answering, as an unreachable Provider does. */
+    @Volatile var unansweredFiles = false
+
     /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
     val movieDetails = ConcurrentHashMap<Long, String>()
     /** Movie Listings whose files are answered with HTTP 404, as the Provider answers for a dead link. */
@@ -81,6 +97,9 @@ class FakeProvider : Closeable {
     /** Movie Listings whose files open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
     val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     @Volatile var slowStreamDelayMillis = 1_000L
+
+    /** Called with each `player_api` request's action (null for the account) before it is answered. */
+    @Volatile var onRequest: ((action: String?) -> Unit)? = null
 
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
@@ -116,6 +135,7 @@ class FakeProvider : Closeable {
         server.createContext("/player_api.php") { exchange -> try { api(exchange) } finally { exchange.close() } }
         server.createContext("/movie/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
         server.createContext("/series/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
+        server.createContext("/live/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
         server.start()
     }
 
@@ -147,6 +167,17 @@ class FakeProvider : Closeable {
         }
     }
 
+    /** Serves these live Listings, as (name, Category name), numbered from 1 in this order. */
+    fun serveChannels(vararg listings: Pair<String, String>) {
+        val categories = listings.map { it.second }.distinct()
+        liveCategoriesOverride = categories.withIndex()
+            .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
+        liveListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
+            """{"num":${i + 1},"stream_id":${i + 1},"name":${json(listing.first)},"stream_type":"live","stream_icon":"http://logo/${i + 1}.png",""" +
+                """"category_id":"${categories.indexOf(listing.second) + 1}","epg_channel_id":"","tv_archive":0}"""
+        }
+    }
+
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     override fun close() = server.stop(0)
@@ -158,6 +189,7 @@ class FakeProvider : Closeable {
             wrongLoginStatus?.let { return exchange.sendResponseHeaders(it, -1) }
             return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
+        onRequest?.invoke(query["action"])
         when (query["action"]) {
             null -> respond(exchange) { it.write(account().toByteArray()) }
             "get_vod_categories" -> respond(exchange) { body ->
@@ -170,6 +202,8 @@ class FakeProvider : Closeable {
             "get_series" -> respond(exchange) { body ->
                 if (!catalogFile("series_streams.json", body)) body.write(showListOverride?.toByteArray() ?: fixture("series_streams.json"))
             }
+            "get_live_categories" -> respond(exchange) { it.write((liveCategoriesOverride ?: "[]").toByteArray()) }
+            "get_live_streams" -> respond(exchange) { it.write((liveListOverride ?: "[]").toByteArray()) }
             "get_vod_info" -> respond(exchange) { body ->
                 body.write((movieDetails[query["vod_id"]?.toLongOrNull()] ?: """{"info":[],"movie_data":{}}""").toByteArray())
             }
@@ -235,6 +269,11 @@ class FakeProvider : Closeable {
         if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return exchange.sendResponseHeaders(401, -1)
         val id = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()
         if (id in deadStreams) return exchange.sendResponseHeaders(404, -1)
+        if (parts[1] == "live" && parts.getOrNull(4)?.substringAfter('.') in deadLiveFormats) return exchange.sendResponseHeaders(404, -1)
+        // Closed by the caller without a status line.
+        if (unansweredFiles) return
+        val limit = refuseRangesAfter
+        if (limit != null && exchange.requestHeaders.getFirst("Range") != null && _ranges.size >= limit) return exchange.sendResponseHeaders(429, -1)
         if (openStreams.incrementAndGet() > 1) {
             openStreams.decrementAndGet()
             _refusedStreams.incrementAndGet()

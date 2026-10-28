@@ -19,7 +19,9 @@ import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.EpisodeNumber
+import dev.betteriptv.core.SubtitleOffer
 import dev.betteriptv.core.Track
+import kotlinx.coroutines.flow.MutableStateFlow
 import dev.betteriptv.core.iso639
 import dev.betteriptv.core.refreshRateFor
 import kotlinx.coroutines.Dispatchers
@@ -141,6 +143,33 @@ fun PlayerScreen(
     } as? ControlledEngine
     val playing = state is PlaybackState.Playing
     LaunchedEffect(player, audioDelay, subtitleDelay) { player?.delay(audioDelay, subtitleDelay) }
+
+    // Downloaded subtitles, for a file without subtitles in the Viewer's languages: searched for once per
+    // session, when a file needs them, and shown automatically when the Track choice says so.
+    val chosen by (player?.chosen ?: remember { MutableStateFlow(null) }).collectAsState()
+    var offers by remember(session) { mutableStateOf<List<SubtitleOffer>?>(null) }
+    var shownSubtitle by remember(session) { mutableStateOf<ShownSubtitle?>(null) }
+    val downloads = remember(session) { HashMap<String, ShownSubtitle>() }
+    val downloadLanguages = remember(player, chosen) {
+        if (chosen == null) emptyList() else player?.tracks?.let { plan.downloadLanguages(it.subtitles, library.rememberedTracks()) }.orEmpty()
+    }
+    val showDownloaded: (SubtitleOffer) -> Unit = { offer ->
+        scope.launch {
+            val subtitle = downloads[offer.id] ?: library.downloadSubtitle(offer)?.let { file ->
+                withContext(Dispatchers.Default) { ShownSubtitle.parse(offer, file) }.also { downloads[offer.id] = it }
+            }
+            if (subtitle != null) shownSubtitle = subtitle
+        }
+    }
+    LaunchedEffect(session, downloadLanguages.isNotEmpty()) {
+        if (downloadLanguages.isNotEmpty() && offers == null) offers = library.subtitleOffers(plan, plan.subtitleLanguages(library.rememberedTracks()))
+    }
+    LaunchedEffect(chosen, offers) {
+        val choice = chosen ?: return@LaunchedEffect
+        val language = choice.downloaded
+        if (language == null) shownSubtitle = null
+        else if (shownSubtitle?.offer?.language != language) offers?.firstOrNull { it.language == language }?.let(showDownloaded)
+    }
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
     MatchRefreshRate(player)
     LaunchedEffect(overlay, pressed, panel, player?.isPlaying) {
@@ -166,13 +195,14 @@ fun PlayerScreen(
             when {
                 event.key == Key.Menu -> panel = if (state is PlaybackState.Ended) Panel.None else Panel.Versions
                 event.key == Key.MediaPlayPause -> player?.togglePause()
-                event.key == Key.MediaRewind -> player?.seek(-SEEK_STEP)
-                event.key == Key.MediaFastForward -> player?.seek(SEEK_STEP)
+                // A Channel is live: there is nowhere to seek to.
+                event.key == Key.MediaRewind -> if (!plan.live) player?.seek(-SEEK_STEP)
+                event.key == Key.MediaFastForward -> if (!plan.live) player?.seek(SEEK_STEP)
                 // With the overlay up, its buttons take the keys.
                 overlay || suggested != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
-                    Key.DirectionLeft -> player.seek(-SEEK_STEP).also { overlay = true }
-                    Key.DirectionRight -> player.seek(SEEK_STEP).also { overlay = true }
+                    Key.DirectionLeft -> { if (!plan.live) player.seek(-SEEK_STEP); overlay = true }
+                    Key.DirectionRight -> { if (!plan.live) player.seek(SEEK_STEP); overlay = true }
                     Key.DirectionCenter, Key.Enter, Key.DirectionUp, Key.DirectionDown -> overlay = true
                     else -> return@onPreviewKeyEvent false
                 }
@@ -183,6 +213,7 @@ fun PlayerScreen(
         // Beside the picture, not around it: Back would spend a press moving focus up to a focusable parent.
         Box(Modifier.focusRequester(screen).focusable())
         if (player != null) key(player) { EngineSurface(player) }
+        if (player != null) shownSubtitle?.let { DownloadedSubtitles(player, it, subtitleDelay, settings.subtitleStyle) }
 
         when (val shown = state) {
             is PlaybackState.Starting -> if (!overlay) VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)))
@@ -209,6 +240,7 @@ fun PlayerScreen(
                 episode = plan.episode,
                 version = state.version,
                 player = player,
+                live = plan.live,
                 onVersions = { panel = Panel.Versions },
                 onTracks = { panel = Panel.Tracks },
             )
@@ -235,11 +267,19 @@ fun PlayerScreen(
                 settings.subtitleStyle,
                 audioDelay,
                 subtitleDelay,
+                downloads = offers.orEmpty().filter { it.language in downloadLanguages }.groupBy { it.language }.values.flatMap { it.take(DOWNLOADS_PER_LANGUAGE) },
+                shownDownload = shownSubtitle?.offer,
+                onDownloaded = { offer ->
+                    player?.chooseSubtitles(null)
+                    showDownloaded(offer)
+                    scope.launch { library.rememberSubtitles(offer.language) }
+                },
                 onAudio = { index, track ->
                     player?.chooseAudio(index)
                     track.language?.let { scope.launch { library.rememberAudio(it) } }
                 },
                 onSubtitles = { index, track ->
+                    shownSubtitle = null
                     player?.chooseSubtitles(index)
                     if (track == null) scope.launch { library.rememberSubtitles(null) }
                     else track.language?.let { scope.launch { library.rememberSubtitles(it) } }
@@ -260,6 +300,12 @@ private const val SEEK_STEP = 10_000L
 
 /** How long a delay changes with each press, in milliseconds. */
 private const val DELAY_STEP = 50L
+
+/** How far the subtitle delay moves a press: a downloaded subtitle is often off by whole seconds, and finer is unnoticeable. */
+private const val SUBTITLE_DELAY_STEP = 250L
+
+/** How many downloaded subtitles are offered per language: another file is often the fix for one badly off. */
+private const val DOWNLOADS_PER_LANGUAGE = 3
 
 /** How long a Version stays named once it starts. */
 private val NAMED_FOR = 5.seconds
@@ -480,10 +526,11 @@ private fun engineName(engine: Engine) = stringResource(
 
 /**
  * The player overlay: the Title, its Episode and the Version playing at the top; where playback is,
- * the transport and the panels' buttons at the bottom. Play/Pause takes first focus.
+ * the transport and the panels' buttons at the bottom. Play/Pause takes first focus. A [live]
+ * Channel has no scrubber and no jumps.
  */
 @Composable
-private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, onVersions: () -> Unit, onTracks: () -> Unit) {
+private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, onVersions: () -> Unit, onTracks: () -> Unit) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
@@ -507,14 +554,17 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             )
             if (version != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                    BadgeRow(version.attributes.cardBadges())
-                    Spacer(Modifier.width(Spacing.s))
+                    // A Channel has no badges: its label stands alone.
+                    if (!live) {
+                        BadgeRow(version.attributes.cardBadges())
+                        Spacer(Modifier.width(Spacing.s))
+                    }
                     Text(context.playLabel(version), style = Type.caption, color = Colors.ink, maxLines = 1)
                 }
             }
         }
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!live) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(clock(position), style = Type.label, color = Colors.ink)
                 Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
                     val shape = RoundedCornerShape(3.dp)
@@ -527,14 +577,14 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             }
             Spacer(Modifier.height(Spacing.l))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
-                NuageButton(stringResource(R.string.player_back), onClick = { player.seek(-SEEK_STEP) })
+                if (!live) NuageButton(stringResource(R.string.player_back), onClick = { player.seek(-SEEK_STEP) })
                 NuageButton(
                     stringResource(if (isPlaying) R.string.player_pause else R.string.play),
                     onClick = player::togglePause,
                     modifier = Modifier.focusRequester(play),
                     icon = if (isPlaying) null else Icons.Filled.PlayArrow,
                 )
-                NuageButton(stringResource(R.string.player_forward), onClick = { player.seek(SEEK_STEP) })
+                if (!live) NuageButton(stringResource(R.string.player_forward), onClick = { player.seek(SEEK_STEP) })
                 Spacer(Modifier.weight(1f))
                 NuageButton(stringResource(R.string.versions_title), onClick = onVersions)
                 NuageButton(stringResource(R.string.player_tracks), onClick = onTracks)
@@ -560,6 +610,9 @@ private fun TracksPanel(
     style: SubtitleStyle,
     audioDelay: Long,
     subtitleDelay: Long,
+    downloads: List<SubtitleOffer>,
+    shownDownload: SubtitleOffer?,
+    onDownloaded: (SubtitleOffer) -> Unit,
     onAudio: (Int, Track) -> Unit,
     onSubtitles: (Int?, Track?) -> Unit,
     onStyle: (SubtitleStyle) -> Unit,
@@ -592,17 +645,31 @@ private fun TracksPanel(
             }
             item { PanelHeading(stringResource(R.string.tracks_subtitles)) }
             item {
-                SettingRow(stringResource(R.string.subtitles_off), if (tracks?.subtitlesOn == null) on else "", onClick = {
+                SettingRow(stringResource(R.string.subtitles_off), if (tracks?.subtitlesOn == null && shownDownload == null) on else "", onClick = {
                     onSubtitles(null, null)
                     picks++
                 })
             }
             tracks?.subtitles.orEmpty().forEachIndexed { index, track ->
                 item {
-                    SettingRow(context.trackName(track), if (index == tracks?.subtitlesOn) on else "", onClick = {
+                    SettingRow(context.trackName(track), if (index == tracks?.subtitlesOn && shownDownload == null) on else "", onClick = {
                         onSubtitles(index, track)
                         picks++
                     })
+                }
+            }
+            downloads.forEach { offer ->
+                item {
+                    val detail = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
+                    SettingRow(
+                        stringResource(R.string.subtitle_downloaded, context.trackName(Track(offer.language))),
+                        if (offer.id == shownDownload?.id) on else "",
+                        onClick = {
+                            onDownloaded(offer)
+                            picks++
+                        },
+                        detail = detail.takeIf { it.isNotBlank() },
+                    )
                 }
             }
             item { PanelHeading(stringResource(R.string.subtitle_style)) }
@@ -629,8 +696,11 @@ private fun TracksPanel(
                 }
             }
             item { PanelHeading(stringResource(R.string.delays)) }
-            item { DelayRow(R.string.audio_delay, audioDelay, onAudioDelay) }
-            item { DelayRow(R.string.subtitle_delay, subtitleDelay, onSubtitleDelay) }
+            item { DelayRow(R.string.audio_delay, audioDelay, DELAY_STEP, stringResource(R.string.delay_value, audioDelay), onAudioDelay) }
+            item {
+                val seconds = String.format(java.util.Locale.getDefault(), "%+.2f", subtitleDelay / 1000.0)
+                DelayRow(R.string.subtitle_delay, subtitleDelay, SUBTITLE_DELAY_STEP, stringResource(R.string.delay_seconds, seconds), onSubtitleDelay)
+            }
         }
     }
 }
@@ -651,18 +721,18 @@ private fun StyleChoice(label: Int, options: List<Int>, selected: Int, onSelect:
 
 /** An audio or subtitle delay, made earlier or later a step at a time. */
 @Composable
-private fun DelayRow(label: Int, delay: Long, onChange: (Long) -> Unit) {
+private fun DelayRow(label: Int, delay: Long, step: Long, shown: String, onChange: (Long) -> Unit) {
     Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
-        NuageButton(stringResource(R.string.delay_earlier), onClick = { onChange(delay - DELAY_STEP) })
+        NuageButton(stringResource(R.string.delay_earlier), onClick = { onChange(delay - step) })
         Text(
-            stringResource(R.string.delay_value, delay),
+            shown,
             style = Type.label,
             color = Colors.ink,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(96.dp),
         )
-        NuageButton(stringResource(R.string.delay_later), onClick = { onChange(delay + DELAY_STEP) })
+        NuageButton(stringResource(R.string.delay_later), onClick = { onChange(delay + step) })
     }
 }
 

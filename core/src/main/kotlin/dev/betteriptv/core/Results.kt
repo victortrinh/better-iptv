@@ -34,6 +34,9 @@ sealed interface HomeRow {
     /** The Titles the Viewer started and didn't finish, last played first. */
     data class ContinueWatching(val titles: List<InProgress>) : HomeRow
 
+    /** The Channels the Viewer saved, in the order they were added. */
+    data class Favourites(val channels: List<Channel>) : HomeRow
+
     /** Titles with recently added Listings, most popular on TMDB first. */
     data class NewOnYourService(val titles: List<TitleSummary>) : HomeRow
 
@@ -106,12 +109,16 @@ data class Episode(
  * One playable copy of a Movie or Episode, from one Listing (for an Episode, [listingId] is the
  * Provider's Episode id). [backups] are the equivalent Versions (same language and quality), best
  * first, tried when this one fails to start.
+ *
+ * A Channel plays as a Version too, [listingId] being its stream id, with a [liveFormat]: `ts` for
+ * MPEG-TS, with the same stream as HLS (`m3u8`) as its Backup.
  */
 data class Version(
     val listingId: Long,
     val name: String,
     val attributes: VersionAttributes,
     val backups: List<Version> = emptyList(),
+    val liveFormat: String? = null,
 )
 
 /** How the app knows a Version attribute. */
@@ -196,9 +203,31 @@ sealed interface SyncStatus {
         override val last: CompletedSync? = null
     }
 
-    data class Running(override val last: CompletedSync?) : SyncStatus
+    /**
+     * A Sync is reading the Provider's catalog: [moviesRead] movie and [showsRead] show Listings so
+     * far, Clutter and Sports replays left out. The Provider sends movies first, and never a total.
+     */
+    data class Running(override val last: CompletedSync?, val moviesRead: Int = 0, val showsRead: Int = 0) : SyncStatus {
+        /** How far through, judged by [last]'s Listing counts; below 1 until the Sync finishes, null without them. */
+        val fraction: Float?
+            get() {
+                val expected = (last ?: return null).let { it.movieListingCount + it.showListingCount }
+                if (expected == 0) return null
+                return ((moviesRead + showsRead).toFloat() / expected).coerceAtMost(MAX_RUNNING_FRACTION)
+            }
+
+        private companion object {
+            const val MAX_RUNNING_FRACTION = 0.99f
+        }
+    }
 
     data class Synced(override val last: CompletedSync) : SyncStatus
+
+    /**
+     * The Sync finished and its catalog shows, and the cloud is being asked about [of] names to Match
+     * suspects, [asked] so far. Their Titles regroup once every name is asked.
+     */
+    data class Matching(override val last: CompletedSync, val asked: Int, val of: Int) : SyncStatus
 
     /** The Sync failed; the catalog from [last] is still shown. */
     data class Failed(val problem: SyncProblem, override val last: CompletedSync?) : SyncStatus

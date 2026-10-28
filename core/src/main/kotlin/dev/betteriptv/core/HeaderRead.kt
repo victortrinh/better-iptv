@@ -61,7 +61,10 @@ internal val HEADER_READABLE = setOf("mkv", "webm", "mp4", "m4v", "mov")
  * which frees the Viewer's connection.
  */
 internal class HeaderReader(private val http: OkHttpClient) {
-    /** What the file at [location] holds; null when its header can't be read. Throws an [IOException] when the Provider refuses. */
+    /**
+     * What the file at [location] holds; null when its header can't be read. Throws
+     * [HeaderReadRefused] when the Provider answers with an error, and another [IOException] when it doesn't answer.
+     */
     suspend fun read(location: String, container: String): FileContents? {
         val start = fetch(location, 0, START_BYTES)
         if (container !in MP4_CONTAINERS) return readMatroska(start.bytes, start.size)
@@ -94,7 +97,7 @@ internal class HeaderReader(private val http: OkHttpClient) {
                 try {
                     response.use {
                         // Never the location in a message: it holds the login.
-                        if (response.code != 200 && response.code != 206) throw IOException("The Provider answered a Header read with HTTP ${response.code}.")
+                        if (response.code != 200 && response.code != 206) throw HeaderReadRefused(response.code)
                         val size = if (response.code == 206) response.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
                         else response.body!!.contentLength().takeIf { it >= 0 }
                         // A Provider that ignores the range sends the whole file: the start is all that's read of it.
@@ -115,6 +118,9 @@ internal class HeaderReader(private val http: OkHttpClient) {
         val MP4_CONTAINERS = setOf("mp4", "m4v", "mov")
     }
 }
+
+/** The Provider answered a Header read with HTTP [status] instead of the file. */
+internal class HeaderReadRefused(val status: Int) : IOException("The Provider answered a Header read with HTTP $status.")
 
 // Matroska
 
