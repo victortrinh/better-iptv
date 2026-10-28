@@ -3,6 +3,7 @@ package dev.betteriptv.app
 import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
+import dev.betteriptv.core.BackgroundPace
 import dev.betteriptv.core.QualityCap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,11 @@ data class ViewerSettings(
     val subtitleStyle: SubtitleStyle = SubtitleStyle(),
     /** Whether an Episode's credits count down to the next Episode, which then plays by itself. */
     val playNextAutomatically: Boolean = true,
+    val backgroundReading: BackgroundReading = BackgroundReading.Gentle,
 )
+
+/** How fast Background reading goes; [pace] is null when it is off. */
+enum class BackgroundReading(val pace: BackgroundPace?) { Off(null), Gentle(BackgroundPace.Gentle), Normal(BackgroundPace.Normal) }
 
 /**
  * How the player draws subtitles that carry no style of their own (styled ASS subtitles keep
@@ -68,6 +73,7 @@ class ViewerSettingsStore(context: Context) {
             .putString(SUBTITLE_BACKGROUND, new.subtitleStyle.background.name)
             .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
             .putBoolean(PLAY_NEXT_AUTOMATICALLY, new.playNextAutomatically)
+            .putString(BACKGROUND_READING, new.backgroundReading.name)
             .apply()
         _settings.value = new
     }
@@ -88,6 +94,7 @@ class ViewerSettingsStore(context: Context) {
                 position = read(SUBTITLE_POSITION, SubtitlePosition.entries) ?: SubtitlePosition.Bottom,
             ),
             playNextAutomatically = prefs.getBoolean(PLAY_NEXT_AUTOMATICALLY, true),
+            backgroundReading = read(BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
         )
     }
 
@@ -103,6 +110,7 @@ class ViewerSettingsStore(context: Context) {
         const val SUBTITLE_BACKGROUND = "subtitle_background"
         const val SUBTITLE_POSITION = "subtitle_position"
         const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
+        const val BACKGROUND_READING = "background_reading"
     }
 }
 

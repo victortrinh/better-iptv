@@ -5,9 +5,10 @@ import java.util.Locale
 
 /**
  * What a search found, best first in each group: [movies] and [shows] whose names match, and
- * [people] (cast) whose names match, each with their Titles the Provider has.
+ * [people] (cast) whose names match, each with their Titles the Provider has, and the [channels]
+ * whose names match.
  */
-data class SearchResults(val movies: List<TitleSummary>, val shows: List<TitleSummary>, val people: List<Person>) {
+data class SearchResults(val movies: List<TitleSummary>, val shows: List<TitleSummary>, val people: List<Person>, val channels: List<Channel> = emptyList()) {
     companion object {
         val NONE = SearchResults(emptyList(), emptyList(), emptyList())
     }
@@ -29,6 +30,9 @@ internal class SearchIndex private constructor(
     /** Each person's Titles, as indexes into [titles]. */
     val personTitles: List<IntArray>,
     private val personWords: Map<String, IntArray>,
+    /** The Channels' Provider stream ids, in the Provider's order. */
+    val channels: LongArray = LongArray(0),
+    private val channelWords: Map<String, IntArray> = emptyMap(),
 ) {
     /** One Title: its primary languages of Versions, so Content languages can lead, and TMDB's popularity. */
     class Entry(val id: TitleId, val languages: Set<String>, val popularity: Double)
@@ -44,6 +48,9 @@ internal class SearchIndex private constructor(
     fun findTitles(query: String): List<Hit> = find(query, titleWords)
 
     fun findPeople(query: String): List<Hit> = find(query, personWords)
+
+    /** Channels whose names match [query], as indexes into [channels]. */
+    fun findChannels(query: String): List<Hit> = find(query, channelWords)
 
     /** The entries that have a word matching every word of [query]; the worst word's distance counts. */
     private fun find(query: String, words: Map<String, IntArray>): List<Hit> {
@@ -70,6 +77,8 @@ internal class SearchIndex private constructor(
         private val personTitles = mutableListOf<Postings>()
         private val personWords = HashMap<String, Postings>()
         private val personIndex = HashMap<String, Int>()
+        private val channels = Postings64()
+        private val channelWords = HashMap<String, Postings>()
 
         /** Adds a Title found by [names], with Versions in [languages], and its [cast]. */
         fun title(id: TitleId, names: Collection<String>, languages: Set<String>, popularity: Double, cast: List<String>) {
@@ -87,13 +96,36 @@ internal class SearchIndex private constructor(
             }
         }
 
+        /** Adds Channel [id], found by its Provider [name]. */
+        fun channel(id: Long, name: String) {
+            val index = channels.size
+            channels.add(id)
+            words(name).forEach { channelWords.getOrPut(it, ::Postings).add(index) }
+        }
+
         fun build() = SearchIndex(
             titles,
             titleWords.mapValues { it.value.toArray() },
             people,
             personTitles.map { it.toArray() },
             personWords.mapValues { it.value.toArray() },
+            channels.toArray(),
+            channelWords.mapValues { it.value.toArray() },
         )
+    }
+
+    /** A growing list of longs that doesn't box them. */
+    private class Postings64 {
+        private var values = LongArray(16)
+        var size = 0
+            private set
+
+        fun add(value: Long) {
+            if (size == values.size) values = values.copyOf(size * 2)
+            values[size++] = value
+        }
+
+        fun toArray(): LongArray = values.copyOf(size)
     }
 
     /** A growing list of ints that doesn't box them: the full catalog has millions. */

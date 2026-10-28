@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -15,11 +16,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.NuageTheme
+import dev.betteriptv.core.Channel
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -39,6 +46,16 @@ class MainActivity : ComponentActivity() {
         val app = application as BetterIptvApp
         lifecycleScope.launch {
             app.settings.settings.collect { if (it.appLanguage != appLanguage) recreate() }
+        }
+        // Only Titles, never a location: it holds the login.
+        lifecycleScope.launch { app.library.confirmations.collect { Log.i("BackgroundReading", "Confirmed $it") } }
+        // Only while the app shows: the Viewer may be watching in another app.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                app.settings.settings.map { it.backgroundReading.pace to it.contentLanguages }.distinctUntilChanged().collectLatest { (pace, languages) ->
+                    if (pace != null) app.library.readInBackground(languages, pace)
+                }
+            }
         }
         setContent {
             NuageTheme { Root(app) }
@@ -77,13 +94,30 @@ private fun Root(app: BetterIptvApp) {
             returnedFrom = -1
             returnedToHome = null
         }
-        when (val title = opened) {
+        val watch = { channel: Channel -> playing = NowPlaying(app.library.channelPlayPlan(channel, contentLanguages), channel.name) }
+        val now = playing
+        if (now != null) {
+            BackHandler { playing = null }
+            PlayerScreen(
+                app.library, now.plan, now.name, settings,
+                deviceProfile = { readDeviceProfile(context) },
+                onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
+                inARow = now.inARow,
+                onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
+                onEnded = { playing = null },
+            )
+        } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
                     app.library, contentLanguages, appLanguage, home,
                     restoreFocus = returnedToHome,
                     onTab = onTab,
-                    onOpen = { opened = OpenedTitle(-1, it.id, it) },
+                    onOpen = { card, id -> opened = OpenedTitle(-1, id, card) },
+                    onWatch = { card, channel ->
+                        // Back from the Channel comes back to its card.
+                        returnedToHome = card
+                        watch(channel)
+                    },
                 )
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
@@ -91,6 +125,7 @@ private fun Root(app: BetterIptvApp) {
                         app.library, query, { query = it }, contentLanguages, appLanguage,
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(-1, it) },
+                        onWatch = watch,
                     )
                 }
                 Browse.Settings -> SettingsScreen(app.library, settings, onChange = app.settings::update, onTab = onTab)
@@ -105,38 +140,25 @@ private fun Root(app: BetterIptvApp) {
                     )
                 }
             }
-            else -> when (val now = playing) {
-                null -> {
-                    BackHandler {
-                        returnedFrom = title.cardIndex
-                        returnedToHome = title.homeCard
-                        opened = null
-                    }
-                    TitleScreen(
-                        app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
-                        deviceProfile = { readDeviceProfile(context) },
-                        onPlay = { plan, name -> playing = NowPlaying(plan, name) },
-                    )
+            else -> {
+                BackHandler {
+                    returnedFrom = title.cardIndex
+                    returnedToHome = title.homeCard
+                    opened = null
                 }
-                else -> {
-                    BackHandler { playing = null }
-                    PlayerScreen(
-                        app.library, now.plan, now.name, settings,
-                        deviceProfile = { readDeviceProfile(context) },
-                        onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
-                        inARow = now.inARow,
-                        onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
-                        onEnded = { playing = null },
-                    )
-                }
+                TitleScreen(
+                    app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
+                    deviceProfile = { readDeviceProfile(context) },
+                    onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                )
             }
         }
     }
 }
 
 /**
- * What the player plays: a [plan] of the Title named [name], the [inARow]th Episode in a row to
- * start by itself since a key was pressed.
+ * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
+ * row to start by itself since a key was pressed.
  */
 private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0)
 

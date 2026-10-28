@@ -56,7 +56,7 @@ _Avoid_: Series, TV show
 One episode of a Show, identified by season and episode number.
 
 **Credits**:
-The end of a Movie's or Episode's file: its last 5%, or its last 8 minutes when that is less. Providers mark none, so this rule stands in: from here a Title counts as watched, and an Episode offers the next one.
+The end of a Movie's or Episode's file: its last 10%, or its last 10 minutes when that is less (ADR 0008). Providers mark none, so this rule stands in: from here a Movie is Watched, and an Episode offers the next one.
 _Avoid_: Outro, end card
 
 **Version**:
@@ -178,6 +178,14 @@ _Avoid_: Favourite team, followed team
 **Chart**:
 An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending, Trakt most watched), filtered to Titles the Provider has.
 _Avoid_: Trending list, top list
+
+**Continue watching**:
+The Movies the Viewer stopped partway through and hasn't Watched, last played first. Their Title page offers "Continue from 1:02:13", "Restart" and "Remove from Continue watching", which forgets where they stopped.
+_Avoid_: Resume list, in progress
+
+**Watched**:
+A Movie the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched Movie from the beginning.
+_Avoid_: Finished, completed, seen
 
 **New on your service**:
 Titles whose Listings the Provider added recently, ordered by popularity.

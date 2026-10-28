@@ -4,15 +4,15 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Whether [position] of a file [duration] long (milliseconds, null while the player doesn't know it)
- * is in its credits: its last 5%, or its last 8 minutes when that is less. Providers mark no
- * credits, so this is the rule for them: from here a Title counts as watched, and an Episode offers
- * the next one.
+ * is in its credits: its last 10%, or its last 10 minutes when that is less (ADR 0008). Providers
+ * mark no credits, so this is the rule for them: from here a Title counts as Watched, and an
+ * Episode offers the next one.
  */
 fun inCredits(position: Long, duration: Long?): Boolean =
     duration != null && duration > 0 && position >= duration - minOf((duration * CREDITS_SHARE).toLong(), CREDITS_TIME)
 
-private const val CREDITS_SHARE = 0.05
-private const val CREDITS_TIME = 8 * 60_000L
+private const val CREDITS_SHARE = 0.10
+private const val CREDITS_TIME = 10 * 60_000L
 
 /**
  * How the next Episode is offered once one reaches its credits: a card with the next Episode,

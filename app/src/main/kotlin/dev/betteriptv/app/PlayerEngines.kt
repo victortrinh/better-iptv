@@ -33,9 +33,11 @@ import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.RememberedTracks
 import dev.betteriptv.core.Track
+import dev.betteriptv.core.TrackChoice
 import dev.betteriptv.core.frameRateOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -105,6 +107,9 @@ sealed interface ControlledEngine : PlayerEngine {
 
     /** The film's frames a second, once the engine knows them. */
     val frameRate: Float?
+
+    /** The plan's Track choice for the file, once the engine has read its Tracks: it says when downloaded subtitles show. */
+    val chosen: StateFlow<TrackChoice?>
 }
 
 /** How long after a seek filling the buffer is taken for the seek's doing. */
@@ -116,7 +121,8 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     override val engine = Engine.Media3
     private val requests = OpenRequests()
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
-    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered) { seen = it }) }
+    override val chosen = MutableStateFlow<TrackChoice?>(null)
+    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered, { seen = it }) { chosen.value = it }) }
     /** The presentation times of the frames shown since playback started or the Viewer last seeked, on the playback thread. */
     private val frameTimes = ArrayList<Long>(MIN_FRAMES_FOR_RATE)
     @Volatile private var measuredFrameRate: Float? = null
@@ -192,18 +198,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
 
     override fun style(style: SubtitleStyle) {
         this.style = style
-        subtitleView?.apply {
-            val (background, edge) = when (style.background) {
-                SubtitleBackground.Outline -> Color.TRANSPARENT to CaptionStyleCompat.EDGE_TYPE_OUTLINE
-                SubtitleBackground.Shadow -> Color.TRANSPARENT to CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
-                SubtitleBackground.Box -> SUBTITLE_BOX to CaptionStyleCompat.EDGE_TYPE_NONE
-            }
-            setStyle(CaptionStyleCompat(style.colour.argb, background, Color.TRANSPARENT, edge, Color.BLACK, null))
-            // The Viewer's size and colour win over the file's own.
-            setApplyEmbeddedFontSizes(false)
-            setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * style.size.scale)
-            setBottomPaddingFraction(style.position.fromBottom)
-        }
+        subtitleView?.draw(style)
     }
 
     override val frameRate: Float?
@@ -321,6 +316,7 @@ private class TrackChooser(
     private val device: DeviceProfile,
     private val remembered: () -> RememberedTracks,
     private val onSeen: (FileContents) -> Unit,
+    private val onChosen: (TrackChoice) -> Unit,
 ) : Player.Listener {
     private var chosen = false
 
@@ -343,6 +339,7 @@ private class TrackChooser(
             choice.subtitle?.let { setOverrideForType(TrackSelectionOverride(subtitles[it].mediaTrackGroup, 0)) }
                 ?: setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
         }.build()
+        onChosen(choice)
     }
 }
 
@@ -425,6 +422,8 @@ class VlcEngine(
     // VLC draws subtitles with the options it was created with.
     override fun style(style: SubtitleStyle) = Unit
 
+    override val chosen = MutableStateFlow<TrackChoice?>(null)
+
     override val frameRate: Float?
         get() = mediaTracks().filterIsInstance<IMedia.VideoTrack>().firstOrNull()
             ?.let { if (it.frameRateDen > 0) it.frameRateNum.toFloat() / it.frameRateDen else null }?.takeIf { it > 0 }
@@ -472,6 +471,7 @@ class VlcEngine(
         val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map { Track(it.language) }, device, remembered())
         choice.audio?.let { player.setAudioTrack(audio[it].id) }
         player.setSpuTrack(choice.subtitle?.let { subtitles[it].id } ?: -1)
+        chosen.value = choice
         return true
     }
 
@@ -522,6 +522,21 @@ private val VLC_AUDIO_CODECS = mapOf(
     "mp4a" to "audio/mp4a-latm", "a52" to "audio/ac3", "eac3" to "audio/eac3", "trhd" to "audio/true-hd", "mlp" to "audio/true-hd",
     "dts" to "audio/vnd.dts", "Opus" to "audio/opus", "flac" to "audio/flac", "mpga" to "audio/mpeg", "vorb" to "audio/vorbis",
 )
+
+/** Draws subtitles without a style of their own in the Viewer's [style]: embedded ones, and downloaded ones over either engine. */
+@OptIn(UnstableApi::class)
+internal fun SubtitleView.draw(style: SubtitleStyle) {
+    val (background, edge) = when (style.background) {
+        SubtitleBackground.Outline -> Color.TRANSPARENT to CaptionStyleCompat.EDGE_TYPE_OUTLINE
+        SubtitleBackground.Shadow -> Color.TRANSPARENT to CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+        SubtitleBackground.Box -> SUBTITLE_BOX to CaptionStyleCompat.EDGE_TYPE_NONE
+    }
+    setStyle(CaptionStyleCompat(style.colour.argb, background, Color.TRANSPARENT, edge, Color.BLACK, null))
+    // The Viewer's size and colour win over the file's own.
+    setApplyEmbeddedFontSizes(false)
+    setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * style.size.scale)
+    setBottomPaddingFraction(style.position.fromBottom)
+}
 
 /** The dark box behind subtitles, at 70%. */
 private const val SUBTITLE_BOX = 0xB3000000.toInt()

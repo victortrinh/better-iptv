@@ -184,7 +184,7 @@ class PlaybackTest {
 
     private val device = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
-    private suspend fun nextPlan() = library.playPlan(plan.titleId, listOf("en"), device)!!
+    private suspend fun nextPlan() = library.playPlan(plan.titleId!!, listOf("en"), device)!!
 
     /** Plays [plan] until it reaches [position] of [duration], then leaves, as the Viewer pressing Back would. */
     private suspend fun stopAt(position: Long, duration: Long? = null) = coroutineScope {
@@ -213,7 +213,7 @@ class PlaybackTest {
     @Test fun `Play resumes from the Version the Viewer chose too`() = runBlocking {
         stopAt(42 * 60_000L)
 
-        assertEquals(42 * 60_000L, library.chosenPlayPlan(plan.titleId, plan.version.listingId, listOf("en"))!!.from)
+        assertEquals(42 * 60_000L, library.chosenPlayPlan(plan.titleId!!, plan.version.listingId, listOf("en"))!!.from)
     }
 
     @Test fun `stopping in the first minute doesn't record a resume point`() = runBlocking {
@@ -227,6 +227,48 @@ class PlaybackTest {
 
         assertEquals(0L, nextPlan().from)
         assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
+    }
+
+    @Test fun `stopping as a film's credits start, 10 minutes from the end, marks it watched`() = runBlocking {
+        stopAt(110 * 60_000L, duration = 120 * 60_000L)
+
+        assertEquals(0L, nextPlan().from)
+    }
+
+    @Test fun `stopping just before the last 10 minutes keeps the resume point`() = runBlocking {
+        stopAt(109 * 60_000L, duration = 120 * 60_000L)
+
+        assertEquals(109 * 60_000L, nextPlan().from)
+    }
+
+    @Test fun `a short film counts as watched in its last tenth`() = runBlocking {
+        stopAt(27 * 60_000L, duration = 30 * 60_000L)
+        assertEquals(0L, nextPlan().from)
+
+        stopAt(26 * 60_000L, duration = 30 * 60_000L)
+        assertEquals(26 * 60_000L, nextPlan().from)
+    }
+
+    @Test fun `removing a Movie from Continue watching forgets where the Viewer stopped`() = runBlocking {
+        stopAt(42 * 60_000L, duration = 120 * 60_000L)
+
+        library.removeFromContinueWatching(plan.titleId!!)
+
+        assertEquals(0L, nextPlan().from)
+        assertTrue(library.homeRows(listOf("en"), "en").none { it is HomeRow.ContinueWatching })
+    }
+
+    @Test fun `Restart plays from the beginning, and keeps the old resume point until the first minute passes`() = runBlocking {
+        stopAt(42 * 60_000L, duration = 120 * 60_000L)
+        plan = nextPlan().fromStart()
+
+        stopAt(30_000L, duration = 120 * 60_000L)
+        assertEquals(0L, created.single().startedFrom)
+        assertEquals(42 * 60_000L, nextPlan().from)
+
+        plan = nextPlan().fromStart()
+        stopAt(5 * 60_000L, duration = 120 * 60_000L)
+        assertEquals(5 * 60_000L, nextPlan().from)
     }
 
     @Test fun `playing to the end marks the Title watched`() = runBlocking {

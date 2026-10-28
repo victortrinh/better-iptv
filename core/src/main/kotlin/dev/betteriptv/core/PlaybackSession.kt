@@ -182,7 +182,7 @@ class PlaybackSession internal constructor(
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
                         // An Episode's progress isn't kept yet: it would count as the Show's.
-                        if (plan.episode == null) withContext(Dispatchers.IO) { library.finished(plan.titleId) }
+                        plan.resumable?.let { withContext(Dispatchers.IO) { library.finished(it) } }
                         _state.value = PlaybackState.Ended
                         return
                     }
@@ -231,17 +231,20 @@ class PlaybackSession internal constructor(
         val opened = TimeSource.Monotonic.markNow()
         try {
             val player = engines(engine)
-            val relay = if (player.overlapsRequests) library.relay(connection.location) else null
+            // A live stream has no index to read and nowhere to seek, and an HLS playlist's segments
+            // are fetched beside it, which the relay's one location can't serve: VLC plays it as it is.
+            val relay = if (player.overlapsRequests && !plan.live) library.relay(connection.location) else null
             try {
                 _state.value = PlaybackState.Starting(version, player)
                 return watch(version, player, relay?.location ?: connection.location, opened, relay)
             } finally {
                 resumeAt = player.position
                 // A quick write, made even while the Viewer leaving cancels playback.
-                if (plan.episode == null) library.saveProgress(plan.titleId, resumeAt, player.duration)
+                plan.resumable?.let { library.saveProgress(it, resumeAt, player.duration) }
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
-                player.seen?.let { library.confirm(version, it) }
+                // A Channel's stream changes as it goes: there is no file to Confirm.
+                if (!plan.live) player.seen?.let { library.confirm(version, it) }
                 withContext(NonCancellable) {
                     player.release()
                     relay?.close()
@@ -291,12 +294,13 @@ class PlaybackSession internal constructor(
             }
         }
         val deadline = async { startDeadline(opened, relay) }
-        if (plan.episode == null) launch {
+        val resumable = plan.resumable
+        if (resumable != null) launch {
             while (true) {
                 delay(RECORD_EVERY)
                 val position = player.position
                 val duration = player.duration
-                withContext(Dispatchers.IO) { library.saveProgress(plan.titleId, position, duration) }
+                withContext(Dispatchers.IO) { library.saveProgress(resumable, position, duration) }
             }
         }
         if (plan.episode != null) launch {

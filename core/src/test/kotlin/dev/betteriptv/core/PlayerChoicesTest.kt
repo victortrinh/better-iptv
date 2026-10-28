@@ -80,8 +80,8 @@ class PlayerChoicesTest {
         val plan = library.playPlan(movie, english, fullHdTv)!!
 
         assertEquals(TrackChoice(audio = 0, subtitle = 1), plan.chooseTracks(tracks("eng"), tracks("fre", "eng"), fullHdTv))
-        // Without them, the usual choice stands: subtitles only when no audio is in a Content language.
-        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("eng"), tracks("fre"), fullHdTv))
+        // Without them, downloaded ones show instead.
+        assertEquals(TrackChoice(audio = 0, subtitle = null, downloaded = "en"), plan.chooseTracks(tracks("eng"), tracks("fre"), fullHdTv))
     }
 
     @Test fun `turning subtitles off is remembered too, even for a film in another language`() = runBlocking {
@@ -158,12 +158,12 @@ class PlayerChoicesTest {
         val job = launch { session.play() }
         withTimeout(5_000) { session.state.first { it is PlaybackState.Playing } }
 
-        // 45 minutes: the credits are its last 5%, from 42:45.
+        // 45 minutes: the credits are its last 10%, from 40:30.
         player.duration = 45 * 60_000L
-        player.position = 42 * 60_000L
+        player.position = 40 * 60_000L
         delay(1_500)
         assertEquals(false, (session.state.value as PlaybackState.Playing).credits)
-        player.position = 43 * 60_000L
+        player.position = 41 * 60_000L
         withTimeout(5_000) { session.state.first { (it as? PlaybackState.Playing)?.credits == true } }
         player.position = 10 * 60_000L
         withTimeout(5_000) { session.state.first { (it as? PlaybackState.Playing)?.credits == false } }
@@ -184,13 +184,13 @@ class PlayerChoicesTest {
         job.cancelAndJoin()
     }
 
-    @Test fun `the credits are a file's last 5 percent, or its last 8 minutes when that is less, and unknown without its length`() {
-        // A 22-minute Episode: from 20:54.
-        assertEquals(false, inCredits(20 * 60_000L + 53_000, 22 * 60_000L))
-        assertEquals(true, inCredits(20 * 60_000L + 54_000, 22 * 60_000L))
-        // A 3-hour film: 5% would be 9 minutes, so from 2:52.
-        assertEquals(false, inCredits(171 * 60_000L, 180 * 60_000L))
-        assertEquals(true, inCredits(172 * 60_000L, 180 * 60_000L))
+    @Test fun `the credits are a file's last 10 percent, or its last 10 minutes when that is less, and unknown without its length`() {
+        // A 22-minute Episode: from 19:48.
+        assertEquals(false, inCredits(19 * 60_000L + 47_000, 22 * 60_000L))
+        assertEquals(true, inCredits(19 * 60_000L + 48_000, 22 * 60_000L))
+        // A 3-hour film: 10% would be 18 minutes, so from 2:50.
+        assertEquals(false, inCredits(169 * 60_000L, 180 * 60_000L))
+        assertEquals(true, inCredits(170 * 60_000L, 180 * 60_000L))
         assertEquals(false, inCredits(60 * 60_000L, null))
         assertEquals(false, inCredits(0, 0))
     }

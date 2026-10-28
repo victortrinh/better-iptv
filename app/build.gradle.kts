@@ -87,11 +87,15 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    // A Channel's Backup is its stream as HLS.
+    implementation(libs.media3.hls)
     // DTS and TrueHD audio, which Fire sticks can't decode, and ASS subtitles with their full styling.
     implementation(libs.media3.ffmpeg)
     implementation(libs.ass.media)
     implementation(libs.libvlc)
 
     testImplementation(libs.junit)
+    // A real android.net.Uri for the Media3 classes the player's policies are tested with.
+    testImplementation(libs.robolectric)
     testImplementation(libs.coroutines.test)
 }

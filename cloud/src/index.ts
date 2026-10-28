@@ -4,6 +4,8 @@ import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
 import { MAX_QUERY, search } from "./search";
+import { ServiceUnavailable } from "./subtitle-service";
+import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 
 /**
@@ -27,6 +29,12 @@ import { TmdbUnavailable, type TitleKey } from "./tmdb";
  *   those movie Listings' files. Listings nobody read are left out.
  * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}}]}`:
  *   keeps those reads, `204`.
+ * - `POST /v1/subtitles`, with `{"kind": "movie", "tmdbId": 238, "season": null, "episode": null,
+ *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
+ *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
+ *   offers from OpenSubtitles and Subdl in each language, best first.
+ * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
+ *   `404` when the service no longer has it, `503` when it can't give it right now.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -66,6 +74,22 @@ export default {
       if (typeof asked === "string") return problem(400, asked);
       await saveFileReads(env.DB, asked.provider, asked.files);
       return new Response(null, { status: 204 });
+    }
+    if (request.method === "POST" && pathname === "/v1/subtitles") {
+      const asked = await subtitlesRequest(request);
+      if (typeof asked === "string") return problem(400, asked);
+      return json(await searchSubtitles(env, asked));
+    }
+    if (request.method === "POST" && pathname === "/v1/subtitles/download") {
+      const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
+      if (!isOfferId(id)) return problem(400, "id must be the id of an offer a subtitle search gave.");
+      try {
+        const file = await downloadSubtitle(env, id);
+        return file ? json(file) : problem(404, "The service no longer has that subtitle.");
+      } catch (e) {
+        if (!(e instanceof ServiceUnavailable)) throw e;
+        return problem(503, "The subtitle service can't give that subtitle right now.");
+      }
     }
     return problem(404, "No such endpoint.");
   },
@@ -152,6 +176,27 @@ async function fileReadsRequest(request: Request, part: "listings" | "files"): P
     if (!isListingId(file?.listingId) || !isFile(file.file)) return "Each file must be {\"listingId\": a positive integer, \"file\": an object of at most 8 KB}.";
   }
   return { provider, listings: [], files: asked as FileRead[] };
+}
+
+/** Reads a subtitle search request, or says what's wrong with it. */
+async function subtitlesRequest(request: Request): Promise<SubtitleQuestion | string> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return "The body must be JSON.";
+  }
+  const { kind, tmdbId, season = null, episode = null, languages } = (body ?? {}) as Record<string, unknown>;
+  const positive = (n: unknown) => Number.isSafeInteger(n) && (n as number) > 0;
+  if ((kind !== "movie" && kind !== "show") || !positive(tmdbId)) return "kind must be \"movie\" or \"show\", and tmdbId a positive integer.";
+  // Season 0 holds a Show's specials.
+  if (kind === "show" ? !(Number.isSafeInteger(season) && (season as number) >= 0 && positive(episode)) : season !== null || episode !== null) {
+    return "An Episode needs its season and episode numbers; a Movie has neither.";
+  }
+  if (!Array.isArray(languages) || languages.length === 0 || languages.length > MAX_LANGUAGES || !languages.every((l) => typeof l === "string" && /^[a-z]{2}$/.test(l))) {
+    return `languages must be 1 to ${MAX_LANGUAGES} ISO 639-1 codes, such as "fr".`;
+  }
+  return { kind, tmdbId: tmdbId as number, season: season as number | null, episode: episode as number | null, languages: [...new Set(languages as string[])] };
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });

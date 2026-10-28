@@ -67,10 +67,10 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
  * languages first, each with its Backups; [version] is among them. Playback starts [from]
  * milliseconds in: where the Viewer stopped last time, or the start. A Show's plan plays its
- * [episode]; a Movie's has none.
+ * [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
  */
 data class PlayPlan(
-    val titleId: TitleId,
+    val titleId: TitleId?,
     val version: Version,
     val contentLanguages: List<String>,
     val versions: List<Version>,
@@ -78,6 +78,15 @@ data class PlayPlan(
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
 ) {
+    /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
+    val live: Boolean get() = titleId == null
+
+    /** The Movie whose progress Playback records, so Play resumes there; an Episode's would count as the Show's. */
+    internal val resumable: TitleId? get() = titleId?.takeIf { episode == null }
+
+    /** This plan from the beginning, for Restart. Where the Viewer stopped stays kept until they pass the first minute. */
+    fun fromStart(): PlayPlan = copy(from = 0)
+
     /**
      * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the
      * language the Viewer last picked, else in the first Content language the file has. Among that
@@ -87,6 +96,10 @@ data class PlayPlan(
      * picked (or none, when they last turned them off) when the file has them; otherwise there are
      * none, unless no audio is in any of those languages: then the file's default audio plays with
      * subtitles in the first Content language, when the file has them.
+     *
+     * Where the file lacks the subtitles that would show, [TrackChoice.downloaded] names the language
+     * to show downloaded ones in instead: the one the Viewer last picked, or, when no audio is in
+     * those languages, the first Content language.
      */
     fun chooseTracks(audio: List<Track>, subtitles: List<Track>, device: DeviceProfile, remembered: RememberedTracks = this.remembered): TrackChoice {
         val wanted = rankingLanguages(remembered, contentLanguages).map(::primaryLanguage)
@@ -98,14 +111,35 @@ data class PlayPlan(
         val subtitle = when {
             remembered.subtitlesOff -> null
             picked != null -> picked
+            remembered.subtitles != null -> return TrackChoice(audioIndex, null, downloaded = primaryLanguage(remembered.subtitles))
             audioIndex != null -> null
-            else -> contentLanguages.firstOrNull()?.let { language -> subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 } }
+            else -> contentLanguages.firstOrNull()?.let { language ->
+                subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 }
+                    ?: return TrackChoice(null, null, downloaded = primaryLanguage(language))
+            }
         }
         return TrackChoice(audioIndex, subtitle)
     }
 
+    /**
+     * The languages to offer downloaded subtitles in for a file with these embedded [subtitles]: the
+     * one the Viewer last picked and their Content languages, those the file has no subtitles in.
+     */
+    fun downloadLanguages(subtitles: List<Track>, remembered: RememberedTracks = this.remembered): List<String> =
+        subtitleLanguages(remembered).filter { language -> subtitles.none { it.isIn(language) } }
+
+    /**
+     * Every language subtitles may be downloaded in for this plan, whatever the file holds, at most
+     * [MAX_SUBTITLE_LANGUAGES]; the services know languages by ISO 639-1 code only.
+     */
+    fun subtitleLanguages(remembered: RememberedTracks = this.remembered): List<String> =
+        (listOfNotNull(remembered.subtitles) + contentLanguages).map(::primaryLanguage).filter { it.length == 2 }.distinct().take(MAX_SUBTITLE_LANGUAGES)
+
     private fun Track.isIn(language: String) = this.language?.let(::trackLanguage) == language
 }
+
+/** The most languages one search for downloaded subtitles asks about, as the cloud allows. */
+const val MAX_SUBTITLE_LANGUAGES = 5
 
 /** An Episode of a Show, by season and episode number. */
 data class EpisodeNumber(val season: Int, val number: Int)
@@ -199,8 +233,9 @@ private val SOFTWARE_AUDIO = setOf(
 /**
  * Indexes into the Tracks given to [PlayPlan.chooseTracks]. A null [audio] leaves the file's default
  * audio; a null [subtitle] turns on no subtitles (forced ones, for foreign dialogue, may still show).
+ * [downloaded] is a language (ISO 639-1) to show downloaded subtitles in, which the file lacks.
  */
-data class TrackChoice(val audio: Int?, val subtitle: Int?)
+data class TrackChoice(val audio: Int?, val subtitle: Int?, val downloaded: String? = null)
 
 /**
  * The Viewer's one connection to the Provider, held while a Version plays; close it once the player
@@ -240,6 +275,11 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
             throw e
         }
         return Lease()
+    }
+
+    /** Cancels the Header read holding the connection, if one is, as a [lease] would. */
+    fun cancelRead() {
+        preempt?.invoke()
     }
 
     /**
