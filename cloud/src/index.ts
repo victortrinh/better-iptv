@@ -3,9 +3,10 @@ import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
+import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
-import type { TitleKey } from "./tmdb";
+import { TmdbUnavailable, type TitleKey } from "./tmdb";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves only data that is the same for every Viewer;
@@ -19,6 +20,10 @@ import type { TitleKey } from "./tmdb";
  *   "language": "en", "tmdbId": 597}]}` (cleaned names; year, language and tmdbId may be null):
  *   `{"matches": [{"kind": "movie", "tmdbId": 597}]}` in the order asked. tmdbId is null when TMDB
  *   has no Title by that name, and a match is null when TMDB couldn't answer right now.
+ * - `POST /v1/search`, with `{"query": "der pate"}`: what TMDB's search finds (ADR 0009),
+ *   `{"titles": [{"kind": "movie", "tmdbId": 238, "popularity": 128.4}], "people": [{"name": "Al Pacino",
+ *   "titles": [{"kind": "movie", "tmdbId": 238}]}]}`, a person's Titles being every one they acted in
+ *   or directed. `503` when TMDB can't search right now and the query was never searched.
  * - `POST /v1/file-reads/lookup`, with `{"provider": "<SHA-256 of the Provider's host>", "listings":
  *   [123]}`: `{"files": [{"listingId": 123, "file": {…}}]}`, what Viewers of that Provider read of
  *   those movie Listings' files. Listings nobody read are left out.
@@ -48,6 +53,16 @@ export default {
       const asked = await matchRequest(request);
       if (typeof asked === "string") return problem(400, asked);
       return json({ matches: await match(env, asked) });
+    }
+    if (request.method === "POST" && pathname === "/v1/search") {
+      const query = await searchRequest(request);
+      if (query === null) return problem(400, `query must be a name of 1 to ${MAX_QUERY} characters.`);
+      try {
+        return json(await search(env, query));
+      } catch (e) {
+        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't search right now.");
+        throw e;
+      }
     }
     if (request.method === "POST" && pathname === "/v1/file-reads/lookup") {
       const asked = await fileReadsRequest(request, "listings");
@@ -126,6 +141,19 @@ async function matchRequest(request: Request): Promise<MatchQuestion[] | string>
     questions.push({ kind, name: name.trim(), year: year as number | null, language: language as string | null, tmdbId: tmdbId as number | null });
   }
   return questions;
+}
+
+/** Reads a search request's query, or null when it has none. */
+async function searchRequest(request: Request): Promise<string | null> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return null;
+  }
+  const { query } = (body ?? {}) as { query?: unknown };
+  if (typeof query !== "string" || query.trim() === "" || query.length > MAX_QUERY) return null;
+  return query.trim();
 }
 
 /** Reads a file-read lookup ([part] `listings`) or save ([part] `files`) request, or says what's wrong with it. */

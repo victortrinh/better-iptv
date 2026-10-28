@@ -81,6 +81,43 @@ export async function search(env: Env, kind: Kind, query: string, language: stri
   }));
 }
 
+/** What TMDB's multi search found: Titles of either kind and people, each with its popularity. */
+export interface MultiFound {
+  titles: (TitleKey & { popularity: number })[];
+  people: { personId: number; name: string; popularity: number }[];
+}
+
+/**
+ * The first page of TMDB's search across Movies, Shows and people for [query]. TMDB matches titles
+ * in every language and alternative titles, so the language only sets the names it answers with.
+ */
+export async function searchAll(env: Env, query: string): Promise<MultiFound> {
+  const response = await get(env, "search/multi", { query, language: "en", include_adult: "false" });
+  const found: MultiFound = { titles: [], people: [] };
+  if (response === NOT_FOUND) return found;
+  const { results } = (await response.json()) as { results?: TmdbMultiResult[] };
+  for (const r of results ?? []) {
+    const popularity = r.popularity ?? 0;
+    if (r.media_type === "movie" || r.media_type === "tv") found.titles.push({ kind: r.media_type === "movie" ? "movie" : "show", tmdbId: r.id, popularity });
+    else if (r.media_type === "person" && r.name) found.people.push({ personId: r.id, name: r.name, popularity });
+  }
+  return found;
+}
+
+/** The Titles [personId] acted in or directed, by TMDB's combined credits; NOT_FOUND when TMDB has no such person. */
+export async function credits(env: Env, personId: number): Promise<TitleKey[] | typeof NOT_FOUND> {
+  const response = await get(env, `person/${personId}/combined_credits`, { language: "en" });
+  if (response === NOT_FOUND) return NOT_FOUND;
+  const { cast, crew } = (await response.json()) as { cast?: TmdbCredit[]; crew?: (TmdbCredit & { job?: string })[] };
+  const titles = new Map<string, TitleKey>();
+  for (const credit of [...(cast ?? []), ...(crew ?? []).filter((c) => c.job === "Director")]) {
+    if (credit.media_type !== "movie" && credit.media_type !== "tv") continue;
+    const kind: Kind = credit.media_type === "movie" ? "movie" : "show";
+    titles.set(`${kind}/${credit.id}`, { kind, tmdbId: credit.id });
+  }
+  return [...titles.values()];
+}
+
 const tmdbPath = (kind: Kind) => (kind === "movie" ? "movie" : "tv");
 
 /** GETs [path] from TMDB with the cloud's key; NOT_FOUND on a 404. */
@@ -152,6 +189,20 @@ interface TmdbSearchResult {
   release_date?: string;
   first_air_date?: string;
   popularity?: number;
+}
+
+/** The parts of a TMDB multi search result the cloud uses. */
+interface TmdbMultiResult {
+  id: number;
+  media_type?: string;
+  name?: string;
+  popularity?: number;
+}
+
+/** The parts of one of a person's TMDB credits the cloud uses. */
+interface TmdbCredit {
+  id: number;
+  media_type?: string;
 }
 
 /** The parts of TMDB's movie and TV details responses the app uses. */
