@@ -24,6 +24,24 @@
     <string name="sync_never">Pas encore synchronisé.</string>
     <string name="sync_first">Première synchronisation de votre catalogue…</string>
     <string name="sync_running">Synchronisation… (catalogue du %1$s affiché)</string>
+    <string name="sync_first_progress">Première synchronisation de votre catalogue… %1$s jusqu\'ici</string>
+    <string name="sync_running_progress">Synchronisation… %1$s (catalogue du %2$s affiché)</string>
+    <plurals name="sync_movies_read">
+        <item quantity="one">%1$s film</item>
+        <item quantity="many">%1$s films</item>
+        <item quantity="other">%1$s films</item>
+    </plurals>
+    <plurals name="sync_shows_read">
+        <item quantity="one">%1$s série</item>
+        <item quantity="many">%1$s séries</item>
+        <item quantity="other">%1$s séries</item>
+    </plurals>
+    <string name="sync_movies_and_shows">%1$s et %2$s</string>
+    <plurals name="sync_matching">
+        <item quantity="one">Correspondance de %1$s nom sur %2$s ; les titres seront regroupés à la fin.</item>
+        <item quantity="many">Correspondance de %1$s noms sur %2$s ; les titres seront regroupés à la fin.</item>
+        <item quantity="other">Correspondance de %1$s noms sur %2$s ; les titres seront regroupés à la fin.</item>
+    </plurals>
     <string name="sync_done">Synchronisé %1$s en %2$s s.</string>
     <string name="sync_failed">Échec de la synchronisation : %1$s Catalogue du %2$s affiché.</string>
     <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
@@ -104,6 +122,9 @@
     <string name="delay_earlier">Plus tôt</string>
     <string name="delay_later">Plus tard</string>
     <string name="delay_value">%1$d ms</string>
+    <string name="delay_seconds">%1$s s</string>
+    <string name="subtitle_downloaded">%1$s · Téléchargés</string>
+    <string name="subtitle_hearing_impaired">%1$s · Pour sourds et malentendants</string>
     <plurals name="versions_count">
         <item quantity="one">%1$d version</item>
         <item quantity="many">%1$d versions</item>
@@ -154,14 +175,19 @@
     <string name="home_title">Accueil</string>
     <string name="row_continue_watching">Reprendre</string>
     <string name="row_new">Nouveau sur votre service</string>
+    <string name="row_favourites">Favoris</string>
+    <string name="player_live">En direct · %1$s</string>
+    <string name="channel_add_favourite">≡ Ajouter aux favoris</string>
+    <string name="channel_remove_favourite">≡ Retirer des favoris</string>
     <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
     <string name="search_title">Recherche</string>
     <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>
-    <string name="search_start">Tapez deux lettres pour trouver des films, des séries et des personnes.</string>
+    <string name="search_start">Tapez deux lettres pour trouver des films, des séries, des chaînes et des personnes.</string>
     <string name="search_searching">Recherche…</string>
     <string name="search_none">Aucun résultat pour « %1$s ».</string>
     <string name="search_movies">Films · %1$d</string>
     <string name="search_shows">Séries · %1$d</string>
+    <string name="search_channels">Chaînes · %1$d</string>
     <string name="player_starting">Démarrage de %1$s</string>
     <string name="player_versions_hint">≡ Versions</string>
     <string name="player_playing">En lecture</string>

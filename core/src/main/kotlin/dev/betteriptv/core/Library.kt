@@ -86,7 +86,7 @@ class Library private constructor(
     }
 
     /**
-     * Downloads the Provider's movie and show Categories and Listings and replaces the catalog
+     * Downloads the Provider's movie, show and live Categories and Listings and replaces the catalog
      * atomically. Only `player_api` requests are made, never a stream, so a Sync never takes the
      * Viewer's connection. Clutter and Sports replays are left out of the lists, and Prefixes the
      * Prefix table doesn't know are reported in the finished Sync.
@@ -94,7 +94,8 @@ class Library private constructor(
      * Listings are Matched by their Provider's TMDB ID, except suspected Mismatches and Listings
      * without one, which are Matched by what the cloud answered about them before. Once the new
      * catalog shows, the cloud is asked about the rest, and the Titles are regrouped by its answers
-     * before this returns (the status shows the Sync finished in the meantime).
+     * before this returns (the status shows the Sync finished in the meantime, then how many names
+     * have been asked). While it runs, the status counts the Listings read.
      */
     suspend fun sync(): SyncStatus = syncLock.withLock {
         withContext(Dispatchers.IO) {
@@ -105,6 +106,8 @@ class Library private constructor(
                 val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
                 client.account()
                 val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
+                var moviesRead = 0
+                var showsRead = 0
                 store.replaceListings(
                     fill = { staging ->
                         val movieCategories = HashMap<String, String>()
@@ -114,7 +117,12 @@ class Library private constructor(
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
-                            staging.listing(id, name, categoryId, added, image, hidden = description.hidden != null, question(kind, name, description, tmdbId), container)
+                            val hidden = description.hidden != null
+                            staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                            if (!hidden) {
+                                if (kind == TitleKind.Movie) moviesRead++ else showsRead++
+                                _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
+                            }
                         }
                         client.movieCategories { id, name ->
                             movieCategories[id] = name
@@ -129,6 +137,12 @@ class Library private constructor(
                         }
                         client.showListings { id, name, categoryId, modified, tmdbId, image ->
                             listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
+                        }
+                        val liveCategories = HashMap<String, String>()
+                        client.liveCategories { id, name -> liveCategories[id] = name }
+                        val now = Instant.now()
+                        client.liveListings { id, name, categoryId, image ->
+                            if (!prefixTable.isLiveClutter(name, liveCategories[categoryId].orEmpty())) staging.channel(id, name, image, eventStart(name, now))
                         }
                     },
                     completed = { movieCount, showCount, rematched ->
@@ -173,6 +187,7 @@ class Library private constructor(
      */
     private fun matchByName() {
         if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
+        val synced = _syncStatus.value as? SyncStatus.Synced ?: return
         try {
             val now = Instant.now()
             val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
@@ -182,6 +197,8 @@ class Library private constructor(
             // A batch can fail on its own (the cloud ran out of CPU time, say): its suspects are asked
             // again next Sync. Several in a row mean the cloud is down.
             var failedInARow = 0
+            var asked = 0
+            _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
             for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
                 try {
                     store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
@@ -192,12 +209,16 @@ class Library private constructor(
                         break
                     }
                 }
+                asked += batch.size
+                _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
             }
             store.applyMatchAnswers()?.let { _syncStatus.value = SyncStatus.Synced(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // The Sync itself finished: its catalog shows, Matched by the Provider's IDs.
+        } finally {
+            if (_syncStatus.value is SyncStatus.Matching) _syncStatus.value = synced
         }
     }
 
@@ -245,6 +266,9 @@ class Library private constructor(
      * device has no metadata for and every Title of the people it finds, and the results come again.
      * Without the cloud the first results are all there are.
      *
+     * Channels are found by their Provider names the same way, Favourites first among equally close
+     * matches, then in the Provider's order; finished Event channels aren't.
+     *
      * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
@@ -253,7 +277,8 @@ class Library private constructor(
         val index = searchIndex()
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
         val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
-        emit(searchResults(index, titles, people, emptyMap(), contentLanguages, appLanguage))
+        val channels = foundChannels(index, query)
+        emit(searchResults(index, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
 
         if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
         // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
@@ -269,8 +294,35 @@ class Library private constructor(
         val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
             FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
         }
-        emit(searchResults(index, titles, merged, popularity, contentLanguages, appLanguage))
+        emit(searchResults(index, titles, merged, popularity, contentLanguages, appLanguage).copy(channels = channels))
     }.flowOn(Dispatchers.IO)
+
+    /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
+    private fun foundChannels(index: SearchIndex, query: String): List<Channel> {
+        val favourites = store.favouriteIds()
+        val ranked = index.findChannels(query)
+            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { index.channels[it.index] !in favourites }, { it.index }))
+            .map { index.channels[it.index] }
+        // Finished Event channels drop out, so a few more are read than are shown.
+        val on = store.channels(ranked.take(CHANNELS_FOUND * 4), Instant.now() - EVENT_FINISHED_AFTER)
+        return ranked.mapNotNull(on::get).take(CHANNELS_FOUND)
+    }
+
+    /** The Viewer's Favourites that are on, in the order they were added. */
+    suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(Instant.now() - EVENT_FINISHED_AFTER) }
+
+    /** Saves Channel [channel] as a Favourite, or removes it when [favourite] is false. */
+    suspend fun setFavourite(channel: Long, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(channel, favourite, Instant.now()) }
+
+    /**
+     * What watching [channel] starts: its live stream as MPEG-TS, with the same stream as HLS as its
+     * Backup, for a Provider or a player that does one and not the other.
+     */
+    fun channelPlayPlan(channel: Channel, contentLanguages: List<String>): PlayPlan {
+        val hls = Version(channel.id, channel.name, VersionAttributes(), liveFormat = "m3u8")
+        val ts = Version(channel.id, channel.name, VersionAttributes(), backups = listOf(hls), liveFormat = "ts")
+        return PlayPlan(null, ts, contentLanguages, listOf(ts), remembered = rememberedTracks())
+    }
 
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
     private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
@@ -364,6 +416,7 @@ class Library private constructor(
         val known = HashMap<TitleId, Known>()
         store.forEachMetadata { id, body -> TitleMetadata(body).let { known[id] = Known(it.searchNames, it.cast, it.popularity) } }
         val builder = SearchIndex.Builder()
+        store.forEachChannel(builder::channel)
         for (kind in TitleKind.entries) {
             store.forEachTitle(kind) { id, listings ->
                 val metadata = known[id]
@@ -478,7 +531,7 @@ class Library private constructor(
      */
     suspend fun nextEpisodePlan(plan: PlayPlan, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
         val playing = plan.episode ?: return@withContext null
-        val plans = episodePlans(plan.titleId, plan.contentLanguages, device, qualityCap) ?: return@withContext null
+        val plans = episodePlans(plan.titleId ?: return@withContext null, plan.contentLanguages, device, qualityCap) ?: return@withContext null
         plans.tailMap(playing).entries.asSequence().filter { it.key != playing }.firstNotNullOfOrNull { it.value() }
     }
 
@@ -537,6 +590,30 @@ class Library private constructor(
         }
     }
 
+    /**
+     * The subtitles that can be downloaded for [plan]'s Movie or Episode in [languages] (ISO 639-1),
+     * the best few in each language first. Empty for a Title without a TMDB ID, or when the cloud
+     * can't answer: the Viewer plays on without them.
+     */
+    suspend fun subtitleOffers(plan: PlayPlan, languages: List<String>): List<SubtitleOffer> = withContext(Dispatchers.IO) {
+        val id = plan.titleId as? TitleId.Tmdb
+        if (cloud == null || id == null || languages.isEmpty()) return@withContext emptyList()
+        try {
+            cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+        } catch (e: CloudException) {
+            emptyList()
+        }
+    }
+
+    /** Downloads the subtitle file [offer] names, through the cloud; null when it can't be had now. */
+    suspend fun downloadSubtitle(offer: SubtitleOffer): DownloadedSubtitle? = withContext(Dispatchers.IO) {
+        try {
+            cloud?.downloadSubtitle(offer.id)
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
     /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
     private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
 
@@ -558,7 +635,8 @@ class Library private constructor(
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
 
     /**
-     * The home screen's rows: Continue watching, then New on your service (Titles among the most
+     * The home screen's rows: Continue watching, then the Viewer's Favourites (in the order they
+     * were added; finished Event channels left out), then New on your service (Titles among the most
      * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
      * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
      * Untagged one Likely in one; Continue watching shows whatever the Viewer started. Genres come
@@ -567,6 +645,7 @@ class Library private constructor(
      */
     suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
         val resumes = store.inProgress(ROW_SIZE).mapNotNull { progress -> store.title(progress.id)?.let { progress to it } }
+        val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
         val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
@@ -594,6 +673,7 @@ class Library private constructor(
                     ),
                 )
             }
+            if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (newest.isNotEmpty()) add(HomeRow.NewOnYourService(newest.take(ROW_SIZE).map { card(it) }))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.sortedWith(popularFirst).take(ROW_SIZE).map { card(it) })) }
         }
@@ -602,14 +682,17 @@ class Library private constructor(
     /**
      * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
      * closed: a second stream is never opened while one is in use. Close it when playback ends. An
-     * [episode]'s Version streams from the Provider's Shows, not its Movies.
+     * [episode]'s Version streams from the Provider's Shows, not its Movies, and a Channel's (one
+     * with a [Version.liveFormat]) from its live streams.
      */
     suspend fun connect(version: Version, episode: Boolean = false): Connection {
         val location = withContext(Dispatchers.IO) {
             val login = credentials.load() ?: throw ProviderException(WrongLogin)
             val client = XtreamClient(login, http)
             // Most of the surveyed Provider's files are MKV.
-            if (episode) client.episodeLocation(version.listingId, store.episodeContainer(version.listingId) ?: "mkv")
+            val live = version.liveFormat
+            if (live != null) client.liveLocation(version.listingId, live)
+            else if (episode) client.episodeLocation(version.listingId, store.episodeContainer(version.listingId) ?: "mkv")
             else client.movieLocation(version.listingId, store.container(version.listingId) ?: "mkv")
         }
         return Connection(location, connection.lease())
@@ -942,6 +1025,8 @@ class Library private constructor(
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10
+        /** At most this many Channels per search: a row of cards. */
+        private const val CHANNELS_FOUND = 40
         /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
         private const val TMDB_SEARCH_LETTERS = 3
         /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */

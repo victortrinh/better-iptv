@@ -77,8 +77,8 @@ class PlayerChoicesTest {
         val plan = library.playPlan(movie, english, fullHdTv)!!
 
         assertEquals(TrackChoice(audio = 0, subtitle = 1), plan.chooseTracks(tracks("eng"), tracks("fre", "eng"), fullHdTv))
-        // Without them, the usual choice stands: subtitles only when no audio is in a Content language.
-        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("eng"), tracks("fre"), fullHdTv))
+        // Without them, downloaded ones show instead.
+        assertEquals(TrackChoice(audio = 0, subtitle = null, downloaded = "en"), plan.chooseTracks(tracks("eng"), tracks("fre"), fullHdTv))
     }
 
     @Test fun `turning subtitles off is remembered too, even for a film in another language`() = runBlocking {

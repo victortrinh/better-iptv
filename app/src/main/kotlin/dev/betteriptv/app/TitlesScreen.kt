@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -30,6 +31,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
@@ -92,15 +94,23 @@ fun TitlesScreen(
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
                 Spacer(Modifier.width(Spacing.m))
-                NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running)
+                NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running && status !is SyncStatus.Matching)
             }
         }
+        val described = context.describe(status)
         Text(
-            context.describe(status),
+            described,
             style = Type.caption,
             color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
             modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.s),
         )
+        // A first Sync leaves the grid empty for minutes: say how far it is where the cards will be, readable from the couch.
+        if (count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching)) {
+            Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
+                Text(described, style = Type.body, color = Colors.inkMuted, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = EMPTY_GRID_TEXT_WIDTH))
+            }
+            return@Column
+        }
         // The margins are content padding, so a focused card grows into them instead of being clipped.
         LazyVerticalGrid(
             GridCells.FixedSize(Cards.posterWidth),
@@ -138,12 +148,32 @@ private fun Card(
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
     SyncStatus.NeverSynced -> getString(R.string.sync_never)
-    is SyncStatus.Running -> status.last?.let { getString(R.string.sync_running, ago(it)) } ?: getString(R.string.sync_first)
-    is SyncStatus.Synced -> getString(R.string.sync_done, ago(status.last), String.format(Locale.getDefault(), "%.1f", status.last.duration.toMillis() / 1000.0)) +
-        unknownPrefixes(status.last)
+    is SyncStatus.Running -> running(status)
+    is SyncStatus.Synced -> synced(status.last)
+    is SyncStatus.Matching -> synced(status.last) + " " +
+        resources.getQuantityString(R.plurals.sync_matching, status.of, count(status.asked), count(status.of))
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
 }
+
+/** A first Sync counts the Listings read; a later one tells how far it is by the last one's counts. */
+private fun Context.running(status: SyncStatus.Running): String {
+    val last = status.last
+    if (last == null) {
+        if (status.moviesRead == 0 && status.showsRead == 0) return getString(R.string.sync_first)
+        val movies = resources.getQuantityString(R.plurals.sync_movies_read, status.moviesRead, count(status.moviesRead))
+        val read = if (status.showsRead == 0) movies
+        else getString(R.string.sync_movies_and_shows, movies, resources.getQuantityString(R.plurals.sync_shows_read, status.showsRead, count(status.showsRead)))
+        return getString(R.string.sync_first_progress, read)
+    }
+    val fraction = status.fraction ?: return getString(R.string.sync_running, ago(last))
+    return getString(R.string.sync_running_progress, NumberFormat.getPercentInstance().format(fraction), ago(last))
+}
+
+private fun Context.synced(last: CompletedSync): String =
+    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.toMillis() / 1000.0)) + unknownPrefixes(last)
+
+private fun count(n: Int): String = NumberFormat.getIntegerInstance().format(n)
 
 private fun Context.describe(problem: SyncProblem): String = when (problem) {
     is ProviderProblem -> describe(problem)
@@ -161,3 +191,6 @@ private fun Context.ago(sync: CompletedSync): String {
     return if (System.currentTimeMillis() - millis < DateUtils.MINUTE_IN_MILLIS) getString(R.string.sync_just_now)
     else DateUtils.getRelativeTimeSpanString(millis).toString()
 }
+
+/** Wide enough for the French first-Sync line on two lines at body size. */
+private val EMPTY_GRID_TEXT_WIDTH = 440.dp

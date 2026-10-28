@@ -53,6 +53,27 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     /** Streams the show Categories as (Provider category id, name). */
     fun showCategories(each: (id: String, name: String) -> Unit) = categories("get_series_categories", each)
 
+    /** Streams the live Categories as (Provider category id, name). */
+    fun liveCategories(each: (id: String, name: String) -> Unit) = categories("get_live_categories", each)
+
+    /** Streams the live Listings in the Provider's order as (Provider stream id, name, category id, logo URL). */
+    fun liveListings(each: (id: Long, name: String, categoryId: String?, image: String?) -> Unit) = api("get_live_streams") { json ->
+        json.eachObject {
+            var id: Long? = null
+            var name: String? = null
+            var categoryId: String? = null
+            var image: String? = null
+            while (hasNext()) when (nextName()) {
+                "stream_id" -> id = nextScalar()?.toLongOrNull()
+                "name" -> name = nextScalar()
+                "category_id" -> categoryId = nextScalar()
+                "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                else -> skipValue()
+            }
+            if (id != null && name != null) each(id, name, categoryId, image)
+        }
+    }
+
     private fun categories(action: String, each: (id: String, name: String) -> Unit) = api(action) { json ->
         json.eachObject {
             var id: String? = null
@@ -238,6 +259,13 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     /** Where Episode [id]'s file streams from. It holds the login, so it goes to the player engine only. */
     fun episodeLocation(id: Long, container: String): String =
         base.newBuilder().addPathSegment("series").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
+
+    /**
+     * Where Channel [id] streams from, as MPEG-TS (`ts`) or HLS (`m3u8`). It holds the login, so it
+     * goes to the player engine only.
+     */
+    fun liveLocation(id: Long, format: String): String =
+        base.newBuilder().addPathSegment("live").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$format").build().toString()
 
     private fun <T> api(action: String?, vararg parameters: Pair<String, String>, read: (JsonReader) -> T): T {
         val url = base.newBuilder()

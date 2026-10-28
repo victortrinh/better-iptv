@@ -86,6 +86,7 @@ fun PlayerPrototype() {
             buffered = position + 900_000,
             duration = 4_732_000,
             isPlaying = playing,
+            live = false,
             playFocus = play,
             onBack = { position = (position - 10_000).coerceAtLeast(0) },
             onPlayPause = { playing = !playing },

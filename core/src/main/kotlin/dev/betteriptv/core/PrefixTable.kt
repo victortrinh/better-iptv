@@ -13,6 +13,7 @@ internal class PrefixTable private constructor(
     private val prefixes: Map<String, Rule>,
     private val categoryHints: List<Pair<Regex, Rule>>,
     private val clutterNames: List<Regex>,
+    private val liveClutterNames: List<Regex>,
 ) {
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -40,6 +41,14 @@ internal class PrefixTable private constructor(
         }
         return Description(prefix?.takeIf { prefixRule == null }, draft.attributes(), hidden)
     }
+
+    /**
+     * Whether a live Listing is Clutter: a separator row, an empty or finished-marked Event slot, or
+     * radio, by its [name] or its [category]. Event channels finished by the clock are told apart by
+     * [eventStart]. Sports replay hints mean nothing for live Listings.
+     */
+    fun isLiveClutter(name: String, category: String): Boolean =
+        describe(name, category).hidden == Hidden.Clutter || liveClutterNames.any { it.containsMatchIn(name) }
 
     /**
      * A Listing's name without its Prefix and year, for showing until cloud metadata arrives:
@@ -145,6 +154,7 @@ internal class PrefixTable private constructor(
             val prefixes = LinkedHashMap<String, Rule>()
             val hints = mutableListOf<Pair<Regex, Rule>>()
             val clutterNames = mutableListOf<Regex>()
+            val liveClutterNames = mutableListOf<Regex>()
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -153,8 +163,8 @@ internal class PrefixTable private constructor(
                     section = raw.trim().removeSurrounding("[", "]")
                     return@forEachIndexed
                 }
-                if (section == "clutter names") {
-                    clutterNames += Regex(raw.trim())
+                if (section == "clutter names" || section == "live clutter names") {
+                    (if (section == "clutter names") clutterNames else liveClutterNames) += Regex(raw.trim())
                     return@forEachIndexed
                 }
                 val line = raw.replace(Regex("""\s+#.*$"""), "")
@@ -166,7 +176,7 @@ internal class PrefixTable private constructor(
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =

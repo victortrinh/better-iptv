@@ -20,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.NuageTheme
+import dev.betteriptv.core.Channel
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
@@ -93,13 +94,29 @@ private fun Root(app: BetterIptvApp) {
             returnedFrom = -1
             returnedToHome = null
         }
-        when (val title = opened) {
+        val watch = { channel: Channel -> playing = NowPlaying(app.library.channelPlayPlan(channel, contentLanguages), channel.name) }
+        val now = playing
+        if (now != null) {
+            BackHandler { playing = null }
+            PlayerScreen(
+                app.library, now.plan, now.name, settings,
+                deviceProfile = { readDeviceProfile(context) },
+                onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
+                onPlay = { playing = now.copy(plan = it) },
+                onEnded = { playing = null },
+            )
+        } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
                     app.library, contentLanguages, appLanguage, home,
                     restoreFocus = returnedToHome,
                     onTab = onTab,
-                    onOpen = { opened = OpenedTitle(-1, it.id, it) },
+                    onOpen = { card, id -> opened = OpenedTitle(-1, id, card) },
+                    onWatch = { card, channel ->
+                        // Back from the Channel comes back to its card.
+                        returnedToHome = card
+                        watch(channel)
+                    },
                 )
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
@@ -107,6 +124,7 @@ private fun Root(app: BetterIptvApp) {
                         app.library, query, { query = it }, contentLanguages, appLanguage,
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(-1, it) },
+                        onWatch = watch,
                     )
                 }
                 Browse.Settings -> SettingsScreen(app.library, settings, onChange = app.settings::update, onTab = onTab)
@@ -121,35 +139,23 @@ private fun Root(app: BetterIptvApp) {
                     )
                 }
             }
-            else -> when (val now = playing) {
-                null -> {
-                    BackHandler {
-                        returnedFrom = title.cardIndex
-                        returnedToHome = title.homeCard
-                        opened = null
-                    }
-                    TitleScreen(
-                        app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
-                        deviceProfile = { readDeviceProfile(context) },
-                        onPlay = { plan, name -> playing = NowPlaying(plan, name) },
-                    )
+            else -> {
+                BackHandler {
+                    returnedFrom = title.cardIndex
+                    returnedToHome = title.homeCard
+                    opened = null
                 }
-                else -> {
-                    BackHandler { playing = null }
-                    PlayerScreen(
-                        app.library, now.plan, now.name, settings,
-                        deviceProfile = { readDeviceProfile(context) },
-                        onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
-                        onPlay = { playing = now.copy(plan = it) },
-                        onEnded = { playing = null },
-                    )
-                }
+                TitleScreen(
+                    app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
+                    deviceProfile = { readDeviceProfile(context) },
+                    onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                )
             }
         }
     }
 }
 
-/** What the player plays: a [plan] of the Title named [name]. */
+/** What the player plays: a [plan] of the Title or Channel named [name]. */
 private data class NowPlaying(val plan: PlayPlan, val name: String)
 
 /** The Title whose details are open, and which card opened it (in a list, or on the home screen), so focus goes back there. */
