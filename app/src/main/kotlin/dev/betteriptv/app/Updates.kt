@@ -1,0 +1,182 @@
+package dev.betteriptv.app
+
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.ApkInstaller
+import dev.betteriptv.core.UpdateState
+import java.io.File
+
+/** Android's package installer, opened on a build downloaded into the cache (shared through the `updates` FileProvider). */
+class AndroidApkInstaller(private val context: Context) : ApkInstaller {
+    override fun canInstall(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.packageManager.canRequestPackageInstalls()
+        // Fire OS 6 (Android 7.1) has one switch for every app, "Apps from Unknown Sources".
+        else @Suppress("DEPRECATION") Settings.Secure.getInt(context.contentResolver, Settings.Secure.INSTALL_NON_MARKET_APPS, 0) == 1
+
+    override fun install(apk: File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
+
+/**
+ * The update offered on launch (#21), on the bare ground before anything else: its version, then
+ * "Update now" and "Later". Once the Viewer confirms it follows [state]: the first update guides
+ * them through allowing this app to install apps, then the download's progress, then Android's
+ * installer. [onUpdate] confirms (and carries on once the permission is allowed); [onLater] goes on to the app.
+ */
+@Composable
+fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) {
+    BackHandler(onBack = onLater)
+    val context = LocalContext.current
+    val first = remember { FocusRequester() }
+    // Each step's main button takes focus as it appears.
+    LaunchedEffect(state::class) { runCatching { first.requestFocus() } }
+    Box(Modifier.fillMaxSize().background(Colors.ground)) {
+        Column(
+            Modifier.align(Alignment.Center).width(560.dp).padding(Spacing.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.l),
+        ) {
+            when (state) {
+                is UpdateState.NeedsPermission -> {
+                    // Back from Android's settings: carry on if the Viewer allowed it.
+                    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { onUpdate() }
+                    Heading(stringResource(R.string.update_allow_title))
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Body(stringResource(R.string.update_allow_steps))
+                        Buttons {
+                            NuageButton(stringResource(R.string.update_open_settings), { openInstallSettings(context) }, Modifier.focusRequester(first))
+                            NuageButton(stringResource(R.string.update_later), onLater)
+                        }
+                        Caption(stringResource(R.string.update_allow_fire))
+                    } else {
+                        Body(stringResource(R.string.update_allow_old))
+                        Buttons {
+                            NuageButton(stringResource(R.string.update_open_settings), { openInstallSettings(context) }, Modifier.focusRequester(first))
+                            NuageButton(stringResource(R.string.update_later), onLater)
+                        }
+                    }
+                }
+                is UpdateState.Downloading -> {
+                    Heading(stringResource(R.string.update_title))
+                    val fraction = state.downloaded.toFloat() / state.update.size
+                    Body(stringResource(R.string.update_downloading, (fraction * 100).toInt()))
+                    Progress(fraction)
+                    Buttons { NuageButton(stringResource(R.string.update_later), onLater, Modifier.focusRequester(first)) }
+                }
+                is UpdateState.Installing -> {
+                    Heading(stringResource(R.string.update_title))
+                    Body(stringResource(R.string.update_installing))
+                    Buttons {
+                        // Opens the installer again, if the Viewer backed out of it.
+                        NuageButton(stringResource(R.string.update_install), onUpdate, Modifier.focusRequester(first))
+                        NuageButton(stringResource(R.string.update_later), onLater)
+                    }
+                }
+                is UpdateState.Failed -> {
+                    Heading(stringResource(R.string.update_title))
+                    Text(stringResource(R.string.update_failed, state.problem), style = Type.body, color = Colors.error, textAlign = TextAlign.Center)
+                    Buttons {
+                        NuageButton(stringResource(R.string.update_retry), onUpdate, Modifier.focusRequester(first))
+                        NuageButton(stringResource(R.string.update_later), onLater)
+                    }
+                }
+                is UpdateState.Available -> {
+                    Heading(stringResource(R.string.update_title))
+                    Body(stringResource(R.string.update_version, state.update.versionName, BuildConfig.VERSION_NAME))
+                    Buttons {
+                        NuageButton(stringResource(R.string.update_now), onUpdate, Modifier.focusRequester(first))
+                        NuageButton(stringResource(R.string.update_later), onLater)
+                    }
+                }
+                UpdateState.Unknown, UpdateState.UpToDate -> Unit
+            }
+        }
+    }
+}
+
+/**
+ * Android's page for allowing this app to install apps (Android 8 and later), or on Fire OS 6 the
+ * developer options that hold "Apps from Unknown Sources". The screen's text says where to go if
+ * neither opens.
+ */
+private fun openInstallSettings(context: Context) {
+    val pages = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            add(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+        }
+        add(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+        add(Intent(Settings.ACTION_SETTINGS))
+    }
+    for (page in pages) {
+        try {
+            context.startActivity(page)
+            return
+        } catch (e: ActivityNotFoundException) {
+            // The next page, then.
+        }
+    }
+}
+
+@Composable
+private fun Heading(text: String) = Text(text, style = Type.headline, color = Colors.ink, textAlign = TextAlign.Center)
+
+@Composable
+private fun Body(text: String) = Text(text, style = Type.body, color = Colors.inkMuted, textAlign = TextAlign.Center)
+
+@Composable
+private fun Caption(text: String) = Text(text, style = Type.caption, color = Colors.inkMuted, textAlign = TextAlign.Center)
+
+@Composable
+private fun Buttons(content: @Composable () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m)) { content() }
+}
+
+/** The download's progress: white over white at 25%, like the player's scrubber. */
+@Composable
+private fun Progress(fraction: Float) {
+    val shape = RoundedCornerShape(50)
+    Box(Modifier.fillMaxWidth().height(6.dp).background(Colors.ink.copy(alpha = 0.25f), shape)) {
+        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(6.dp).background(Colors.ink, shape))
+    }
+}
