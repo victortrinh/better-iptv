@@ -217,6 +217,7 @@ fun PlayerScreen(
     }
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
     MatchRefreshRate(player)
+    KeepScreenOn(player.takeIf { playing })
     LaunchedEffect(overlay, pressed, panel, player?.isPlaying) {
         // A paused picture keeps its overlay, so the Viewer sees where they are.
         if (overlay && panel == Panel.None && player?.isPlaying != false) {
@@ -363,6 +364,26 @@ private val OVERLAY_FOR = 5.seconds
 
 /** How long the buffering suggestion waits for the Viewer before stepping aside. */
 private val SUGGESTED_FOR = 15.seconds
+
+/**
+ * Keeps the TV's screensaver away while the player screen shows, since the remote may go untouched
+ * for a whole film, unless the Viewer paused the [player] that plays. Between files it stays on: letting
+ * go then would start a screensaver held back since the last key press.
+ */
+@Composable
+private fun KeepScreenOn(player: ControlledEngine?) {
+    val view = LocalView.current
+    val paused by produceState(false, player) {
+        while (true) {
+            value = player?.isPlaying == false
+            delay(1.seconds)
+        }
+    }
+    DisposableEffect(view, paused) {
+        view.keepScreenOn = !paused
+        onDispose { view.keepScreenOn = false }
+    }
+}
 
 /**
  * Switches the TV to the refresh rate that fits [player]'s film once its frame rate is known, where
