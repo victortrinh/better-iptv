@@ -2,12 +2,15 @@ package dev.betteriptv.app
 
 import android.app.Activity
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import dev.betteriptv.app.ui.components.NuageIconButton
@@ -18,6 +21,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import dev.betteriptv.app.ui.components.BadgeRow
@@ -42,6 +47,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -49,11 +55,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +81,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -104,9 +114,9 @@ import kotlin.time.Duration.Companion.seconds
  * Plays a [plan]'s Version of the Title named [name] full screen through a Playback session, which
  * falls back to the VLC engine when Media3 can't open a file and to the Version's Backups when it is
  * dead. The Version playing is named when it starts; repeated buffering brings a one-tap suggestion
- * of a lower Version. Any key shows the player overlay (centre pauses once it shows; left and right
- * jump 10 s), with Versions and Audio and subtitles, where the Viewer picks Tracks, which are
- * remembered for the next file, styles subtitles ([settings]' style, changed through
+ * of a lower Version. Any key shows the player overlay (centre pauses once it shows; left and
+ * right, like rewind and fast-forward, scrub: see [Scrub]), with Versions and Audio and subtitles,
+ * where the Viewer picks Tracks, which are remembered for the next file, styles subtitles ([settings]' style, changed through
  * [onSubtitleStyle]) and delays the sound or subtitles. The remote's Menu key opens the Versions
  * directly, with "Try other player". The TV switches to the film's refresh rate where it can.
  * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
@@ -218,9 +228,47 @@ fun PlayerScreen(
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
     MatchRefreshRate(player)
     KeepScreenOn(player.takeIf { playing })
-    LaunchedEffect(overlay, pressed, panel, player?.isPlaying) {
+    // A scrub pauses the picture and moves only a target, until OK, or the remote resting, seeks
+    // there once and plays on as before; Back goes back to playing where it was. No request is made
+    // until then: VLC opens a new one for each seek before closing the last.
+    var scrub by remember(player) { mutableStateOf<Scrub?>(null) }
+    // Read only by the overlay and the commit, so a held key's repeats don't recompose the whole screen.
+    var scrubTo by remember(player) { mutableStateOf<Long?>(null) }
+    var scrubMoves by remember(player) { mutableIntStateOf(0) }
+    var resumes by remember(player) { mutableStateOf(false) }
+    fun moveScrub(forward: Boolean, event: KeyEvent) {
+        val engine = player ?: return
+        val current = scrub ?: Scrub(engine.position, engine.duration).also {
+            scrub = it
+            resumes = engine.isPlaying
+            if (resumes) engine.togglePause()
+        }
+        // A key's first press is a tap, whatever time the remote stamps it with.
+        val native = event.nativeKeyEvent
+        current.move(forward, at = if (native.repeatCount == 0) native.downTime else native.eventTime, downAt = native.downTime)
+        scrubTo = current.target
+        scrubMoves++
+        overlay = true
+    }
+    fun endScrub(commit: Boolean) {
+        val current = scrub ?: return
+        scrub = null
+        scrubTo = null
+        val engine = player ?: return
+        if (commit) current.commit(engine.position)?.let(engine::seek)
+        if (resumes && !engine.isPlaying) engine.togglePause()
+    }
+    LaunchedEffect(scrub) {
+        val current = scrub ?: return@LaunchedEffect
+        snapshotFlow { scrubMoves }.collectLatest {
+            val at = current.commitsAt() ?: return@collectLatest
+            delay(at - SystemClock.uptimeMillis())
+            endScrub(commit = true)
+        }
+    }
+    LaunchedEffect(overlay, pressed, panel, player?.isPlaying, scrub) {
         // A paused picture keeps its overlay, so the Viewer sees where they are.
-        if (overlay && panel == Panel.None && player?.isPlaying != false) {
+        if (overlay && panel == Panel.None && scrub == null && player?.isPlaying != false) {
             delay(OVERLAY_FOR)
             overlay = false
         }
@@ -233,23 +281,42 @@ fun PlayerScreen(
     val bare = panel == Panel.None && !overlay && suggested == null && upNext == null
     LaunchedEffect(bare) { if (bare) screen.requestFocus() }
     if (overlay && panel == Panel.None) BackHandler { overlay = false }
+    if (scrub != null) BackHandler { endScrub(commit = false) }
 
     Box(
         Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown) touched = true
+            if (event.type == KeyEventType.KeyUp && event.key in SCRUB_KEYS) scrub?.let {
+                // When the app gets to it, not when it was stamped: a Back just after letting go
+                // still cancels, however far behind the app is.
+                it.release(SystemClock.uptimeMillis())
+                scrubMoves++
+                return@onPreviewKeyEvent true
+            }
             if (event.type != KeyEventType.KeyDown || panel != Panel.None || (ended && upNext != null)) return@onPreviewKeyEvent false
+            if (scrub != null) {
+                when (event.key) {
+                    Key.DirectionLeft, Key.MediaRewind -> moveScrub(forward = false, event)
+                    Key.DirectionRight, Key.MediaFastForward -> moveScrub(forward = true, event)
+                    Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> endScrub(commit = true)
+                    // Back cancels it, through its BackHandler.
+                    Key.Back -> return@onPreviewKeyEvent false
+                    else -> Unit
+                }
+                return@onPreviewKeyEvent true
+            }
             pressed++
             when {
                 event.key == Key.Menu -> panel = if (state is PlaybackState.Ended) Panel.None else Panel.Versions
                 event.key == Key.MediaPlayPause -> player?.togglePause()
                 // A Channel is live: there is nowhere to seek to.
-                event.key == Key.MediaRewind -> if (!plan.live) player?.seek(-SEEK_STEP)
-                event.key == Key.MediaFastForward -> if (!plan.live) player?.seek(SEEK_STEP)
+                event.key == Key.MediaRewind -> if (!plan.live) moveScrub(forward = false, event)
+                event.key == Key.MediaFastForward -> if (!plan.live) moveScrub(forward = true, event)
                 // With the overlay or a card up, its buttons take the keys.
                 overlay || suggested != null || card != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
-                    Key.DirectionLeft -> { if (!plan.live) player.seek(-SEEK_STEP); overlay = true }
-                    Key.DirectionRight -> { if (!plan.live) player.seek(SEEK_STEP); overlay = true }
+                    Key.DirectionLeft -> if (plan.live) overlay = true else moveScrub(forward = false, event)
+                    Key.DirectionRight -> if (plan.live) overlay = true else moveScrub(forward = true, event)
                     Key.DirectionCenter, Key.Enter, Key.DirectionUp, Key.DirectionDown -> overlay = true
                     else -> return@onPreviewKeyEvent false
                 }
@@ -289,6 +356,7 @@ fun PlayerScreen(
                 version = state.version,
                 player = player,
                 live = plan.live,
+                target = { scrubTo },
                 onNext = next?.let { { onPlay(it, 0) } },
                 onVersions = { panel = Panel.Versions },
                 onTracks = { panel = Panel.Tracks },
@@ -346,6 +414,9 @@ fun PlayerScreen(
 private enum class Panel { None, Versions, Tracks }
 
 private const val SEEK_STEP = 10_000L
+
+/** The keys that scrub a Movie or Episode. */
+private val SCRUB_KEYS = setOf(Key.DirectionLeft, Key.DirectionRight, Key.MediaRewind, Key.MediaFastForward)
 
 /** How long a delay changes with each press, in milliseconds. */
 private const val DELAY_STEP = 50L
@@ -599,7 +670,7 @@ private fun engineName(engine: Engine) = stringResource(
  * bottom. Play/Pause takes first focus. A [live] Channel has no scrubber and no jumps.
  */
 @Composable
-private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, onNext: (() -> Unit)?, onVersions: () -> Unit, onTracks: () -> Unit) {
+private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, target: () -> Long?, onNext: (() -> Unit)?, onVersions: () -> Unit, onTracks: () -> Unit) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
@@ -637,6 +708,7 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
             duration = player.duration,
             isPlaying = isPlaying,
             live = live,
+            target = target(),
             playFocus = play,
             onBack = { player.seek(-SEEK_STEP) },
             onPlayPause = player::togglePause,
@@ -654,7 +726,8 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
  * Play/Pause and Forward 10 s as round icons in the middle (then Next Episode, when there is one to
  * play, [onNext]), between Versions on the left and Audio and subtitles on the right.
  * The times sit in fixed slots in tabular digits, so the scrubber stays still as they tick (#70).
- * A [live] Channel has no scrubber and no jumps: Play/Pause stays alone in the middle.
+ * A [live] Channel has no scrubber and no jumps: Play/Pause stays alone in the middle. While the
+ * Viewer scrubs to a [target], the playhead and its time stand there instead.
  */
 @Composable
 internal fun PlayerControls(
@@ -671,6 +744,7 @@ internal fun PlayerControls(
     onTracks: () -> Unit,
     modifier: Modifier = Modifier,
     onNext: (() -> Unit)? = null,
+    target: Long? = null,
 ) {
     val time = Type.label.copy(fontFeatureSettings = "tnum")
     val measurer = rememberTextMeasurer()
@@ -680,12 +754,31 @@ internal fun PlayerControls(
     Column(modifier.fillMaxWidth().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
         if (!live) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(clock(position), style = time, color = Colors.ink, textAlign = TextAlign.End, modifier = Modifier.width(slotWidth))
-            Box(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
+            BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp)) {
                 val shape = RoundedCornerShape(3.dp)
                 fun share(at: Long) = if (duration == null) 0f else (at.toFloat() / duration).coerceIn(0f, 1f)
                 Box(Modifier.fillMaxSize().background(Colors.ink.copy(alpha = 0.25f), shape))
                 Box(Modifier.fillMaxWidth(share(buffered)).fillMaxHeight().background(Colors.ink.copy(alpha = 0.45f), shape))
-                Box(Modifier.fillMaxWidth(share(position)).fillMaxHeight().background(Colors.ink, shape))
+                Box(Modifier.fillMaxWidth(share(target ?: position)).fillMaxHeight().background(Colors.ink, shape))
+                // While scrubbing, the playhead is the target, its time above it, kept over the bar;
+                // both are drawn outside the bar's bounds, so nothing around it moves.
+                if (target != null) {
+                    val at = maxWidth * share(target)
+                    // Sized for themselves, not the bar's 6 dp: the head centred on the bar, the time above it.
+                    Box(Modifier.offset(x = at - SCRUB_HEAD / 2).requiredSize(SCRUB_HEAD).background(Colors.ink, CircleShape))
+                    Text(
+                        clock(target),
+                        style = time,
+                        color = Colors.ink,
+                        softWrap = false,
+                        modifier = Modifier.layout { measurable, constraints ->
+                            val label = measurable.measure(Constraints())
+                            layout(0, 0) {
+                                label.place((at.roundToPx() - label.width / 2).coerceIn(0, (constraints.maxWidth - label.width).coerceAtLeast(0)), -label.height - Spacing.s.roundToPx())
+                            }
+                        },
+                    )
+                }
             }
             Text(duration?.let { "\u2212" + clock((it - position).coerceAtLeast(0)) } ?: "", style = time, color = Colors.inkMuted, modifier = Modifier.width(slotWidth))
         }
@@ -710,6 +803,9 @@ internal fun PlayerControls(
         )
     }
 }
+
+/** The playhead while scrubbing. */
+private val SCRUB_HEAD = 14.dp
 
 /** Play/Pause, a step bigger than the buttons beside it. */
 private val PLAY_SIZE = 52.dp
