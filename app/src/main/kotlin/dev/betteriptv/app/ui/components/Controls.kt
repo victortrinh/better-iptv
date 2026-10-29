@@ -129,8 +129,11 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
             tabs.forEachIndexed { index, tab ->
                 FocusSurface(
                     onClick = { onSelect(index) },
+                    // One fixed height for every tab: sized by its content, an icon tab came out taller
+                    // than a word tab, whose text renders shorter than the label's line height.
+                    modifier = if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT),
                     weight = FocusWeight.Control,
-                    corner = 20.dp,
+                    corner = TAB_HEIGHT / 2,
                     container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
                     focusedContainer = Colors.focus,
                 ) { focused ->
@@ -141,16 +144,17 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
                         else -> Colors.ink.copy(alpha = 0.85f)
                     }
                     if (tab.icon != null) {
-                        // 20 dp, the label's line height, so the icon tab is as tall as the others.
-                        Icon(tab.icon, contentDescription = tab.name, tint = ink, modifier = Modifier.padding(6.dp).size(20.dp))
+                        Icon(tab.icon, contentDescription = tab.name, tint = ink, modifier = Modifier.align(Alignment.Center).size(20.dp))
                     } else {
-                        Text(tab.name, style = Type.label, color = ink, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
+                        Text(tab.name, style = Type.label, color = ink, maxLines = 1, modifier = Modifier.align(Alignment.Center).padding(horizontal = 14.dp))
                     }
                 }
             }
         }
     }
 }
+
+private val TAB_HEIGHT = 32.dp
 
 /** A settings row: what it is on the left, its current value on the right. */
 @Composable
