@@ -62,8 +62,30 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
     )
 }
 
-/** A card on the home screen: which row it is in, and its Title's or Channel's [key]. */
-data class HomeCard(val row: Int, val key: String)
+/**
+ * A card on the home screen: the [row] it is in, by the row's key (not its place, which changes as
+ * Continue watching and Favourites come and go), and its Title's or Channel's [key].
+ */
+data class HomeCard(val row: String, val key: String)
+
+/**
+ * Where focus goes for [card], a card of the rows [before], once the screen shows [after] (each row's
+ * key to its cards' keys, in screen order): the card itself; else the card now in its place in the
+ * same row, the one after it or the last; else the first card of the row now where its row was.
+ * Null when there are no cards.
+ */
+fun restoredCard(card: HomeCard, before: Map<String, List<String>>, after: Map<String, List<String>>): HomeCard? {
+    val cards = after[card.row]
+    if (cards != null && card.key in cards) return card
+    if (!cards.isNullOrEmpty()) {
+        val at = before[card.row]?.indexOf(card.key) ?: -1
+        return HomeCard(card.row, cards[at.coerceIn(0, cards.lastIndex)])
+    }
+    val rows = after.filterValues { it.isNotEmpty() }.keys.toList()
+    if (rows.isEmpty()) return null
+    val at = before.keys.indexOf(card.row).coerceIn(0, rows.lastIndex)
+    return HomeCard(rows[at], after.getValue(rows[at]).first())
+}
 
 /**
  * What the home screen keeps while another screen shows: its scroll position, and the rows read
@@ -79,7 +101,8 @@ class HomeState {
  * The home screen's rows: Continue watching (stills with how far the Viewer got), the Viewer's
  * Favourites, New on your service, then a row per genre. They are read again whenever the screen
  * shows, so a Title just played moves to the front of Continue watching. [restoreFocus] is the card
- * to focus on arrival, the one the Viewer opened before coming back; the first card when null.
+ * to focus on arrival, the one the Viewer opened before coming back, or the card now in its place
+ * when it has gone; the first card when null.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
@@ -96,23 +119,36 @@ fun HomeScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     val synced = status.last
-    LaunchedEffect(synced, contentLanguages, appLanguage) { state.rows = library.homeRows(contentLanguages, appLanguage) }
+    // The card to focus, until it takes focus: asked for once, so a row composed again as the
+    // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
+    // so the card is checked again once they are read: the Title opened may have left Continue
+    // watching meanwhile.
+    var pending by remember(restoreFocus) { mutableStateOf(restoreFocus) }
+    var focused by remember(restoreFocus) { mutableStateOf(false) }
+    var checked by remember(restoreFocus) { mutableStateOf(false) }
+    LaunchedEffect(synced, contentLanguages, appLanguage) {
+        val before = state.rows
+        state.rows = library.homeRows(contentLanguages, appLanguage)
+        if (!checked && restoreFocus != null && before != null) {
+            val restored = restoredCard(restoreFocus, before.cards, state.rows.orEmpty().cards)
+            if (restored != restoreFocus) pending = restored
+        }
+        checked = true
+    }
     val rows = state.rows
-    // Where focus goes once a Favourite removed takes its card away.
-    var afterRemoval by remember { mutableStateOf<HomeCard?>(null) }
-    val focusOn = afterRemoval ?: restoreFocus ?: rows?.firstOrNull()?.let { HomeCard(0, it.keys.first()) }
+    val focusOn = pending ?: rows?.firstOrNull()?.takeIf { !focused }?.let { HomeCard(it.key, it.keys.first()) }
+    val onFocused = {
+        pending = null
+        focused = true
+    }
     val scope = rememberCoroutineScope()
-    val onFavourite = { rowIndex: Int, channels: List<Channel>, channel: Channel, favourite: Boolean ->
+    val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {
             library.setFavourite(channel.id, favourite)
-            if (!favourite) {
-                val at = channels.indexOf(channel)
-                val neighbour = channels.getOrNull(at + 1) ?: channels.getOrNull(at - 1)
-                // Without a neighbour the row goes, and focus with it to the row that takes its place.
-                afterRemoval = HomeCard(rowIndex, neighbour?.let(::channelKey) ?: "")
-            }
+            val before = state.rows.orEmpty()
             state.rows = library.homeRows(contentLanguages, appLanguage)
-            if (afterRemoval?.key == "") afterRemoval = state.rows?.getOrNull(rowIndex)?.let { HomeCard(rowIndex, it.keys.first()) }
+            // Focus goes to its neighbour, or to the row that takes its place.
+            if (!favourite) pending = restoredCard(HomeCard(row.key, channelKey(channel)), before.cards, state.rows.orEmpty().cards)
         }
         Unit
     }
@@ -131,8 +167,8 @@ fun HomeScreen(
                 Text(stringResource(R.string.home_empty), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
             }
         }
-        rows.orEmpty().forEachIndexed { rowIndex, row ->
-            item(key = "row-$rowIndex", contentType = "row") {
+        rows.orEmpty().forEach { row ->
+            item(key = "row-${row.key}", contentType = "row") {
                 Text(
                     row.heading(),
                     style = Type.headline,
@@ -148,20 +184,26 @@ fun HomeScreen(
                     modifier = Modifier.padding(bottom = 14.dp),
                 ) {
                     if (row is HomeRow.Favourites) itemsIndexed(row.channels, key = { _, channel -> channelKey(channel) }) { _, channel ->
-                        val card = HomeCard(rowIndex, channelKey(channel))
+                        val card = HomeCard(row.key, channelKey(channel))
                         val focus = remember { FocusRequester() }
-                        if (card == focusOn) LaunchedEffect(Unit) { focus.requestFocus() }
+                        if (card == focusOn) LaunchedEffect(Unit) {
+                            focus.requestFocus()
+                            onFocused()
+                        }
                         ChannelCard(
                             channel,
                             onWatch = { onWatch(card, it) },
-                            onFavourite = { it, favourite -> onFavourite(rowIndex, row.channels, it, favourite) },
+                            onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
                             modifier = Modifier.focusRequester(focus),
                         )
                     }
                     itemsIndexed(row.titles, key = { _, title -> title.id.toString() }) { index, title ->
-                        val card = HomeCard(rowIndex, title.id.toString())
+                        val card = HomeCard(row.key, title.id.toString())
                         val focus = remember { FocusRequester() }
-                        if (card == focusOn) LaunchedEffect(Unit) { focus.requestFocus() }
+                        if (card == focusOn) LaunchedEffect(Unit) {
+                            focus.requestFocus()
+                            onFocused()
+                        }
                         val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                         TitleCard(
                             image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
@@ -186,6 +228,19 @@ private val HomeRow.titles: List<TitleSummary>
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
     }
+
+/** A row's key, as [HomeCard]s hold it: the same row keeps it when rows before it come or go. */
+private val HomeRow.key: String
+    get() = when (this) {
+        is HomeRow.ContinueWatching -> "continue"
+        is HomeRow.Favourites -> "favourites"
+        is HomeRow.NewOnYourService -> "new"
+        is HomeRow.Genre -> "genre/$name"
+    }
+
+/** Each row's key to its cards' keys, in screen order, for [restoredCard]. */
+private val List<HomeRow>.cards: Map<String, List<String>>
+    get() = associate { it.key to it.keys }
 
 /** The keys of a row's cards, as [HomeCard]s hold them. */
 private val HomeRow.keys: List<String>
