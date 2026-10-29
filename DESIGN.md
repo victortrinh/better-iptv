@@ -84,7 +84,8 @@ components:
     textColor: "{colors.ink}"
     typography: "{typography.label}"
     rounded: "{rounded.control}"
-    padding: "6px 14px"
+    padding: "0 14px"
+    height: "30px"
   tab-selected:
     backgroundColor: "{colors.glass-high}"
     textColor: "{colors.ink}"
@@ -310,8 +311,8 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Navigation (`TopTabs`, `Wordmark`)
 - The Wordmark (NuageTivi) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
-- Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): a 20 dp icon with 6 dp padding, as tall as a word tab, named by its content description.
-- **Tab:** label type, 14 x 6 dp padding. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
+- Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): a 20 dp icon centred in a 30 dp circle, as tall as a word tab, named by its content description.
+- **Tab:** label type, 30 dp tall with 14 dp padding at the sides. Every tab gets the fixed height, because a label trims its line height to its glyphs, so padding alone sizes words and icons differently. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
 
 ### Cards (`TitleCard`)
 - **Poster:** 104 dp wide, 2:3. **Wide:** 196 dp wide, 16:9, for Continue watching.
@@ -337,7 +338,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Settings (`SettingRow`, `ChoiceRow`)
 - **SettingRow:** a `glass` pill, 16 x 12 dp padding. Label (label type) with optional detail (muted caption) on the left, current value (muted body) on the right. Focus is a white fill, with the detail at 70% black.
-- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
+- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. A choice's text stays on one line; when the choices don't fit beside their label, whole capsules move to a second line, 8 dp below. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
 
 ### Inputs (`NuageTextField`, `RemoteKeyboard`)
 - **NuageTextField:** a caption label above it (`ink-muted`, `ink` when focused), then a 48 dp `glass` field with `card` corners and 16 dp padding, body text, an `ink` cursor and a muted placeholder. **Focus:** the white ring on `glass-high`. D-pad up and down leave the field, and the IME action moves to the next field or submits on the last one.
