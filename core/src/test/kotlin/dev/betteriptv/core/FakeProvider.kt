@@ -91,8 +91,10 @@ class FakeProvider : Closeable {
 
     /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
     val movieDetails = ConcurrentHashMap<Long, String>()
-    /** Movie Listings whose files are answered with HTTP 404, as the Provider answers for a dead link. */
+    /** Movie Listings whose files are answered with HTTP [deadStatus], as the Provider answers for a dead link. */
     val deadStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+    /** 404 by default; the surveyed Provider answers some dead Movie files with 400, others with 405. */
+    @Volatile var deadStatus = 404
 
     /** Movie Listings whose files open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
     val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
@@ -268,7 +270,7 @@ class FakeProvider : Closeable {
         val parts = exchange.requestURI.path.split("/")
         if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return exchange.sendResponseHeaders(401, -1)
         val id = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()
-        if (id in deadStreams) return exchange.sendResponseHeaders(404, -1)
+        if (id in deadStreams) return exchange.sendResponseHeaders(deadStatus, -1)
         if (parts[1] == "live" && parts.getOrNull(4)?.substringAfter('.') in deadLiveFormats) return exchange.sendResponseHeaders(404, -1)
         // Closed by the caller without a status line.
         if (unansweredFiles) return

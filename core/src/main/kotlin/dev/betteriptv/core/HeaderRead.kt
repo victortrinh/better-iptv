@@ -62,11 +62,12 @@ internal val HEADER_READABLE = setOf("mkv", "webm", "mp4", "m4v", "mov")
  */
 internal class HeaderReader(private val http: OkHttpClient) {
     /**
-     * What the file at [location] holds; null when its header can't be read. Throws
-     * [HeaderReadRefused] when the Provider answers with an error, and another [IOException] when it doesn't answer.
+     * What the file at [location] holds; null when its header can't be read, or when the file is dead.
+     * Throws [HeaderReadRefused] when the Provider answers with another error, and another [IOException]
+     * when it doesn't answer.
      */
     suspend fun read(location: String, container: String): FileContents? {
-        val start = fetch(location, 0, START_BYTES)
+        val start = fetch(location, 0, START_BYTES) ?: return null
         if (container !in MP4_CONTAINERS) return readMatroska(start.bytes, start.size)
         var part = start
         var offset = 0L
@@ -77,7 +78,7 @@ internal class HeaderReader(private val http: OkHttpClient) {
                 Mp4Read.Unreadable -> return null
                 is Mp4Read.More -> {
                     offset = read.from
-                    part = fetch(location, read.from, read.length)
+                    part = fetch(location, read.from, read.length) ?: return null
                 }
             }
         }
@@ -86,8 +87,8 @@ internal class HeaderReader(private val http: OkHttpClient) {
 
     private class Part(val bytes: ByteArray, val size: Long?)
 
-    /** Up to [length] bytes of the file from [from], and the whole file's size when the Provider says. */
-    private suspend fun fetch(location: String, from: Long, length: Long): Part = suspendCancellableCoroutine { continuation ->
+    /** Up to [length] bytes of the file from [from], and the whole file's size when the Provider says; null when the file is dead. */
+    private suspend fun fetch(location: String, from: Long, length: Long): Part? = suspendCancellableCoroutine { continuation ->
         val call = http.newCall(Request.Builder().url(location).header("Range", "bytes=$from-${from + length - 1}").build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -96,6 +97,7 @@ internal class HeaderReader(private val http: OkHttpClient) {
             override fun onResponse(call: Call, response: Response) {
                 try {
                     response.use {
+                        if (response.code.isDead()) return continuation.resume(null)
                         // Never the location in a message: it holds the login.
                         if (response.code != 200 && response.code != 206) throw HeaderReadRefused(response.code)
                         val size = if (response.code == 206) response.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
@@ -118,6 +120,14 @@ internal class HeaderReader(private val http: OkHttpClient) {
         val MP4_CONTAINERS = setOf("mp4", "m4v", "mov")
     }
 }
+
+/**
+ * A 4xx the Provider won't change on a retry, as the player counts them: the file is dead. The
+ * surveyed Provider answers dead Movie files with 400, 404 or 405. 401 is the login, not the file;
+ * 403 and 429 may be the Provider refusing a stream over the Connection limit or for flooding, and
+ * 408 is a timeout.
+ */
+private fun Int.isDead() = this in 400..499 && this !in setOf(401, 403, 408, 429)
 
 /** The Provider answered a Header read with HTTP [status] instead of the file. */
 internal class HeaderReadRefused(val status: Int) : IOException("The Provider answered a Header read with HTTP $status.")
