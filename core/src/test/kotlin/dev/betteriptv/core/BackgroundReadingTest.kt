@@ -145,6 +145,36 @@ class BackgroundReadingTest {
         assertEquals(listOf(1L, 2L, 3L, 4L, 5L), read())
     }
 
+    @Test fun `a dead Version is passed over, not taken for a refusal`() = runBlocking {
+        syncMovies(3)
+        provider.deadStatus = 400
+        provider.deadStreams += 1L
+
+        startReading()
+        awaitReads(2)
+        idle()
+
+        assertEquals(listOf(2L, 3L), read())
+        // Asked once: it stays unread, never asked again.
+        assertEquals(3, provider.streamRequests)
+    }
+
+    @Test fun `a dead Version on a details page doesn't stop its other Versions' reads`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"},{"category_id":"2","category_name":"FR - FILMS"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"EN - Movie (2025)","tmdb":"7","category_id":"1","added":"1700000000","container_extension":"mkv"},
+            {"stream_id":2,"name":"FR - Movie (2025)","tmdb":"7","category_id":"2","added":"1700000000","container_extension":"mkv"}
+        ]"""
+        provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "fre", "A_AAC")), width = 1920, height = 1080)
+        library.sync()
+        provider.deadStatus = 405
+        provider.deadStreams += 1L
+
+        library.readHeaders(movie(7), english) {}
+
+        assertEquals(listOf(2L), read())
+    }
+
     @Test fun `a Provider that doesn't answer pauses reading for a while, not for the day`() = runBlocking {
         syncMovies(3)
         provider.unansweredFiles = true

@@ -793,9 +793,10 @@ class Library private constructor(
      * Background reading at [pace], until cancelled: a Header read of the Version a Movie's card
      * shows, one at a time and only while the connection is free, so never during Playback nor while
      * a details page reads. Cards on screen come first ([onScreen]), then Continue watching, then the
-     * newest Movies in the Viewer's [contentLanguages]. A Provider answering with an error stops it
-     * until the next day, and one not answering pauses it for a quarter of an hour. Each read that
-     * Confirms a card's Version is announced in [confirmations].
+     * newest Movies in the Viewer's [contentLanguages]. A dead file is kept as unreadable and passed
+     * over; a Provider answering with another error stops it until the next day, and one not
+     * answering pauses it for a quarter of an hour. Each read that Confirms a card's Version is
+     * announced in [confirmations].
      */
     suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace) =
         readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE)
