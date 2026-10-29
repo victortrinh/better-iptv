@@ -337,7 +337,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Settings (`SettingRow`, `ChoiceRow`)
 - **SettingRow:** a `glass` pill, 16 x 12 dp padding. Label (label type) with optional detail (muted caption) on the left, current value (muted body) on the right. Focus is a white fill, with the detail at 70% black.
-- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
+- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. A choice's text stays on one line; when the choices don't fit beside their label, whole capsules move to a second line, 8 dp below. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
 
 ### Inputs (`NuageTextField`, `RemoteKeyboard`)
 - **NuageTextField:** a caption label above it (`ink-muted`, `ink` when focused), then a 48 dp `glass` field with `card` corners and 16 dp padding, body text, an `ink` cursor and a muted placeholder. **Focus:** the white ring on `glass-high`. D-pad up and down leave the field, and the IME action moves to the next field or submits on the last one.

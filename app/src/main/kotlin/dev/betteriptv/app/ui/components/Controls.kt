@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -175,12 +176,13 @@ fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modi
 
 /**
  * A small set of exclusive choices (Quality cap, Background reading). The chosen one is stronger
- * glass with a check; only focus is white.
+ * glass with a check; only focus is white. Choices that don't fit beside their label move whole to
+ * a second line; a choice's word never breaks.
  */
 @Composable
 fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val capsule = RoundedCornerShape(50)
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { index, option ->
             val isSelected = index == selected
             FocusSurface(
@@ -196,7 +198,7 @@ fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
                         Icon(Icons.Filled.Check, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                     }
-                    Text(option, style = Type.label, color = ink)
+                    Text(option, style = Type.label, color = ink, maxLines = 1, softWrap = false)
                 }
             }
         }
