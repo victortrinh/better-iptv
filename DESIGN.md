@@ -310,8 +310,8 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Navigation (`TopTabs`, `Wordmark`)
 - The Wordmark (NuageTivi) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
-- Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): a 20 dp icon with 6 dp padding, as tall as a word tab, named by its content description.
-- **Tab:** label type, 14 x 6 dp padding. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
+- Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): 32 dp circles holding a 20 dp icon, named by its content description.
+- **Tab:** 32 dp tall, every one alike; label type centred with 14 dp padding at the sides. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
 
 ### Cards (`TitleCard`)
 - **Poster:** 104 dp wide, 2:3. **Wide:** 196 dp wide, 16:9, for Continue watching.
