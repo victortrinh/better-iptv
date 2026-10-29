@@ -8,7 +8,7 @@ Priorities, in order: a fast catalog with the best Version in the Viewer's langu
 
 Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-ignored `.survey/`).
 
-- Connection limit: 1.
+- Connection limit: 1. On 2026-10-29 it wasn't enforced within one home network: a second stream from a Mac on the stick's network was served while the stick played, so the refusal code is still unknown ([#82](https://github.com/victortrinh/better-iptv/issues/82)). `ProviderLoadErrorPolicy` keeps retrying 403 and 429 in case it is one of those.
 - 144,031 movie Listings (54,658 Titles), 36,252 show Listings (14,818 Titles), 45,710 live Listings; 22 MB compressed.
 - TMDB ID on 94% of movie and show Listings.
 - Names follow `PREFIX - Title (Year)` with 105 distinct Prefixes; Category names add hints ("MULTI-SUBS", "Dolby Vision", "DOLBY AUDIO", "VOSTFR").
@@ -39,6 +39,7 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 | Search index built from the whole catalog | Same stick and build | About 70–90 s of CPU on one core. Until #51's fix, every other catalog read (a details page, the grids) waited for it. |
 | Starting a Version, and switching Version from the Menu key (#43) | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build, against the real Provider, 2026-10-27 | Play to first frame: 3.8 s resuming an MKV at 7 min, 6.1 s for an MP4 while a Header read was running. Switching English (AAC) → Español (E-AC-3, passed through) → English: 3.5 s and 3.6 s from the old player's release to the new first frame, at the same scene, subtitles kept. Four 10 s seeks after: no refused stream. |
 | VLC's start after "Try other player" (Media3 let go → VLC's first picture), through the stream relay | Fire TV Stick 4K Max (AFTKA, `armeabi-v7a` libVLC), real Provider, Forgotten Love (2023) 1080p | 7.1 s on a Backup; 11.7 and 12.2 s on the Version's own file. That was over the 8 s start timeout, so VLC was cut off there and the next Backup played on Media3 instead. After [#58](https://github.com/victortrinh/better-iptv/issues/58)'s fix (through the relay, the 8 s count from the Provider's latest answer, up to 32 s), debug build, 2026-10-27: 13.9, 12.7 and 14.6 s on the Version's own file (to its first decoded frame), at the same scene each time. Media3 back from VLC: 2.9 s. The emulator took ~7 s (#36). |
+| A dead Version giving way to its Backup ([#82](https://github.com/victortrinh/better-iptv/issues/82)); the dead Listing was a throwaway build pointing Speak (2004)'s first Version at an ID the Provider doesn't have | Fire TV Stick 4K Max (AFTKA), Fire OS 7.7.1.3, debug build, against the real Provider, 2026-10-29 | The Provider answers an unknown ID with HTTP 405 in 0.15 s, and a known ID with the wrong extension with 551 (from a Mac). On the stick: one 405, no retries, the Version failed 0.5 s after its player started, and the Backup's player started 0.8 s later (first frame 4 s after that). Seven seeks ahead on the Backup, two of them while the Mac held a second stream: no error, no switch. |
 
 ## M1: Replace TiviMate for Movies and Shows
 

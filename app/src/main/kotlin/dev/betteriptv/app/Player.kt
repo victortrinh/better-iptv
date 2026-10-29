@@ -86,9 +86,10 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
 }
 
 /**
- * Media3's retries, except for an answer the Provider won't change on a retry: a 4xx (a dead
- * Listing answers 404) or a refused login (511, 513). Such a Version fails at once, so its Backup
- * starts instead of waiting out about 3 s of retries. Timeouts and other 5xx answers can be passing
+ * Media3's retries, except for an answer the Provider won't change on a retry: a 4xx (the
+ * surveyed Provider answers a Listing it doesn't have with 405) or a refused login (511, 513).
+ * Such a Version fails at once, so its Backup starts instead of waiting out about 3 s of retries.
+ * Timeouts and other 5xx answers can be passing
  * trouble, and are still retried; so are 403 and 429, which may be the Provider refusing a stream
  * over the Connection limit while it still counts the one Media3 closed to seek.
  */
