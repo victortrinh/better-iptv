@@ -1,6 +1,12 @@
 package dev.betteriptv.app
 
 import android.content.Context
+import android.text.format.DateFormat
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalDensity
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -76,7 +82,9 @@ import kotlinx.coroutines.withContext
  * A Title's details: what it is, Play with the Version it will start, and every Version grouped by
  * language, the Viewer's languages first and the rest behind "Other languages". A Show has no Play
  * button; it lists its seasons and Episodes first, each Episode with the languages it's available
- * in, once the Provider's show details are read, and choosing one plays it. TMDB's backdrop fills the screen behind them. Without
+ * in and how far the Viewer got, once the Provider's show details are read, and choosing one plays
+ * it. Focus starts on the Episode to watch next, the one before it peeking above. Episodes TMDB lists
+ * as not aired yet say when they will be, and can't be played. TMDB's backdrop fills the screen behind them. Without
  * one, the poster sits beside the header instead: a poster blown up as a backdrop is too blurry and
  * too bright to keep text on it readable.
  *
@@ -103,8 +111,8 @@ fun TitleScreen(
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
-    val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages, reads) {
-        if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages)
+    val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages, appLanguage, reads) {
+        if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages, appLanguage)
     }
     // A Show's reads need its show details, so they start once its Episodes are in.
     val readable = id.kind == TitleKind.Movie || episodes != null
@@ -146,10 +154,11 @@ private fun TitleContent(
     var showOthers by rememberSaveable(title.id) { mutableStateOf(false) }
     val firstVersion = remember { FocusRequester() }
     val play = remember { FocusRequester() }
-    val firstEpisode = remember { FocusRequester() }
+    val nextEpisode = remember { FocusRequester() }
+    val listState = rememberLazyListState()
     val isShow = title.id.kind == TitleKind.Show
     // Play takes first focus. With nothing to start, or on a Show, the first Version takes it, and a
-    // Show's first Episode takes it over once the Episodes are read, unless the Viewer has moved on.
+    // Show's next Episode takes it over once the Episodes are read, unless the Viewer has moved on.
     var firstVersionFocused by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
     // Removing it from Continue watching takes its button away, so focus goes back to Play.
@@ -159,8 +168,16 @@ private fun TitleContent(
         if (wasResumable && !resumable) play.requestFocus()
         wasResumable = resumable
     }
-    val hasEpisodes = episodes?.seasons?.isNotEmpty() == true
-    LaunchedEffect(title.id, hasEpisodes) { if (hasEpisodes && firstVersionFocused) firstEpisode.requestFocus() }
+    val next = episodes?.next
+    val peekPx = with(LocalDensity.current) { PEEK.roundToPx() }
+    LaunchedEffect(title.id, next) {
+        if (episodes == null || next == null || !firstVersionFocused) return@LaunchedEffect
+        // The Episode before the next one peeks above it, so the Viewer sees where they are in the season.
+        // A list opens here once; from then on EdgeScroll moves it.
+        episodes.previousEpisodeIndex(next)?.let { listState.scrollToItem(it, peekPx) }
+        withFrameNanos {}
+        nextEpisode.requestFocus()
+    }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
     val shown = title.languages.ifEmpty { title.otherLanguages }
     val best = shown.firstOrNull()?.versions?.firstOrNull()
@@ -168,6 +185,7 @@ private fun TitleContent(
     if (backdrop != null) Backdrop(backdrop)
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = Spacing.screenY),
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
@@ -246,7 +264,7 @@ private fun TitleContent(
                 }
             }
         }
-        if (isShow) episodes(context, episodes, firstEpisode, onEpisode)
+        if (isShow) episodes(context, episodes, nextEpisode, onEpisode)
         item {
             Row(Modifier.padding(top = if (isShow) Spacing.xl else 0.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink)
@@ -283,21 +301,18 @@ private fun TitleContent(
 
 /**
  * A Show's seasons, each Episode as a row naming the languages it's available in, the Viewer's
- * first. Choosing one plays its Best playable Version.
+ * first, with how far the Viewer got in it. Choosing one plays its Best playable Version; one not
+ * aired yet says when it will be instead, and plays nothing. [nextEpisode] marks [ShowEpisodes.next].
+ *
+ * The items here are counted by [previousEpisodeIndex]: keep the two in step.
  */
-private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, firstEpisode: FocusRequester, onEpisode: (Episode) -> Unit) {
+private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, nextEpisode: FocusRequester, onEpisode: (Episode) -> Unit) {
     item(key = "episodes") {
         Text(stringResource(R.string.episodes_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp))
     }
-    val note = when {
-        episodes == null -> context.getString(R.string.episodes_reading)
-        episodes.seasons.isEmpty() && episodes.unreadVersions > 0 -> context.getString(R.string.episodes_unreachable)
-        episodes.seasons.isEmpty() -> context.getString(R.string.episodes_none)
-        episodes.unreadVersions > 0 -> context.resources.getQuantityString(R.plurals.episodes_unread, episodes.unreadVersions, episodes.unreadVersions)
-        else -> null
-    }
+    val note = episodes.note(context)
     if (note != null) item(key = "episodes note") { Text(note, style = Type.caption, color = Colors.inkMuted) }
-    episodes?.seasons.orEmpty().forEachIndexed { seasonIndex, season ->
+    episodes?.seasons.orEmpty().forEach { season ->
         item(key = "season ${season.number}") {
             Text(
                 "${if (season.number == 0) context.getString(R.string.season_specials) else context.getString(R.string.season_title, season.number)} · " +
@@ -307,18 +322,60 @@ private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, fi
                 modifier = Modifier.padding(top = Spacing.m, bottom = 2.dp),
             )
         }
-        season.episodes.forEachIndexed { index, episode ->
+        season.episodes.forEach { episode ->
             item(key = "episode ${season.number} ${episode.number}") {
+                val available = episode.availableOn
                 SettingRow(
                     episode.name?.let { context.getString(R.string.episode_named, episode.number, it) } ?: context.getString(R.string.episode_number, episode.number),
-                    (episode.languages + episode.otherLanguages).joinToString(", ") { group -> group.language?.let(::languageName) ?: context.getString(R.string.language_untagged) },
+                    if (available != null) context.getString(R.string.episode_available, context.monthDay(available))
+                    else (episode.languages + episode.otherLanguages).joinToString(", ") { group -> group.language?.let(::languageName) ?: context.getString(R.string.language_untagged) },
                     onClick = { onEpisode(episode) },
-                    modifier = if (seasonIndex == 0 && index == 0) Modifier.focusRequester(firstEpisode) else Modifier,
+                    modifier = if (episode.id == episodes?.next) Modifier.focusRequester(nextEpisode) else Modifier,
+                    progress = episode.progress,
+                    enabled = available == null,
                 )
             }
         }
     }
 }
+
+/** What to say above a Show's Episodes while they're read, or when some or all can't be. */
+private fun ShowEpisodes?.note(context: Context): String? = when {
+    this == null -> context.getString(R.string.episodes_reading)
+    seasons.isEmpty() && unreadVersions > 0 -> context.getString(R.string.episodes_unreachable)
+    seasons.isEmpty() -> context.getString(R.string.episodes_none)
+    unreadVersions > 0 -> context.resources.getQuantityString(R.plurals.episodes_unread, unreadVersions, unreadVersions)
+    else -> null
+}
+
+/**
+ * The list index of the Episode row just before [next] (in an earlier season, when it opens one),
+ * null when [next] is the first: the header, the Episodes headline and its note come first, then each
+ * season's heading and its Episodes, as [episodes] lays them out.
+ */
+private fun ShowEpisodes.previousEpisodeIndex(next: EpisodeNumber): Int? {
+    // The header and the Episodes headline, then the note when there is one.
+    var index = 2 + (if (seasons.isEmpty() || unreadVersions > 0) 1 else 0)
+    var previous: Int? = null
+    for (season in seasons) {
+        index++
+        for (episode in season.episodes) {
+            if (episode.id == next) return previous
+            previous = index++
+        }
+    }
+    return null
+}
+
+/** "October 31" in the App language, with the year when it isn't this one. */
+private fun Context.monthDay(date: LocalDate): String {
+    val locale = resources.configuration.locales[0]
+    val skeleton = if (date.year == LocalDate.now().year) "MMMMd" else "MMMMdyyyy"
+    return date.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, skeleton), locale))
+}
+
+/** How much of the Episode before the next one is hidden above the list's top edge. */
+private val PEEK = 16.dp
 
 /** The muted line naming the Version Play starts. */
 @Composable
