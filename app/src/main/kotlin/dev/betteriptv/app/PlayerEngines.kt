@@ -377,27 +377,38 @@ class VlcEngine(
     private val player = MediaPlayer(vlc)
     private val attached = CompletableDeferred<Unit>()
     private var from = 0L
-    override val position: Long get() = player.time.takeIf { it > 0 } ?: from
-    override val duration: Long? get() = player.length.takeIf { it > 0 }
+    private var length: Long? = null
+
+    // The picture can still read the engine for a frame after the session releases it (downloaded
+    // subtitles follow its position every 50 ms), and a released LibVLC player throws: it answers
+    // with where it stopped instead.
+    private var released = false
+    override val position: Long get() = if (released) from else player.time.takeIf { it > 0 } ?: from
+    override val duration: Long? get() = if (released) length else player.length.takeIf { it > 0 }
 
     fun attach(layout: VLCVideoLayout) {
         player.attachViews(layout, null, true, false)
         attached.complete(Unit)
     }
 
-    override val isPlaying: Boolean get() = player.isPlaying
+    override val isPlaying: Boolean get() = !released && player.isPlaying
     override val buffered: Long get() = position
 
-    override fun togglePause() = if (player.isPlaying) player.pause() else player.play()
+    override fun togglePause() {
+        if (released) return
+        if (player.isPlaying) player.pause() else player.play()
+    }
 
     @Volatile override var seen: FileContents? = null
         private set
 
     override fun seek(by: Long) {
+        if (released) return
         player.setTime((player.time + by).coerceAtLeast(0))
     }
 
     private fun mediaTracks(): List<IMedia.Track> {
+        if (released) return emptyList()
         val media = player.media ?: return emptyList()
         return try {
             (0 until media.trackCount).map(media::getTrack)
@@ -490,6 +501,9 @@ class VlcEngine(
     }
 
     override suspend fun release() {
+        from = position
+        length = duration
+        released = true
         player.setEventListener(null)
         player.stop()
         player.detachViews()
