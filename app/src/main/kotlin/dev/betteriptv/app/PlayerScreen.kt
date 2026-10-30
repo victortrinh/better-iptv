@@ -860,9 +860,15 @@ private fun TracksPanel(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
-    // Read again after each pick: the engine says which Track is on.
+    // Read again after each pick, and twice a second: the engine says which Track is on, and
+    // Media3 says so only once it has switched, after the pick (#160).
     var picks by remember { mutableIntStateOf(0) }
-    val tracks = remember(player, picks) { player?.tracks }
+    val tracks by produceState(player?.tracks, player, picks) {
+        while (true) {
+            value = player?.tracks
+            delay(500)
+        }
+    }
     val audio = tracks?.audio.orEmpty().mapIndexed { index, track ->
         TrackOption(context.audioName(track, isOriginal(track)), index == tracks?.audioOn, onClick = {
             onAudio(index, track)
