@@ -30,7 +30,8 @@ export async function search(env: Env, asked: Searched, languages: string[]): Pr
   }
   if (!body?.status) return [];
   return (body.subtitles ?? []).flatMap((s) => {
-    const zip = /^\/subtitle\/([\w.-]+)\.zip$/.exec(s.url ?? "");
+    // The url carries the cloud's key (`/subtitle/1-2.zip?api_key=…`): only the zip's path goes into the ref.
+    const zip = /^\/subtitle\/([\w.-]+)\.zip$/.exec(new URL(s.url ?? "", env.SUBDL_API).pathname);
     const language = primaryLanguage(s.language ?? "");
     if (!zip || !language) return [];
     // A whole season's zip holds every Episode: the download picks the one asked for.
@@ -43,7 +44,9 @@ export async function search(env: Env, asked: Searched, languages: string[]): Pr
 export async function download(env: Env, ref: string): Promise<ServiceFile | typeof NOT_FOUND> {
   const [, path, season, episode] = ref.split(":");
   if (!/^[\w.-]+$/.test(path ?? "")) return NOT_FOUND;
-  const response = await fetchOrUnavailable(new URL(`${env.SUBDL_DOWNLOADS}/subtitle/${path}.zip`));
+  const url = new URL(`${env.SUBDL_DOWNLOADS}/subtitle/${path}.zip`);
+  url.searchParams.set("api_key", env.SUBDL_API_KEY!);
+  const response = await fetchOrUnavailable(url);
   if (response.status === 404) return NOT_FOUND;
   if (!response.ok) throw new ServiceUnavailable(`Subdl answered HTTP ${response.status} for a download`);
   let files;
