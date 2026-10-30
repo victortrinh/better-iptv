@@ -321,7 +321,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 - Icons are Material Filled, solid white shapes like the launcher's z. `material-icons-core` covers most; the few others (Pause, Replay 10, Forward 10, Subtitles) are copied into `NuageIcons` rather than pulling in `material-icons-extended`.
 
 ### Navigation (`TopTabs`, `Wordmark`)
-- The Wordmark ("zugig", lowercase like the TV banner) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
+- The Wordmark ("zugig", lowercase like the TV banner, ending in a mid-grey `#77787E` dot raised to cap height) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
 - Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): 32 dp circles holding a 20 dp icon, named by its content description.
 - **Tab:** 32 dp tall, every one alike; label type centred with 14 dp padding at the sides. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
 

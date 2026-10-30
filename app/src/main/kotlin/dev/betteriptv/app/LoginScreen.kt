@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.NuageTextField
+import dev.betteriptv.app.ui.components.Wordmark
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -76,7 +77,7 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = Spacing.xxl)) {
-            Text(stringResource(R.string.wordmark), style = Type.display.copy(fontSize = 44.sp, lineHeight = 48.sp), color = Colors.ink)
+            Wordmark(style = Type.display.copy(fontSize = 44.sp, lineHeight = 48.sp))
             Spacer(Modifier.height(Spacing.l))
             Text(stringResource(R.string.login_title), style = Type.headline, color = Colors.ink)
             Spacer(Modifier.height(Spacing.s))

@@ -38,7 +38,7 @@ Every IPTV player shows the Provider's Listings as the Provider files them. This
 
 ## Brand Commitments
 
-- The app's name on screen is **Zugig**. The Wordmark and the TV banner set it lowercase, "zugig"; sentences write Zugig.
+- The app's name on screen is **Zugig**. The Wordmark and the TV banner set it lowercase, "zugig", with a grey dot at its top right; sentences write Zugig.
 
 ## Evidence on Hand
 

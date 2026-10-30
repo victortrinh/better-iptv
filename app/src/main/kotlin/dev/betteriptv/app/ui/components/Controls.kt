@@ -21,14 +21,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -108,11 +115,41 @@ fun NuageIconButton(icon: ImageVector, name: String, onClick: () -> Unit, modifi
 /** A destination in [TopTabs]: a word, or an icon with [name] as its description. */
 data class TopTab(val name: String, val icon: ImageVector? = null)
 
-/** The app's name, set lowercase like the TV banner. */
+/** The Wordmark's dot, a step back from the white letters. `DOT_GREY` in scripts/app_icon.py. */
+private val WordmarkDot = Color(0xFF77787E)
+
+/**
+ * The app's name, set lowercase like the TV banner, and its grey dot: 1.35 times Inter's i-dot,
+ * 0.4 i-dots clear of the g, its top on the cap height. The banner's dot uses the same numbers.
+ */
 @Composable
-fun Wordmark(modifier: Modifier = Modifier) {
-    Text(stringResource(R.string.wordmark), style = Type.headline.copy(fontSize = 22.sp), color = Colors.ink, modifier = modifier)
+fun Wordmark(modifier: Modifier = Modifier, style: TextStyle = Type.headline.copy(fontSize = 22.sp)) {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val density = LocalDensity.current
+    val em = with(density) { style.fontSize.toPx() }
+    Text(
+        stringResource(R.string.wordmark),
+        style = style,
+        color = Colors.ink,
+        onTextLayout = { layout = it },
+        modifier = modifier
+            .drawBehind {
+                val line = layout ?: return@drawBehind
+                val radius = DOT_EM * em / 2
+                // The line ends at the g's advance; its ink stops G_SIDE_BEARING_EM short of that.
+                val left = line.getLineRight(0) + (DOT_GAP_EM - G_SIDE_BEARING_EM) * em
+                val top = line.firstBaseline - CAP_HEIGHT_EM * em
+                drawCircle(WordmarkDot, radius, Offset(left + radius, top + radius))
+            }
+            .padding(end = with(density) { ((DOT_GAP_EM - G_SIDE_BEARING_EM + DOT_EM) * em).toDp() }),
+    )
 }
+
+// Inter Bold's metrics, in em, as scripts/app_icon.py reads them from the font.
+private const val DOT_EM = 0.2169f
+private const val DOT_GAP_EM = 0.0643f
+private const val G_SIDE_BEARING_EM = 0.0625f
+private const val CAP_HEIGHT_EM = 0.7275f
 
 /**
  * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
