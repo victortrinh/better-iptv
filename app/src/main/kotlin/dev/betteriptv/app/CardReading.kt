@@ -22,10 +22,22 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun cardBest(library: Library, title: TitleSummary, contentLanguages: List<String>): VersionAttributes {
-    DisposableEffect(library, title.id) {
-        CardsOnScreen.add(library, title.id)
-        onDispose { CardsOnScreen.remove(library, title.id) }
+    OnScreen(library, title.id)
+    return liveBest(library, title, contentLanguages)
+}
+
+/** Counts [id]'s card as on screen while it is composed, for a card that doesn't show its attributes (Home's). */
+@Composable
+fun OnScreen(library: Library, id: TitleId) {
+    DisposableEffect(library, id) {
+        CardsOnScreen.add(library, id)
+        onDispose { CardsOnScreen.remove(library, id) }
     }
+}
+
+/** The attributes [title]'s card shows, updated when Background reading Confirms its Version, without counting it as on screen. */
+@Composable
+fun liveBest(library: Library, title: TitleSummary, contentLanguages: List<String>): VersionAttributes {
     var best by remember(title) { mutableStateOf(title.best) }
     LaunchedEffect(title.id, contentLanguages) {
         library.confirmations.filter { it == title.id }.collect {

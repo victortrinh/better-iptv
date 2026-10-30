@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
-import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.TopTab
@@ -126,8 +125,6 @@ fun HomePrototype(focusCard: Boolean) {
                                 onClick = {},
                                 wide = wide,
                                 progress = row.progress?.getOrNull(index),
-                                info = row.left?.getOrNull(index)?.let { CardInfo.InProgress(episode = null, left = it) }
-                                    ?: CardInfo.About("${title.year} · ${title.runtime} · ${title.genres}", title.description),
                                 modifier = if (rowIndex == 0 && index == 0) Modifier.focusRequester(firstCard) else Modifier,
                             )
                         }

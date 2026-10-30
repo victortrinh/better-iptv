@@ -1,9 +1,12 @@
 package dev.betteriptv.app
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -14,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -31,12 +35,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import dev.betteriptv.app.ui.components.CardInfo
+import dev.betteriptv.app.ui.components.InfoPanel
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Keyline
+import dev.betteriptv.app.ui.theme.StayPut
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,13 +103,15 @@ fun restoredCard(card: HomeCard, before: Map<String, List<String>>, after: Map<S
 }
 
 /**
- * What the home screen keeps while another screen shows: its scroll position, and the rows read
- * last, which show until they are read again so coming back doesn't blank the screen.
+ * What the home screen keeps while another screen shows: its scroll position, the rows read last,
+ * which show until they are read again so coming back doesn't blank the screen, and the card the
+ * info panel tells about, the one focused last.
  */
 @Stable
 class HomeState {
     val list = LazyListState()
     var rows by mutableStateOf<List<HomeRow>?>(null)
+    var focused by mutableStateOf<HomeCard?>(null)
 }
 
 /**
@@ -113,6 +123,7 @@ class HomeState {
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     library: Library,
@@ -161,91 +172,134 @@ fun HomeScreen(
     }
 
     val tab = remember { FocusRequester() }
-    // The tabs stay on screen above the rows. The margins are content padding, so a focused card
-    // grows into them instead of being clipped.
+    // Like Netflix's: the focused card sits at the left margin and its row's heading at the top of
+    // the rows, so focus stays in one place and the rows move under it.
+    val density = LocalDensity.current
+    val poster = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.posterWidth / 2).toPx()) } }
+    val still = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.wideWidth / 2).toPx()) } }
+    val focusedRow = rows?.indexOfFirst { it.key == state.focused?.row } ?: -1
+    LaunchedEffect(focusedRow) {
+        if (focusedRow >= 0) state.list.animateScrollToItem(focusedRow)
+    }
+    // The tabs and the info panel stay on screen above the rows, which pass under the panel. The
+    // margins are content padding, so a focused card grows into them instead of being clipped.
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
-        BrowseTabs(Browse.Home, onTab, Modifier.padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), selectedFocus = tab)
-        LazyColumn(
-            Modifier.fillMaxSize().backToTab(tab),
-            state = state.list,
-            contentPadding = PaddingValues(bottom = Spacing.screenY),
-        ) {
-            if (rows?.isEmpty() == true) {
-                item(key = "empty") {
-                    Text(stringResource(R.string.home_empty), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
+        BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab)
+        HomeInfo(library, rows, state.focused, contentLanguages, Modifier.padding(start = Spacing.screenX, bottom = 12.dp))
+        CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
+            LazyColumn(
+                Modifier.fillMaxSize().backToTab(tab),
+                state = state.list,
+            ) {
+                if (rows?.isEmpty() == true) {
+                    item(key = "empty") {
+                        Text(stringResource(R.string.home_empty), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
+                    }
                 }
-            }
-            rows.orEmpty().forEach { row ->
-                item(key = "row-${row.key}", contentType = "row") {
-                    Text(
-                        row.heading(),
-                        style = Type.headline,
-                        color = Colors.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
-                    )
-                    val wide = row is HomeRow.ContinueWatching
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                        modifier = Modifier.padding(bottom = 14.dp).focusRestorer(),
-                    ) {
-                        if (row is HomeRow.Favourites) itemsIndexed(row.channels, key = { _, channel -> channelKey(channel) }) { _, channel ->
-                            val card = HomeCard(row.key, channelKey(channel))
-                            val focus = remember { FocusRequester() }
-                            if (card == focusOn) LaunchedEffect(Unit) {
-                                focus.requestFocus()
-                                onFocused()
+                rows.orEmpty().forEach { row ->
+                    item(key = "row-${row.key}", contentType = "row") {
+                        Text(
+                            row.heading(),
+                            style = Type.headline,
+                            color = Colors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
+                        )
+                        val wide = row is HomeRow.ContinueWatching
+                        // Favourites' Channel cards are as wide as stills.
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides if (wide || row is HomeRow.Favourites) still else poster) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+                                modifier = Modifier.padding(bottom = 14.dp).focusRestorer(),
+                            ) {
+                                if (row is HomeRow.Favourites) itemsIndexed(row.channels, key = { _, channel -> channelKey(channel) }) { _, channel ->
+                                    val card = HomeCard(row.key, channelKey(channel))
+                                    val focus = remember { FocusRequester() }
+                                    if (card == focusOn) LaunchedEffect(Unit) {
+                                        focus.requestFocus()
+                                        onFocused()
+                                    }
+                                    ChannelCard(
+                                        channel,
+                                        onWatch = { onWatch(card, it) },
+                                        onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
+                                        modifier = Modifier.focusRequester(focus),
+                                        named = false,
+                                        onFocus = { state.focused = card },
+                                    )
+                                }
+                                itemsIndexed(row.titles, key = { _, title -> title.id.toString() }) { index, title ->
+                                    val card = HomeCard(row.key, title.id.toString())
+                                    val focus = remember { FocusRequester() }
+                                    if (card == focusOn) LaunchedEffect(Unit) {
+                                        focus.requestFocus()
+                                        onFocused()
+                                    }
+                                    val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
+                                    // The info panel shows the badges, so the card only counts as on screen.
+                                    OnScreen(library, title.id)
+                                    TitleCard(
+                                        image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
+                                        name = title.name,
+                                        badges = emptyList(),
+                                        onClick = { onOpen(card, title.id) },
+                                        modifier = Modifier.focusRequester(focus),
+                                        wide = wide,
+                                        progress = resume?.progress,
+                                        named = false,
+                                        onFocus = { state.focused = card },
+                                    )
+                                }
                             }
-                            ChannelCard(
-                                channel,
-                                onWatch = { onWatch(card, it) },
-                                onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
-                                modifier = Modifier.focusRequester(focus),
-                            )
-                        }
-                        itemsIndexed(row.titles, key = { _, title -> title.id.toString() }) { index, title ->
-                            val card = HomeCard(row.key, title.id.toString())
-                            val focus = remember { FocusRequester() }
-                            if (card == focusOn) LaunchedEffect(Unit) {
-                                focus.requestFocus()
-                                onFocused()
-                            }
-                            val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
-                            val context = LocalContext.current
-                            TitleCard(
-                                image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
-                                name = title.name,
-                                badges = cardBest(library, title, contentLanguages).cardBadges(),
-                                onClick = { onOpen(card, title.id) },
-                                modifier = Modifier.focusRequester(focus),
-                                wide = wide,
-                                progress = resume?.progress,
-                                info = remember(title, resume) { context.cardInfo(title, resume) },
-                            )
                         }
                     }
                 }
+                // Room under the last row, so it too comes up to the top of the rows. Only with the
+                // rows: alone, it would be the item the list keeps in place as they arrive above it.
+                if (!rows.isNullOrEmpty()) item(key = "end") { Spacer(Modifier.fillParentMaxHeight()) }
             }
         }
     }
 }
 
+/** The info panel, telling about [card] of [rows], the card focused last. */
+@Composable
+private fun HomeInfo(library: Library, rows: List<HomeRow>?, card: HomeCard?, contentLanguages: List<String>, modifier: Modifier) {
+    val row = rows?.firstOrNull { it.key == card?.row }
+    val channel = (row as? HomeRow.Favourites)?.channels?.firstOrNull { channelKey(it) == card?.key }
+    if (channel != null) {
+        InfoPanel(CardInfo.Channel(channel.name, channel.menuHint()), emptyList(), modifier)
+        return
+    }
+    val titles = row?.titles.orEmpty()
+    val index = titles.indexOfFirst { it.id.toString() == card?.key }
+    if (index < 0) {
+        InfoPanel(null, emptyList(), modifier)
+        return
+    }
+    val title = titles[index]
+    val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
+    val context = LocalContext.current
+    val info = remember(title, resume) { context.cardInfo(title, resume) }
+    InfoPanel(info, liveBest(library, title, contentLanguages).cardBadges(), modifier)
+}
+
 /**
- * What the info area under [title]'s card tells: the time left when the Viewer is in it ([resume]),
- * else its year, runtime and genres and its description.
+ * What the info panel tells about [title]: the time left when the Viewer is in it ([resume]), else
+ * its year, runtime and genres and its description.
  */
 private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo {
     val left = resume?.left
     if (left != null) {
         // Rounded up, so the last seconds still read "1 min left".
         val minutes = ((left.toMillis() + 59_999) / 60_000).toInt().coerceAtLeast(1)
-        return CardInfo.InProgress(episode = null, left = getString(R.string.time_left, runtime(minutes)))
+        return CardInfo.InProgress(title.name, episode = null, left = getString(R.string.time_left, runtime(minutes)))
     }
     val about = title.about
     val metadata = listOfNotNull(title.year?.toString(), about?.runtimeMinutes?.let(::runtime), about?.genres?.take(2)?.joinToString(", ")?.ifEmpty { null })
-    return CardInfo.About(metadata.joinToString(" · "), about?.description)
+    return CardInfo.About(title.name, metadata.joinToString(" · "), about?.description)
 }
 
 private val HomeRow.titles: List<TitleSummary>
