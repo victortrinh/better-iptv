@@ -2,7 +2,8 @@
 """Write the launcher icon and the TV banner as vector drawables (#66, #104).
 
 The mark is a solid white lowercase z on a glass disc, on the charcoal ground:
-Verre's translucent glass plus the one solid white thing. It is drawn on a
+Verre's translucent glass plus the one solid white thing. The banner's "zugig" ends
+in a grey dot raised to cap height, the same dot the in-app Wordmark draws. It is drawn on a
 512 x 512 master canvas and placed by <group> transforms, so every resource
 shares one geometry. The z and the banner's "zugig" are the app's Inter Bold,
 turned into outlines because a vector drawable can't hold text.
@@ -32,9 +33,15 @@ FONT = TTFont(RES / "font" / "inter_700.ttf")
 GROUND = "#FF16171B"  # charcoal, a step above Colors.ground so the icon isn't a hole
 WHITE = "#FFF2F2F4"   # off-white
 GLASS = "#FF4A4B50"   # white glass over the ground, flattened to an opaque colour
+DOT_GREY = "#FF77787E"  # the Wordmark's dot: a step back from the white letters
 
 WORD = "zugig"
 TRACKING = -0.03  # Inter Bold tracked like Type.display
+
+# The Wordmark's dot, in em: 1.35 x Inter's own i-dot, 0.4 i-dots clear of the g's ink,
+# its top on the cap height. The Wordmark composable uses the same numbers.
+DOT_EM = 0.2169
+DOT_GAP_EM = 0.0643
 
 # The disc fills the 512 master; the z's x-height is 45% of it, its ink centred.
 DISC = "M256,0A256,256 0 1 1 256,512A256,256 0 1 1 256,0Z"
@@ -77,6 +84,19 @@ def centred_text(s, size, cx, cy, tracking=0.0):
     l, t, r, b = ink_bounds(s, size, tracking)
     d, _ = text_outline(s, cx - (l + r) / 2, cy - (t + b) / 2, size, tracking)
     return d
+
+
+def wordmark(size, cx, cy, tracking=0.0):
+    """ "zugig" and its dot, their ink centred together on (cx, cy): (word path, dot path)."""
+    l, t, r, b = ink_bounds(WORD, size, tracking)
+    d = DOT_EM * size
+    dot_l = r + DOT_GAP_EM * size
+    dot_t = -FONT["OS/2"].sCapHeight * size / FONT["head"].unitsPerEm
+    ox, oy = round(cx - (l + dot_l + d) / 2, 2), round(cy - (min(t, dot_t) + b) / 2, 2)
+    word, _ = text_outline(WORD, ox, oy, size, tracking)
+    rad, x, y = d / 2, ox + dot_l + d / 2, oy + dot_t + d / 2
+    dot = f"M{n(x)},{n(y - rad)}A{n(rad)},{n(rad)} 0 1 1 {n(x)},{n(y + rad)}A{n(rad)},{n(rad)} 0 1 1 {n(x)},{n(y - rad)}Z"
+    return word, dot
 
 
 def mark(monochrome=False):
@@ -141,10 +161,11 @@ def main():
     body = path_xml("M0,0h48v48h-48z", GROUND, "    ") + group_xml(mark(), k, tx, ty)
     write(RES / "mipmap-anydpi" / "ic_launcher.xml", vector(48, 48, body, "Launcher icon below API 26."))
 
-    # Banner: the wordmark alone, its ink centred on the 320 x 180 card.
-    body = path_xml("M0,0h320v180h-320z", GROUND, "    ") + path_xml(centred_text(WORD, 64, 160, 90, TRACKING), WHITE, "    ")
+    # Banner: the wordmark and its dot alone, their ink centred on the 320 x 180 card.
+    word, dot = wordmark(64, 160, 90, TRACKING)
+    body = path_xml("M0,0h320v180h-320z", GROUND, "    ") + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    ")
     write(RES / "drawable" / "banner.xml",
-          vector(320, 180, body, "TV banner (android:banner): zugig in Inter Bold."))
+          vector(320, 180, body, "TV banner (android:banner): zugig in Inter Bold and its grey dot."))
 
 
 if __name__ == "__main__":
