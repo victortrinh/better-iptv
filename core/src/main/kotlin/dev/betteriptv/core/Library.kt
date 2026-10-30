@@ -533,16 +533,42 @@ class Library private constructor(
         val title = store.title(id) ?: return@withContext null
         val remembered = rememberedTracks()
         val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered) }
+        val stopped = stopped(id)
+        ranked.firstOrNull()?.let {
+            PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0, remembered = remembered, length = stopped?.duration)
+        }
     }
 
     /**
      * What playing a Show's [episode] starts: its Best playable Version, chosen as a Movie's is, from
-     * the Episodes [episodes] read before; it starts from the beginning. Null for a Movie, or when the
-     * Show has no such Episode or no Version of it the device can display.
+     * the Episodes [episodes] read before; it starts where the Viewer stopped in it, unless they
+     * finished it. Null for a Movie, or when the Show has no such Episode or no Version of it the
+     * device can display.
      */
     suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? =
         withContext(Dispatchers.IO) { episodePlans(id, contentLanguages, device, qualityCap)?.get(episode)?.invoke() }
+
+    /**
+     * What a Show's Play button starts: the Episode the Viewer last stopped in, from where they
+     * stopped; once they finished it, the next one the device can play; and the first one when they
+     * never played the Show or finished its last Episode. Null for a Movie, or when no Episode read
+     * before has a Version the device can display.
+     */
+    suspend fun upNext(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
+        val plans = episodePlans(id, contentLanguages, device, qualityCap) ?: return@withContext null
+        val last = store.episodeProgress(id).firstOrNull()
+        val next = when {
+            last == null -> null
+            !last.watched -> plans[last.episode]?.invoke()
+            else -> plans.tailMap(last.episode).entries.asSequence().filter { it.key != last.episode }.firstNotNullOfOrNull { it.value() }
+        }
+        next ?: plans.values.firstNotNullOfOrNull { it() }
+    }
+
+    /** Where the Viewer stopped in each Episode of Show [id] they played, by Episode. */
+    suspend fun episodeProgress(id: TitleId): Map<EpisodeNumber, EpisodeProgress> = withContext(Dispatchers.IO) {
+        store.episodeProgress(id).associate { it.episode to EpisodeProgress(it.position, it.duration, it.watched) }
+    }
 
     /**
      * What to offer once [plan]'s Episode ends: the Show's next Episode the device can play, the next
@@ -564,11 +590,15 @@ class Library private constructor(
         val languages = rankingLanguages(remembered, contentLanguages)
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
-                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered) }
+                ranked.firstOrNull()?.let {
+                    val at = stopped[episode]
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration)
+                }
             }
         }
         return plans
@@ -617,7 +647,8 @@ class Library private constructor(
             val remembered = rememberedTracks()
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered)
+            val stopped = stopped(id)
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0, remembered = remembered, length = stopped?.duration)
         }
     }
 
@@ -645,22 +676,28 @@ class Library private constructor(
         }
     }
 
-    /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
-    private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
+    /** Where Play starts in [id]: where the Viewer stopped, or null for the start once they finished it. */
+    private fun stopped(id: TitleId): StoredProgress? = store.progress(id)?.takeUnless { it.watched }
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
-     * doesn't know it) in [id]. In its credits ([inCredits]) the Title counts as watched, and under a minute
-     * in nothing is recorded, so a Title opened by mistake doesn't land in Continue watching.
+     * doesn't know it) in [id], or in its [episode] for a Show. In its credits ([inCredits]) the Movie
+     * or Episode counts as watched, and under a minute in nothing is recorded, so a Title opened by
+     * mistake doesn't land in Continue watching.
      */
-    internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
+    internal fun saveProgress(id: TitleId, position: Long, duration: Long?, episode: EpisodeNumber? = null) {
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
+        val at = Instant.now()
+        if (episode != null) store.saveEpisodeProgress(id, episode, if (watched) 0 else position, duration, watched, at)
+        else store.saveProgress(id, if (watched) 0 else position, duration, watched, at)
     }
 
-    /** Records that the Viewer played [id] to its end. */
-    internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+    /** Records that the Viewer played [id], or its [episode] for a Show, to its end. */
+    internal fun finished(id: TitleId, episode: EpisodeNumber? = null) {
+        if (episode != null) store.saveEpisodeProgress(id, episode, 0, null, watched = true, Instant.now())
+        else store.saveProgress(id, 0, null, watched = true, Instant.now())
+    }
 
     /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }

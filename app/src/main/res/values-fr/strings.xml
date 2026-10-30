@@ -82,6 +82,10 @@
     <string name="play_restart">Recommencer</string>
     <string name="continue_watching_remove">Retirer de « Reprendre »</string>
     <string name="play_nothing">Aucune version que ce téléviseur peut afficher</string>
+    <string name="play_episode">Lecture S%1$d É%2$d</string>
+    <string name="play_continue_episode">Reprendre S%1$d É%2$d</string>
+    <string name="details_episode">S%1$d É%2$d</string>
+    <string name="details_episode_named">S%1$d É%2$d · %3$s</string>
     <string name="player_failed">Cette version n\'a pas joué. Essayez l\'autre lecteur, ou revenez choisir une autre version.</string>
     <string name="player_try_other">Essayer l\'autre lecteur</string>
     <string name="player_engine">Lecture avec %1$s</string>

@@ -97,6 +97,10 @@
     <string name="play_restart">Restart</string>
     <string name="continue_watching_remove">Remove from Continue watching</string>
     <string name="play_nothing">No Version this TV can display</string>
+    <string name="play_episode">Play S%1$d E%2$d</string>
+    <string name="play_continue_episode">Continue S%1$d E%2$d</string>
+    <string name="details_episode">S%1$d E%2$d</string>
+    <string name="details_episode_named">S%1$d E%2$d · %3$s</string>
     <string name="player_failed">This Version and its Backups didn\'t play. Try the other player, or press ≡ to pick another Version.</string>
     <string name="player_starting">Starting %1$s</string>
     <string name="player_versions_hint">≡ Versions</string>

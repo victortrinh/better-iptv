@@ -106,6 +106,15 @@ data class Episode(
 )
 
 /**
+ * Where the Viewer stopped in an Episode: [position] of [duration] (milliseconds, null when the player
+ * didn't know it), or at its start once they finished it ([watched]).
+ */
+data class EpisodeProgress(val position: Long, val duration: Long?, val watched: Boolean) {
+    /** How far in the Viewer is, for a progress bar; null without its length, or once finished. */
+    val fraction: Float? get() = duration?.takeIf { it > 0 && !watched }?.let { (position.toFloat() / it).coerceIn(0f, 1f) }
+}
+
+/**
  * One playable copy of a Movie or Episode, from one Listing (for an Episode, [listingId] is the
  * Provider's Episode id). [backups] are the equivalent Versions (same language and quality), best
  * first, tried when this one fails to start.
