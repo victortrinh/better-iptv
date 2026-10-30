@@ -23,9 +23,9 @@
     <string name="sync_now">Synchroniser</string>
     <string name="sync_never">Pas encore synchronisé.</string>
     <string name="sync_first">Première synchronisation de votre catalogue…</string>
-    <string name="sync_running">Synchronisation… (catalogue du %1$s affiché)</string>
+    <string name="sync_running">Synchronisation… (affichage du catalogue synchronisé %1$s)</string>
     <string name="sync_first_progress">Première synchronisation de votre catalogue… %1$s jusqu\'ici</string>
-    <string name="sync_running_progress">Synchronisation… %1$s (catalogue du %2$s affiché)</string>
+    <string name="sync_running_progress">Synchronisation… %1$s (affichage du catalogue synchronisé %2$s)</string>
     <plurals name="sync_movies_read">
         <item quantity="one">%1$s film</item>
         <item quantity="many">%1$s films</item>
@@ -43,7 +43,7 @@
         <item quantity="other">Correspondance de %1$s noms sur %2$s ; les titres seront regroupés à la fin.</item>
     </plurals>
     <string name="sync_done">Synchronisé %1$s en %2$s s.</string>
-    <string name="sync_failed">Échec de la synchronisation : %1$s Catalogue du %2$s affiché.</string>
+    <string name="sync_failed">Échec de la synchronisation : %1$s Affichage du catalogue synchronisé %2$s.</string>
     <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
     <string name="sync_just_now">à l\'instant</string>
     <string name="sync_failed_empty">Échec de la synchronisation : %1$s</string>
