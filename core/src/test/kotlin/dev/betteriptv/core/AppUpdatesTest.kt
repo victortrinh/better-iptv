@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -45,9 +46,11 @@ class AppUpdatesTest {
     private val installer = object : ApkInstaller {
         var allowed = true
         val installed = mutableListOf<ByteArray>()
+        val installedDexMetadata = mutableListOf<ByteArray?>()
         override fun canInstall() = allowed
-        override fun install(apk: File) {
+        override fun install(apk: File, dexMetadata: File?) {
             installed += apk.readBytes()
+            installedDexMetadata += dexMetadata?.readBytes()
         }
     }
 
@@ -56,6 +59,17 @@ class AppUpdatesTest {
     private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer)
 
     private val apk = ByteArray(300_000) { (it * 31).toByte() }
+    private val dm = ByteArray(20_000) { (it * 7).toByte() }
+
+    /** Publishes [publish]'s build with dex metadata beside it, whose manifest entry says [dmSha256]. */
+    private fun publishWithDexMetadata(dmSha256: String = sha256(dm)) {
+        files["/build-95/better-iptv-0.1.95.apk"] = apk
+        files["/build-95/better-iptv-0.1.95.dm"] = dm
+        files["/build-95/update.json"] = """
+            {"versionCode": 95, "versionName": "0.1.95", "apk": "better-iptv-0.1.95.apk", "sha256": "${sha256(apk)}", "size": ${apk.size},
+             "dm": "better-iptv-0.1.95.dm", "dmSha256": "$dmSha256", "dmSize": ${dm.size}}
+        """.trimIndent().toByteArray()
+    }
 
     private fun publish(versionCode: Long = 95, body: ByteArray = apk, sha256: String = sha256(body), size: Long = body.size.toLong()) {
         files["/build-95/better-iptv-0.1.$versionCode.apk"] = body
@@ -170,6 +184,54 @@ class AppUpdatesTest {
         // Next launch, running the new build: the old download is cleaned up.
         updates(installedVersionCode = 95).check()
         assertTrue(downloads.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test fun `a build without dex metadata installs on its own`() = runBlocking {
+        publish()
+        val updates = updates()
+        updates.check()
+        assertNull((updates.state.value as UpdateState.Available).update.dexMetadata)
+        updates.update()
+        assertNull(installer.installedDexMetadata.single())
+    }
+
+    @Test fun `the build's dex metadata is downloaded and installed with it`() = runBlocking {
+        publishWithDexMetadata()
+        val updates = updates()
+        updates.check()
+        assertEquals("$host/build-95/better-iptv-0.1.95.dm", (updates.state.value as UpdateState.Available).update.dexMetadata?.url)
+        updates.update()
+        assertTrue(updates.state.value is UpdateState.Installing)
+        assertArrayEquals(apk, installer.installed.single())
+        assertArrayEquals(dm, installer.installedDexMetadata.single())
+
+        // Kept with the APK for opening the installer again, then cleaned up once the new build runs.
+        updates(installedVersionCode = 91).check()
+        assertEquals(2, downloads.listFiles().orEmpty().size)
+        updates(installedVersionCode = 95).check()
+        assertTrue(downloads.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test fun `dex metadata that doesn't match the manifest is left out, and the build still installs`() = runBlocking {
+        publishWithDexMetadata(dmSha256 = "0".repeat(64))
+        val updates = updates()
+        updates.check()
+        updates.update()
+        assertTrue(updates.state.value is UpdateState.Installing)
+        assertArrayEquals(apk, installer.installed.single())
+        assertNull(installer.installedDexMetadata.single())
+    }
+
+    @Test fun `a build Android's installer refuses shows why, and asking again starts over`() = runBlocking {
+        publish()
+        val updates = updates()
+        updates.check()
+        updates.update()
+        updates.installFailed("INSTALL_FAILED_INSUFFICIENT_STORAGE")
+        assertEquals("INSTALL_FAILED_INSUFFICIENT_STORAGE", (updates.state.value as UpdateState.Failed).problem)
+        updates.update()
+        assertTrue(updates.state.value is UpdateState.Installing)
+        assertEquals(2, installer.installed.size)
     }
 
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

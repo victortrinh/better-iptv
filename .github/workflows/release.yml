@@ -1,8 +1,9 @@
 name: Release
 
 # Every push to main becomes a release the in-app updater offers (#21, docs/releases.md): the
-# release APK, signed with the key only the Viewer holds, and update.json beside it on a GitHub
-# release, which the app reads at releases/latest/download/update.json.
+# release APK, signed with the key only the Viewer holds, its Baseline Profile as dex metadata (#63),
+# and update.json beside them on a GitHub release, which the app reads at
+# releases/latest/download/update.json.
 
 on:
   push:
@@ -55,13 +56,18 @@ jobs:
           code=$(git rev-list --count HEAD)
           name="0.1.$code"
           apk="better-iptv-$name.apk"
+          dm="better-iptv-$name.dm"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
-          # An absolute address: GitHub redirects update.json to a signed asset address, and a bare
+          # The profile in Android 9–11's format (baselineProfiles/1), the stick's: installed with the
+          # APK, Android compiles the app at install instead of days later.
+          cp app/build/outputs/apk/release/baselineProfiles/1/app-release.dm "$dm"
+          # Absolute addresses: GitHub redirects update.json to a signed asset address, and a bare
           # name resolved against that answers 618 (jwt-not-provided).
-          url="https://github.com/$GITHUB_REPOSITORY/releases/download/build-$code/$apk"
-          jq -n --argjson code "$code" --arg name "$name" --arg apk "$url" \
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/build-$code"
+          jq -n --argjson code "$code" --arg name "$name" --arg apk "$base/$apk" \
             --arg sha256 "$(sha256sum "$apk" | cut -d' ' -f1)" --argjson size "$(stat -c%s "$apk")" \
-            '{versionCode: $code, versionName: $name, apk: $apk, sha256: $sha256, size: $size}' > update.json
+            --arg dm "$base/$dm" --arg dmSha256 "$(sha256sum "$dm" | cut -d' ' -f1)" --argjson dmSize "$(stat -c%s "$dm")" \
+            '{versionCode: $code, versionName: $name, apk: $apk, sha256: $sha256, size: $size, dm: $dm, dmSha256: $dmSha256, dmSize: $dmSize}' > update.json
           cat update.json
-          gh release create "build-$code" "$apk" update.json \
+          gh release create "build-$code" "$apk" "$dm" update.json \
             --target "$GITHUB_SHA" --title "$name" --generate-notes --latest

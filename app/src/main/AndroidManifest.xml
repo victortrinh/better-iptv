@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- The in-app updater opens Android's installer on a downloaded build (#21). -->
+    <!-- The in-app updater hands Android's installer a downloaded build (#21). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -30,15 +30,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Hands the installer a downloaded build from the cache (res/xml/updates.xml). -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.updates"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/updates" />
-        </provider>
+        <!-- Android's answers to the in-app updater's install session. -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 </manifest>
