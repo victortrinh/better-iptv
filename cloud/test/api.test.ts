@@ -7,7 +7,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -225,6 +225,65 @@ describe("the metadata cache", () => {
     tmdb.failWith = null;
     const later = await metadata(token, "en", [{ kind: "show", tmdbId: 1396 }]);
     expect(later.titles.map((t) => t.tmdbId)).toEqual([1396]);
+  });
+});
+
+describe("upcoming Episodes", () => {
+  // The Last of Us, a season in the middle of airing: E4 aired, E5 airs next.
+  beforeEach(() => {
+    tmdb.show(100088, () => ({ id: 100088, name: "The Last of Us", next_episode_to_air: { season_number: 2, episode_number: 5, air_date: "2026-10-31", name: "Feel Her Love" } }));
+    tmdb.season(100088, 2, (language) => ({
+      season_number: 2,
+      episodes: [
+        { season_number: 2, episode_number: 4, air_date: "2026-10-24", name: "Day One" },
+        { season_number: 2, episode_number: 5, air_date: "2026-10-31", name: language === "fr" ? "Ressens son amour" : "Feel Her Love" },
+        { season_number: 2, episode_number: 6, air_date: "2026-11-07", name: "" },
+        { season_number: 2, episode_number: 7, air_date: null, name: "Convergence" },
+      ],
+    }));
+  });
+
+  const upcoming = async (token: string, tmdbId: number, language = "en") => {
+    const response = await call("POST", "/v1/upcoming", { tmdbId, language }, token);
+    return { status: response.status, body: (await response.json()) as { episodes: unknown[] } };
+  };
+
+  it("lists the Episodes from the next to air to the end of its season, named in the language asked", async () => {
+    const token = await registerDevice();
+    const { status, body } = await upcoming(token, 100088, "fr");
+    expect(status).toBe(200);
+    // One without an air date has none to show.
+    expect(body.episodes).toEqual([
+      { season: 2, episode: 5, airDate: "2026-10-31", name: "Ressens son amour" },
+      { season: 2, episode: 6, airDate: "2026-11-07", name: null },
+    ]);
+  });
+
+  it("has none for a Show with nothing to air, or one TMDB doesn't have", async () => {
+    const token = await registerDevice();
+    expect((await upcoming(token, 1396)).body.episodes).toEqual([]);
+    expect((await upcoming(token, 999)).body.episodes).toEqual([]);
+  });
+
+  it("answers from its cache for half a day, and while TMDB is down after that", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T08:00:00Z"));
+    const token = await registerDevice();
+    await upcoming(token, 100088);
+    vi.setSystemTime(new Date("2026-10-30T19:00:00Z"));
+    await upcoming(token, 100088);
+    expect(tmdb.requests).toHaveLength(2);
+
+    vi.setSystemTime(new Date("2026-10-31T08:00:00Z"));
+    tmdb.failWith = 503;
+    expect((await upcoming(token, 100088)).body.episodes).toHaveLength(2);
+    expect((await upcoming(token, 1396)).status).toBe(503);
+  });
+
+  it("rejects a malformed request", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/upcoming", { tmdbId: "1399", language: "en" }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/upcoming", { tmdbId: 1399, language: "eng" }, token)).status).toBe(400);
   });
 });
 

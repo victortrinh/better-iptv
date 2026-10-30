@@ -64,6 +64,11 @@ export class FakeTmdb {
     this.titles.set(`tv/${id}`, answer);
   }
 
+  /** TMDB's details of [show]'s season [season], with [answer] building the response in the requested language. */
+  season(show: number, season: number, answer: (language: string) => object) {
+    this.titles.set(`tv/${show}/season/${season}`, answer);
+  }
+
   /** A movie TMDB's search finds, with [result] building it in the requested language. */
   searchableMovie(result: (language: string) => SearchResult) {
     this.searchable.push({ path: "movie", result });

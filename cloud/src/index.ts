@@ -7,6 +7,7 @@ import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
+import { upcoming } from "./upcoming";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves only data that is the same for every Viewer;
@@ -33,6 +34,10 @@ import { TmdbUnavailable, type TitleKey } from "./tmdb";
  *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
  *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
  *   offers from OpenSubtitles and Subdl in each language, best first.
+ * - `POST /v1/upcoming`, with `{"tmdbId": 1399, "language": "fr"}`: the Show's Episodes TMDB lists
+ *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
+ *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
+ *   when TMDB can't answer right now and the Show was never asked about.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */
@@ -79,6 +84,18 @@ export default {
       const asked = await subtitlesRequest(request);
       if (typeof asked === "string") return problem(400, asked);
       return json(await searchSubtitles(env, asked));
+    }
+    if (request.method === "POST" && pathname === "/v1/upcoming") {
+      const { tmdbId, language } = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; language?: unknown };
+      if (!Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
+        return problem(400, "tmdbId must be a Show's positive TMDB ID, and language an ISO 639-1 code, such as \"fr\".");
+      }
+      try {
+        return json({ episodes: await upcoming(env, tmdbId as number, language) });
+      } catch (e) {
+        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
+        throw e;
+      }
     }
     if (request.method === "POST" && pathname === "/v1/subtitles/download") {
       const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
