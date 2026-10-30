@@ -479,11 +479,16 @@ class Library private constructor(
      * A Show's Episodes, from the Provider's show details of each of its Versions (API calls, a
      * few at a time, never a stream), merged by season and episode number. Details are kept on the
      * device and asked again only once the Provider changes that Version's Show; when it can't be
-     * reached, the details kept from before stand. Null for a Movie, or a Show the catalog doesn't have.
+     * reached, the details kept from before stand. The Episodes TMDB lists as not aired yet that no
+     * Version has are added, named in [appLanguage], unless the cloud can't say right now. Each
+     * Episode has how far the Viewer got in it, and [ShowEpisodes.next] is the one to watch next.
+     * Null for a Movie, or a Show the catalog doesn't have.
      */
-    suspend fun episodes(id: TitleId, contentLanguages: List<String>): ShowEpisodes? = withContext(Dispatchers.IO) {
+    suspend fun episodes(id: TitleId, contentLanguages: List<String>, appLanguage: String = "en"): ShowEpisodes? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Show) return@withContext null
         val title = store.title(id) ?: return@withContext null
+        // Asked beside the Provider, which takes about a second a show Listing.
+        val upcoming = async { upcoming(id, appLanguage) }
         val kept = store.showDetails(title.listings.map { it.id })
         val now = Instant.now()
         val read = kept.mapValuesTo(HashMap()) { it.value.episodes }
@@ -514,10 +519,20 @@ class Library private constructor(
             }
         }
         val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }
-        ShowEpisodes(
-            mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })),
-            unreadVersions = title.listings.count { it.id !in read },
-        )
+        val played = store.episodeProgress(id)
+        val merged = mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val seasons = withUpcomingAndProgress(merged, upcoming.await(), played, LocalDate.now())
+        ShowEpisodes(seasons, unreadVersions = title.listings.count { it.id !in read }, next = nextEpisode(seasons, played))
+    }
+
+    /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
+    private fun upcoming(id: TitleId, appLanguage: String): List<UpcomingEpisode> {
+        if (cloud == null || id !is TitleId.Tmdb || !canAskCloud()) return emptyList()
+        return try {
+            cloud.upcoming(id.tmdbId, primaryLanguage(appLanguage))
+        } catch (e: CloudException) {
+            emptyList()
+        }
     }
 
     /**
@@ -538,7 +553,7 @@ class Library private constructor(
 
     /**
      * What playing a Show's [episode] starts: its Best playable Version, chosen as a Movie's is, from
-     * the Episodes [episodes] read before; it starts from the beginning. Null for a Movie, or when the
+     * the Episodes [episodes] read before; it starts where the Viewer stopped, unless they finished it. Null for a Movie, or when the
      * Show has no such Episode or no Version of it the device can display.
      */
     suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? =
@@ -564,11 +579,14 @@ class Library private constructor(
         val languages = rankingLanguages(remembered, contentLanguages)
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val stopped = store.episodeProgress(id).filter { !it.watched }.associate { it.episode to it.position }
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
-                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered) }
+                ranked.firstOrNull()?.let {
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped[episode] ?: 0, episode = episode, remembered = remembered)
+                }
             }
         }
         return plans
@@ -659,8 +677,24 @@ class Library private constructor(
         store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
     }
 
+    /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
+    internal fun saveProgress(plan: PlayPlan, position: Long, duration: Long?) {
+        val id = plan.titleId ?: return
+        val episode = plan.episode ?: return saveProgress(id, position, duration)
+        val watched = inCredits(position, duration)
+        if (!watched && position < MIN_RESUME_POSITION) return
+        store.saveEpisodeProgress(id, episode, if (watched) 0 else position, duration, watched, Instant.now())
+    }
+
     /** Records that the Viewer played [id] to its end. */
     internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+
+    /** Records that the Viewer played what [plan] plays to its end. */
+    internal fun finished(plan: PlayPlan) {
+        val id = plan.titleId ?: return
+        val episode = plan.episode ?: return finished(id)
+        store.saveEpisodeProgress(id, episode, 0, null, watched = true, Instant.now())
+    }
 
     /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }

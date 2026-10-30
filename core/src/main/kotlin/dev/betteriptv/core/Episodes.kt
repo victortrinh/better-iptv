@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import java.time.LocalDate
 import java.util.Locale
 import java.util.SortedMap
 
@@ -25,6 +26,43 @@ internal fun mergeEpisodes(
         val named = versions.sortedWith(compareBy<EpisodeVersion> { it.show.attributes.language?.value?.let(::primaryLanguage) !in wanted }.thenBy(BEST_FIRST) { it.candidate })
         Episode(key.first, key.second, named.firstNotNullOfOrNull { episodeName(it.title) }, languages, otherLanguages)
     }.map { (season, episodes) -> Season(season, episodes) }
+}
+
+/**
+ * [seasons] with the Episodes TMDB lists ([upcoming]) as airing after [today] and that no Version
+ * has yet, named as TMDB names them, and with how far the Viewer got in each ([played]).
+ */
+internal fun withUpcomingAndProgress(seasons: List<Season>, upcoming: List<UpcomingEpisode>, played: List<StoredEpisodeProgress>, today: LocalDate): List<Season> {
+    val progress = played.associateBy { it.episode }
+    val byNumber = sortedMapOf<Int, MutableMap<Int, Episode>>(compareBy({ it == 0 }, { it }))
+    seasons.forEach { season -> byNumber[season.number] = season.episodes.associateByTo(sortedMapOf()) { it.number } }
+    upcoming.filter { it.airDate.isAfter(today) }.forEach { coming ->
+        val season = byNumber.getOrPut(coming.episode.season) { sortedMapOf() }
+        if (coming.episode.number !in season) season[coming.episode.number] = Episode(coming.episode.season, coming.episode.number, coming.name, emptyList(), emptyList(), availableOn = coming.airDate)
+    }
+    return byNumber.map { (number, episodes) ->
+        Season(number, episodes.values.map { episode -> progress[episode.id]?.let { episode.withProgress(it) } ?: episode })
+    }
+}
+
+private fun Episode.withProgress(played: StoredEpisodeProgress): Episode = when {
+    played.watched -> copy(progress = 1f, watched = true)
+    else -> copy(progress = played.duration?.takeIf { it > 0 }?.let { (played.position.toFloat() / it).coerceIn(0f, 1f) })
+}
+
+/**
+ * The Episode of [seasons] to watch next, from what the Viewer [played] (last played first): the
+ * one they stopped in, else the one after the one they last Watched, else the first. After a
+ * season's Episode come the next season's, not the specials; after the Show's last, it stays on
+ * that one. Null for a Show without Episodes.
+ */
+internal fun nextEpisode(seasons: List<Season>, played: List<StoredEpisodeProgress>): EpisodeNumber? {
+    val episodes = seasons.flatMap { it.episodes }
+    val first = episodes.firstOrNull { it.season != 0 } ?: episodes.firstOrNull() ?: return null
+    val last = played.firstOrNull { stopped -> episodes.any { it.id == stopped.episode } } ?: return first.id
+    if (!last.watched) return last.episode
+    val after = episodes.drop(episodes.indexOfFirst { it.id == last.episode } + 1)
+    return after.firstOrNull { it.season != 0 || last.episode.season == 0 }?.id ?: last.episode
 }
 
 /**

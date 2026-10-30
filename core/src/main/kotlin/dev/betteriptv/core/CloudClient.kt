@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.LocalDate
 
 /**
  * Speaks the app's cloud API (cloud/src/index.ts). The device signs in with its own token, which
@@ -124,6 +125,22 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }
     }
 
+    /**
+     * The Episodes Show [tmdbId] has yet to air, as TMDB lists them, from the next one to the end of
+     * its season, named in [language] (ISO 639-1).
+     */
+    fun upcoming(tmdbId: Long, language: String): List<UpcomingEpisode> {
+        val answer = authorized { token -> post("v1/upcoming", json.toJson(mapOf("tmdbId" to tmdbId, "language" to language)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return (answer["episodes"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { episode ->
+            UpcomingEpisode(
+                EpisodeNumber((episode["season"] as? Number)?.toInt() ?: return@mapNotNull null, (episode["episode"] as? Number)?.toInt() ?: return@mapNotNull null),
+                airDate = (episode["airDate"] as? String)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return@mapNotNull null,
+                name = episode["name"] as? String,
+            )
+        }
+    }
+
     /** The subtitle file a search offered as [id]; null when its service no longer has it. */
     fun downloadSubtitle(id: String): DownloadedSubtitle? {
         val answer = try {
@@ -227,3 +244,6 @@ internal interface DeviceTokenStore {
  */
 internal fun providerKey(login: ProviderLogin): String =
     MessageDigest.getInstance("SHA-256").digest(XtreamClient.baseUrl(login.address).host.lowercase().toByteArray()).joinToString("") { "%02x".format(it) }
+
+/** An Episode TMDB lists as not aired yet: it airs on [airDate], and TMDB may know its [name]. */
+internal class UpcomingEpisode(val episode: EpisodeNumber, val airDate: LocalDate, val name: String?)

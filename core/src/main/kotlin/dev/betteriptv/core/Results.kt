@@ -2,6 +2,7 @@ package dev.betteriptv.core
 
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 /** One movie Listing, as the Provider names and files it, with what its Prefix and Category say about it. */
 data class MovieListing(val id: Long, val name: String, val category: String, val attributes: VersionAttributes)
@@ -84,10 +85,11 @@ data class LanguageGroup(val language: String?, val versions: List<Version>) {
 
 /**
  * A Show's Episodes, merged by season and episode number across all its Versions' show details,
- * so it has every season any Version has. [unreadVersions] counts the Versions whose details the
- * Provider couldn't give (and that weren't kept from before): their Episodes are missing.
+ * so it has every season any Version has, and the ones TMDB lists as not aired yet. [unreadVersions]
+ * counts the Versions whose details the Provider couldn't give (and that weren't kept from before):
+ * their Episodes are missing. [next] is the Episode to watch next ([nextEpisode]), null when there are none.
  */
-data class ShowEpisodes(val seasons: List<Season>, val unreadVersions: Int)
+data class ShowEpisodes(val seasons: List<Season>, val unreadVersions: Int, val next: EpisodeNumber? = null)
 
 /** One season of a Show, its Episodes in order. Specials (season 0) come after the others. */
 data class Season(val number: Int, val episodes: List<Episode>)
@@ -95,7 +97,11 @@ data class Season(val number: Int, val episodes: List<Episode>)
 /**
  * One Episode of a Show with its Versions grouped by language, as a Title's are: [languages] are
  * the Viewer's, [otherLanguages] the rest, so together they are the languages it's available in.
- * [name] is the Episode's name as the Provider gives it in the best Version, null when it gives none.
+ * [name] is the Episode's name as the Provider gives it in the best Version (as TMDB gives it, for
+ * one not aired yet), null when it gives none.
+ *
+ * [progress] is how far the Viewer got, from 0 to 1, null when they never played it; it is 1 once
+ * it's [watched]. An Episode TMDB lists as airing on [availableOn] has no Version yet, so it can't be played.
  */
 data class Episode(
     val season: Int,
@@ -103,7 +109,12 @@ data class Episode(
     val name: String?,
     val languages: List<LanguageGroup>,
     val otherLanguages: List<LanguageGroup>,
-)
+    val progress: Float? = null,
+    val watched: Boolean = false,
+    val availableOn: LocalDate? = null,
+) {
+    val id: EpisodeNumber get() = EpisodeNumber(season, number)
+}
 
 /**
  * One playable copy of a Movie or Episode, from one Listing (for an Episode, [listingId] is the

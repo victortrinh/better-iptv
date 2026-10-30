@@ -88,6 +88,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS progress (title_key TEXT PRIMARY KEY, position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, " +
                 "updated_at INTEGER NOT NULL)",
         )
+        // The same for each Episode of a Show, by season and episode number.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS episode_progress (title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, position INTEGER NOT NULL, " +
+                "duration INTEGER, watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (title_key, season, number))",
+        )
     }
     private val reader: SQLiteConnection = driver.open(path)
 
@@ -739,6 +744,31 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** Records that the Viewer stopped at [position] of [duration] in Show [id]'s [episode] at [at], or finished it when [watched]. */
+    fun saveEpisodeProgress(id: TitleId, episode: EpisodeNumber, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO episode_progress VALUES (?, ?, ?, ?, ?, ?, ?)").use {
+            it.bindText(1, key(id))
+            it.bindLong(2, episode.season.toLong())
+            it.bindLong(3, episode.number.toLong())
+            it.bindLong(4, position)
+            if (duration == null) it.bindNull(5) else it.bindLong(5, duration)
+            it.bindLong(6, if (watched) 1 else 0)
+            it.bindLong(7, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /** Where the Viewer stopped in each Episode of Show [id] they played, last played first. */
+    fun episodeProgress(id: TitleId): List<StoredEpisodeProgress> = synchronized(reader) {
+        reader.prepare("SELECT season, number, position, duration, watched FROM episode_progress WHERE title_key = ? ORDER BY updated_at DESC").use {
+            it.bindText(1, key(id))
+            buildList {
+                while (it.step()) add(StoredEpisodeProgress(EpisodeNumber(it.getInt(0), it.getInt(1)), it.getLong(2), if (it.isNull(3)) null else it.getLong(3), it.getLong(4) != 0L))
+            }
+        }
+    }
+
     /** Forgets where the Viewer stopped in [id], and whether they finished it. */
     fun forgetProgress(id: TitleId) = synchronized(writer) {
         writer.prepare("DELETE FROM progress WHERE title_key = ?").use {
@@ -887,6 +917,9 @@ internal class StoredSuspect(val kind: TitleKind, val name: String, val category
 
 /** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
 internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
+
+/** Where the Viewer stopped in a Show's [episode], as [StoredProgress] is for a Title. */
+internal class StoredEpisodeProgress(val episode: EpisodeNumber, val position: Long, val duration: Long?, val watched: Boolean)
 
 /** A show Listing's kept show details: when the Provider had last changed the Show, and when they were read. */
 internal class StoredShowDetails(val modified: Long?, val fetchedAt: Instant, val episodes: List<ProviderEpisode>)
