@@ -515,13 +515,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     /**
      * Calls [each] with what search needs of the metadata cached for each Title TMDB has, in
      * whichever language was cached, a page at a time like [forEachTitle]: the names it's found by
-     * (as released, in each language TMDB has, and its other names, some more than once), its cast
-     * and its popularity.
+     * (as released, in each language TMDB has, and its other names, some more than once), its cast,
+     * its genres (in the cached language) and its popularity.
      * SQLite picks them out of the JSON ([TitleMetadata]'s shape), so the bodies, descriptions and
      * all, never reach the heap: for the whole catalog they're hundreds of MB (#106).
      */
-    fun forEachSearchMetadata(each: (id: TitleId.Tmdb, names: List<String>, cast: List<String>, popularity: Double) -> Unit) {
-        class Row(val key: String, val names: List<String>, val cast: List<String>, val popularity: Double)
+    fun forEachSearchMetadata(each: (id: TitleId.Tmdb, names: List<String>, cast: List<String>, genres: List<String>, popularity: Double) -> Unit) {
+        class Row(val key: String, val names: List<String>, val cast: List<String>, val genres: List<String>, val popularity: Double)
         val listed = { column: Int, it: SQLiteStatement -> if (it.isNull(column)) emptyList() else it.getText(column).split(SEPARATOR) }
         var after = ""
         while (true) {
@@ -531,7 +531,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                     SELECT key, json_extract(body, '$.originalTitle'), json_extract(body, '$.popularity'),
                         (SELECT group_concat(json_extract(value, '$.title'), char(31)) FROM json_each(body, '$.titles')),
                         (SELECT group_concat(value, char(31)) FROM json_each(body, '$.alternativeTitles')),
-                        (SELECT group_concat(json_extract(value, '$.name'), char(31)) FROM json_each(body, '$.cast'))
+                        (SELECT group_concat(json_extract(value, '$.name'), char(31)) FROM json_each(body, '$.cast')),
+                        (SELECT group_concat(value, char(31)) FROM json_each(body, '$.genres'))
                     FROM (
                         SELECT title_key AS key, jsonb(max(body)) AS body FROM title_metadata WHERE body IS NOT NULL AND title_key > ?
                         GROUP BY title_key ORDER BY title_key LIMIT $SCAN_PAGE
@@ -542,12 +543,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                     buildList {
                         while (it.step()) {
                             val names = listOfNotNull(if (it.isNull(1)) null else it.getText(1)) + listed(3, it) + listed(4, it)
-                            add(Row(it.getText(0), names.distinct(), listed(5, it), if (it.isNull(2)) 0.0 else it.getDouble(2)))
+                            add(Row(it.getText(0), names.distinct(), listed(5, it), listed(6, it), if (it.isNull(2)) 0.0 else it.getDouble(2)))
                         }
                     }
                 }
             }
-            page.forEach { row -> (titleId(row.key) as? TitleId.Tmdb)?.let { id -> each(id, row.names, row.cast, row.popularity) } }
+            page.forEach { row -> (titleId(row.key) as? TitleId.Tmdb)?.let { id -> each(id, row.names, row.cast, row.genres, row.popularity) } }
             if (page.size < SCAN_PAGE) return
             after = page.last().key
         }

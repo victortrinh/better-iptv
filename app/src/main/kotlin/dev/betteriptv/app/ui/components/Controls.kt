@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -230,6 +231,28 @@ fun RemoteKeyboard(onKey: (String) -> Unit, onDelete: () -> Unit, onSpace: () ->
 }
 
 private val KEY = 34.dp
+
+/**
+ * Queries one press away, under the [RemoteKeyboard]: Title names, people and genres as plain text
+ * rows that fill white on focus. [onPick] gets the one chosen.
+ */
+@Composable
+fun Completions(completions: List<String>, onPick: (String) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        completions.forEach { completion ->
+            FocusSurface({ onPick(completion) }, Modifier.fillMaxWidth(), weight = FocusWeight.Row, focusedContainer = Colors.focus) { focused ->
+                Text(
+                    completion,
+                    style = Type.body,
+                    color = if (focused) Colors.onFocus else Colors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun Key(label: String, onClick: () -> Unit, width: Dp = KEY) {
