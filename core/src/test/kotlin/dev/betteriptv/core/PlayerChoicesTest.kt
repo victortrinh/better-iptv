@@ -94,6 +94,26 @@ class PlayerChoicesTest {
         assertEquals(TrackChoice(audio = null, subtitle = null), plan.chooseTracks(tracks("ger"), tracks("eng"), fullHdTv))
     }
 
+    @Test fun `closed captions the Viewer turns on stay on for the next stream that has them, and outlive the app`() = runBlocking {
+        syncMovies()
+        val captions = Track(null, CEA_608)
+        library.rememberClosedCaptions()
+
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        assertEquals(TrackChoice(audio = null, subtitle = 1), plan.chooseTracks(tracks(null), listOf(Track("eng"), captions), fullHdTv))
+        // Without them, nothing shows: captions have no language to download subtitles in.
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("eng"), tracks("eng"), fullHdTv))
+        library.close()
+        assertEquals(RememberedTracks(closedCaptions = true), openLibrary().rememberedTracks())
+    }
+
+    @Test fun `picking subtitles in a language turns closed captions off again`() = runBlocking {
+        library.rememberClosedCaptions()
+        library.rememberSubtitles("fr")
+
+        assertEquals(RememberedTracks(subtitles = "fr"), library.rememberedTracks())
+    }
+
     @Test fun `a pick made while playing applies to the next file the session opens, through what the Library remembers`() = runBlocking {
         syncMovies()
         val plan = library.playPlan(movie, english, fullHdTv)!!

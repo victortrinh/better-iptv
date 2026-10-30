@@ -110,6 +110,7 @@ data class PlayPlan(
         val picked = remembered.subtitles?.let { language -> subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 } }
         val subtitle = when {
             remembered.subtitlesOff -> null
+            remembered.closedCaptions -> subtitles.indexOfFirst { it.isClosedCaptions }.takeIf { it >= 0 }
             picked != null -> picked
             remembered.subtitles != null -> return TrackChoice(audioIndex, null, downloaded = primaryLanguage(remembered.subtitles))
             audioIndex != null -> null
@@ -147,9 +148,9 @@ data class EpisodeNumber(val season: Int, val number: Int)
 /**
  * The audio and subtitle languages the Viewer last picked in the player, kept for the next file:
  * [audio] is null until they pick one, and [subtitles] is a language, or none when they turned
- * subtitles off ([subtitlesOff]) or never picked any.
+ * subtitles off ([subtitlesOff]), picked a Channel's [closedCaptions], or never picked any.
  */
-data class RememberedTracks(val audio: String? = null, val subtitles: String? = null, val subtitlesOff: Boolean = false)
+data class RememberedTracks(val audio: String? = null, val subtitles: String? = null, val subtitlesOff: Boolean = false, val closedCaptions: Boolean = false)
 
 /** The languages Versions and Tracks are preferred in: the audio language the Viewer last picked, then their [contentLanguages]. */
 internal fun rankingLanguages(remembered: RememberedTracks, contentLanguages: List<String>): List<String> =
@@ -205,7 +206,14 @@ private const val FRAME_RATE_SNAP = 0.0005f
  * or 639-2), its format as a [mimeType] (`audio/true-hd`) and an audio Track's [channels], if the
  * file names them.
  */
-data class Track(val language: String?, val mimeType: String? = null, val channels: Int? = null)
+data class Track(val language: String?, val mimeType: String? = null, val channels: Int? = null) {
+    /** Whether it is a live Channel's closed captions (CEA-608 or 708), which carry no language. */
+    val isClosedCaptions get() = mimeType == CEA_608 || mimeType == CEA_708
+}
+
+/** The MIME types of closed captions carried in a live Channel's picture, as Media3 names them. */
+const val CEA_608 = "application/cea-608"
+const val CEA_708 = "application/cea-708"
 
 /** How an audio Track reaches the Viewer's ears, best first: [PlayPlan.chooseTracks] ranks Tracks in this order. */
 enum class AudioOutput {

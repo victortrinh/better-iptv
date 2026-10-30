@@ -399,6 +399,7 @@ fun PlayerScreen(
                     shownSubtitle = null
                     player?.chooseSubtitles(index)
                     if (track == null) scope.launch { library.rememberSubtitles(null) }
+                    else if (track.isClosedCaptions) scope.launch { library.rememberClosedCaptions() }
                     else track.language?.let { scope.launch { library.rememberSubtitles(it) } }
                 },
                 onStyle = onSubtitleStyle,
@@ -614,7 +615,8 @@ private fun VersionsPanel(
                     TryOtherPlayer(onTryOtherPlayer)
                 }
             }
-            VersionHeader(Modifier.padding(bottom = 2.dp))
+            // A Channel's row names how it streams, not a quality or a language.
+            if (versions.any { it.liveFormat == null }) VersionHeader(Modifier.padding(bottom = 2.dp))
             LazyColumn(
                 Modifier.weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -622,9 +624,8 @@ private fun VersionsPanel(
             ) {
                 items(versions, key = { it.listingId }) { version ->
                     val isPlaying = playing != null && (version.listingId == playing.listingId || version.backups.any { it.listingId == playing.listingId })
-                    val line = context.versionLine(version)
                     VersionRow(
-                        if (isPlaying) line.copy(note = context.getString(R.string.player_playing), noteIsCaution = false) else line,
+                        context.versionLine(version, playing = playing.takeIf { isPlaying }),
                         onClick = { if (isPlaying) onClose() else onPick(version) },
                         modifier = if (version == versions.first()) Modifier.focusRequester(first) else Modifier,
                     )
@@ -989,10 +990,15 @@ private fun Modifier.keepsSideFocus() = focusProperties {
     onExit = { if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange() }
 }.focusGroup()
 
-/** A Track as the Viewer picks it: its language, then for audio its channels and format. */
-private fun Context.trackName(track: Track): String {
+/**
+ * A Track as the Viewer picks it: its language, then for audio its channels and format. A Channel's
+ * closed captions are named as such, with their language when they have one.
+ */
+internal fun Context.trackName(track: Track): String {
     // A Track tagged `und` (undetermined) has no name in any language.
-    val language = track.language?.let { iso639(it) ?: it }?.let(::languageName)?.takeIf { it.isNotEmpty() } ?: getString(R.string.track_unknown_language)
+    val named = track.language?.let { iso639(it) ?: it }?.let(::languageName)?.takeIf { it.isNotEmpty() }
+    if (track.isClosedCaptions) return listOfNotNull(getString(R.string.track_closed_captions), named).joinToString(" · ")
+    val language = named ?: getString(R.string.track_unknown_language)
     val channels = when (val count = track.channels) {
         null -> null
         1 -> getString(R.string.track_mono)

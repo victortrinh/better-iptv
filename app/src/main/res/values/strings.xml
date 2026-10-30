@@ -121,6 +121,7 @@
     <string name="tracks_subtitles">Subtitles</string>
     <string name="subtitles_off">Off</string>
     <string name="track_unknown_language">Unknown language</string>
+    <string name="track_closed_captions">Closed captions</string>
     <string name="track_mono">Mono</string>
     <string name="track_stereo">Stereo</string>
     <string name="subtitle_style">Subtitle style</string>

@@ -3,6 +3,7 @@ package dev.betteriptv.app
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource.HttpDataSourceException
@@ -17,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
+import java.net.ProtocolException
 import java.net.SocketTimeoutException
 
 @OptIn(UnstableApi::class)
@@ -49,6 +51,26 @@ class ProviderLoadErrorPolicyTest {
     @Test
     fun aDeadListingWrappedInAnotherErrorIsNotAskedForAgain() {
         assertEquals(C.TIME_UNSET, policy.getRetryDelayMsFor(info(IOException(answered(404)))))
+    }
+
+    @Test
+    fun aStreamRefusedWithA407IsNotAskedForAgain() {
+        // Android's HTTP stack doesn't hand a 407 over as an answer: it throws, and Media3 wraps that.
+        val refused = HttpDataSourceException(
+            ProtocolException("Received HTTP_PROXY_AUTH (407) code while not using proxy"),
+            dataSpec,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            HttpDataSourceException.TYPE_OPEN,
+        )
+        assertEquals(C.TIME_UNSET, policy.getRetryDelayMsFor(info(refused)))
+    }
+
+    @Test
+    fun anUnreadableAnswerIsStillAskedForAgain() {
+        val garbled = HttpDataSourceException(ProtocolException("Unexpected status line: ICY 200 OK"), dataSpec, HttpDataSourceException.TYPE_OPEN)
+        val error = info(garbled)
+        assertEquals(media3.getRetryDelayMsFor(error), policy.getRetryDelayMsFor(error))
+        assertNotEquals(C.TIME_UNSET, policy.getRetryDelayMsFor(error))
     }
 
     @Test
