@@ -33,7 +33,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         val answer = authorized { token -> post("v1/metadata", json.toJson(body), token) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
         return CloudMetadata(
-            found = (answer["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title -> titleId(title)?.let { it to json.toJson(title) } }.toMap(),
+            found = (answer["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title -> titleId(title)?.let { it to json.serializeNulls().toJson(title) } }.toMap(),
             notFound = (answer["notFound"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull(::titleId),
         )
     }

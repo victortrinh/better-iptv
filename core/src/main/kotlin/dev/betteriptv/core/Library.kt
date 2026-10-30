@@ -470,6 +470,7 @@ class Library private constructor(
             genres = metadata?.genres.orEmpty(),
             runtimeMinutes = metadata?.runtimeMinutes,
             backdrop = metadata?.backdrop,
+            logo = metadata?.logo,
             cast = metadata?.cast.orEmpty(),
             fromTmdb = metadata != null,
         )
@@ -982,7 +983,11 @@ class Library private constructor(
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
         val cached = store.metadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
-        val wanted = tmdbIds.filter { cached[it]?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true }
+        // An answer from before the cloud gave logos is asked again: it would otherwise lack one for a week.
+        val wanted = tmdbIds.filter { id ->
+            val stored = cached[id]
+            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"logoPath\"") == false
+        }
         if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
             try {
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->
