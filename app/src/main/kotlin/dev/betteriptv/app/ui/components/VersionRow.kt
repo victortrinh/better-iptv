@@ -37,6 +37,8 @@ data class VersionLine(
     /** A warning or explanation under the badges: "Likely English", "Cinema recording (CAM)". */
     val note: String? = null,
     val noteIsCaution: Boolean = false,
+    /** A Channel's label, which stands in for the columns: "Live · MPEG-TS". */
+    val live: String? = null,
 )
 
 /**
@@ -58,26 +60,33 @@ fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modi
         focusedContainer = Colors.surfaceHigh,
         interactionSource = interaction,
     ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(QUALITY)) {
-                BadgeRow(line.badges)
-                if (line.note != null) {
-                    Text(
-                        line.note,
-                        style = Type.caption,
-                        color = if (line.noteIsCaution) Colors.caution else Colors.inkMuted,
-                        modifier = Modifier.padding(top = 4.dp),
-                        maxLines = 1,
-                    )
-                }
+        if (line.live != null) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text(line.live, style = Type.label, color = Colors.ink, maxLines = 1)
+                line.note?.let { Text(it, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(top = 4.dp), maxLines = 1) }
             }
-            Cell(line.source, SOURCE, emphasis = true)
-            Cell(line.audio, AUDIO)
-            Cell(line.subtitles, SUBTITLES)
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
-                Column(horizontalAlignment = Alignment.End) {
-                    line.bitrate?.let { Text(it, style = Type.body, color = Colors.ink, textAlign = TextAlign.End) }
-                    line.backups?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
+        } else {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(QUALITY)) {
+                    BadgeRow(line.badges)
+                    if (line.note != null) {
+                        Text(
+                            line.note,
+                            style = Type.caption,
+                            color = if (line.noteIsCaution) Colors.caution else Colors.inkMuted,
+                            modifier = Modifier.padding(top = 4.dp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Cell(line.source, SOURCE, emphasis = true)
+                Cell(line.audio, AUDIO)
+                Cell(line.subtitles, SUBTITLES)
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        line.bitrate?.let { Text(it, style = Type.body, color = Colors.ink, textAlign = TextAlign.End) }
+                        line.backups?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
+                    }
                 }
             }
         }

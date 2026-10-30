@@ -33,6 +33,7 @@ import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
+import java.net.ProtocolException
 
 /**
  * A Media3 player with the libass [ass] handler that draws its ASS subtitles, and the [delays] its
@@ -88,7 +89,8 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
 /**
  * Media3's retries, except for an answer the Provider won't change on a retry: a 4xx (the
  * surveyed Provider answers a Listing it doesn't have with 405) or a refused login (511, 513).
- * Such a Version fails at once, so its Backup starts instead of waiting out about 3 s of retries.
+ * Such a Version fails at once, so its Backup starts instead of waiting out about 3 s of retries
+ * (a refused live TS stream, answered with 407, waited about 5 s before its HLS Backup).
  * Timeouts and other 5xx answers can be passing
  * trouble, and are still retried; so are 403 and 429, which may be the Provider refusing a stream
  * over the Connection limit while it still counts the one Media3 closed to seek.
@@ -96,8 +98,19 @@ internal fun buildPlayer(context: Context, dataSources: DataSource.Factory = Def
 @OptIn(UnstableApi::class)
 internal class ProviderLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorInfo): Long {
-        val answer = generateSequence<Throwable>(loadErrorInfo.exception) { it.cause }.filterIsInstance<InvalidResponseCodeException>().firstOrNull()
-        return if (answer != null && answer.responseCode.isFinal()) C.TIME_UNSET else super.getRetryDelayMsFor(loadErrorInfo)
+        val answer = generateSequence<Throwable>(loadErrorInfo.exception) { it.cause }.firstNotNullOfOrNull { it.responseCode() }
+        return if (answer != null && answer.isFinal()) C.TIME_UNSET else super.getRetryDelayMsFor(loadErrorInfo)
+    }
+
+    /**
+     * The code the Provider answered with. Android's HTTP stack throws on a 407 instead of handing
+     * it over ("Received HTTP_PROXY_AUTH (407) code while not using proxy"), so that one is read
+     * from the message.
+     */
+    private fun Throwable.responseCode(): Int? = when (this) {
+        is InvalidResponseCodeException -> responseCode
+        is ProtocolException -> if (message?.let(PROXY_AUTH::containsMatchIn) == true) 407 else null
+        else -> null
     }
 
     private fun Int.isFinal() = (this in 400..499 && this !in PASSING_4XX) || this == 511 || this == 513
@@ -105,6 +118,8 @@ internal class ProviderLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
 
 /** The 4xx answers that can change on a retry: refused for now, timed out, too many requests. */
 private val PASSING_4XX = setOf(403, 408, 429)
+
+private val PROXY_AUTH = Regex("""\bHTTP_PROXY_AUTH \(407\)""")
 
 /** How much later than the picture the Viewer wants the sound and the subtitles, in microseconds; negative is earlier. */
 internal class Delays {

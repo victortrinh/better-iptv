@@ -66,8 +66,15 @@ fun Context.playLabel(version: Version): String = when (version.liveFormat) {
     else -> getString(R.string.player_live, "HLS")
 }
 
-/** What a [version]'s row in a Versions list shows. */
-fun Context.versionLine(version: Version): VersionLine {
+/**
+ * What a [version]'s row in a Versions list shows; [playing] is the Version playing when it is this
+ * one or one of its Backups. A Channel's row says how it streams instead of filling the columns.
+ */
+fun Context.versionLine(version: Version, playing: Version? = null): VersionLine {
+    val playingNote = playing?.let { getString(R.string.player_playing) }
+    if (version.liveFormat != null) {
+        return VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = playingNote, live = playLabel(playing ?: version))
+    }
     val attributes = version.attributes
     val none = getString(R.string.version_none)
     return VersionLine(
@@ -77,12 +84,13 @@ fun Context.versionLine(version: Version): VersionLine {
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
         bitrate = attributes.bitrate?.value?.let { getString(R.string.version_bitrate_value, it / 1e6) },
         backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
-        // Both notes are cautions.
+        // Both other notes are cautions.
         note = when {
+            playingNote != null -> playingNote
             attributes.cam -> getString(R.string.version_cam)
             attributes.audioDescription -> getString(R.string.version_audio_description)
             else -> null
         },
-        noteIsCaution = true,
+        noteIsCaution = playingNote == null,
     )
 }

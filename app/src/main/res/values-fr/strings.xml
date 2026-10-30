@@ -101,6 +101,7 @@
     <string name="tracks_subtitles">Sous-titres</string>
     <string name="subtitles_off">Désactivés</string>
     <string name="track_unknown_language">Langue inconnue</string>
+    <string name="track_closed_captions">Sous-titres codés</string>
     <string name="track_mono">Mono</string>
     <string name="track_stereo">Stéréo</string>
     <string name="subtitle_style">Style des sous-titres</string>
