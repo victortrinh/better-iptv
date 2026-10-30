@@ -264,13 +264,17 @@ class Library private constructor(
     /**
      * Movies, Shows and people whose names match [query], once it has two letters. Titles are found
      * by any Listing name of their Versions and any name TMDB has for them, people by name; accents
-     * and case don't matter, and small typos are tolerated. Titles with Versions in the Viewer's
-     * [contentLanguages] come first, then closer matches, then TMDB's most popular. A person's
+     * and case don't matter, and small typos are tolerated; a year after a name finds that year's
+     * Title. Titles with Versions in the Viewer's [contentLanguages] come first, then closer matches
+     * (a whole name, then whole words, then words being typed, then typos), then TMDB's most
+     * popular. A person's
      * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
      *
      * The device's own matches come first, from the Listing names and the metadata it has cached.
      * Then, for three letters or more, TMDB's search (through the cloud, ADR 0009) adds Titles the
      * device has no metadata for and every Title of the people it finds, and the results come again.
+     * TMDB's search also finds loose matches, so its Titles rank as words being typed, after the
+     * device's whole-word matches.
      * Without the cloud the first results are all there are.
      *
      * Channels are found by their Provider names the same way, Favourites first among equally close
@@ -295,7 +299,8 @@ class Library private constructor(
         val popularity = HashMap<Int, Double>()
         for ((id, score) in found.titles) {
             val position = index.position(id) ?: continue
-            titles[position] = 0
+            // As a Title's word being typed: a Title's words are a step after its whole name.
+            titles[position] = minOf(titles[position] ?: Int.MAX_VALUE, SearchIndex.STARTED_WORD + 1)
             popularity[position] = score
         }
         val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNullTo(HashSet(), index::position)) }
