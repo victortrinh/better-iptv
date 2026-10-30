@@ -185,8 +185,11 @@ class PlaybackSession internal constructor(
         var asked = plan.version
         var queue = asked.withBackups
         var engine = Engine.Media3
+        // The engine last tried: trying the other player after a failure means the other one from it.
+        var tried = engine
         while (true) {
             while (queue.isNotEmpty()) {
+                tried = engine
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
                         // An Episode's progress isn't kept yet: it would count as the Show's.
@@ -217,7 +220,7 @@ class PlaybackSession internal constructor(
                     asked = choice.version
                     engine = Engine.Media3
                 }
-                else -> engine = engine.other
+                else -> engine = tried.other
             }
             queue = asked.withBackups
         }

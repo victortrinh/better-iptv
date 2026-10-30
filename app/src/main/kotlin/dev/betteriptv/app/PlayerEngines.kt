@@ -38,11 +38,13 @@ import dev.betteriptv.core.Track
 import dev.betteriptv.core.TrackChoice
 import dev.betteriptv.core.frameRateOf
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -50,6 +52,8 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.IOException
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration.Companion.seconds
@@ -360,7 +364,9 @@ private class TrackChooser(
 /**
  * The VLC engine, for the rare file Media3 can't open. It decodes in software what the stick can't
  * in hardware. Its picture needs a [VLCVideoLayout]: playback starts once one is [attach]ed.
- * Used on the main thread only.
+ * Driven from the main thread, but LibVLC can hold the main thread for half a minute while its own
+ * threads open a stream, so every call into the player is made on a thread of its own, and what the
+ * overlay reads is what LibVLC last reported.
  */
 class VlcEngine(
     context: Context,
@@ -375,28 +381,71 @@ class VlcEngine(
     override val overlapsRequests = true
     private val vlc = LibVLC(context.applicationContext, arrayListOf("--http-reconnect") + style.vlcOptions())
     private val player = MediaPlayer(vlc)
+    private val calls = Executors.newSingleThreadExecutor { Thread(it, "vlc-calls") }
+    private val onVlc = calls.asCoroutineDispatcher()
     private val attached = CompletableDeferred<Unit>()
-    private var from = 0L
-    private var length: Long? = null
+    @Volatile private var from = 0L
 
     // The picture can still read the engine for a frame after the session releases it (downloaded
-    // subtitles follow its position every 50 ms), and a released LibVLC player throws: it answers
-    // with where it stopped instead.
-    private var released = false
-    override val position: Long get() = if (released) from else player.time.takeIf { it > 0 } ?: from
-    override val duration: Long? get() = if (released) length else player.length.takeIf { it > 0 }
+    // subtitles follow its position every 50 ms): it answers with where it stopped instead.
+    @Volatile private var released = false
+
+    // What LibVLC last reported, read by the overlay.
+    @Volatile private var time: Long? = null
+    @Volatile private var timeAt = TimeSource.Monotonic.markNow()
+    @Volatile private var length: Long? = null
+    @Volatile private var playing = false
+    // Until LibVLC says otherwise.
+    @Volatile private var pausable = true
+    @Volatile private var shown = false
+    @Volatile private var known = emptyList<IMedia.Track>()
+    @Volatile private var audioId = -1
+    @Volatile private var spuId = -1
+
+    /** Whether the Viewer wants it playing: a pause asked for before the picture shows waits for it. */
+    @Volatile private var wanted = true
+
+    // Between LibVLC's reports of where it is, the position moves on with the clock, so downloaded subtitles keep time.
+    override val position: Long
+        get() {
+            val at = time ?: return from
+            if (released || !playing) return at
+            return at + timeAt.elapsedNow().inWholeMilliseconds.coerceAtMost(MAX_TIME_AHEAD)
+        }
+    override val duration: Long? get() = length
 
     fun attach(layout: VLCVideoLayout) {
         player.attachViews(layout, null, true, false)
         attached.complete(Unit)
     }
 
-    override val isPlaying: Boolean get() = !released && player.isPlaying
+    override val isPlaying: Boolean get() = !released && wanted
     override val buffered: Long get() = position
 
-    override fun togglePause() {
+    /** Calls into LibVLC on its thread, unless the engine is released by then. */
+    private fun onVlcThread(call: () -> Unit) {
         if (released) return
-        if (player.isPlaying) player.pause() else player.play()
+        try {
+            calls.execute { if (!released) call() }
+        } catch (_: RejectedExecutionException) {
+            // Released meanwhile.
+        }
+    }
+
+    override fun togglePause() {
+        // A stream VLC can't pause, such as some live ones, plays on.
+        if (released || (shown && !pausable)) return
+        wanted = !wanted
+        onVlcThread(::applyPause)
+    }
+
+    /** Plays or pauses as the Viewer wants: pausing waits for a picture, and is skipped for a stream VLC can't pause, which it would stop. */
+    private fun applyPause() {
+        if (wanted) {
+            if (!player.isPlaying) player.play()
+        } else if (player.isPlaying && shown && pausable) {
+            player.pause()
+        }
     }
 
     @Volatile override var seen: FileContents? = null
@@ -404,11 +453,14 @@ class VlcEngine(
 
     override fun seek(by: Long) {
         if (released) return
-        player.setTime((player.time + by).coerceAtLeast(0))
+        val to = (position + by).coerceAtLeast(0)
+        time = to
+        timeAt = TimeSource.Monotonic.markNow()
+        onVlcThread { player.setTime(to) }
     }
 
+    /** The file's Tracks as LibVLC knows them; on its thread. */
     private fun mediaTracks(): List<IMedia.Track> {
-        if (released) return emptyList()
         val media = player.media ?: return emptyList()
         return try {
             (0 until media.trackCount).map(media::getTrack)
@@ -419,27 +471,31 @@ class VlcEngine(
 
     override val tracks: FileTracks?
         get() {
-            val all = mediaTracks()
+            val all = known
             val audio = all.filter { it.type == IMedia.Track.Type.Audio }
             if (audio.isEmpty()) return null
             val subtitles = all.filter { it.type == IMedia.Track.Type.Text }
             return FileTracks(
                 audio.map { Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
                 subtitles.map(::vlcSubtitles),
-                audio.indexOfFirst { it.id == player.audioTrack }.takeIf { it >= 0 },
-                subtitles.indexOfFirst { it.id == player.spuTrack }.takeIf { it >= 0 },
+                audio.indexOfFirst { it.id == audioId }.takeIf { it >= 0 },
+                subtitles.indexOfFirst { it.id == spuId }.takeIf { it >= 0 },
             )
         }
 
     override fun chooseAudio(index: Int) {
-        mediaTracks().filter { it.type == IMedia.Track.Type.Audio }.getOrNull(index)?.let { player.setAudioTrack(it.id) }
+        val id = known.filter { it.type == IMedia.Track.Type.Audio }.getOrNull(index)?.id ?: return
+        audioId = id
+        onVlcThread { player.setAudioTrack(id) }
     }
 
     override fun chooseSubtitles(index: Int?) {
-        player.setSpuTrack(index?.let { mediaTracks().filter { it.type == IMedia.Track.Type.Text }.getOrNull(it)?.id } ?: -1)
+        val id = index?.let { known.filter { it.type == IMedia.Track.Type.Text }.getOrNull(it)?.id } ?: -1
+        spuId = id
+        onVlcThread { player.setSpuTrack(id) }
     }
 
-    override fun delay(audio: Long, subtitles: Long) {
+    override fun delay(audio: Long, subtitles: Long) = onVlcThread {
         player.setAudioDelay(audio * 1000)
         player.setSpuDelay(subtitles * 1000)
     }
@@ -450,7 +506,7 @@ class VlcEngine(
     override val chosen = MutableStateFlow<TrackChoice?>(null)
 
     override val frameRate: Float?
-        get() = mediaTracks().filterIsInstance<IMedia.VideoTrack>().firstOrNull()
+        get() = known.filterIsInstance<IMedia.VideoTrack>().firstOrNull()
             ?.let { if (it.frameRateDen > 0) it.frameRateNum.toFloat() / it.frameRateDen else null }?.takeIf { it > 0 }
 
     override suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit) {
@@ -459,58 +515,98 @@ class VlcEngine(
         suspendCancellableCoroutine { continuation ->
             var tracksChosen = false
             var started = false
-            player.setEventListener { event ->
+            // On the main thread: it only notes what LibVLC reports, and leaves calls into it to its thread.
+            val listener = MediaPlayer.EventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.EndReached -> if (continuation.isActive) continuation.resume(Unit)
                     // VLC doesn't say whether the file or the stream failed; it's the last resort either way.
                     MediaPlayer.Event.EncounteredError -> if (continuation.isActive) continuation.resumeWithException(CantOpen("VLC can't play the file"))
-                    MediaPlayer.Event.Playing, MediaPlayer.Event.ESAdded -> {
-                        if (!tracksChosen) tracksChosen = chooseTracks()
-                        if (event.type == MediaPlayer.Event.Playing && !started) {
-                            started = true
-                            events(PlayerEvent.Started)
-                        }
+                    MediaPlayer.Event.TimeChanged -> {
+                        time = event.timeChanged
+                        timeAt = TimeSource.Monotonic.markNow()
+                    }
+                    MediaPlayer.Event.LengthChanged -> length = event.lengthChanged.takeIf { it > 0 }
+                    MediaPlayer.Event.PausableChanged -> pausable = event.pausable
+                    MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> playing = false
+                    MediaPlayer.Event.Vout -> if (event.voutCount > 0 && !shown) {
+                        shown = true
+                        // A pause asked for before the picture showed.
+                        onVlcThread(::applyPause)
+                    }
+                    MediaPlayer.Event.ESSelected, MediaPlayer.Event.ESDeleted -> onVlcThread(::readTracks)
+                }
+                if (event.type == MediaPlayer.Event.Playing) {
+                    playing = true
+                    if (!started) {
+                        started = true
+                        events(PlayerEvent.Started)
                     }
                 }
+                if (event.type == MediaPlayer.Event.Playing || event.type == MediaPlayer.Event.ESAdded) onVlcThread {
+                    readTracks()
+                    if (!tracksChosen) tracksChosen = chooseTracks()
+                }
             }
-            val media = Media(vlc, Uri.parse(location))
-            media.addOption(":start-time=${from / 1000.0}")
-            player.media = media
-            // The player keeps its own reference.
-            media.release()
-            player.play()
+            onVlcThread {
+                player.setEventListener(listener)
+                val media = Media(vlc, Uri.parse(location))
+                media.addOption(":start-time=${from / 1000.0}")
+                player.media = media
+                // The player keeps its own reference.
+                media.release()
+                player.play()
+            }
         }
+    }
+
+    /** Notes the file's Tracks and which are on, for the overlay; on LibVLC's thread. */
+    private fun readTracks() {
+        known = mediaTracks()
+        audioId = player.audioTrack
+        spuId = player.spuTrack
     }
 
     /**
      * Applies the [plan]'s Track choice, and keeps what the file holds so Playback Confirms the
-     * Version; false while VLC doesn't know the file's audio Tracks yet.
+     * Version; false while VLC doesn't know the file's audio Tracks yet. On LibVLC's thread.
      */
     private fun chooseTracks(): Boolean {
-        val tracks = mediaTracks()
+        val tracks = known
         val audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
         val subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }
         if (audio.isEmpty()) return false
         seen = vlcContents(tracks)
         // VLC decodes every format itself, so its Tracks' formats don't change the choice.
         val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map(::vlcSubtitles), device, remembered())
-        choice.audio?.let { player.setAudioTrack(audio[it].id) }
-        player.setSpuTrack(choice.subtitle?.let { subtitles[it].id } ?: -1)
+        choice.audio?.let {
+            player.setAudioTrack(audio[it].id)
+            audioId = audio[it].id
+        }
+        spuId = choice.subtitle?.let { subtitles[it].id } ?: -1
+        player.setSpuTrack(spuId)
         chosen.value = choice
         return true
     }
 
     override suspend fun release() {
         from = position
-        length = duration
         released = true
-        player.setEventListener(null)
-        player.stop()
+        // Stopping waits for LibVLC's threads, which can take as long as a stalled stream.
+        withContext(onVlc) {
+            player.setEventListener(null)
+            player.stop()
+        }
         player.detachViews()
-        player.release()
-        vlc.release()
+        withContext(onVlc) {
+            player.release()
+            vlc.release()
+        }
+        calls.shutdown()
     }
 }
+
+/** How far the position moves on with the clock past LibVLC's last report: no further than its reports come. */
+private const val MAX_TIME_AHEAD = 1_000L
 
 /** What a file holds, from every Track Media3 found in it, playable or not. */
 private fun Tracks.contents(): FileContents {
