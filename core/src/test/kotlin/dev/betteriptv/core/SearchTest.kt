@@ -183,6 +183,45 @@ class SearchTest {
         assertTrue(search("romance").movies.isEmpty())
     }
 
+    @Test fun `results show Movies, Shows, genres, Channels, then people`() {
+        val movie = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
+        val show = TitleSummary(TitleId.Tmdb(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
+        val results = SearchResults(
+            movies = listOf(movie),
+            shows = listOf(show),
+            people = listOf(Person("Dramane Diallo", listOf(movie))),
+            channels = listOf(Channel(7, "Drama TV", null, false)),
+            genres = listOf(Genre("Drama", listOf(show))),
+        )
+
+        assertEquals(
+            listOf(
+                SearchGroup.Movies(listOf(movie)),
+                SearchGroup.Shows(listOf(show)),
+                SearchGroup.OfGenre(Genre("Drama", listOf(show))),
+                SearchGroup.Channels(listOf(Channel(7, "Drama TV", null, false))),
+                SearchGroup.OfPerson(Person("Dramane Diallo", listOf(movie))),
+            ),
+            results.groups("dra"),
+        )
+    }
+
+    @Test fun `a query that is a genre's whole name shows that genre first (#170)`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "The Drama", genres = listOf("Comedy"), popularity = 90.0))
+        cloud.title("en", tmdbTitle(2, "Brooklyn", genres = listOf("Drama", "Romance"), popularity = 30.0))
+        cloud.title("en", tmdbTitle(3, "Melodrama", genres = listOf("Melodrama"), popularity = 20.0))
+        syncMovies("EN - The Drama (2024)" to 1, "EN - Brooklyn (2015)" to 2, "EN - Melodrama (2020)" to 3)
+
+        val picked = search("Drama").groups("Drama")
+        assertEquals(SearchGroup.OfGenre::class, picked.first()::class)
+        assertEquals("Drama", (picked.first() as SearchGroup.OfGenre).genre.name)
+        assertEquals(SearchGroup.Movies::class, picked[1]::class)
+        // Typed in full, in any case, with a space after it.
+        assertEquals("Drama", (search("drama ").groups("drama ").first() as SearchGroup.OfGenre).genre.name)
+        // Still being typed: the usual order.
+        assertEquals(SearchGroup.Movies::class, search("dra").groups("dra").first()::class)
+    }
+
     @Test fun `completions offer Titles, then people, then genres, the query starts`() = runBlocking {
         cloud.title("en", tmdbTitle(1, "Bridget Jones's Diary", genres = listOf("Comedy"), popularity = 50.0))
         cloud.title("en", tmdbTitle(2, "Brooklyn", genres = listOf("Drama"), popularity = 30.0))

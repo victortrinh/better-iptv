@@ -1,7 +1,6 @@
 package dev.betteriptv.app.prototype
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,12 +26,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.withFrameNanos
+import dev.betteriptv.app.ResultRow
 import dev.betteriptv.app.ui.components.Completions
+import kotlinx.coroutines.delay
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TopTabs
-import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Type
@@ -66,6 +66,13 @@ fun SearchPrototype() {
                 titles.flatMap { it.people.split(", ") }.distinct().filter(starts).take(2) +
                 genres.filter(starts).take(1)
             ).filter { !it.equals(typed, ignoreCase = true) }.take(7)
+    }
+    // Search answers twice: the device's own matches, then reordered once TMDB's search adds what it knows.
+    var shown by remember { mutableStateOf(results) }
+    LaunchedEffect(query) {
+        shown = results
+        delay(SECOND_ANSWER_MS)
+        shown = results.reversed()
     }
     LaunchedEffect(toResults, query) {
         if (!toResults || results.isEmpty()) return@LaunchedEffect
@@ -112,12 +119,9 @@ fun SearchPrototype() {
                 }
                 Spacer(Modifier.width(40.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Movies · ${results.size}", style = Type.headline, color = Colors.ink)
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(Cards.gap)) {
-                        results.forEachIndexed { i, title ->
-                            TitleCard(painterResource(title.poster), title.name, title.badges, onClick = {}, modifier = if (i == 0) Modifier.focusRequester(firstResult) else Modifier)
-                        }
+                    Text("Movies · ${shown.size}", style = Type.headline, color = Colors.ink)
+                    ResultRow(shown, key = { it.name }, Modifier.focusRequester(firstResult)) { title, modifier ->
+                        TitleCard(painterResource(title.poster), title.name, title.badges, onClick = {}, modifier = modifier)
                     }
                     Spacer(Modifier.height(4.dp))
                     Text("Shows · 0", style = Type.headline, color = Colors.ink)
@@ -127,3 +131,6 @@ fun SearchPrototype() {
         }
     }
 }
+
+/** As TMDB's search takes on the stick: about a second after the device's own matches. */
+private const val SECOND_ANSWER_MS = 1500L

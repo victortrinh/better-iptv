@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
 import kotlinx.coroutines.launch
+import dev.betteriptv.core.SearchGroup
 import dev.betteriptv.core.SearchResults
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleSummary
@@ -177,48 +178,47 @@ private fun Results(
         Text(message, style = Type.body, color = Colors.inkMuted)
         return
     }
-    // The first card of the first group takes focus when a completion is picked.
-    val first = Modifier.focusRequester(firstResult)
-    val firstGroup = when {
-        results.movies.isNotEmpty() -> results.movies
-        results.shows.isNotEmpty() -> results.shows
-        results.genres.isNotEmpty() -> results.genres.first().titles
-        results.channels.isNotEmpty() -> results.channels
-        else -> results.people.first().titles
-    }
+    val groups = results.groups(query)
+    // A new answer shows the results from their top, unless focus is in them.
+    val column = rememberLazyListState()
+    var inResults by remember { mutableStateOf(false) }
+    remember(groups) { if (!inResults) column.requestScrollToItem(0) }
     // The right margin is content padding, so cards scroll under the edge instead of being clipped.
-    LazyColumn(Modifier.backToTab(tab), contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
-        if (results.movies.isNotEmpty()) item {
-            Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen, first.takeIf { firstGroup === results.movies })
-        }
-        if (results.shows.isNotEmpty()) item {
-            Group(library, contentLanguages, stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen, first.takeIf { firstGroup === results.shows })
-        }
-        items(results.genres, key = { "genre/${it.name}" }) { genre ->
-            Group(library, contentLanguages, genre.name, genre.titles, onOpen, first.takeIf { firstGroup === genre.titles })
-        }
-        if (results.channels.isNotEmpty()) item {
-            Column {
-                Text(stringResource(R.string.search_channels, results.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                // A wide card grows past the column's edge when focused: the row starts that much
-                // further left, so the card isn't clipped, and its cards still line up with the heading.
-                LazyRow(
-                    contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
-                    horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                    modifier = Modifier.offset(x = -Spacing.m).focusRestorer(),
-                ) {
-                    itemsIndexed(results.channels, key = { _, channel -> "channel/${channel.id}" }) { i, channel ->
-                        ChannelCard(channel, onWatch, onFavourite, if (i == 0 && firstGroup === results.channels) first else Modifier)
+    LazyColumn(
+        Modifier.backToTab(tab).onFocusChanged { inResults = it.hasFocus },
+        state = column,
+        contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY),
+    ) {
+        itemsIndexed(groups, key = { _, group -> group.key }) { i, group ->
+            // The first card of the first group takes focus when a completion is picked.
+            val first = Modifier.focusRequester(firstResult).takeIf { i == 0 }
+            when (group) {
+                is SearchGroup.Movies -> Group(library, contentLanguages, stringResource(R.string.search_movies, group.titles.size), group.titles, onOpen, first)
+                is SearchGroup.Shows -> Group(library, contentLanguages, stringResource(R.string.search_shows, group.titles.size), group.titles, onOpen, first)
+                is SearchGroup.OfGenre -> Group(library, contentLanguages, group.genre.name, group.genre.titles, onOpen, first)
+                is SearchGroup.OfPerson -> Group(library, contentLanguages, group.person.name, group.person.titles, onOpen, first)
+                is SearchGroup.Channels -> Column {
+                    Text(stringResource(R.string.search_channels, group.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // A wide card grows past the column's edge when focused: the row starts that much
+                    // further left, so the card isn't clipped, and its cards still line up with the heading.
+                    ResultRow(group.channels, key = { "channel/${it.id}" }, first) { channel, modifier ->
+                        ChannelCard(channel, onWatch, onFavourite, modifier)
                     }
+                    Spacer(Modifier.height(14.dp))
                 }
-                Spacer(Modifier.height(14.dp))
             }
-        }
-        items(results.people, key = { "person/${it.name}" }) { person ->
-            Group(library, contentLanguages, person.name, person.titles, onOpen, first.takeIf { firstGroup === person.titles })
         }
     }
 }
+
+private val SearchGroup.key: String
+    get() = when (this) {
+        is SearchGroup.Movies -> "movies"
+        is SearchGroup.Shows -> "shows"
+        is SearchGroup.OfGenre -> "genre/${genre.name}"
+        is SearchGroup.Channels -> "channels"
+        is SearchGroup.OfPerson -> "person/${person.name}"
+    }
 
 /** A headline over a row of cards; [first] modifies the first card. */
 @Composable
@@ -227,22 +227,53 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // A focused card grows past the column's edge: the row starts that much further left, as
         // Channels' does, so the card isn't clipped, and its cards still line up with the heading.
-        LazyRow(
-            contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
-            horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-            modifier = Modifier.offset(x = -Spacing.m).focusRestorer(),
-        ) {
-            itemsIndexed(titles, key = { _, title -> title.id.toString() }) { i, title ->
-                TitleCard(
-                    rememberArtwork(title.image, card = true),
-                    title.name,
-                    cardBest(library, title, contentLanguages).cardBadges(),
-                    onClick = { onOpen(title.id) },
-                    modifier = first?.takeIf { i == 0 } ?: Modifier,
-                )
-            }
+        ResultRow(titles, key = { it.id.toString() }, first) { title, modifier ->
+            TitleCard(
+                rememberArtwork(title.image, card = true),
+                title.name,
+                cardBest(library, title, contentLanguages).cardBadges(),
+                onClick = { onOpen(title.id) },
+                modifier = modifier,
+            )
         }
         Spacer(Modifier.height(14.dp))
+    }
+}
+
+/**
+ * A row of result [items], `m` further left so a focused card isn't clipped; [first] modifies the
+ * first card. Search answers again once TMDB's search adds what it knows, reordering the row best
+ * first, but a `LazyRow` follows the card that was first: so a new answer shows the row from its
+ * start, unless focus is in it, where moving the row under the Viewer would be worse (#169). Focus
+ * still on the row's first card (where picking a completion put it) moves to the new first card.
+ */
+@Composable
+internal fun <T> ResultRow(items: List<T>, key: (T) -> Any, first: Modifier?, card: @Composable (T, Modifier) -> Unit) {
+    val row = rememberLazyListState()
+    // The focused card's place in the row, or null when focus is elsewhere.
+    var focused by remember { mutableStateOf<Int?>(null) }
+    val firstCard = remember { FocusRequester() }
+    val refocus = remember(items) {
+        val at = focused
+        if (at == null || at == 0) row.requestScrollToItem(0)
+        at == 0
+    }
+    LaunchedEffect(items) {
+        if (!refocus) return@LaunchedEffect
+        // The new first card is laid out in the frame these items are composed in.
+        withFrameNanos {}
+        firstCard.requestFocus()
+    }
+    LazyRow(
+        state = row,
+        contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
+        horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+        modifier = Modifier.offset(x = -Spacing.m).focusRestorer().onFocusChanged { if (!it.hasFocus) focused = null },
+    ) {
+        itemsIndexed(items, key = { _, item -> key(item) }) { i, item ->
+            val modifier = Modifier.onFocusChanged { if (it.isFocused) focused = i }
+            card(item, if (i == 0) modifier.focusRequester(firstCard).then(first ?: Modifier) else modifier)
+        }
     }
 }
 

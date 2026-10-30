@@ -21,9 +21,34 @@ data class SearchResults(
     val isEmpty: Boolean
         get() = movies.isEmpty() && shows.isEmpty() && people.isEmpty() && channels.isEmpty() && genres.isEmpty()
 
+    /**
+     * The rows these results show for [query]: Movies, Shows, genres, Channels, then people. A query
+     * that is a genre's whole name (a picked genre completion or shortcut, or the name typed in
+     * full) shows that genre first, as Netflix does: the Viewer chose a genre, not a name (#170).
+     */
+    fun groups(query: String): List<SearchGroup> = buildList {
+        val typed = SearchIndex.words(query)
+        val picked = genres.firstOrNull { SearchIndex.words(it.name) == typed }
+        if (picked != null) add(SearchGroup.OfGenre(picked))
+        if (movies.isNotEmpty()) add(SearchGroup.Movies(movies))
+        if (shows.isNotEmpty()) add(SearchGroup.Shows(shows))
+        genres.filter { it !== picked }.mapTo(this, SearchGroup::OfGenre)
+        if (channels.isNotEmpty()) add(SearchGroup.Channels(channels))
+        people.mapTo(this, SearchGroup::OfPerson)
+    }
+
     companion object {
         val NONE = SearchResults(emptyList(), emptyList(), emptyList())
     }
+}
+
+/** One row of [SearchResults], in the order [SearchResults.groups] shows them. */
+sealed interface SearchGroup {
+    data class Movies(val titles: List<TitleSummary>) : SearchGroup
+    data class Shows(val titles: List<TitleSummary>) : SearchGroup
+    data class OfGenre(val genre: Genre) : SearchGroup
+    data class Channels(val channels: List<Channel>) : SearchGroup
+    data class OfPerson(val person: Person) : SearchGroup
 }
 
 /** One of TMDB's genres ([name], as the cached metadata has it), with its Titles the Provider has, best first. */
