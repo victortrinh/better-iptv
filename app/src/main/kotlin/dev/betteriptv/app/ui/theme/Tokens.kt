@@ -52,11 +52,14 @@ private val inter = FontFamily(
 object Type {
     /** A Title's name in the hero and on its details page. */
     val display = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 50.sp, lineHeight = 52.sp, letterSpacing = (-0.03).em)
-    /** Row headings, screen headings, the wordmark. */
-    val headline = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 26.sp, letterSpacing = (-0.01).em)
+    /** Row headings, screen headings, the wordmark. Smaller than it was so the artwork under it leads (#147). */
+    val headline = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 24.sp, letterSpacing = (-0.01).em)
     /** A Title's name on a card, a language heading. */
     val title = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
-    val body = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp)
+    /** Descriptions, metadata lines, messages, field text: what's read from the couch (#147). */
+    val body = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 17.sp, lineHeight = 24.sp)
+    /** Body beside label type in a table or row: Version cells, a setting's value. Sized so French fits the Version columns. */
+    val detail = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp)
     /** Buttons, tabs, settings rows. */
     val label = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp)
     /** Badges, metadata, explanations under a setting. */
@@ -86,7 +89,8 @@ object Spacing {
 
 /** Card sizes on the home rows. */
 object Cards {
-    val posterWidth = 104.dp
+    /** About 5.5 posters across between the margins, `gap` apart: (960 − 2 × 48) / (136 + 20) ≈ 5.5. */
+    val posterWidth = 136.dp
     /** A landscape (16:9) card: Continue watching. */
     val wideWidth = 196.dp
     /** Wide enough that a focused card's growth doesn't touch its neighbours. */

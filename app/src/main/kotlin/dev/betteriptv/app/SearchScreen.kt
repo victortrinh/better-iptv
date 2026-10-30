@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -33,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.Completions
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
@@ -51,9 +56,11 @@ import kotlinx.coroutines.delay
 
 /**
  * Search: the [query] typed on a D-pad keyboard on the left, results on the right as each letter
- * lands, grouped as Movies, Shows, Channels and people (each person with their Titles the
- * Provider has). A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its
- * menu key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]).
+ * lands, grouped as Movies, Shows, genres, Channels and people (each genre and person with their
+ * Titles the Provider has). Under the keyboard, completions replace the query in one press and
+ * move focus to the first result; before anything is typed they are genre shortcuts. A Title's
+ * card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or removes
+ * the Favourite. The tabs switch to the other browsing screens ([onTab]).
  */
 @Composable
 fun SearchScreen(
@@ -85,12 +92,24 @@ fun SearchScreen(
     val keyboard = remember { FocusRequester() }
     val tab = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
+    // A completion was picked: focus goes to the first result once its query is answered.
+    val firstResult = remember { FocusRequester() }
+    var toResults by remember { mutableStateOf(false) }
+    LaunchedEffect(toResults, results, answered) {
+        if (!toResults || answered != query || results.isEmpty) return@LaunchedEffect
+        // The first card is laid out in the frame these results are composed in.
+        withFrameNanos {}
+        firstResult.requestFocus()
+        // Last: it restarts this effect.
+        toResults = false
+    }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
         BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxSize()) {
-            Column(Modifier.padding(start = Spacing.screenX).width(290.dp)) {
+            // Scrolls once focus goes down into the completions, so they all can be reached.
+            Column(Modifier.padding(start = Spacing.screenX).width(290.dp).verticalScroll(rememberScrollState())) {
                 Box(
                     Modifier.fillMaxWidth().height(44.dp).background(Colors.surface, RoundedCornerShape(Corners.control)).padding(horizontal = 14.dp),
                     contentAlignment = Alignment.CenterStart,
@@ -112,9 +131,17 @@ fun SearchScreen(
                     onSpace = { if (query.isNotEmpty() && !query.endsWith(" ")) onQuery("$query ") },
                     modifier = Modifier.focusRequester(keyboard),
                 )
+                Completions(
+                    results.completions,
+                    onPick = {
+                        onQuery(it)
+                        toResults = true
+                    },
+                    modifier = Modifier.padding(top = 14.dp, bottom = Spacing.screenY),
+                )
             }
             Spacer(Modifier.width(40.dp))
-            Results(library, contentLanguages, query, results, searching = answered != query, tab, onOpen, onWatch) { channel, favourite ->
+            Results(library, contentLanguages, query, results, searching = answered != query, tab, firstResult, onOpen, onWatch) { channel, favourite ->
                 scope.launch {
                     library.setFavourite(channel.id, favourite)
                     results = results.copy(channels = results.channels.map { if (it.id == channel.id) it.copy(favourite = favourite) else it })
@@ -132,11 +159,12 @@ private fun Results(
     results: SearchResults,
     searching: Boolean,
     tab: FocusRequester,
+    firstResult: FocusRequester,
     onOpen: (TitleId) -> Unit,
     onWatch: (Channel) -> Unit,
     onFavourite: (Channel, Boolean) -> Unit,
 ) {
-    if (results == SearchResults.NONE) {
+    if (results.isEmpty) {
         val message = when {
             query.isBlank() -> stringResource(R.string.search_start)
             searching -> stringResource(R.string.search_searching)
@@ -145,10 +173,26 @@ private fun Results(
         Text(message, style = Type.body, color = Colors.inkMuted)
         return
     }
+    // The first card of the first group takes focus when a completion is picked.
+    val first = Modifier.focusRequester(firstResult)
+    val firstGroup = when {
+        results.movies.isNotEmpty() -> results.movies
+        results.shows.isNotEmpty() -> results.shows
+        results.genres.isNotEmpty() -> results.genres.first().titles
+        results.channels.isNotEmpty() -> results.channels
+        else -> results.people.first().titles
+    }
     // The right margin is content padding, so cards scroll under the edge instead of being clipped.
     LazyColumn(Modifier.backToTab(tab), contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
-        if (results.movies.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen) }
-        if (results.shows.isNotEmpty()) item { Group(library, contentLanguages, stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen) }
+        if (results.movies.isNotEmpty()) item {
+            Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen, first.takeIf { firstGroup === results.movies })
+        }
+        if (results.shows.isNotEmpty()) item {
+            Group(library, contentLanguages, stringResource(R.string.search_shows, results.shows.size), results.shows, onOpen, first.takeIf { firstGroup === results.shows })
+        }
+        items(results.genres, key = { "genre/${it.name}" }) { genre ->
+            Group(library, contentLanguages, genre.name, genre.titles, onOpen, first.takeIf { firstGroup === genre.titles })
+        }
         if (results.channels.isNotEmpty()) item {
             Column {
                 Text(stringResource(R.string.search_channels, results.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -159,18 +203,22 @@ private fun Results(
                     horizontalArrangement = Arrangement.spacedBy(Cards.gap),
                     modifier = Modifier.offset(x = -Spacing.m).focusRestorer(),
                 ) {
-                    items(results.channels, key = { "channel/${it.id}" }) { channel -> ChannelCard(channel, onWatch, onFavourite) }
+                    itemsIndexed(results.channels, key = { _, channel -> "channel/${channel.id}" }) { i, channel ->
+                        ChannelCard(channel, onWatch, onFavourite, if (i == 0 && firstGroup === results.channels) first else Modifier)
+                    }
                 }
                 Spacer(Modifier.height(14.dp))
             }
         }
-        items(results.people, key = { "person/${it.name}" }) { person -> Group(library, contentLanguages, person.name, person.titles, onOpen) }
+        items(results.people, key = { "person/${it.name}" }) { person ->
+            Group(library, contentLanguages, person.name, person.titles, onOpen, first.takeIf { firstGroup === person.titles })
+        }
     }
 }
 
-/** A headline over a row of cards. */
+/** A headline over a row of cards; [first] modifies the first card. */
 @Composable
-private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit) {
+private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit, first: Modifier?) {
     Column {
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         LazyRow(
@@ -178,8 +226,14 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
             modifier = Modifier.focusRestorer(),
         ) {
-            items(titles, key = { it.id.toString() }) { title ->
-                TitleCard(rememberArtwork(title.image, card = true), title.name, cardBest(library, title, contentLanguages).cardBadges(), onClick = { onOpen(title.id) })
+            itemsIndexed(titles, key = { _, title -> title.id.toString() }) { i, title ->
+                TitleCard(
+                    rememberArtwork(title.image, card = true),
+                    title.name,
+                    cardBest(library, title, contentLanguages).cardBadges(),
+                    onClick = { onOpen(title.id) },
+                    modifier = first?.takeIf { i == 0 } ?: Modifier,
+                )
             }
         }
         Spacer(Modifier.height(14.dp))

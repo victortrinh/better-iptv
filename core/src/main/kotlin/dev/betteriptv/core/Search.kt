@@ -5,14 +5,29 @@ import java.util.Locale
 
 /**
  * What a search found, best first in each group: [movies] and [shows] whose names match, and
- * [people] (cast) whose names match, each with their Titles the Provider has, and the [channels]
- * whose names match.
+ * [people] (cast) and TMDB [genres] whose names match, each with their Titles the Provider has, and
+ * the [channels] whose names match. [completions] are queries one press away: Title names, people
+ * and genres the query starts, or genre shortcuts before anything is typed.
  */
-data class SearchResults(val movies: List<TitleSummary>, val shows: List<TitleSummary>, val people: List<Person>, val channels: List<Channel> = emptyList()) {
+data class SearchResults(
+    val movies: List<TitleSummary>,
+    val shows: List<TitleSummary>,
+    val people: List<Person>,
+    val channels: List<Channel> = emptyList(),
+    val genres: List<Genre> = emptyList(),
+    val completions: List<String> = emptyList(),
+) {
+    /** Whether nothing was found; [completions] may still offer something. */
+    val isEmpty: Boolean
+        get() = movies.isEmpty() && shows.isEmpty() && people.isEmpty() && channels.isEmpty() && genres.isEmpty()
+
     companion object {
         val NONE = SearchResults(emptyList(), emptyList(), emptyList())
     }
 }
+
+/** One of TMDB's genres ([name], as the cached metadata has it), with its Titles the Provider has, best first. */
+data class Genre(val name: String, val titles: List<TitleSummary>)
 
 /** Someone in TMDB's cast of Titles the Provider has, with those Titles, best first. */
 data class Person(val name: String, val titles: List<TitleSummary>)
@@ -36,6 +51,11 @@ internal class SearchIndex private constructor(
     private val channelWords: Map<String, IntArray> = emptyMap(),
     /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
     private val titleNames: LongArray = LongArray(0),
+    /** TMDB's genres of the Titles with metadata. */
+    val genres: List<String> = emptyList(),
+    /** Each genre's Titles, as indexes into [titles]. */
+    val genreTitles: List<IntArray> = emptyList(),
+    private val genreWords: Map<String, IntArray> = emptyMap(),
 ) {
     /** One Title: its primary languages of Versions, so Content languages can lead, and TMDB's popularity. */
     class Entry(val id: TitleId, val languages: Set<String>, val popularity: Double)
@@ -61,6 +81,9 @@ internal class SearchIndex private constructor(
     }
 
     fun findPeople(query: String): List<Hit> = find(query, personWords)
+
+    /** Genres whose names match [query], as indexes into [genres]. */
+    fun findGenres(query: String): List<Hit> = find(query, genreWords)
 
     /** Channels whose names match [query], as indexes into [channels]. */
     fun findChannels(query: String): List<Hit> = find(query, channelWords)
@@ -95,6 +118,10 @@ internal class SearchIndex private constructor(
         private val channels = Postings64()
         private val channelWords = HashMap<String, Postings>()
         private val titleNames = Postings64()
+        private val genres = mutableListOf<String>()
+        private val genreTitles = mutableListOf<Postings>()
+        private val genreWords = HashMap<String, Postings>()
+        private val genreIndex = HashMap<String, Int>()
 
         /** Adds a Title found by [names], with Versions in [languages]. */
         fun title(id: TitleId, names: Collection<String>, languages: Set<String>) {
@@ -104,8 +131,11 @@ internal class SearchIndex private constructor(
             addWords(index, names)
         }
 
-        /** Adds what TMDB says of Title [id]: more [names] it's found by, its [popularity] and [cast]. Titles not added are left out. */
-        fun metadata(id: TitleId, names: Collection<String>, popularity: Double, cast: List<String>) {
+        /**
+         * Adds what TMDB says of Title [id]: more [names] it's found by, its [popularity], [cast] and
+         * [genres]. Titles not added are left out.
+         */
+        fun metadata(id: TitleId, names: Collection<String>, popularity: Double, cast: List<String>, genres: List<String>) {
             val index = positions[id] ?: return
             titles[index] = titles[index].let { Entry(it.id, it.languages, popularity) }
             addWords(index, names)
@@ -117,6 +147,15 @@ internal class SearchIndex private constructor(
                     people.size - 1
                 }
                 personTitles[person].add(index)
+            }
+            for (name in genres.distinct()) {
+                val genre = genreIndex.getOrPut(name) {
+                    this.genres += name
+                    genreTitles += Postings()
+                    words(name).forEach { word -> genreWords.getOrPut(word, ::Postings).add(this.genres.size - 1) }
+                    this.genres.size - 1
+                }
+                genreTitles[genre].add(index)
             }
         }
 
@@ -145,6 +184,9 @@ internal class SearchIndex private constructor(
             channels.toArray(),
             drain(channelWords),
             titleNames.toArray().apply { sort() },
+            genres,
+            genreTitles.map { it.toArray() },
+            drain(genreWords),
         )
 
         /** [words]' postings as arrays, letting go of each list once copied so the heap never holds both. */
@@ -331,7 +373,7 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
     }
     lap("titles")
     // Straight into the index: holding every Title's names until its Listings come by doesn't fit the stick's heap.
-    store.forEachSearchMetadata { id, names, cast, popularity -> builder.metadata(id, names, popularity, cast) }
+    store.forEachSearchMetadata { id, names, cast, genres, popularity -> builder.metadata(id, names, popularity, cast, genres) }
     lap("metadata")
     return builder.build().also { lap("build") }
 }

@@ -171,6 +171,50 @@ class SearchTest {
         assertEquals(listOf("Marlon Brando"), search("marlon brnado").people.map { it.name })
     }
 
+    @Test fun `searching a genre shows its Titles the Provider has`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "Bridget Jones's Diary", genres = listOf("Comedy", "Romance"), popularity = 50.0))
+        cloud.title("en", tmdbTitle(2, "Brooklyn", genres = listOf("Drama", "Romance"), popularity = 30.0))
+        syncMovies("EN - Bridget Jones's Diary (2001)" to 1, "EN - Brooklyn (2015)" to 2)
+
+        val romance = search("romance").genres.single()
+
+        assertEquals("Romance", romance.name)
+        assertEquals(listOf(1L, 2L), romance.titles.map { (it.id as TitleId.Tmdb).tmdbId })
+        assertTrue(search("romance").movies.isEmpty())
+    }
+
+    @Test fun `completions offer Titles, then people, then genres, the query starts`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "Bridget Jones's Diary", genres = listOf("Comedy"), popularity = 50.0))
+        cloud.title("en", tmdbTitle(2, "Brooklyn", genres = listOf("Drama"), popularity = 30.0))
+        cloud.title("en", tmdbTitle(3, "Fight Club", genres = listOf("Drama"), cast = listOf("Brad Pitt"), popularity = 80.0))
+        cloud.title("en", tmdbTitle(4, "City of God", genres = listOf("Brazilian Cinema"), popularity = 20.0))
+        syncMovies("EN - Bridget Jones's Diary (2001)" to 1, "EN - Brooklyn (2015)" to 2, "EN - Fight Club (1999)" to 3, "EN - City of God (2002)" to 4)
+
+        assertEquals(listOf("Bridget Jones's Diary", "Brooklyn", "Brad Pitt", "Brazilian Cinema"), search("br").completions)
+    }
+
+    @Test fun `completions lead with Titles in Content languages, and never offer the query itself`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "Night Train", popularity = 5.0))
+        cloud.title("en", tmdbTitle(2, "Night Shift", popularity = 500.0))
+        cloud.title("en", tmdbTitle(3, "Night", popularity = 50.0))
+        syncMovies("EN - Night Train (2010)" to 1, "DE - Night Shift (2020)" to 2, "EN - Night (2019)" to 3)
+
+        assertEquals(listOf("Night Train", "Night Shift"), search("night").completions)
+    }
+
+    @Test fun `before anything is typed, completions are the genres with the most Titles in Content languages`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "Heat", genres = listOf("Crime", "Action")))
+        cloud.title("en", tmdbTitle(2, "Ronin", genres = listOf("Action")))
+        cloud.title("en", tmdbTitle(3, "Das Boot", genres = listOf("War")))
+        syncMovies("EN - Heat (1995)" to 1, "EN - Ronin (1998)" to 2, "DE - Das Boot (1981)" to 3)
+
+        val empty = search("")
+
+        assertTrue(empty.isEmpty)
+        assertEquals(listOf("Action", "Crime"), empty.completions)
+        assertEquals(SearchResults.NONE, search("h"))
+    }
+
     @Test fun `TMDB's search finds a Title by a name the device has no metadata for`() = runBlocking {
         syncMovies("EN - The Godfather (1972)" to 238, "EN - Heat (1995)" to 949)
         cloud.search("der pate", titles = listOf(godfather to 120.0, TitleId.Tmdb(TitleKind.Movie, 999_999) to 300.0))
@@ -272,7 +316,7 @@ class SearchTest {
         for (name in names) assertEquals(name, reference(name), SearchIndex.words(name))
     }
 
-    @Test fun `search reads only names, cast and popularity from cached metadata`() {
+    @Test fun `search reads only names, cast, genres and popularity from cached metadata`() {
         val json = com.squareup.moshi.Moshi.Builder().build().adapter(Any::class.java).toJson(
             tmdbTitle(
                 238, "The Godfather", titles = listOf(Triple("fr", "FR", "Le Parrain"), Triple("en", "US", "The Godfather"), Triple("de", "DE", " ")),
@@ -284,10 +328,10 @@ class SearchTest {
         store.saveMetadata("en", mapOf(godfather to json), listOf(godfatherPartTwo), java.time.Instant.now())
         val found = mutableListOf<List<Any>>()
 
-        store.forEachSearchMetadata { id, names, cast, popularity -> found += listOf(id, names.filter(String::isNotBlank).toSet(), cast, popularity) }
+        store.forEachSearchMetadata { id, names, cast, genres, popularity -> found += listOf(id, names.filter(String::isNotBlank).toSet(), cast, genres, popularity) }
         store.close()
 
-        assertEquals(listOf(listOf(godfather, setOf("The Godfather", "Le Parrain", "Mario Puzo's The Godfather"), listOf("Marlon Brando", "Al Pacino"), 120.5)), found)
+        assertEquals(listOf(listOf(godfather, setOf("The Godfather", "Le Parrain", "Mario Puzo's The Godfather"), listOf("Marlon Brando", "Al Pacino"), listOf("Drama"), 120.5)), found)
     }
 
     @Test fun `building the search index doesn't hold up reading a Title`() = runBlocking {
