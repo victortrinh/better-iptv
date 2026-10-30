@@ -95,7 +95,7 @@ _Avoid_: Highlight
 ### Tracks and quality
 
 **Track**:
-An audio or subtitle stream inside a Version's file, with a language.
+An audio or subtitle stream inside a Version's file, with a language. A Channel's closed captions (CEA-608) are a subtitle Track with none.
 _Avoid_: Stream
 
 **Confirmed**:

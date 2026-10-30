@@ -557,7 +557,12 @@ class Library private constructor(
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
         val subtitles = store.rememberedTrack(SUBTITLES)
-        RememberedTracks(store.rememberedTrack(AUDIO), subtitles?.takeIf { it != SUBTITLES_OFF }, subtitlesOff = subtitles == SUBTITLES_OFF).also { remembered = it }
+        RememberedTracks(
+            store.rememberedTrack(AUDIO),
+            subtitles?.takeIf { it != SUBTITLES_OFF && it != CLOSED_CAPTIONS },
+            subtitlesOff = subtitles == SUBTITLES_OFF,
+            closedCaptions = subtitles == CLOSED_CAPTIONS,
+        ).also { remembered = it }
     }
 
     /** Remembers that the Viewer picked audio in [language] (a BCP 47 tag), so it plays next time, and its Versions rank first. */
@@ -569,7 +574,13 @@ class Library private constructor(
     /** Remembers that the Viewer picked subtitles in [language], or turned them off when null, so the next file starts the same. */
     suspend fun rememberSubtitles(language: String?) = withContext(Dispatchers.IO) {
         store.rememberTrack(SUBTITLES, language ?: SUBTITLES_OFF)
-        remembered = rememberedTracks().copy(subtitles = language, subtitlesOff = language == null)
+        remembered = rememberedTracks().copy(subtitles = language, subtitlesOff = language == null, closedCaptions = false)
+    }
+
+    /** Remembers that the Viewer turned on a Channel's closed captions, so they stay on in the other player and on the next Channel. */
+    suspend fun rememberClosedCaptions() = withContext(Dispatchers.IO) {
+        store.rememberTrack(SUBTITLES, CLOSED_CAPTIONS)
+        remembered = rememberedTracks().copy(subtitles = null, subtitlesOff = false, closedCaptions = true)
     }
 
     @Volatile private var remembered: RememberedTracks? = null
@@ -998,6 +1009,7 @@ class Library private constructor(
         private const val AUDIO = "audio"
         private const val SUBTITLES = "subtitles"
         private const val SUBTITLES_OFF = "off"
+        private const val CLOSED_CAPTIONS = "closed-captions"
         /** The cloud's answers about a Listing are asked again after this, so new Titles on TMDB come through. */
         private val MATCH_FRESH_FOR: Duration = Duration.ofDays(30)
         /** A name TMDB found nothing for is asked about again sooner, but not every daily Sync: few Titles are added in a week. */

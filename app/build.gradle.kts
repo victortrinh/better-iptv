@@ -90,6 +90,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Robolectric tests read the app's strings, in English and French.
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         // Compressed native code (libVLC is most of it) halves the APK sideloaded over Wi-Fi; the

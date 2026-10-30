@@ -8,7 +8,7 @@ Priorities, in order: a fast catalog with the best Version in the Viewer's langu
 
 Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-ignored `.survey/`).
 
-- Connection limit: 1. On 2026-10-29 it wasn't enforced within one home network: a second stream from a Mac on the stick's network was served while the stick played, so the refusal code is still unknown ([#82](https://github.com/victortrinh/better-iptv/issues/82)). `ProviderLoadErrorPolicy` keeps retrying 403 and 429 in case it is one of those.
+- Connection limit: 1. On 2026-10-29 it wasn't enforced within one home network: a second stream from a Mac on the stick's network was served while the stick played, so the refusal code is still unknown ([#82](https://github.com/victortrinh/better-iptv/issues/82)). `ProviderLoadErrorPolicy` keeps retrying 403 and 429 in case it is one of those. A 407, which the Provider sent when a Channel's TS request was refused, reaches the player as a `ProtocolException` and is final, so the HLS Backup starts at once ([#108](https://github.com/victortrinh/better-iptv/issues/108)).
 - 144,031 movie Listings (54,658 Titles), 36,252 show Listings (14,818 Titles), 45,710 live Listings; 22 MB compressed.
 - TMDB ID on 94% of movie and show Listings.
 - Names follow `PREFIX - Title (Year)` with 105 distinct Prefixes; Category names add hints ("MULTI-SUBS", "Dolby Vision", "DOLBY AUDIO", "VOSTFR").

@@ -22,6 +22,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import dev.betteriptv.core.CEA_608
+import dev.betteriptv.core.CEA_708
 import dev.betteriptv.core.CantOpen
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Engine
@@ -329,7 +331,7 @@ private class TrackChooser(
         val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
         val choice = plan.chooseTracks(
             audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
-            subtitles.map { Track(it.getTrackFormat(0).language) },
+            subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
             device,
             remembered(),
         )
@@ -400,7 +402,7 @@ class VlcEngine(
             val subtitles = all.filter { it.type == IMedia.Track.Type.Text }
             return FileTracks(
                 audio.map { Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
-                subtitles.map { Track(it.language) },
+                subtitles.map(::vlcSubtitles),
                 audio.indexOfFirst { it.id == player.audioTrack }.takeIf { it >= 0 },
                 subtitles.indexOfFirst { it.id == player.spuTrack }.takeIf { it >= 0 },
             )
@@ -468,7 +470,7 @@ class VlcEngine(
         if (audio.isEmpty()) return false
         seen = vlcContents(tracks)
         // VLC decodes every format itself, so its Tracks' formats don't change the choice.
-        val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map { Track(it.language) }, device, remembered())
+        val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map(::vlcSubtitles), device, remembered())
         choice.audio?.let { player.setAudioTrack(audio[it].id) }
         player.setSpuTrack(choice.subtitle?.let { subtitles[it].id } ?: -1)
         chosen.value = choice
@@ -511,11 +513,16 @@ internal fun vlcContents(tracks: List<IMedia.Track>): FileContents {
     return FileContents(
         audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
             .map { Track(it.language, VLC_AUDIO_CODECS[it.codec?.trim()], (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
-        subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }.map { Track(it.language) },
+        subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }.map(::vlcSubtitles),
         width = video?.width?.takeIf { it > 0 },
         height = video?.height?.takeIf { it > 0 },
     )
 }
+
+/** A VLC subtitle Track, its closed captions known by their fourcc. */
+private fun vlcSubtitles(track: IMedia.Track) = Track(track.language, VLC_CAPTION_CODECS[track.codec?.trim()])
+
+private val VLC_CAPTION_CODECS = mapOf("c608" to CEA_608, "c708" to CEA_708)
 
 /** Media3's MIME types by VLC audio fourcc, as VLC names them, with trailing spaces trimmed. */
 private val VLC_AUDIO_CODECS = mapOf(
