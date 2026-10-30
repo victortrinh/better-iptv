@@ -135,6 +135,20 @@ class PlaybackTest {
         job.cancel()
     }
 
+    @Test fun `when VLC fails after Try other player, Try other player goes back to Media3`() = runBlocking {
+        val session = session()
+        val job = launch { session.play() }
+        session.awaitPlaying(Engine.Media3, count = 1)
+        scripts[Engine.Vlc] = Script.Breaks
+        session.tryOtherPlayer()
+        withTimeout(5_000) { session.state.first { it is PlaybackState.Failed } }
+
+        session.tryOtherPlayer()
+        session.awaitPlaying(Engine.Media3, count = 3)
+        assertEquals(listOf(Engine.Media3, Engine.Vlc, Engine.Media3), created.map { it.engine })
+        job.cancel()
+    }
+
     @Test fun `a file that plays to the end ends the session`() = runBlocking {
         scripts[Engine.Media3] = Script.Ends
         val session = session()
