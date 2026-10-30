@@ -341,3 +341,24 @@ private val ISO_639_1: Map<String, String> by lazy {
 
 /** A Track's language as a primary language subtag: `eng`, `en` and `en-US` are all `en`. */
 private fun trackLanguage(tag: String): String = primaryLanguage(tag).let { ISO_639_1[it] ?: it }
+
+/**
+ * A Track as VLC's player names it, for a stream whose Tracks LibVLC lists no other way, such as a
+ * live Channel's: "Track 1 - [English]" is in English, "Closed captions 1" is CEA-608 captions. Null
+ * for the closed captions after the first, which almost every Channel leaves empty.
+ */
+fun vlcNamedTrack(name: String): Track? {
+    VLC_CLOSED_CAPTIONS.matchEntire(name)?.let { return if (it.groupValues[1] == "1") Track(null, CEA_608) else null }
+    val language = VLC_LANGUAGE.find(name)?.groupValues?.get(1)?.let { LANGUAGES_BY_NAME[it.lowercase(Locale.ROOT)] }
+    return Track(language)
+}
+
+private val VLC_CLOSED_CAPTIONS = Regex("""Closed captions (\d+)""")
+
+/** The language VLC names at the end of a Track's name, in brackets. */
+private val VLC_LANGUAGE = Regex("""\[([^\]]+)]\s*$""")
+
+/** ISO 639-1 codes by their languages' English names, lower case, as VLC names them. */
+private val LANGUAGES_BY_NAME: Map<String, String> by lazy {
+    Locale.getISOLanguages().associateBy { Locale.forLanguageTag(it).getDisplayLanguage(Locale.ENGLISH).lowercase(Locale.ROOT) }
+}
