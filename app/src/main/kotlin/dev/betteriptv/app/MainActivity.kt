@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,8 +91,8 @@ private fun Root(app: BetterIptvApp) {
         var tab by rememberSaveable { mutableStateOf(Browse.Home) }
         // Each screen keeps its scroll position while another is shown.
         val home = remember { HomeState() }
-        val movies = rememberLazyGridState()
-        val shows = rememberLazyGridState()
+        val movies = remember { TitlesState() }
+        val shows = remember { TitlesState() }
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
