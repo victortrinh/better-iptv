@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,16 +58,17 @@ import kotlinx.coroutines.delay
 /**
  * Search: the [query] typed on a D-pad keyboard on the left, results on the right as each letter
  * lands, grouped as Movies, Shows, genres, Channels and people (each genre and person with their
- * Titles the Provider has). Under the keyboard, completions replace the query in one press and
- * move focus to the first result; before anything is typed they are genre shortcuts. A Title's
- * card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or removes
- * the Favourite. The tabs switch to the other browsing screens ([onTab]).
+ * Titles the Provider has). Each key [onEdit]s the query as it is when the key lands, so keys
+ * pressed faster than the stick redraws aren't lost. Under the keyboard, completions replace the
+ * query in one press and move focus to the first result; before anything is typed they are genre
+ * shortcuts. A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu
+ * key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]).
  */
 @Composable
 fun SearchScreen(
     library: Library,
     query: String,
-    onQuery: (String) -> Unit,
+    onEdit: ((String) -> String) -> Unit,
     contentLanguages: List<String>,
     appLanguage: String,
     onTab: (Browse) -> Unit,
@@ -108,8 +110,10 @@ fun SearchScreen(
         BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxSize()) {
-            // Scrolls once focus goes down into the completions, so they all can be reached.
-            Column(Modifier.padding(start = Spacing.screenX).width(290.dp).verticalScroll(rememberScrollState())) {
+            // Scrolls once focus goes down into the completions, so they all can be reached, and back
+            // up once it returns to the keyboard, so the query shows again.
+            val column = rememberScrollState()
+            Column(Modifier.padding(start = Spacing.screenX).width(290.dp).verticalScroll(column)) {
                 Box(
                     Modifier.fillMaxWidth().height(44.dp).background(Colors.surface, RoundedCornerShape(Corners.control)).padding(horizontal = 14.dp),
                     contentAlignment = Alignment.CenterStart,
@@ -126,15 +130,15 @@ fun SearchScreen(
                     modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
                 )
                 RemoteKeyboard(
-                    onKey = { onQuery(query + it) },
-                    onDelete = { onQuery(query.dropLast(1)) },
-                    onSpace = { if (query.isNotEmpty() && !query.endsWith(" ")) onQuery("$query ") },
-                    modifier = Modifier.focusRequester(keyboard),
+                    onKey = { key -> onEdit { it + key } },
+                    onDelete = { onEdit { it.dropLast(1) } },
+                    onSpace = { onEdit { if (it.isNotEmpty() && !it.endsWith(" ")) "$it " else it } },
+                    modifier = Modifier.focusRequester(keyboard).onFocusChanged { if (it.hasFocus) scope.launch { column.animateScrollTo(0) } },
                 )
                 Completions(
                     results.completions,
-                    onPick = {
-                        onQuery(it)
+                    onPick = { completion ->
+                        onEdit { completion }
                         toResults = true
                     },
                     modifier = Modifier.padding(top = 14.dp, bottom = Spacing.screenY),
@@ -221,10 +225,12 @@ private fun Results(
 private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit, first: Modifier?) {
     Column {
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // A focused card grows past the column's edge: the row starts that much further left, as
+        // Channels' does, so the card isn't clipped, and its cards still line up with the heading.
         LazyRow(
-            contentPadding = PaddingValues(top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
+            contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier.offset(x = -Spacing.m).focusRestorer(),
         ) {
             itemsIndexed(titles, key = { _, title -> title.id.toString() }) { i, title ->
                 TitleCard(
