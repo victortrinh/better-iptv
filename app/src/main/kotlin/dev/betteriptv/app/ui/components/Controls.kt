@@ -162,15 +162,33 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
 
 private val TAB_HEIGHT = 32.dp
 
-/** A settings row: what it is on the left, its current value on the right. */
+/**
+ * A settings row: what it is on the left, its current value on the right. [progress] (0 to 1) draws
+ * how far the Viewer got under the label, as on a card. A row that isn't [enabled] keeps focus but
+ * ignores the click, its label muted like a disabled button's.
+ */
 @Composable
-fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modifier = Modifier, detail: String? = null) {
-    FocusSurface(onClick, modifier.fillMaxWidth(), weight = FocusWeight.Row, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
+fun SettingRow(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+    progress: Float? = null,
+    enabled: Boolean = true,
+) {
+    FocusSurface({ if (enabled) onClick() }, modifier.fillMaxWidth(), weight = FocusWeight.Row, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = Type.label, color = if (focused) Colors.onFocus else Colors.ink)
+                Text(label, style = Type.label, color = if (focused) Colors.onFocus else if (enabled) Colors.ink else Colors.inkMuted)
                 if (detail != null) {
                     Text(detail, style = Type.caption, color = if (focused) Colors.onFocus.copy(alpha = 0.7f) else Colors.inkMuted)
+                }
+                if (progress != null) {
+                    val ink = if (focused) Colors.onFocus else Colors.ink
+                    Box(Modifier.padding(top = 6.dp).width(PROGRESS_WIDTH).height(4.dp).background(ink.copy(alpha = 0.25f), RoundedCornerShape(50))) {
+                        Box(Modifier.fillMaxWidth(progress).height(4.dp).background(ink, RoundedCornerShape(50)))
+                    }
                 }
             }
             Spacer(Modifier.width(16.dp))
@@ -178,6 +196,9 @@ fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modi
         }
     }
 }
+
+/** How wide a row's progress bar is: about a card's, so a started Episode reads like a started Movie. */
+private val PROGRESS_WIDTH = 120.dp
 
 /**
  * A small set of exclusive choices (Quality cap, Background reading). The chosen one is stronger

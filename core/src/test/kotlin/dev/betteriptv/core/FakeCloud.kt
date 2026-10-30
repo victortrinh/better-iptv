@@ -34,6 +34,7 @@ class FakeCloud : Closeable {
     @Volatile var onMatch: (() -> Unit)? = null
 
     private val metadata = HashMap<String, Map<String, Any?>>()
+    private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
 
     /** The queries the device sent to `/v1/search`, as sent. */
@@ -107,6 +108,15 @@ class FakeCloud : Closeable {
         }
     }
 
+    /** Answers `/v1/upcoming` for Show [tmdbId] in [language] with [episodes]: season, episode, air date and name. */
+    fun upcoming(tmdbId: Long, language: String, vararg episodes: Pair<EpisodeNumber, Pair<java.time.LocalDate, String?>>) {
+        synchronized(upcoming) {
+            upcoming["$tmdbId/$language"] = episodes.map { (number, coming) ->
+                mapOf("season" to number.season, "episode" to number.number, "airDate" to coming.first.toString(), "name" to coming.second)
+            }
+        }
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -157,6 +167,13 @@ class FakeCloud : Closeable {
                     mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong())
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
+            }
+            "/v1/upcoming" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val asked = read(body) as Map<*, *>
+                val key = "${(asked["tmdbId"] as Number).toLong()}/${asked["language"]}"
+                respond(exchange, 200, mapOf("episodes" to synchronized(upcoming) { upcoming[key] }.orEmpty()))
             }
             "/v1/subtitles", "/v1/subtitles/download" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")

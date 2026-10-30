@@ -83,9 +83,6 @@ data class PlayPlan(
     /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
     val live: Boolean get() = titleId == null
 
-    /** The Movie whose progress Playback records, so Play resumes there; an Episode's would count as the Show's. */
-    internal val resumable: TitleId? get() = titleId?.takeIf { episode == null }
-
     /** This plan from the beginning, for Restart. Where the Viewer stopped stays kept until they pass the first minute. */
     fun fromStart(): PlayPlan = copy(from = 0)
 
