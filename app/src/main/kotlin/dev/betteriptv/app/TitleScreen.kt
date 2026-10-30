@@ -160,6 +160,8 @@ private fun TitleContent(
     // Play takes first focus. With nothing to start, or on a Show, the first Version takes it, and a
     // Show's next Episode takes it over once the Episodes are read, unless the Viewer has moved on.
     var firstVersionFocused by remember { mutableStateOf(false) }
+    // When the Episodes come first, the first Version isn't laid out yet and nothing takes focus.
+    var listHasFocus by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
     // Removing it from Continue watching takes its button away, so focus goes back to Play.
     val resumable = plan != null && plan.from > 0
@@ -171,7 +173,7 @@ private fun TitleContent(
     val next = episodes?.next
     val peekPx = with(LocalDensity.current) { PEEK.roundToPx() }
     LaunchedEffect(title.id, next) {
-        if (episodes == null || next == null || !firstVersionFocused) return@LaunchedEffect
+        if (episodes == null || next == null || (listHasFocus && !firstVersionFocused)) return@LaunchedEffect
         // The Episode before the next one peeks above it, so the Viewer sees where they are in the season.
         // A list opens here once; from then on EdgeScroll moves it.
         episodes.previousEpisodeIndex(next)?.let { listState.scrollToItem(it, peekPx) }
@@ -184,7 +186,7 @@ private fun TitleContent(
 
     if (backdrop != null) Backdrop(backdrop)
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().onFocusChanged { listHasFocus = it.hasFocus },
         state = listState,
         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = Spacing.screenY),
         verticalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -374,8 +376,8 @@ private fun Context.monthDay(date: LocalDate): String {
     return date.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, skeleton), locale))
 }
 
-/** How much of the Episode before the next one is hidden above the list's top edge. */
-private val PEEK = 16.dp
+/** How far the Episode before the next one is scrolled up: through the top margin, to the screen's edge. */
+private val PEEK = Spacing.screenY
 
 /** The muted line naming the Version Play starts. */
 @Composable
