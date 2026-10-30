@@ -49,6 +49,7 @@ import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.CertaintyLegend
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.SettingRow
+import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.VersionHeader
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Cards
@@ -143,6 +144,7 @@ private fun TitleContent(
     val context = LocalContext.current
     val backdrop = rememberArtwork(title.backdrop)
     val image = rememberArtwork(title.image).takeIf { backdrop == null }
+    val logo = rememberArtwork(title.logo)
     var showOthers by rememberSaveable(title.id) { mutableStateOf(false) }
     val firstVersion = remember { FocusRequester() }
     val play = remember { FocusRequester() }
@@ -174,7 +176,7 @@ private fun TitleContent(
         item {
             Row(Modifier.padding(top = Spacing.xl, bottom = Spacing.xl)) {
                 Column(Modifier.width(470.dp)) {
-                    Text(title.name, style = Type.display, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    TitleName(title.name, logo)
                     Spacer(Modifier.height(Spacing.s))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val versions = (title.languages + title.otherLanguages).sumOf { it.versionCount }
@@ -327,7 +329,7 @@ private fun PlayLabel(text: String) {
 }
 
 /** `2 h 55 min`, or `48 min` under an hour. */
-private fun Context.runtime(minutes: Int): String =
+internal fun Context.runtime(minutes: Int): String =
     if (minutes < 60) getString(R.string.runtime_minutes, minutes) else getString(R.string.runtime_hours, minutes / 60, minutes % 60)
 
 private fun LazyListScope.languageGroup(

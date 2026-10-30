@@ -519,6 +519,7 @@ class Library private constructor(
             genres = metadata?.genres.orEmpty(),
             runtimeMinutes = metadata?.runtimeMinutes,
             backdrop = metadata?.backdrop,
+            logo = metadata?.logo,
             cast = metadata?.cast.orEmpty(),
             fromTmdb = metadata != null,
         )
@@ -582,7 +583,7 @@ class Library private constructor(
         val title = store.title(id) ?: return@withContext null
         val remembered = rememberedTracks()
         val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered) }
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id)) }
     }
 
     /**
@@ -613,15 +614,19 @@ class Library private constructor(
         val languages = rankingLanguages(remembered, contentLanguages)
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val original = originalLanguage(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
-                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered) }
+                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered, originalLanguage = original) }
             }
         }
         return plans
     }
+
+    /** The language [id] was released in, from TMDB's metadata kept on the device: the details screen has fetched it before Play. */
+    private fun originalLanguage(id: TitleId): String? = (id as? TitleId.Tmdb)?.let(store::anyMetadata)?.let { TitleMetadata(it).originalLanguage }
 
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
@@ -666,7 +671,7 @@ class Library private constructor(
             val remembered = rememberedTracks()
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered)
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id))
         }
     }
 
@@ -731,7 +736,8 @@ class Library private constructor(
         val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
         fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
             val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
-            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
+            val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes) }
+            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
         }
         val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
         // The newest movies, then the newest shows, in the Viewer's languages.
@@ -748,7 +754,8 @@ class Library private constructor(
                     HomeRow.ContinueWatching(
                         resumes.map { (progress, title) ->
                             val fraction = progress.duration?.takeIf { it > 0 }?.let { (progress.position.toFloat() / it).coerceIn(0f, 1f) }
-                            InProgress(card(title), metadata[title.id]?.backdrop, fraction)
+                            val left = progress.duration?.takeIf { it > 0 }?.let { Duration.ofMillis((it - progress.position).coerceAtLeast(0)) }
+                            InProgress(card(title), metadata[title.id]?.backdrop, fraction, left)
                         },
                     ),
                 )
@@ -1031,7 +1038,11 @@ class Library private constructor(
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
         val cached = store.metadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
-        val wanted = tmdbIds.filter { cached[it]?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true }
+        // An answer from before the cloud gave logos is asked again: it would otherwise lack one for a week.
+        val wanted = tmdbIds.filter { id ->
+            val stored = cached[id]
+            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"logoPath\"") == false
+        }
         if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
             try {
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->

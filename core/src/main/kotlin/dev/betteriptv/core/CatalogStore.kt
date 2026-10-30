@@ -602,6 +602,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         image = if (isNull(from + 4)) null else getText(from + 4),
     )
 
+    /** Any cached metadata of [id], in whichever language was fetched last; null when none is. */
+    fun anyMetadata(id: TitleId.Tmdb): String? = synchronized(reader) {
+        reader.prepare("SELECT body FROM title_metadata WHERE title_key = ? AND body IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").use {
+            it.bindText(1, key(id))
+            if (it.step()) it.getText(0) else null
+        }
+    }
+
     /** The cached metadata of [ids] in [language] (ISO 639-1), by Title. A null body means TMDB has no such Title. */
     fun metadata(ids: List<TitleId.Tmdb>, language: String): Map<TitleId.Tmdb, StoredMetadata> = synchronized(reader) {
         if (ids.isEmpty()) return emptyMap()

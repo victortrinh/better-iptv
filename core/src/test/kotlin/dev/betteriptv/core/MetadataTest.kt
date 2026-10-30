@@ -54,6 +54,7 @@ class MetadataTest {
         runtimeMinutes = 175,
         posterPath = "/parrain.jpg",
         backdropPath = "/godfather-backdrop.jpg",
+        logoPath = "/parrain-logo.png",
         cast = listOf("Marlon Brando", "Al Pacino"),
     )
 
@@ -62,6 +63,24 @@ class MetadataTest {
 
     private suspend fun details(id: TitleId, appLanguage: String, contentLanguages: List<String> = french) =
         library.title(id, contentLanguages, appLanguage) ?: throw AssertionError("no Title $id")
+
+    @Test fun `a play plan knows the language the Title was released in, so the player can call its audio Original`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", originalLanguage = "en"))
+        details(godfather, "fr")
+
+        val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
+        assertEquals("en", plan.originalLanguage)
+        assertTrue(plan.isOriginal(Track("eng")))
+        assertTrue(plan.isOriginal(Track("en-US")))
+        assertFalse(plan.isOriginal(Track("fre")))
+        assertFalse(plan.isOriginal(Track(null)))
+    }
+
+    @Test fun `without TMDB's metadata no audio is Original`() = runBlocking {
+        val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
+        assertNull(plan.originalLanguage)
+        assertFalse(plan.isOriginal(Track("eng")))
+    }
 
     @Test fun `a card and the details show TMDB's name, poster, description and genres in the App language`() = runBlocking {
         cloud.title("fr", leParrain)
@@ -77,6 +96,7 @@ class MetadataTest {
             assertEquals(listOf("Drame", "Crime"), it.genres)
             assertEquals(175, it.runtimeMinutes)
             assertEquals("https://image.tmdb.org/t/p/w1280/godfather-backdrop.jpg", it.backdrop)
+            assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", it.logo)
             assertEquals(listOf("Marlon Brando", "Al Pacino"), it.cast)
             assertTrue(it.fromTmdb)
         }
@@ -98,6 +118,26 @@ class MetadataTest {
 
         assertEquals("From the World of John Wick: Ballerina", card(ballerina, "fr").name)
         assertEquals("Taking place during the events of John Wick: Chapter 3…", details(ballerina, "fr").description)
+    }
+
+    @Test fun `an SVG logo is asked for as a PNG, and a Title without one has no logo`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg"))
+        cloud.title("fr", tmdbTitle(541671, "Ballerina"))
+
+        assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
+        assertNull(details(ballerina, "fr").logo)
+    }
+
+    @Test fun `metadata kept from before the cloud gave logos is asked again`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather") - "logoPath")
+        details(godfather, "fr")
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png"))
+
+        assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
+        assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
+        // Once it has the logo field, even null, it is kept for the week.
+        details(godfather, "fr")
+        assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
     }
 
     @Test fun `a Title with no translation at all keeps the name it was released under`() = runBlocking {
