@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">NuageTivi</string>
+    <!-- The Wordmark, lowercase like the TV banner. -->
+    <string name="wordmark" translatable="false">zugig</string>
     <!-- The name under the launcher icon; debug builds add "debug". -->
-    <string name="launcher_name" translatable="false">NuageTivi</string>
+    <string name="launcher_name" translatable="false">Zugig</string>
 
     <string name="login_title">Log in to your Provider</string>
     <string name="login_private">Your login stays on this device, encrypted.</string>
@@ -210,9 +211,9 @@
     <string name="update_install">Install</string>
     <string name="update_failed">The update didn\'t download. %1$s</string>
     <string name="update_retry">Try again</string>
-    <string name="update_allow_title">Allow NuageTivi to install its updates</string>
-    <string name="update_allow_steps">Android asks once. Open settings, turn on NuageTivi, then press Back.</string>
-    <string name="update_allow_fire">If settings open elsewhere: Settings → My Fire TV → Developer options → Install unknown apps → NuageTivi: On.</string>
+    <string name="update_allow_title">Allow Zugig to install its updates</string>
+    <string name="update_allow_steps">Android asks once. Open settings, turn on Zugig, then press Back.</string>
+    <string name="update_allow_fire">If settings open elsewhere: Settings → My Fire TV → Developer options → Install unknown apps → Zugig: On.</string>
     <string name="update_allow_old">Settings → My Fire TV → Developer options → Apps from Unknown Sources: On, then come back here.</string>
     <string name="update_open_settings">Open settings</string>
 

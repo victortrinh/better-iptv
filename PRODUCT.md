@@ -38,7 +38,7 @@ Every IPTV player shows the Provider's Listings as the Provider files them. This
 
 ## Brand Commitments
 
-- The app's name on screen is **NuageTivi**.
+- The app's name on screen is **Zugig**. The Wordmark and the TV banner set it lowercase, "zugig"; sentences write Zugig.
 
 ## Evidence on Hand
 

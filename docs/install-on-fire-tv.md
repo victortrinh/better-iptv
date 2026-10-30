@@ -38,7 +38,7 @@ Install, replacing any earlier build:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Every debug build is signed with the debug key checked in at `app/debug.keystore`, so builds from CI and from any computer replace each other without uninstalling (which would delete the synced catalog and the saved login). Debug builds are their own app, `dev.betteriptv.debug` ("NuageTivi debug"), beside the release app that updates itself from GitHub (see `releases.md`).
+Every debug build is signed with the debug key checked in at `app/debug.keystore`, so builds from CI and from any computer replace each other without uninstalling (which would delete the synced catalog and the saved login). Debug builds are their own app, `dev.betteriptv.debug` ("Zugig debug"), beside the release app that updates itself from GitHub (see `releases.md`).
 
 The app appears under **Your Apps & Channels**; start it from there, or with:
 

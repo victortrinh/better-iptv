@@ -7,7 +7,7 @@ The app updates itself (ADR 0006, ADR 0010). On every push to main, the **Releas
 
 Release builds read `https://github.com/victortrinh/better-iptv/releases/latest/download/update.json` on launch (`updateUrl` in `gradle.properties`). When it names a higher versionCode, the app shows "Update available" before anything else. "Update now" downloads the APK, checks its size and SHA-256 against `update.json`, and opens Android's installer; "Later" puts it away until the next launch, and Settings → App version offers it too. The first time, Android has to allow the app to install apps, and the app walks the Viewer there.
 
-Debug and benchmark builds don't check. They are a separate app, `dev.betteriptv.debug` ("NuageTivi debug"), signed with the public debug key.
+Debug and benchmark builds don't check. They are a separate app, `dev.betteriptv.debug` ("Zugig debug"), signed with the public debug key.
 
 ## Once: the release key
 
@@ -16,7 +16,7 @@ Only you hold this key. CI signs with it, and Android only accepts an update sig
 1. Generate the keystore on your computer, outside the repository:
 
    ```bash
-   keytool -genkeypair -keystore ~/better-iptv-release.jks -alias release -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=NuageTivi"
+   keytool -genkeypair -keystore ~/better-iptv-release.jks -alias release -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Zugig"
    ```
 
    keytool asks for a password; use the same one for the key when it asks.
@@ -34,7 +34,7 @@ Until the secrets exist, the Release workflow skips with a warning and publishes
 
 The app on the stick today is signed with the debug key, so the first release can't install over it.
 
-1. Uninstall it: **Settings → Applications → Manage Installed Applications → NuageTivi → Uninstall** (or `adb uninstall dev.betteriptv`). This deletes the synced catalog and the saved login.
+1. Uninstall it: **Settings → Applications → Manage Installed Applications → Zugig → Uninstall** (or `adb uninstall dev.betteriptv`). This deletes the synced catalog and the saved login.
 2. Download the APK from the latest release on GitHub and install it over adb (see `install-on-fire-tv.md` for connecting):
 
    ```bash
