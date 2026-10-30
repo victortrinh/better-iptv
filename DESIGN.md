@@ -23,9 +23,9 @@ typography:
     letterSpacing: "-0.03em"
   headline:
     fontFamily: "Inter"
-    fontSize: "20px"
+    fontSize: "18px"
     fontWeight: 700
-    lineHeight: "26px"
+    lineHeight: "24px"
     letterSpacing: "-0.01em"
   title:
     fontFamily: "Inter"
@@ -33,6 +33,11 @@ typography:
     fontWeight: 600
     lineHeight: "22px"
   body:
+    fontFamily: "Inter"
+    fontSize: "17px"
+    fontWeight: 400
+    lineHeight: "24px"
+  detail:
     fontFamily: "Inter"
     fontSize: "15px"
     fontWeight: 400
@@ -93,7 +98,7 @@ components:
     textColor: "{colors.on-focus}"
   title-card-poster:
     rounded: "{rounded.card}"
-    width: "104px"
+    width: "136px"
   title-card-wide:
     rounded: "{rounded.card}"
     width: "196px"
@@ -220,9 +225,10 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 
 ### Hierarchy
 - **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most. A Title with a TMDB logo (in the App language, else English) shows the logo there instead (`TitleName`): fitted in a 320 × 104 dp box, the room two Display lines take, and sitting on its bottom edge, with the name as its content description. The box stays empty while the logo loads, and the name shows in Display type when there is no logo or it can't be loaded.
-- **Headline** (`Type.headline`): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. The Wordmark uses it at 22 sp.
+- **Headline** (`Type.headline`, 18 sp): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. Kept modest so the posters under a heading lead, as on Netflix (#147). The Wordmark uses it at 22 sp.
 - **Title** (`Type.title`): a Title's name under a focused card, the language group heading over Versions ("English · 3"), the search query.
-- **Body** (`Type.body`): descriptions, metadata lines, Version cells, setting values, field text. Descriptions are capped at 2 lines in the hero and 3 on details.
+- **Body** (`Type.body`, 17 sp): descriptions, metadata lines, people, messages, field text: what is read from the couch. Descriptions are capped at 2 lines in the hero and 3 on details.
+- **Detail** (`Type.detail`, 15 sp): body beside label type in a row or table: Version cells and bitrate, setting values. It stays at 15 sp so the French strings still fit the Version columns.
 - **Label** (`Type.label`): buttons, tabs, choices, keys, setting labels, the Source cell of a Version row.
 - **Caption** (`Type.caption`): badges, column headings, field labels, explanations under a setting, the Sync status line.
 
@@ -237,7 +243,7 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 
 **The shell.** `TopTabs` runs across the top inside the margins: the Wordmark on the left and the tab capsule centred. Tabs are Home, Movies, Shows, Live, then Search and Settings as icons; Live arrives with the sports hub. The tabs stay on screen on Home, Movies, Shows and Search: the cards scroll beneath them and pass under their bottom edge. Back from any card focuses the selected tab and leaves the scroll position alone; Down from the tab returns to the card that had focus. Back on a tab does what it always did: Search goes to Movies, the other tabs leave the app.
 
-**Home.** The featured Title's backdrop fills the screen. The hero text column (440 dp wide) starts 96 dp below the tabs, at the bottom-left third. In order: display name, a metadata line (year · runtime · genres in muted body) followed by its badges, two lines of description, then Play and Details buttons 12 dp apart. The first Down from the hero scrolls it fully off screen, under the tabs, so the first row's heading comes up to the top; Up to the hero brings it back whole. Past it, the focused card's info area does the hero's job. Artwork stays still: no video previews. Each row follows: a headline heading, 12 dp, then a `LazyRow` with `screen-x` horizontal and 10 dp vertical content padding, then 14 dp before the next heading. Posters (2:3, 104 dp) fill most rows. Continue watching uses 16:9 stills (196 dp) with a progress bar, so the Viewer sees where they stopped. Favourites follow it (first when there's nothing to continue) as `ChannelCard`s in the order they were added, and the row is left out while there are none. Removing a Favourite moves focus to its neighbour, or to the row that takes its place. Back from a Title returns focus to the card that opened it, in the same row even when rows above it came or went. If that card has gone (the Title left Continue watching meanwhile), focus goes to the card now in its place, or to the row that takes its place, like a removed Favourite. There is no Live tab until the sports hub (M2): Channels are reached through Favourites and Search (ADR 0007). Cards sit `card-gap` (20 dp) apart, enough that a 1.12x focused card never touches its neighbours.
+**Home.** The featured Title's backdrop fills the screen. The hero text column (440 dp wide) starts 96 dp below the tabs, at the bottom-left third. In order: display name, a metadata line (year · runtime · genres in muted body) followed by its badges, two lines of description, then Play and Details buttons 12 dp apart. The first Down from the hero scrolls it fully off screen, under the tabs, so the first row's heading comes up to the top; Up to the hero brings it back whole. Past it, the focused card's info area does the hero's job. Artwork stays still: no video previews. Each row follows: a headline heading, 12 dp, then a `LazyRow` with `screen-x` horizontal and 10 dp vertical content padding, then 14 dp before the next heading. Posters (2:3, 136 dp) fill most rows. Continue watching uses 16:9 stills (196 dp) with a progress bar, so the Viewer sees where they stopped. Favourites follow it (first when there's nothing to continue) as `ChannelCard`s in the order they were added, and the row is left out while there are none. Removing a Favourite moves focus to its neighbour, or to the row that takes its place. Back from a Title returns focus to the card that opened it, in the same row even when rows above it came or went. If that card has gone (the Title left Continue watching meanwhile), focus goes to the card now in its place, or to the row that takes its place, like a removed Favourite. There is no Live tab until the sports hub (M2): Channels are reached through Favourites and Search (ADR 0007). Cards sit `card-gap` (20 dp) apart, enough that a 1.12x focused card never touches its neighbours.
 
 **Details.** Same backdrop. A header column (470 dp) holds the display name, metadata line with badges, three lines of description, and the people in muted body. Below it, Play sits next to a muted label naming the Version Play will start. Next comes a "Versions" headline with the `CertaintyLegend` on the right, the `VersionHeader`, then Versions grouped by language ("English · 3"), 8 dp between rows. A `SettingRow` at the end reveals other languages.
 
@@ -314,7 +320,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 - **Tab:** 32 dp tall, every one alike; label type centred with 14 dp padding at the sides. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
 
 ### Cards (`TitleCard`)
-- **Poster:** 104 dp wide, 2:3. **Wide:** 196 dp wide, 16:9, for Continue watching.
+- **Poster:** 136 dp wide, 2:3: about 5.5 across Home's rows between the margins, `card-gap` apart. The Movies and Shows grids fit as many 136 dp columns as the width holds (five) and share the rest between them, so the grid ends at the right margin. **Wide:** 196 dp wide, 16:9, for Continue watching.
 - **Corner Style:** `card`. **Background:** the artwork itself, cropped to fill.
 - **Progress:** a 4 dp bar along the bottom edge, `ink` over `ground` at 60%.
 - **Focus:** `FocusWeight.Card`. Under the card, after 12 dp, a 44 dp slot shows the Title name (title type, one line) and a compact `BadgeRow` only while the card has focus. The slot is always reserved so rows don't jump.
@@ -332,12 +338,12 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 ### Version table (`VersionRow`, `VersionHeader`)
 - A `glass` pill, 14 x 10 dp padding, with fixed-width columns sized for French: Quality 188 dp, Source 124 dp, Audio 188 dp, Subtitles 120 dp, Bitrate taking the rest, right-aligned.
 - Quality holds the badges plus an optional caption note: `ink-muted` normally ("Likely English"), `caution` for cautions ("Cinema recording (CAM)").
-- Source is label type in `ink`. The other cells are muted body, two lines at most. Bitrate is body in `ink`, with its Backup count in muted caption below.
+- Source is label type in `ink`. The other cells are muted detail type, two lines at most. Bitrate is detail type in `ink`, with its Backup count in muted caption below.
 - `VersionHeader` names the columns in muted caption with the same widths. Group Versions under a title-type language heading.
 - **Focus:** the white ring on `glass-high`. No scale.
 
 ### Settings (`SettingRow`, `ChoiceRow`)
-- **SettingRow:** a `glass` pill, 16 x 12 dp padding. Label (label type) with optional detail (muted caption) on the left, current value (muted body) on the right. Focus is a white fill, with the detail at 70% black.
+- **SettingRow:** a `glass` pill, 16 x 12 dp padding. Label (label type) with optional detail (muted caption) on the left, current value (muted detail type) on the right. Focus is a white fill, with the detail at 70% black.
 - **ChoiceRow:** capsules 36 dp tall, 8 dp apart. A choice's text stays on one line; when the choices don't fit beside their label, whole capsules move to a second line, 8 dp below. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
 
 ### Inputs (`NuageTextField`, `RemoteKeyboard`)

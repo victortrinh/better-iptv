@@ -84,7 +84,7 @@ fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modi
                 Cell(line.subtitles, SUBTITLES)
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                     Column(horizontalAlignment = Alignment.End) {
-                        line.bitrate?.let { Text(it, style = Type.body, color = Colors.ink, textAlign = TextAlign.End) }
+                        line.bitrate?.let { Text(it, style = Type.detail, color = Colors.ink, textAlign = TextAlign.End) }
                         line.backups?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
                     }
                 }
@@ -120,7 +120,7 @@ private fun Heading(text: String, width: Dp) {
 private fun Cell(text: String, width: Dp, emphasis: Boolean = false) {
     Text(
         text,
-        style = if (emphasis) Type.label else Type.body,
+        style = if (emphasis) Type.label else Type.detail,
         color = if (emphasis) Colors.ink else Colors.inkMuted,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
