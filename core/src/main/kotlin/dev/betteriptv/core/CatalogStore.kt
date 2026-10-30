@@ -37,6 +37,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val writer: SQLiteConnection = driver.open(path).apply {
         execSQL("PRAGMA journal_mode=WAL")
         execSQL("PRAGMA synchronous=NORMAL")
+        // A big write grows the write-ahead log; once checkpointed, it is cut back to this.
+        execSQL("PRAGMA journal_size_limit=$WAL_SIZE_LIMIT")
         execSQL("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         if (prepare("PRAGMA user_version").use { it.step(); it.getLong(0) } < SCHEMA_VERSION) {
             // A catalog stored in an older shape is dropped; the next Sync stores it again.
@@ -256,6 +258,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("ROLLBACK")
             throw e
         }
+        truncateLog()
+    }
+
+    /**
+     * Copies the write-ahead log into the database and empties it, so a Sync's ~100 MB of writes
+     * don't stay on the device's storage beside the catalog. The reader is held off meanwhile, since
+     * a checkpoint can't empty the log while a read is going on.
+     */
+    private fun truncateLog() = synchronized(reader) {
+        writer.prepare("PRAGMA wal_checkpoint(TRUNCATE)").use { it.step() }
     }
 
     /** The Sync whose catalog is stored, if any. */
@@ -340,6 +352,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("ROLLBACK")
             throw e
         }
+        truncateLog()
         lastSync()
     }
 
@@ -794,6 +807,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val SCHEMA_VERSION = 4
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
+        /** The most the write-ahead log keeps on the device's storage between checkpoints, in bytes. */
+        const val WAL_SIZE_LIMIT = 4L * 1024 * 1024
         const val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
