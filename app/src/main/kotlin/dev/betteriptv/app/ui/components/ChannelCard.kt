@@ -36,7 +36,8 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * One Channel: its logo, whole, on a 16:9 glass card, or its name when there is no logo. Its name
  * and the menu key's hint ([menuHint], to add or remove the Favourite) appear under it while it has
- * focus. Pressing it calls [onClick]; the remote's menu key calls [onMenu].
+ * focus, unless [named] is false (Home, where [InfoPanel] tells them). Pressing it calls [onClick];
+ * the remote's menu key calls [onMenu].
  */
 @Composable
 fun ChannelCard(
@@ -46,6 +47,8 @@ fun ChannelCard(
     onClick: () -> Unit,
     onMenu: () -> Unit,
     modifier: Modifier = Modifier,
+    named: Boolean = true,
+    onFocus: () -> Unit = {},
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -59,6 +62,7 @@ fun ChannelCard(
                 true
             },
             container = Colors.surface,
+            onFocus = onFocus,
             interactionSource = interaction,
         ) {
             if (logo != null) {
@@ -76,13 +80,15 @@ fun ChannelCard(
                 )
             }
         }
-        // Reserved like a Title card's, so rows don't jump when focus moves.
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.height(44.dp)) {
-            if (focused) {
-                Column {
-                    Text(name, style = Type.title, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(menuHint, style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+        if (named) {
+            // Reserved like a Title card's, so rows don't jump when focus moves.
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.height(44.dp)) {
+                if (focused) {
+                    Column {
+                        Text(name, style = Type.title, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(menuHint, style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+                    }
                 }
             }
         }
