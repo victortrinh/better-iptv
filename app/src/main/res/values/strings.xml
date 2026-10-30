@@ -210,7 +210,7 @@
     <string name="update_downloading">Downloading… %1$d%%</string>
     <string name="update_installing">Confirm with Install on the next screen.</string>
     <string name="update_install">Install</string>
-    <string name="update_failed">The update didn\'t download. %1$s</string>
+    <string name="update_failed">The update didn\'t go through. %1$s</string>
     <string name="update_retry">Try again</string>
     <string name="update_allow_title">Allow Zugig to install its updates</string>
     <string name="update_allow_steps">Android asks once. Open settings, turn on Zugig, then press Back.</string>

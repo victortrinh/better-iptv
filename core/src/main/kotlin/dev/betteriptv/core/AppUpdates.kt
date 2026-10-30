@@ -18,10 +18,25 @@ import java.security.MessageDigest
 /**
  * A build newer than the installed one, as the update manifest CI publishes beside it describes it
  * (`update.json`, see .github/workflows/release.yml): `{"versionCode": 95, "versionName": "0.1.95",
- * "apk": "better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567}`. [apkUrl] is resolved against
- * the manifest's own address, so a relative `apk` names a file beside it.
+ * "apk": "better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567}`, plus `"dm"`, `"dmSha256"` and
+ * `"dmSize"` for its [dexMetadata] when CI built one. [apkUrl] is resolved against the manifest's own
+ * address, so a relative `apk` names a file beside it.
  */
-data class AppUpdate(val versionCode: Long, val versionName: String, val apkUrl: String, val sha256: String, val size: Long)
+data class AppUpdate(
+    val versionCode: Long,
+    val versionName: String,
+    val apkUrl: String,
+    val sha256: String,
+    val size: Long,
+    val dexMetadata: DexMetadata? = null,
+)
+
+/**
+ * The build's Baseline Profile as dex metadata (`app-release.dm`, #63). Installed with the APK, it
+ * has Android compile the app's hot code at install, so the first scroll after an update keeps up
+ * instead of waiting days for the idle-time compile.
+ */
+data class DexMetadata(val url: String, val sha256: String, val size: Long)
 
 /** Where keeping the app up to date stands. */
 sealed interface UpdateState {
@@ -43,7 +58,7 @@ sealed interface UpdateState {
     /** Android's installer was opened on [update]; installing replaces the running app. */
     data class Installing(val update: AppUpdate) : UpdateState
 
-    /** Downloading [update] or opening the installer failed, for [problem]. Asking again starts over. */
+    /** Downloading [update], opening the installer or installing failed, for [problem]. Asking again starts over. */
     data class Failed(val update: AppUpdate, val problem: String) : UpdateState
 }
 
@@ -63,14 +78,14 @@ interface ApkInstaller {
     /** Whether Android lets this app install apps ("install unknown apps" is allowed for it). */
     fun canInstall(): Boolean
 
-    /** Opens the installer on [apk], which asks the Viewer to confirm. */
-    fun install(apk: File)
+    /** Opens the installer on [apk], with its [dexMetadata] when there is one; the installer asks the Viewer to confirm. */
+    fun install(apk: File, dexMetadata: File?)
 }
 
 /**
  * Keeps the sideloaded app up to date (ADR 0006): [check] reads the update manifest at
  * [manifestUrl] and offers a newer build than [installedVersionCode]; [update], once the Viewer
- * confirms, downloads it into [downloads], checks its size and SHA-256, and hands it to [installer].
+ * confirms, downloads it (and its dex metadata) into [downloads], checks size and SHA-256, and hands it to [installer].
  * Every step shows in [state].
  */
 class AppUpdates(
@@ -103,8 +118,8 @@ class AppUpdates(
                 update.versionCode > installedVersionCode -> if (offered()?.versionCode != update.versionCode) _state.value = UpdateState.Available(update)
                 else -> _state.value = UpdateState.UpToDate
             }
-            val keep = offered()?.let(::apkFile)
-            downloads.listFiles()?.filter { it != keep }?.forEach { it.delete() }
+            val keep = offered()?.let { listOf(apkFile(it), dmFile(it)) }.orEmpty()
+            downloads.listFiles()?.filter { it !in keep }?.forEach { it.delete() }
         }
     }
 
@@ -120,8 +135,11 @@ class AppUpdates(
             return@withLock
         }
         try {
-            val apk = withContext(Dispatchers.IO) { download(update) }
-            installer.install(apk)
+            withContext(Dispatchers.IO) {
+                val apk = download(update)
+                // Copied into an install session, so off the main thread too.
+                installer.install(apk, downloadDexMetadata(update))
+            }
             _state.value = UpdateState.Installing(update)
         } catch (e: IOException) {
             _state.value = UpdateState.Failed(update, e.message ?: e.javaClass.simpleName)
@@ -129,6 +147,12 @@ class AppUpdates(
             // The installer couldn't be opened (no activity for it, a missing file provider).
             _state.value = UpdateState.Failed(update, e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    /** Android's installer refused the offered build, for [problem]. Asking again starts over. */
+    fun installFailed(problem: String) {
+        val update = offered() ?: return
+        _state.value = UpdateState.Failed(update, problem)
     }
 
     private fun offered(): AppUpdate? = _state.value.offered
@@ -145,18 +169,40 @@ class AppUpdates(
             // Release manifests give an absolute address; a bare name resolves against the address the
             // manifest was finally served from, which for GitHub is a signed asset address that refuses it.
             val apkUrl = response.request.url.resolve(apk)?.toString() ?: return null
-            return AppUpdate(versionCode, versionName, apkUrl, sha256, size)
+            // Without a usable profile the build still installs; the app is compiled later instead.
+            val dexMetadata = run {
+                val url = (body["dm"] as? String)?.let { response.request.url.resolve(it) }?.toString() ?: return@run null
+                val dmSha256 = (body["dmSha256"] as? String)?.lowercase()?.takeIf { it.matches(SHA256) } ?: return@run null
+                val dmSize = (body["dmSize"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return@run null
+                DexMetadata(url, dmSha256, dmSize)
+            }
+            return AppUpdate(versionCode, versionName, apkUrl, sha256, size, dexMetadata)
         }
     }
 
     /** [update]'s APK in [downloads], downloaded unless a whole, verified copy is already there. */
-    private fun download(update: AppUpdate): File {
-        val apk = apkFile(update)
-        if (apk.length() == update.size && sha256(apk) == update.sha256) return apk
+    private fun download(update: AppUpdate): File =
+        download(update.apkUrl, update.sha256, update.size, apkFile(update)) { downloaded ->
+            _state.value = UpdateState.Downloading(update, downloaded)
+        }
+
+    /** [update]'s dex metadata, or null when it has none or it didn't download: installing goes on without it. */
+    private fun downloadDexMetadata(update: AppUpdate): File? {
+        val dm = update.dexMetadata ?: return null
+        return try {
+            download(dm.url, dm.sha256, dm.size, dmFile(update)) {}
+        } catch (e: IOException) {
+            null
+        }
+    }
+
+    /** The file at [url] as [file], downloaded unless a whole, verified copy is already there; [progress] follows the bytes. */
+    private fun download(url: String, expectedSha256: String, size: Long, file: File, progress: (Long) -> Unit): File {
+        if (file.length() == size && sha256(file) == expectedSha256) return file
         downloads.mkdirs()
-        val partial = File(downloads, "${apk.name}.part")
-        _state.value = UpdateState.Downloading(update, 0)
-        http.newCall(Request.Builder().url(update.apkUrl.toHttpUrl()).build()).execute().use { response ->
+        val partial = File(downloads, "${file.name}.part")
+        progress(0)
+        http.newCall(Request.Builder().url(url.toHttpUrl()).build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("The download answered HTTP ${response.code}.")
             val digest = MessageDigest.getInstance("SHA-256")
             var downloaded = 0L
@@ -170,26 +216,28 @@ class AppUpdates(
                         output.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                         downloaded += read
-                        if (downloaded > update.size) throw IOException("The download is larger than the manifest says.")
+                        if (downloaded > size) throw IOException("The download is larger than the manifest says.")
                         // Often enough for a smooth bar, not on every buffer.
-                        if (downloaded - lastShown >= update.size / 200) {
+                        if (downloaded - lastShown >= size / 200) {
                             lastShown = downloaded
-                            _state.value = UpdateState.Downloading(update, downloaded)
+                            progress(downloaded)
                         }
                     }
                 }
             }
-            if (downloaded != update.size) throw IOException("The download stopped at $downloaded of ${update.size} bytes.")
-            if (hex(digest.digest()) != update.sha256) {
+            if (downloaded != size) throw IOException("The download stopped at $downloaded of $size bytes.")
+            if (hex(digest.digest()) != expectedSha256) {
                 partial.delete()
                 throw IOException("The download doesn't match the manifest's SHA-256.")
             }
         }
-        if (!partial.renameTo(apk)) throw IOException("Couldn't keep the download.")
-        return apk
+        if (!partial.renameTo(file)) throw IOException("Couldn't keep the download.")
+        return file
     }
 
     private fun apkFile(update: AppUpdate) = File(downloads, "update-${update.versionCode}.apk")
+
+    private fun dmFile(update: AppUpdate) = File(downloads, "update-${update.versionCode}.dm")
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

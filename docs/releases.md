@@ -3,9 +3,10 @@
 The app updates itself (ADR 0006, ADR 0010). On every push to main, the **Release** workflow (`.github/workflows/release.yml`) runs the tests, builds the release APK signed with the release key, and publishes a GitHub release `build-<versionCode>` holding:
 
 - `better-iptv-0.1.<versionCode>.apk`
-- `update.json`: `{"versionCode": 95, "versionName": "0.1.95", "apk": "https://github.com/victortrinh/better-iptv/releases/download/build-95/better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567}`
+- `better-iptv-0.1.<versionCode>.dm`: the build's Baseline Profile as dex metadata, in Android 9–11's format (#63)
+- `update.json`: `{"versionCode": 95, "versionName": "0.1.95", "apk": "https://github.com/victortrinh/better-iptv/releases/download/build-95/better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567, "dm": "https://…/better-iptv-0.1.95.dm", "dmSha256": "…", "dmSize": 6419}`
 
-Release builds read `https://github.com/victortrinh/better-iptv/releases/latest/download/update.json` on launch (`updateUrl` in `gradle.properties`). When it names a higher versionCode, the app shows "Update available" before anything else. "Update now" downloads the APK, checks its size and SHA-256 against `update.json`, and opens Android's installer; "Later" puts it away until the next launch, and Settings → App version offers it too. The first time, Android has to allow the app to install apps, and the app walks the Viewer there.
+Release builds read `https://github.com/victortrinh/better-iptv/releases/latest/download/update.json` on launch (`updateUrl` in `gradle.properties`). When it names a higher versionCode, the app shows "Update available" before anything else. "Update now" downloads the APK and the `.dm`, checks their sizes and SHA-256 against `update.json`, and hands both to Android's installer in an install session, which asks the Viewer to confirm. On Android 9–11 (Fire OS 7 and 8) the `.dm` has Android compile the app at install, so the first scroll after an update keeps up instead of waiting for Fire OS's idle-time compile; a `.dm` that doesn't download or match is left out and the APK installs alone. "Later" puts it away until the next launch, and Settings → App version offers it too. The first time, Android has to allow the app to install apps, and the app walks the Viewer there.
 
 Debug and benchmark builds don't check. They are a separate app, `dev.betteriptv.debug` ("Zugig debug"), signed with the public debug key.
 
