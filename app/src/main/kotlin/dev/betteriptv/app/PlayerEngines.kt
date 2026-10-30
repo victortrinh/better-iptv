@@ -37,6 +37,7 @@ import dev.betteriptv.core.RememberedTracks
 import dev.betteriptv.core.Track
 import dev.betteriptv.core.TrackChoice
 import dev.betteriptv.core.frameRateOf
+import dev.betteriptv.core.vlcNamedTrack
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -399,6 +400,8 @@ class VlcEngine(
     @Volatile private var pausable = true
     @Volatile private var shown = false
     @Volatile private var known = emptyList<IMedia.Track>()
+    @Volatile private var audioTracks = emptyList<VlcTrack>()
+    @Volatile private var subtitleTracks = emptyList<VlcTrack>()
     @Volatile private var audioId = -1
     @Volatile private var spuId = -1
 
@@ -471,26 +474,25 @@ class VlcEngine(
 
     override val tracks: FileTracks?
         get() {
-            val all = known
-            val audio = all.filter { it.type == IMedia.Track.Type.Audio }
+            val audio = audioTracks
             if (audio.isEmpty()) return null
-            val subtitles = all.filter { it.type == IMedia.Track.Type.Text }
+            val subtitles = subtitleTracks
             return FileTracks(
-                audio.map { Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
-                subtitles.map(::vlcSubtitles),
+                audio.map { it.track },
+                subtitles.map { it.track },
                 audio.indexOfFirst { it.id == audioId }.takeIf { it >= 0 },
                 subtitles.indexOfFirst { it.id == spuId }.takeIf { it >= 0 },
             )
         }
 
     override fun chooseAudio(index: Int) {
-        val id = known.filter { it.type == IMedia.Track.Type.Audio }.getOrNull(index)?.id ?: return
+        val id = audioTracks.getOrNull(index)?.id ?: return
         audioId = id
         onVlcThread { player.setAudioTrack(id) }
     }
 
     override fun chooseSubtitles(index: Int?) {
-        val id = index?.let { known.filter { it.type == IMedia.Track.Type.Text }.getOrNull(it)?.id } ?: -1
+        val id = index?.let { subtitleTracks.getOrNull(it)?.id } ?: -1
         spuId = id
         onVlcThread { player.setSpuTrack(id) }
     }
@@ -561,23 +563,38 @@ class VlcEngine(
 
     /** Notes the file's Tracks and which are on, for the overlay; on LibVLC's thread. */
     private fun readTracks() {
-        known = mediaTracks()
+        val media = mediaTracks()
+        known = media
+        val audio = media.filter { it.type == IMedia.Track.Type.Audio }
+        if (audio.isNotEmpty()) {
+            audioTracks = audio.map { VlcTrack(it.id, Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 })) }
+            subtitleTracks = media.filter { it.type == IMedia.Track.Type.Text }.map { VlcTrack(it.id, vlcSubtitles(it)) }
+        } else {
+            // A live Channel's stream: LibVLC lists its sound and closed captions only as the player's, by name.
+            audioTracks = player.audioTracks.named()
+            subtitleTracks = player.spuTracks.named()
+        }
         audioId = player.audioTrack
         spuId = player.spuTrack
     }
 
+    private fun Array<MediaPlayer.TrackDescription>?.named() =
+        orEmpty().filter { it.id >= 0 }.mapNotNull { description -> vlcNamedTrack(description.name)?.let { VlcTrack(description.id, it) } }
+
     /**
      * Applies the [plan]'s Track choice, and keeps what the file holds so Playback Confirms the
-     * Version; false while VLC doesn't know the file's audio Tracks yet. On LibVLC's thread.
+     * Version; false while VLC doesn't know the file's audio Tracks yet, or a live Channel's closed
+     * captions the Viewer last picked: VLC finds those in the picture a moment after the sound.
+     * On LibVLC's thread.
      */
     private fun chooseTracks(): Boolean {
-        val tracks = known
-        val audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
-        val subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }
+        val audio = audioTracks
+        val subtitles = subtitleTracks
         if (audio.isEmpty()) return false
-        seen = vlcContents(tracks)
+        seen = vlcContents(known)
+        val remembered = remembered()
         // VLC decodes every format itself, so its Tracks' formats don't change the choice.
-        val choice = plan.chooseTracks(audio.map { Track(it.language) }, subtitles.map(::vlcSubtitles), device, remembered())
+        val choice = plan.chooseTracks(audio.map { it.track }, subtitles.map { it.track }, device, remembered)
         choice.audio?.let {
             player.setAudioTrack(audio[it].id)
             audioId = audio[it].id
@@ -585,7 +602,7 @@ class VlcEngine(
         spuId = choice.subtitle?.let { subtitles[it].id } ?: -1
         player.setSpuTrack(spuId)
         chosen.value = choice
-        return true
+        return !(plan.live && remembered.closedCaptions && choice.subtitle == null)
     }
 
     override suspend fun release() {
@@ -604,6 +621,9 @@ class VlcEngine(
         calls.shutdown()
     }
 }
+
+/** A Track VLC plays, by the id its player knows it by. */
+private class VlcTrack(val id: Int, val track: Track)
 
 /** How far the position moves on with the clock past LibVLC's last report: no further than its reports come. */
 private const val MAX_TIME_AHEAD = 1_000L
