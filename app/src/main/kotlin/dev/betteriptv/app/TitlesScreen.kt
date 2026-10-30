@@ -170,8 +170,10 @@ private fun Context.describe(status: SyncStatus): String = when (status) {
     SyncStatus.NeverSynced -> getString(R.string.sync_never)
     is SyncStatus.Running -> running(status)
     is SyncStatus.Synced -> synced(status.last)
-    is SyncStatus.Matching -> synced(status.last) + " " +
-        resources.getQuantityString(R.plurals.sync_matching, status.of, count(status.asked), count(status.of))
+    is SyncStatus.Matching -> synced(status.last) + " " + (
+        status.of?.let { resources.getQuantityString(R.plurals.sync_matching, it, count(status.asked), count(it)) }
+            ?: getString(R.string.sync_matching_start)
+        )
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
 }

@@ -1,5 +1,7 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -78,6 +80,21 @@ class SyncProgressTest {
         assertEquals(listOf(SyncStatus.Matching(synced, 0, 60), SyncStatus.Matching(synced, 25, 60), SyncStatus.Matching(synced, 50, 60)), atMatch)
         assertEquals(60, finished.last.rematchedListings)
         assertEquals(finished, library.syncStatus.value)
+    }
+
+    @Test fun `from the moment the new catalog shows, the status says names are being Matched until the Titles regroup`() = runBlocking {
+        serveSuspects(60)
+        val seen = CopyOnWriteArrayList<SyncStatus>()
+        val watching = launch(Dispatchers.Unconfined) { library.syncStatus.collect { seen += it } }
+
+        val finished = library.sync()
+        watching.cancel()
+
+        // A first Sync: every status carrying a catalog comes once the new one shows.
+        val withCatalog = seen.filter { it.last != null }
+        assertEquals(SyncStatus.Matching(withCatalog.first().last!!, 0, null), withCatalog.first())
+        assertTrue(withCatalog.dropLast(1).all { it is SyncStatus.Matching })
+        assertEquals(finished, withCatalog.last())
     }
 
     @Test fun `when the cloud can't answer, the status goes back to the finished Sync`() = runBlocking {

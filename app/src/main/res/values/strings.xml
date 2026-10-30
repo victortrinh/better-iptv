@@ -59,6 +59,7 @@
         <item quantity="one">Matching %1$s of %2$s name; titles regroup when it\'s done.</item>
         <item quantity="other">Matching %1$s of %2$s names; titles regroup when it\'s done.</item>
     </plurals>
+    <string name="sync_matching_start">Finding names to match; titles regroup when it\'s done.</string>
     <string name="sync_done">Synced %1$s in %2$s s.</string>
     <string name="sync_failed">Sync failed: %1$s Showing the catalog from %2$s.</string>
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>

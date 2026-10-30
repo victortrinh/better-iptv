@@ -42,6 +42,7 @@
         <item quantity="many">Correspondance de %1$s noms sur %2$s ; les titres seront regroupés à la fin.</item>
         <item quantity="other">Correspondance de %1$s noms sur %2$s ; les titres seront regroupés à la fin.</item>
     </plurals>
+    <string name="sync_matching_start">Recherche des noms à faire correspondre ; les titres seront regroupés à la fin.</string>
     <string name="sync_done">Synchronisé %1$s en %2$s s.</string>
     <string name="sync_failed">Échec de la synchronisation : %1$s Affichage du catalogue synchronisé %2$s.</string>
     <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
