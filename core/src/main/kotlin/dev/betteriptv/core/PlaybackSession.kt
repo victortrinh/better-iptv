@@ -21,16 +21,18 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
- * How long a Version has to start before its next Backup is tried. Through the relay it counts from
- * the Provider's latest answer instead, up to [RELAYED_START_TIMEOUTS] times it in all.
+ * How long a Version has to start before its next Backup is tried. It counts from the Provider's
+ * latest answer instead, up to [ANSWERED_START_TIMEOUTS] times it in all.
  */
 internal val START_TIMEOUT = 8.seconds
 
 /**
  * VLC opens several requests one after another before its picture starts, ~1.5 s each through the
- * relay, so a working file can take ~12 s on the stick. While the Provider keeps answering, it may.
+ * relay, so a working file can take ~12 s on the stick. Media3 does too for an MP4 whose index is
+ * at its end: it reads the start, then the whole index from the end, then goes back for the picture.
+ * While the Provider keeps answering, it may.
  */
-private const val RELAYED_START_TIMEOUTS = 4
+private const val ANSWERED_START_TIMEOUTS = 4
 
 /** Buffering this many times within [BUFFERING_WINDOW] brings the suggestion of a lower Version. */
 private const val BUFFERING_REPEATS = 3
@@ -77,6 +79,12 @@ interface PlayerEngine {
      * [release]s the engine afterwards.
      */
     suspend fun play(location: String, from: Long, events: (PlayerEvent) -> Unit)
+
+    /**
+     * When the Provider last sent the engine some of the file, or null before it first did. Through a
+     * relay, the relay knows instead.
+     */
+    val answeredAt: TimeSource.Monotonic.ValueTimeMark? get() = null
 
     /** What the engine found in the file once it opened it, so Playback Confirms the Version; null until then. */
     val seen: FileContents? get() = null
@@ -257,15 +265,15 @@ class PlaybackSession internal constructor(
     }
 
     /**
-     * Returns once an engine given the file at [opened] has had its time to start: the start timeout,
-     * or through a [relay] the start timeout since the Provider last answered, up to the limit.
+     * Returns once [player], given the file at [opened], has had its time to start: the start timeout
+     * since the Provider last answered it (through a [relay], answered the relay), up to the limit.
      */
-    private suspend fun startDeadline(opened: TimeSource.Monotonic.ValueTimeMark, relay: StreamRelay?) {
-        val limit = opened + startTimeout * RELAYED_START_TIMEOUTS
+    private suspend fun startDeadline(player: PlayerEngine, opened: TimeSource.Monotonic.ValueTimeMark, relay: StreamRelay?) {
+        val limit = opened + startTimeout * ANSWERED_START_TIMEOUTS
         var from = opened
         while (true) {
             delay(minOf(from + startTimeout, limit) - TimeSource.Monotonic.markNow())
-            val answered = relay?.answeredAt
+            val answered = if (relay != null) relay.answeredAt else player.answeredAt
             if (answered == null || answered <= from || limit.hasPassedNow()) return
             from = answered
         }
@@ -293,7 +301,7 @@ class PlaybackSession internal constructor(
                 Outcome.Dead
             }
         }
-        val deadline = async { startDeadline(opened, relay) }
+        val deadline = async { startDeadline(player, opened, relay) }
         val resumable = plan.resumable
         if (resumable != null) launch {
             while (true) {
