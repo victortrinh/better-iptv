@@ -313,6 +313,9 @@ class SearchTest {
 
         assertTrue(results.movies.isNotEmpty())
         // The stick is several times slower than a laptop: a keystroke must stay well under a second there.
-        assertTrue("searched in $searched ms", searched < 300)
+        // A laptop searches in about 80 ms. GitHub's runners usually take 130 to 160 ms, but a slow one
+        // reached 320 ms even at best of 3, so CI gets about 5 times its usual time: still a real slowdown.
+        val limit = if (System.getenv("CI") != null) 750 else 300
+        assertTrue("searched in $searched ms, over $limit ms", searched < limit)
     }
 }
