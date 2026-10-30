@@ -133,7 +133,7 @@ private fun Root(app: BetterIptvApp) {
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
                     SearchScreen(
-                        app.library, query, { query = it }, contentLanguages, appLanguage,
+                        app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage,
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(-1, it) },
                         onWatch = watch,
