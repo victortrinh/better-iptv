@@ -192,7 +192,7 @@ class PlaybackSession internal constructor(
                 tried = engine
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
-                        plan.titleId?.let { withContext(Dispatchers.IO) { library.finished(it, plan.episode) } }
+                        if (!plan.live) withContext(Dispatchers.IO) { library.finished(plan) }
                         _state.value = PlaybackState.Ended
                         return
                     }
@@ -250,7 +250,7 @@ class PlaybackSession internal constructor(
             } finally {
                 resumeAt = player.position
                 // A quick write, made even while the Viewer leaving cancels playback.
-                plan.titleId?.let { library.saveProgress(it, resumeAt, player.duration, plan.episode) }
+                if (!plan.live) library.saveProgress(plan, resumeAt, player.duration)
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
                 // A Channel's stream changes as it goes: there is no file to Confirm.
@@ -304,13 +304,12 @@ class PlaybackSession internal constructor(
             }
         }
         val deadline = async { startDeadline(player, opened, relay) }
-        val resumable = plan.titleId
-        if (resumable != null) launch {
+        if (!plan.live) launch {
             while (true) {
                 delay(RECORD_EVERY)
                 val position = player.position
                 val duration = player.duration
-                withContext(Dispatchers.IO) { library.saveProgress(resumable, position, duration, plan.episode) }
+                withContext(Dispatchers.IO) { library.saveProgress(plan, position, duration) }
             }
         }
         if (plan.episode != null) launch {

@@ -479,11 +479,16 @@ class Library private constructor(
      * A Show's Episodes, from the Provider's show details of each of its Versions (API calls, a
      * few at a time, never a stream), merged by season and episode number. Details are kept on the
      * device and asked again only once the Provider changes that Version's Show; when it can't be
-     * reached, the details kept from before stand. Null for a Movie, or a Show the catalog doesn't have.
+     * reached, the details kept from before stand. The Episodes TMDB lists as not aired yet that no
+     * Version has are added, named in [appLanguage], unless the cloud can't say right now. Each
+     * Episode has how far the Viewer got in it, and [ShowEpisodes.next] is the one to watch next.
+     * Null for a Movie, or a Show the catalog doesn't have.
      */
-    suspend fun episodes(id: TitleId, contentLanguages: List<String>): ShowEpisodes? = withContext(Dispatchers.IO) {
+    suspend fun episodes(id: TitleId, contentLanguages: List<String>, appLanguage: String = "en"): ShowEpisodes? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Show) return@withContext null
         val title = store.title(id) ?: return@withContext null
+        // Asked beside the Provider, which takes about a second a show Listing.
+        val upcoming = async { upcoming(id, appLanguage) }
         val kept = store.showDetails(title.listings.map { it.id })
         val now = Instant.now()
         val read = kept.mapValuesTo(HashMap()) { it.value.episodes }
@@ -514,10 +519,20 @@ class Library private constructor(
             }
         }
         val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }
-        ShowEpisodes(
-            mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })),
-            unreadVersions = title.listings.count { it.id !in read },
-        )
+        val played = store.episodeProgress(id)
+        val merged = mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val seasons = withUpcomingAndProgress(merged, upcoming.await(), played, LocalDate.now())
+        ShowEpisodes(seasons, unreadVersions = title.listings.count { it.id !in read }, next = nextEpisode(seasons, played))
+    }
+
+    /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
+    private fun upcoming(id: TitleId, appLanguage: String): List<UpcomingEpisode> {
+        if (cloud == null || id !is TitleId.Tmdb || !canAskCloud()) return emptyList()
+        return try {
+            cloud.upcoming(id.tmdbId, primaryLanguage(appLanguage))
+        } catch (e: CloudException) {
+            emptyList()
+        }
     }
 
     /**
@@ -541,34 +556,11 @@ class Library private constructor(
 
     /**
      * What playing a Show's [episode] starts: its Best playable Version, chosen as a Movie's is, from
-     * the Episodes [episodes] read before; it starts where the Viewer stopped in it, unless they
-     * finished it. Null for a Movie, or when the Show has no such Episode or no Version of it the
-     * device can display.
+     * the Episodes [episodes] read before; it starts where the Viewer stopped, unless they finished it. Null for a Movie, or when the
+     * Show has no such Episode or no Version of it the device can display.
      */
     suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? =
         withContext(Dispatchers.IO) { episodePlans(id, contentLanguages, device, qualityCap)?.get(episode)?.invoke() }
-
-    /**
-     * What a Show's Play button starts: the Episode the Viewer last stopped in, from where they
-     * stopped; once they finished it, the next one the device can play; and the first one when they
-     * never played the Show or finished its last Episode. Null for a Movie, or when no Episode read
-     * before has a Version the device can display.
-     */
-    suspend fun upNext(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
-        val plans = episodePlans(id, contentLanguages, device, qualityCap) ?: return@withContext null
-        val last = store.episodeProgress(id).firstOrNull()
-        val next = when {
-            last == null -> null
-            !last.watched -> plans[last.episode]?.invoke()
-            else -> plans.tailMap(last.episode).entries.asSequence().filter { it.key != last.episode }.firstNotNullOfOrNull { it.value() }
-        }
-        next ?: plans.values.firstNotNullOfOrNull { it() }
-    }
-
-    /** Where the Viewer stopped in each Episode of Show [id] they played, by Episode. */
-    suspend fun episodeProgress(id: TitleId): Map<EpisodeNumber, EpisodeProgress> = withContext(Dispatchers.IO) {
-        store.episodeProgress(id).associate { it.episode to EpisodeProgress(it.position, it.duration, it.watched) }
-    }
 
     /**
      * What to offer once [plan]'s Episode ends: the Show's next Episode the device can play, the next
@@ -681,22 +673,32 @@ class Library private constructor(
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
-     * doesn't know it) in [id], or in its [episode] for a Show. In its credits ([inCredits]) the Movie
-     * or Episode counts as watched, and under a minute in nothing is recorded, so a Title opened by
-     * mistake doesn't land in Continue watching.
+     * doesn't know it) in [id]. In its credits ([inCredits]) the Title counts as watched, and under a minute
+     * in nothing is recorded, so a Title opened by mistake doesn't land in Continue watching.
      */
-    internal fun saveProgress(id: TitleId, position: Long, duration: Long?, episode: EpisodeNumber? = null) {
+    internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        val at = Instant.now()
-        if (episode != null) store.saveEpisodeProgress(id, episode, if (watched) 0 else position, duration, watched, at)
-        else store.saveProgress(id, if (watched) 0 else position, duration, watched, at)
+        store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
     }
 
-    /** Records that the Viewer played [id], or its [episode] for a Show, to its end. */
-    internal fun finished(id: TitleId, episode: EpisodeNumber? = null) {
-        if (episode != null) store.saveEpisodeProgress(id, episode, 0, null, watched = true, Instant.now())
-        else store.saveProgress(id, 0, null, watched = true, Instant.now())
+    /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
+    internal fun saveProgress(plan: PlayPlan, position: Long, duration: Long?) {
+        val id = plan.titleId ?: return
+        val episode = plan.episode ?: return saveProgress(id, position, duration)
+        val watched = inCredits(position, duration)
+        if (!watched && position < MIN_RESUME_POSITION) return
+        store.saveEpisodeProgress(id, episode, if (watched) 0 else position, duration, watched, Instant.now())
+    }
+
+    /** Records that the Viewer played [id] to its end. */
+    internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+
+    /** Records that the Viewer played what [plan] plays to its end. */
+    internal fun finished(plan: PlayPlan) {
+        val id = plan.titleId ?: return
+        val episode = plan.episode ?: return finished(id)
+        store.saveEpisodeProgress(id, episode, 0, null, watched = true, Instant.now())
     }
 
     /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */

@@ -86,7 +86,6 @@ data class PlayPlan(
     /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
     val live: Boolean get() = titleId == null
 
-
     /** This plan from the beginning, for Restart. Where the Viewer stopped stays kept until they pass the first minute. */
     fun fromStart(): PlayPlan = copy(from = 0)
 

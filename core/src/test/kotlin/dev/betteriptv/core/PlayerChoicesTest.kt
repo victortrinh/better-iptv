@@ -183,52 +183,15 @@ class PlayerChoicesTest {
         job.cancelAndJoin()
     }
 
-    @Test fun `a Show the Viewer never played plays its first Episode`() = runBlocking {
-        episodePlan(1, 1)
-
-        val next = library.upNext(chelseaDetective, english, fullHdTv)!!
-        assertEquals(EpisodeNumber(1, 1), next.episode)
-        assertEquals(0L, next.from)
-        assertNull(library.upNext(movie, english, fullHdTv))
-    }
-
-    @Test fun `an Episode resumes where the Viewer stopped, and the Show's Play continues it`() = runBlocking {
+    @Test fun `Play says how far in the Viewer stopped, for a Movie and an Episode`() = runBlocking {
         stopAt(episodePlan(1, 2), 12 * 60_000L)
 
-        assertEquals(12 * 60_000L, episodePlan(1, 2).from)
-        val next = library.upNext(chelseaDetective, english, fullHdTv)!!
-        assertEquals(EpisodeNumber(1, 2), next.episode)
-        assertEquals(12 * 60_000L, next.from)
-        assertEquals(12f / 45, next.progress!!, 0.001f)
-        assertEquals(EpisodeProgress(12 * 60_000L, 45 * 60_000L, watched = false), library.episodeProgress(chelseaDetective)[EpisodeNumber(1, 2)])
-        // Another Episode starts from its beginning.
-        assertEquals(0L, episodePlan(1, 1).from)
-        // A Show's Episodes never land in Continue watching, which holds Movies.
-        assertEquals(emptyList<InProgress>(), library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().flatMap { it.titles })
-    }
-
-    @Test fun `once the Viewer finishes an Episode, the Show's Play moves on to the next one, from its start`() = runBlocking {
-        stopAt(episodePlan(1, 2), 12 * 60_000L)
-        stopAt(episodePlan(1, 2), 42 * 60_000L)
-
-        val next = library.upNext(chelseaDetective, english, fullHdTv)!!
-        assertEquals(EpisodeNumber(1, 3), next.episode)
-        assertEquals(0L, next.from)
-        assertEquals(0L, episodePlan(1, 2).from)
-        assertEquals(true, library.episodeProgress(chelseaDetective)[EpisodeNumber(1, 2)]?.watched)
-    }
-
-    @Test fun `playing an Episode to its end moves the Show's Play on too, and after the last Episode it starts over`() = runBlocking {
-        val seasons = library.run { sync(); episodes(chelseaDetective, english)!!.seasons }
-        val last = seasons.last().episodes.last()
-        val player = ScriptedPlayer(provider)
-        val session = library.playback(episodePlan(last.season, last.number), player.engines)
-        val job = launch { session.play() }
-        withTimeout(5_000) { session.state.first { it is PlaybackState.Playing } }
-        player.end()
-        job.join()
-
-        assertEquals(EpisodeNumber(1, 1), library.upNext(chelseaDetective, english, fullHdTv)?.episode)
+        assertEquals(12f / 45, episodePlan(1, 2).progress!!, 0.001f)
+        assertNull(episodePlan(1, 1).progress)
+        syncMovies()
+        stopAt(library.playPlan(movie, english, fullHdTv)!!, 30 * 60_000L, duration = 120 * 60_000L)
+        assertEquals(0.25f, library.playPlan(movie, english, fullHdTv)!!.progress!!, 0.001f)
+        assertEquals(0.25f, library.chosenPlayPlan(movie, listingId = 1, english)!!.progress!!, 0.001f)
     }
 
     @Test fun `an Episode says when its credits begin, and seeking back out of them takes it back`() = runBlocking {

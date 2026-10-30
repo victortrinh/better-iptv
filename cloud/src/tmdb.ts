@@ -58,6 +58,32 @@ export async function fetchTitle(env: Env, key: TitleKey, language: string): Pro
   return read(key, language, (await response.json()) as TmdbTitle);
 }
 
+/** An Episode TMDB lists as not aired yet: its numbers, its air date (`YYYY-MM-DD`) and its name, when TMDB has one. */
+export interface UpcomingEpisode {
+  season: number;
+  episode: number;
+  airDate: string;
+  name: string | null;
+}
+
+/**
+ * The Episodes of Show [tmdbId] from the next one TMDB says airs on, to the end of its season, with
+ * names in [language] (ISO 639-1): the Show's details, then that season's. Empty when nothing is to
+ * air, NOT_FOUND when TMDB has no such Show.
+ */
+export async function fetchUpcoming(env: Env, tmdbId: number, language: string): Promise<UpcomingEpisode[] | typeof NOT_FOUND> {
+  const show = await get(env, `tv/${tmdbId}`, { language });
+  if (show === NOT_FOUND) return NOT_FOUND;
+  const next = ((await show.json()) as { next_episode_to_air?: TmdbEpisode | null }).next_episode_to_air;
+  if (!next?.air_date) return [];
+  const season = await get(env, `tv/${tmdbId}/season/${next.season_number}`, { language });
+  // A season TMDB can't find (just announced) still has the next Episode.
+  const episodes = season === NOT_FOUND ? [next] : (((await season.json()) as { episodes?: TmdbEpisode[] }).episodes ?? []);
+  return episodes
+    .filter((e) => e.air_date && e.air_date >= next.air_date! && e.episode_number >= next.episode_number)
+    .map((e) => ({ season: next.season_number, episode: e.episode_number, airDate: e.air_date!, name: e.name?.trim() || null }));
+}
+
 /** One result of TMDB's search: its name in the requested language, as released, and its year. */
 export interface Found {
   tmdbId: number;
@@ -203,6 +229,14 @@ interface TmdbMultiResult {
 interface TmdbCredit {
   id: number;
   media_type?: string;
+}
+
+/** The parts of a TMDB Episode the cloud uses. */
+interface TmdbEpisode {
+  season_number: number;
+  episode_number: number;
+  air_date?: string | null;
+  name?: string;
 }
 
 /** The parts of TMDB's movie and TV details responses the app uses. */

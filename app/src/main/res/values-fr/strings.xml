@@ -158,6 +158,7 @@
     </plurals>
     <string name="episode_number">Épisode %1$d</string>
     <string name="episode_named">%1$d. %2$s</string>
+    <string name="episode_available">Disponible le %1$s</string>
     <string name="other_languages">Autres langues</string>
     <string name="other_languages_show">Afficher %1$d</string>
     <string name="other_languages_hide">Masquer</string>

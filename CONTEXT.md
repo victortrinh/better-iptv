@@ -53,7 +53,7 @@ A Title made of seasons of Episodes.
 _Avoid_: Series, TV show
 
 **Episode**:
-One episode of a Show, identified by season and episode number. Where the Viewer stopped in it is kept with its Show, not in Continue watching. A Show's Play continues the Episode they last stopped in, or the one after it once it is Watched, and otherwise plays the first.
+One episode of a Show, identified by season and episode number. A Show's next Episode is the one the Viewer stopped in, else the one after the one they last Watched, else the first: its details' Play plays it ("Continue S1 E6"), and Down from Play lands on it. An Episode TMDB lists as airing later that no Version has yet is shown with its air date and can't be played.
 
 **Credits**:
 The end of a Movie's or Episode's file: its last 10%, or its last 10 minutes when that is less (ADR 0008). Providers mark none, so this rule stands in: from here a Movie is Watched, and an Episode offers the next one.
@@ -184,7 +184,7 @@ The Movies the Viewer stopped partway through and hasn't Watched, last played fi
 _Avoid_: Resume list, in progress
 
 **Watched**:
-A Movie or Episode the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched Movie or Episode from the beginning.
+A Movie or Episode the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched one from the beginning, and any other from where the Viewer stopped. Episodes stay out of Continue watching.
 _Avoid_: Finished, completed, seen
 
 **New on your service**:
