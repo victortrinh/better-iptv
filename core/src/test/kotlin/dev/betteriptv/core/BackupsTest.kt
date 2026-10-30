@@ -109,6 +109,19 @@ class BackupsTest {
         job.cancelAndJoin()
     }
 
+    @Test fun `Media3 reading an MP4's index from its end for longer than the start timeout still plays the Version`() = runBlocking {
+        syncWithBackups()
+        // The start, the index at the end, then the picture: each request waits 400 ms for its first bytes.
+        player.media3Reads = 3
+        provider.slowStreams += 1
+        provider.slowStreamDelayMillis = 400
+        val (session, job) = play(startTimeout = 700.milliseconds)
+
+        session.awaitPlaying(1)
+        assertEquals(listOf(1L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
     @Test fun `VLC on a Version the Provider stops answering gives way to the next Backup`() = runBlocking {
         syncWithBackups()
         player.vlcReads = 5

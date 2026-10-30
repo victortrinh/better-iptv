@@ -11,6 +11,7 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
+import kotlin.time.TimeSource
 
 /**
  * Player engines that really open each location on the [provider], as the stick's do, and start once
@@ -38,6 +39,12 @@ class ScriptedPlayer(private val provider: FakeProvider) {
      * location doesn't say which.
      */
     @Volatile var vlcReads = 0
+
+    /**
+     * When above 1, the Media3 engine reads this many ranges of the file one after another before its
+     * picture starts, closing each before the next, as it reads an MP4 whose index is at its end.
+     */
+    @Volatile var media3Reads = 1
 
     /** Set when the session asked an engine to play while another still held a file. */
     @Volatile var playedOverAnother = false
@@ -73,6 +80,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         private val requests = CopyOnWriteArrayList<HttpURLConnection>()
         @Volatile private var released = false
         @Volatile override var seen: FileContents? = null
+        @Volatile override var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
         /** Completes with how playing stops: a failure, or null for the file's end. */
         val failure = CompletableDeferred<Throwable?>()
 
@@ -88,12 +96,23 @@ class ScriptedPlayer(private val provider: FakeProvider) {
             thread(isDaemon = true) {
                 try {
                     // Each read opens a new request before the earlier one is closed.
-                    for (read in 0 until if (overlapsRequests) vlcReads else 1) {
+                    val reads = when {
+                        overlapsRequests -> vlcReads
+                        engine == Engine.Media3 -> media3Reads
+                        else -> 1
+                    }
+                    for (read in 0 until reads) {
+                        if (read > 0 && !overlapsRequests) {
+                            // Media3 closes a request before it opens the next, and the Provider sees it go.
+                            requests.forEach(HttpURLConnection::disconnect)
+                            while (provider.openStreamCount > 0) Thread.sleep(10)
+                        }
                         val request = URI(location).toURL().openConnection() as HttpURLConnection
                         if (read > 0) request.setRequestProperty("Range", "bytes=${read * 1_000_000}-")
                         requests += request
                         if (released) return@thread request.disconnect()
                         if (request.responseCode !in 200..299 || request.inputStream.read() < 0) throw IOException("the stream is dead")
+                        answeredAt = TimeSource.Monotonic.markNow()
                     }
                     opened.complete(Unit)
                 } catch (e: Exception) {

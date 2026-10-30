@@ -53,6 +53,7 @@ import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 internal const val PLAYER_TAG = "Player"
 
@@ -130,6 +131,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     @Volatile private var measuredFrameRate: Float? = null
     override val position: Long get() = player.currentPosition
     override val duration: Long? get() = player.duration.takeIf { it > 0 }
+    override val answeredAt get() = requests.answeredAt
     override val isPlaying: Boolean get() = player.playWhenReady
     override val buffered: Long get() = player.bufferedPosition
     private var subtitleView: SubtitleView? = null
@@ -268,10 +270,17 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
 /** Longer than Media3's own read timeout, so a request stuck on a stalled Provider closes first. */
 private val RELEASE_TIMEOUT = 10.seconds
 
-/** Counts the player's open requests to the Provider, so releasing can wait for the last one to close. */
+/**
+ * Counts the player's open requests to the Provider, so releasing can wait for the last one to close,
+ * and notes when the Provider last sent some of the file.
+ */
 @OptIn(UnstableApi::class)
 private class OpenRequests {
     private val open = MutableStateFlow(0)
+
+    /** Set on the loading thread as bytes come in, so a slow start still being read counts as alive. */
+    @Volatile var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
+        private set
 
     fun counting(upstream: DataSource.Factory) = DataSource.Factory { Counted(upstream.createDataSource()) }
 
@@ -288,6 +297,9 @@ private class OpenRequests {
             opened = true
             return upstream.open(dataSpec)
         }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+            upstream.read(buffer, offset, length).also { if (it > 0) answeredAt = TimeSource.Monotonic.markNow() }
 
         override fun close() {
             try {
