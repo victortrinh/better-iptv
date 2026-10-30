@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -107,10 +108,11 @@ fun TitlesScreen(
     }
     val focus = remember(grid) { GridFocus(grid, scope) }
     val context = LocalContext.current
+    val tab = remember { FocusRequester() }
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
-            BrowseTabs(if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab)
+            BrowseTabs(if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab, selectedFocus = tab)
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
                 Spacer(Modifier.width(Spacing.m))
@@ -135,7 +137,7 @@ fun TitlesScreen(
         // The columns share the width between them, so the grid ends at the right margin like it starts at the left.
         LazyVerticalGrid(
             GridCells.Adaptive(Cards.posterWidth),
-            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) },
+            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.backToTab(tab),
             state = grid,
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
