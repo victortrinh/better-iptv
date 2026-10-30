@@ -25,9 +25,13 @@ sealed interface TitleId {
 /**
  * A Title's card. [name], [year] and the [image] (a poster URL) come from TMDB in the App language,
  * falling back to English. Without TMDB metadata (an Unmatched Title, or the cloud out of reach),
- * they come from the [best] Version's Listing name and the Provider's image.
+ * they come from the [best] Version's Listing name and the Provider's image. Home's cards also carry
+ * [about], what the info area under a focused card shows.
  */
-data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes)
+data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null)
+
+/** TMDB's description, genres and runtime of a Title, in the App language, falling back to English. */
+data class TitleAbout(val description: String?, val genres: List<String>, val runtimeMinutes: Int?)
 
 /** A row on the home screen. */
 sealed interface HomeRow {
@@ -45,10 +49,10 @@ sealed interface HomeRow {
 }
 
 /**
- * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, and how far they got
- * (0 to 1), or null when the player didn't know the file's length.
+ * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, how far they got
+ * (0 to 1) and how much is [left], both null when the player didn't know the file's length.
  */
-data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?)
+data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?, val left: Duration? = null)
 
 /**
  * A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the

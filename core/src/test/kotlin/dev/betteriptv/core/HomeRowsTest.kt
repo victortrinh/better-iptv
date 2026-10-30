@@ -8,6 +8,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.time.Duration
 
 /** The home screen's rows, seen through the Library after a Sync, with metadata from the fake Cloud. */
 class HomeRowsTest {
@@ -105,12 +106,26 @@ class HomeRowsTest {
         // What the Viewer started shows whatever its language.
         assertEquals(listOf("Second", "Foreign", "First"), resumes.map { it.title.name })
         assertEquals(listOf(0.5f, null, 0.25f), resumes.map { it.progress })
+        assertEquals(listOf(Duration.ofMinutes(60), null, Duration.ofMinutes(90)), resumes.map { it.left })
         assertEquals("https://image.tmdb.org/t/p/w1280/still-2.jpg", resumes.first().still)
         assertTrue(rows().first() is HomeRow.ContinueWatching)
 
         library.finished(movie(2))
         resumes = rows().filterIsInstance<HomeRow.ContinueWatching>().single().titles
         assertEquals(listOf("Foreign", "First"), resumes.map { it.title.name })
+    }
+
+    @Test fun `a card carries what the info area under it shows`() = runBlocking {
+        syncMovies("EN - Described (2025)" to 1, "EN - Unknown (2025)" to 2)
+        cloud.title(
+            "en",
+            tmdbTitle(1, "Described", descriptions = listOf(Triple("en", "", "A film.")), genres = listOf("Drama"), runtimeMinutes = 95),
+        )
+
+        val cards = rows().filterIsInstance<HomeRow.NewOnYourService>().single().titles.associateBy { it.name }
+        assertEquals(TitleAbout("A film.", listOf("Drama"), 95), cards.getValue("Described").about)
+        // Without TMDB metadata there is nothing to tell.
+        assertEquals(null, cards.getValue("Unknown").about)
     }
 
     @Test fun `without anything started there's no Continue watching row`() = runBlocking {
