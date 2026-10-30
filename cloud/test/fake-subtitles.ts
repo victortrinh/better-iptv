@@ -116,6 +116,8 @@ export class FakeSubtitleServices {
   private async subdlAnswer(url: URL): Promise<Response> {
     if (this.subdlFailWith !== null) return Response.json({ status: false, error: "down" }, { status: this.subdlFailWith });
     if (url.host === "dl.subdl.com") {
+      // Subdl's search gives each zip's url with the caller's key in it.
+      if (url.searchParams.get("api_key") !== "test-subdl-key") return new Response("bad key", { status: 403 });
       const subtitle = this.sd.find((s) => url.pathname === `/subtitle/${s.path}.zip`);
       return subtitle ? new Response(await zip(subtitle.files)) : new Response("gone", { status: 404 });
     }
@@ -126,7 +128,7 @@ export class FakeSubtitleServices {
     const subtitles = this.sd
       .filter((s) => s.tmdbId === tmdbId && languages.includes(s.language))
       .filter((s) => !tv || (s.season === Number(url.searchParams.get("season_number")) && (s.episode === undefined || s.episode === Number(url.searchParams.get("episode_number")))))
-      .map((s) => ({ release_name: s.release, name: `SUBDL::${s.release}.zip`, lang: s.language.toLowerCase(), language: s.language, hi: s.hearingImpaired ?? false, url: `/subtitle/${s.path}.zip` }));
+      .map((s) => ({ release_name: s.release, name: `SUBDL::${s.release}.zip`, lang: s.language.toLowerCase(), language: s.language, hi: s.hearingImpaired ?? false, url: `/subtitle/${s.path}.zip?api_key=${url.searchParams.get("api_key")}` }));
     // Like Subdl, a Title with no subtitles is an error.
     if (subtitles.length === 0) return Response.json({ status: false, error: "can't find movie or tv" });
     return Response.json({ status: true, results: [{ tmdb_id: tmdbId }], subtitles });

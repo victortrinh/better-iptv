@@ -82,6 +82,8 @@ describe("subtitle search", () => {
     expect(subtitles.every((s) => s.language === "fr")).toBe(true);
     expect(subtitles[0].downloads).toBe(900);
     expect(unavailable).toEqual([]);
+    // Subdl's zip urls carry the cloud's key: an offer's id goes to devices, so it must not.
+    expect(subtitles.some((s) => s.id.includes("test-subdl-key"))).toBe(false);
   });
 
   it("asks each service by TMDB ID and, from the cached metadata, IMDb ID, with the cloud's own keys", async () => {
