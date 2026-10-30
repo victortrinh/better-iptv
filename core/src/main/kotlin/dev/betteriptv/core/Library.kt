@@ -96,15 +96,15 @@ class Library private constructor(
      * Listings are Matched by their Provider's TMDB ID, except suspected Mismatches and Listings
      * without one, which are Matched by what the cloud answered about them before. Once the new
      * catalog shows, the cloud is asked about the rest, and the Titles are regrouped by its answers
-     * before this returns (the status shows the Sync finished in the meantime, then how many names
-     * have been asked). While it runs, the status counts the Listings read.
+     * before this returns (meanwhile the status shows the Sync finished and that names are being
+     * Matched, then how many have been asked). While it runs, the status counts the Listings read.
      */
     suspend fun sync(): SyncStatus = syncLock.withLock {
         withContext(Dispatchers.IO) {
             val last = _syncStatus.value.last
             _syncStatus.value = SyncStatus.Running(last)
             val started = System.nanoTime()
-            _syncStatus.value = try {
+            val finished = try {
                 val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
                 client.account()
                 val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
@@ -168,9 +168,12 @@ class Library private constructor(
                 // Anything else (a full disk, say) also leaves the previous catalog in place.
                 SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
-            if (_syncStatus.value is SyncStatus.Synced) {
+            // The new catalog shows from here. When the cloud is about to be asked about its suspects, the
+            // status says so at once, not only once they're found, so Sync now stays off until the Titles regroup.
+            _syncStatus.value = if (finished is SyncStatus.Synced && canAskCloud()) SyncStatus.Matching(finished.last, 0, null) else finished
+            if (finished is SyncStatus.Synced) {
                 catalogGeneration.incrementAndGet()
-                matchByName()
+                matchByName(finished)
                 catalogGeneration.incrementAndGet()
                 prepareSearchInBackground()
             }
@@ -188,9 +191,8 @@ class Library private constructor(
      * Asks the cloud about the stored catalog's suspects it hasn't answered for lately, and regroups
      * the Titles by its answers. Without the cloud, the Provider's IDs stand until the next Sync.
      */
-    private fun matchByName() {
-        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
-        val synced = _syncStatus.value as? SyncStatus.Synced ?: return
+    private fun matchByName(synced: SyncStatus.Synced) {
+        if (cloud == null || !canAskCloud()) return
         try {
             val now = Instant.now()
             val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
@@ -224,6 +226,8 @@ class Library private constructor(
             if (_syncStatus.value is SyncStatus.Matching) _syncStatus.value = synced
         }
     }
+
+    private fun canAskCloud() = cloud != null && !Instant.now().isBefore(cloudRetryAt)
 
     /** How many Listings the movie list holds (Clutter and Sports replays aren't in it). */
     fun movieListingCount(): Int = store.movieListingCount()

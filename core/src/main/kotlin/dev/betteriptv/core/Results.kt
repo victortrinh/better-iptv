@@ -225,9 +225,10 @@ sealed interface SyncStatus {
 
     /**
      * The Sync finished and its catalog shows, and the cloud is being asked about [of] names to Match
-     * suspects, [asked] so far. Their Titles regroup once every name is asked.
+     * suspects, [asked] so far. Their Titles regroup once every name is asked. [of] is null while the
+     * suspects are still being found, which can take half a minute on a full catalog.
      */
-    data class Matching(override val last: CompletedSync, val asked: Int, val of: Int) : SyncStatus
+    data class Matching(override val last: CompletedSync, val asked: Int, val of: Int?) : SyncStatus
 
     /** The Sync failed; the catalog from [last] is still shown. */
     data class Failed(val problem: SyncProblem, override val last: CompletedSync?) : SyncStatus
