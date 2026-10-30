@@ -117,6 +117,31 @@ class SearchTest {
         assertEquals(listOf(TitleId.Tmdb(TitleKind.Movie, 949), TitleId.Tmdb(TitleKind.Movie, 1)), search("heat").movies.map { it.id })
     }
 
+    @Test fun `a whole name ranks before whole words, then words being typed, even when they're more popular`() = runBlocking {
+        // #137: The Chase (1966) has no metadata yet, so nothing tells its popularity.
+        cloud.title("en", tmdbTitle(2, "The Desperate Chase", popularity = 50.0))
+        cloud.title("en", tmdbTitle(3, "The Chaser", popularity = 500.0))
+        cloud.title("en", tmdbTitle(4, "The Chase", popularity = 20.0))
+        syncMovies("EN - The Desperate Chase (2024)" to 2, "EN - The Chaser (2008)" to 3, "EN - The Chase (1994)" to 4, "EN - The Chase (1966)" to 31602)
+
+        assertEquals(listOf(4L, 31602L, 2L, 3L), search("the chase").movies.map { (it.id as TitleId.Tmdb).tmdbId })
+    }
+
+    @Test fun `what TMDB's search finds ranks after the device's whole-word matches`() = runBlocking {
+        cloud.title("en", tmdbTitle(5, "The Bounty Hunter", popularity = 900.0))
+        syncMovies("EN - The Bounty Hunter (2010)" to 5, "EN - The Chase (1966)" to 31602)
+        cloud.search("the chase", titles = listOf(TitleId.Tmdb(TitleKind.Movie, 5) to 900.0, TitleId.Tmdb(TitleKind.Movie, 31602) to 10.0))
+
+        assertEquals(listOf(31602L, 5L), search("the chase").movies.map { (it.id as TitleId.Tmdb).tmdbId })
+    }
+
+    @Test fun `a year tells same-name Titles apart`() = runBlocking {
+        syncMovies("EN - The Chase (1994)" to 4, "EN - The Chase (1966)" to 31602)
+
+        assertEquals(listOf(31602L), search("chase 1966").movies.map { (it.id as TitleId.Tmdb).tmdbId })
+        assertEquals(31602L, (search("the chase 1966").movies.first().id as TitleId.Tmdb).tmdbId)
+    }
+
     @Test fun `results are grouped into Movies and Shows`() = runBlocking {
         syncFixtureWithMetadata()
 

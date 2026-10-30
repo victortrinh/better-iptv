@@ -21,7 +21,8 @@ data class Person(val name: String, val titles: List<TitleSummary>)
  * The catalog's names in memory, built once per catalog and cached metadata: every Listing name of
  * a Title's Versions (cleaned of Prefixes), every name TMDB has for it, and its cast. Names are
  * reduced to words without accents or case, and each distinct word is kept once with the Titles
- * (or people) that have it, so a query only scans the vocabulary, not the catalog.
+ * (or people) that have it, so a query only scans the vocabulary, not the catalog. A Listing name
+ * is also kept with its year, so "chase 1966" tells The Chase (1966) from The Chase (1994).
  */
 internal class SearchIndex private constructor(
     val titles: List<Entry>,
@@ -33,11 +34,16 @@ internal class SearchIndex private constructor(
     /** The Channels' Provider stream ids, in the Provider's order. */
     val channels: LongArray = LongArray(0),
     private val channelWords: Map<String, IntArray> = emptyMap(),
+    /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
+    private val titleNames: LongArray = LongArray(0),
 ) {
     /** One Title: its primary languages of Versions, so Content languages can lead, and TMDB's popularity. */
     class Entry(val id: TitleId, val languages: Set<String>, val popularity: Double)
 
-    /** A match and how close it was: 0 for whole words or words being typed, 1 for a tolerated typo. */
+    /**
+     * A match and how close it was: [WHOLE_WORD], [STARTED_WORD] or a tolerated typo after them. A
+     * Title matches by its [WHOLE_NAME] first, and its words a step after.
+     */
     class Hit(val index: Int, val distance: Int)
 
     private val positions: Map<TitleId, Int> = titles.withIndex().associate { (index, entry) -> entry.id to index }
@@ -45,7 +51,14 @@ internal class SearchIndex private constructor(
     /** Where [id] is in [titles], or null when the catalog has no such Title. */
     fun position(id: TitleId): Int? = positions[id]
 
-    fun findTitles(query: String): List<Hit> = find(query, titleWords)
+    /** Titles with a word matching every word of [query], those with a name of just those words first (#137). */
+    fun findTitles(query: String): List<Hit> {
+        val named = nameKey(words(query))
+        var at = titleNames.binarySearch(named.toLong() shl 32).let { if (it < 0) -it - 1 else it }
+        val whole = HashSet<Int>()
+        while (at < titleNames.size && (titleNames[at] shr 32).toInt() == named) whole += titleNames[at++].toInt()
+        return find(query, titleWords).map { if (it.index in whole) Hit(it.index, WHOLE_NAME) else Hit(it.index, it.distance + 1) }
+    }
 
     fun findPeople(query: String): List<Hit> = find(query, personWords)
 
@@ -81,6 +94,7 @@ internal class SearchIndex private constructor(
         private val personIndex = HashMap<String, Int>()
         private val channels = Postings64()
         private val channelWords = HashMap<String, Postings>()
+        private val titleNames = Postings64()
 
         /** Adds a Title found by [names], with Versions in [languages]. */
         fun title(id: TitleId, names: Collection<String>, languages: Set<String>) {
@@ -108,7 +122,11 @@ internal class SearchIndex private constructor(
 
         /** Postings skip a Title added twice in a row, so a word in several of its names is kept once. */
         private fun addWords(index: Int, names: Collection<String>) {
-            for (name in names) for (word in words(name)) titleWords.getOrPut(word, ::Postings).add(index)
+            for (name in names) {
+                val words = words(name)
+                for (word in words) titleWords.getOrPut(word, ::Postings).add(index)
+                titleNames.add(nameKey(words).toLong() shl 32 or index.toLong())
+            }
         }
 
         /** Adds Channel [id], found by its Provider [name]. */
@@ -126,6 +144,7 @@ internal class SearchIndex private constructor(
             drain(personWords),
             channels.toArray(),
             drain(channelWords),
+            titleNames.toArray().apply { sort() },
         )
 
         /** [words]' postings as arrays, letting go of each list once copied so the heap never holds both. */
@@ -185,6 +204,17 @@ internal class SearchIndex private constructor(
         /** Search needs this many letters: one finds too much to be useful. */
         const val MIN_LETTERS = 2
 
+        /** A Title whose name is just the query's words: "the chase" is The Chase, not The Desperate Chase. */
+        const val WHOLE_NAME = 0
+
+        /** A word typed in full, or every word of a Title's. */
+        const val WHOLE_WORD = 0
+
+        /** A word the Viewer is still typing, or a Title found by TMDB's search alone. */
+        const val STARTED_WORD = 1
+
+        /** A name's words, hashed: two names of the same words have the same key. */
+        private fun nameKey(words: List<String>): Int = words.joinToString(" ").hashCode()
 
         /** [text] as lower-case words without accents: "Pokémon: Detective" is `pokemon`, `detective`. */
         fun words(text: String): List<String> {
@@ -232,12 +262,14 @@ internal class SearchIndex private constructor(
         }
 
         /**
-         * How far [typed] is from the catalog's [word], or null when they don't match. A word being
-         * typed matches the words it starts (distance 0). Longer words tolerate typos: one in four
-         * letters or more, two in eight or more, the first letter always right.
+         * How far [typed] is from the catalog's [word], or null when they don't match: [WHOLE_WORD]
+         * for the same word, [STARTED_WORD] for a word it starts (the Viewer may still be typing it).
+         * Longer words tolerate typos, each a step further: one in four letters or more, two in
+         * eight or more, the first letter always right.
          */
         fun distance(typed: String, word: String): Int? {
-            if (word.startsWith(typed)) return 0
+            if (word == typed) return WHOLE_WORD
+            if (word.startsWith(typed)) return STARTED_WORD
             val allowed = when {
                 typed.length >= 8 -> 2
                 typed.length >= 4 -> 1
@@ -247,7 +279,7 @@ internal class SearchIndex private constructor(
             // The whole word, or its start when the Viewer is still typing it.
             val whole = if (word.length <= typed.length + allowed) editDistance(typed, word, allowed) else Int.MAX_VALUE
             val start = editDistance(typed, word.take(typed.length), allowed)
-            return minOf(whole, start).takeIf { it <= allowed }
+            return minOf(whole, start).takeIf { it <= allowed }?.plus(STARTED_WORD)
         }
 
         /** Optimal string alignment distance (a swap of neighbours is one typo), giving up past [limit]. */
@@ -289,7 +321,10 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
     lap("channels")
     for (kind in TitleKind.entries) {
         store.forEachTitle(kind) { id, listings ->
-            val names = listings.mapTo(HashSet()) { prefixTable.cleanName(it.first).name }
+            val names = listings.flatMapTo(HashSet()) { (name) ->
+                val clean = prefixTable.cleanName(name)
+                listOfNotNull(clean.name, clean.year?.let { "${clean.name} $it" })
+            }
             val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.language(name, category)?.let(::primaryLanguage) }
             builder.title(id, names, languages)
         }
