@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
+import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
@@ -37,6 +40,7 @@ import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.HomeRow
+import dev.betteriptv.core.InProgress
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -205,6 +209,7 @@ fun HomeScreen(
                             onFocused()
                         }
                         val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
+                        val context = LocalContext.current
                         TitleCard(
                             image = rememberArtwork(if (wide) resume?.still ?: title.image else title.image, card = true),
                             name = title.name,
@@ -213,12 +218,29 @@ fun HomeScreen(
                             modifier = Modifier.focusRequester(focus),
                             wide = wide,
                             progress = resume?.progress,
+                            info = remember(title, resume) { context.cardInfo(title, resume) },
                         )
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * What the info area under [title]'s card tells: the time left when the Viewer is in it ([resume]),
+ * else its year, runtime and genres and its description.
+ */
+private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo {
+    val left = resume?.left
+    if (left != null) {
+        // Rounded up, so the last seconds still read "1 min left".
+        val minutes = ((left.toMillis() + 59_999) / 60_000).toInt().coerceAtLeast(1)
+        return CardInfo.InProgress(episode = null, left = getString(R.string.time_left, runtime(minutes)))
+    }
+    val about = title.about
+    val metadata = listOfNotNull(title.year?.toString(), about?.runtimeMinutes?.let(::runtime), about?.genres?.take(2)?.joinToString(", ")?.ifEmpty { null })
+    return CardInfo.About(metadata.joinToString(" · "), about?.description)
 }
 
 private val HomeRow.titles: List<TitleSummary>
