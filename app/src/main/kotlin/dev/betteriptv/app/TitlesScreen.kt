@@ -1,7 +1,10 @@
 package dev.betteriptv.app
 
 import android.content.Context
-import android.text.format.DateUtils
+import android.icu.text.DisplayContext
+import android.icu.text.RelativeDateTimeFormatter
+import android.icu.text.RelativeDateTimeFormatter.RelativeUnit
+import android.icu.util.ULocale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +58,8 @@ import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import java.time.Duration
+import java.time.Instant
 import java.util.Locale
 
 /**
@@ -201,10 +206,28 @@ private fun Context.unknownPrefixes(sync: CompletedSync): String {
     return " " + resources.getQuantityString(R.plurals.sync_unknown_prefixes, prefixes.size, prefixes.joinToString(", ") { it.prefix })
 }
 
-private fun Context.ago(sync: CompletedSync): String {
-    val millis = sync.finishedAt.toEpochMilli()
-    return if (System.currentTimeMillis() - millis < DateUtils.MINUTE_IN_MILLIS) getString(R.string.sync_just_now)
-    else DateUtils.getRelativeTimeSpanString(millis).toString()
+private fun Context.ago(sync: CompletedSync): String = ago(sync.finishedAt, Instant.now())
+
+/**
+ * How long ago a Sync finished, worded to sit mid-sentence: "il y a 5 minutes", not the
+ * capitalised "Il y a 5 minutes" DateUtils gives for the start of one.
+ */
+internal fun Context.ago(then: Instant, now: Instant): String {
+    val elapsed = Duration.between(then, now)
+    val (amount, unit) = when {
+        elapsed < Duration.ofMinutes(1) -> return getString(R.string.sync_just_now)
+        elapsed < Duration.ofHours(1) -> elapsed.toMinutes() to RelativeUnit.MINUTES
+        elapsed < Duration.ofDays(1) -> elapsed.toHours() to RelativeUnit.HOURS
+        elapsed < Duration.ofDays(7) -> elapsed.toDays() to RelativeUnit.DAYS
+        elapsed < Duration.ofDays(30) -> elapsed.toDays() / 7 to RelativeUnit.WEEKS
+        elapsed < Duration.ofDays(365) -> elapsed.toDays() / 30 to RelativeUnit.MONTHS
+        else -> elapsed.toDays() / 365 to RelativeUnit.YEARS
+    }
+    val formatter = RelativeDateTimeFormatter.getInstance(
+        ULocale.forLocale(resources.configuration.locales[0]), null,
+        RelativeDateTimeFormatter.Style.LONG, DisplayContext.CAPITALIZATION_FOR_MIDDLE_OF_SENTENCE,
+    )
+    return formatter.format(amount.toDouble(), RelativeDateTimeFormatter.Direction.LAST, unit)
 }
 
 /** Wide enough for the French first-Sync line on two lines at body size. */
