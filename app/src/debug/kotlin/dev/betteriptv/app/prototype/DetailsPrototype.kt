@@ -66,7 +66,7 @@ fun DetailsPrototype(focusVersions: Boolean) {
                     Text(title.people, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = 4.dp))
                     Spacer(Modifier.height(18.dp))
                     // A Movie the Viewer stopped in: Play names where it continues, the other actions stack under it.
-                    Column(Modifier.width(300.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         PrimaryAction("Continue from 1:02:13", Icons.Filled.PlayArrow, {}, Modifier.focusRequester(play), progress = 0.55f)
                         ActionRow("Restart", Icons.Filled.Refresh, {})
                         ActionRow("Remove from Continue watching", Icons.Filled.Close, {})

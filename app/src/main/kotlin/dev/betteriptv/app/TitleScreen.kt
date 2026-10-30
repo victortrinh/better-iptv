@@ -349,8 +349,8 @@ private fun LazyListScope.episodes(context: Context, episodes: ShowEpisodes?, fi
     }
 }
 
-/** The action list's width: rows of one width, sized for "Retirer de « Reprendre »" and a progress bar beside "Reprendre à 1:02:13". */
-private val ACTIONS_WIDTH = 300.dp
+/** The action list's width: rows of one width, sized for "Remove from Continue watching" and a progress bar beside "Reprendre à 1:02:13". */
+private val ACTIONS_WIDTH = 360.dp
 
 /** The muted line naming the Version Play starts. */
 @Composable
