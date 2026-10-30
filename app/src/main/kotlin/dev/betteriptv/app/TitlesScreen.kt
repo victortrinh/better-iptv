@@ -18,10 +18,12 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +58,17 @@ import java.text.NumberFormat
 import java.util.Locale
 
 /**
+ * What a Titles tab keeps while another screen shows: its scroll position, and how many Titles it
+ * counted last. The count shows until it is read again, so coming back from a Title doesn't lay
+ * the grid out empty, which would put it back at its top (#116).
+ */
+@Stable
+class TitlesState {
+    val grid = LazyGridState()
+    var count by mutableStateOf(0)
+}
+
+/**
  * One card per movie or show Title ([kind], picked with the tabs), newest first, read from the
  * device database a page at a time, with TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
@@ -66,7 +79,7 @@ fun TitlesScreen(
     kind: TitleKind,
     contentLanguages: List<String>,
     appLanguage: String,
-    grid: LazyGridState,
+    state: TitlesState,
     restoreFocus: Int,
     onSyncNow: () -> Unit,
     onTab: (Browse) -> Unit,
@@ -80,7 +93,9 @@ fun TitlesScreen(
     val pages = remember(synced, kind, contentLanguages, appLanguage) {
         TitlePages(scope) { offset, limit -> library.titles(offset, limit, contentLanguages, appLanguage, kind) }
     }
-    val count by produceState(initialValue = 0, synced, kind) { value = withContext(Dispatchers.IO) { library.titleCount(kind) } }
+    val grid = state.grid
+    LaunchedEffect(synced, kind) { state.count = withContext(Dispatchers.IO) { library.titleCount(kind) } }
+    val count = state.count
     LaunchedEffect(pages, count) {
         snapshotFlow { grid.layoutInfo.visibleItemsInfo.let { (it.firstOrNull()?.index ?: 0) to (it.lastOrNull()?.index ?: 0) } }
             .collect { (first, last) -> pages.showing(first, last, count) }
