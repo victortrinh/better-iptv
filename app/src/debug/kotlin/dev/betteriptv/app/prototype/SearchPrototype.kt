@@ -24,6 +24,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.withFrameNanos
+import dev.betteriptv.app.ui.components.Completions
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.TitleCard
@@ -34,21 +38,48 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
 
-/** Search: a D-pad keyboard on the left, results updating on the right as each letter lands. */
+/**
+ * Search: a D-pad keyboard on the left, completions under it, results updating on the right as
+ * each letter lands.
+ */
 @Composable
 fun SearchPrototype() {
-        var query by remember { mutableStateOf("the g") }
+    var query by remember { mutableStateOf("the g") }
     val keyboard = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
-    val results = listOf(SampleCatalog.general, SampleCatalog.goldRush, SampleCatalog.kid, SampleCatalog.phantom)
-        .filter { it.name.lowercase().startsWith(query.lowercase()) }
+    val firstResult = remember { FocusRequester() }
+    var toResults by remember { mutableStateOf(false) }
+    val titles = listOf(
+        SampleCatalog.general, SampleCatalog.goldRush, SampleCatalog.kid, SampleCatalog.phantom,
+        SampleCatalog.metropolis, SampleCatalog.safetyLast, SampleCatalog.sherlockJr, SampleCatalog.caligari,
+    )
+    val typed = query.trim().lowercase()
+    val genres = titles.flatMap { it.genres.split(" · ") }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+    val starts = { name: String -> name.lowercase().split(" ").any { it.startsWith(typed.substringAfterLast(' ')) } && name.lowercase().contains(typed) }
+    val results = titles.filter { starts(it.name) || it.genres.split(" · ").any { genre -> genre.equals(typed, ignoreCase = true) } }
+    // As the search index offers them: Title names, then people, then genres; genre shortcuts before typing.
+    val completions = when {
+        typed.isEmpty() -> genres
+        typed.length < 2 -> emptyList()
+        else -> (
+            results.map { it.name }.take(4) +
+                titles.flatMap { it.people.split(", ") }.distinct().filter(starts).take(2) +
+                genres.filter(starts).take(1)
+            ).filter { !it.equals(typed, ignoreCase = true) }.take(7)
+    }
+    LaunchedEffect(toResults, query) {
+        if (!toResults || results.isEmpty()) return@LaunchedEffect
+        withFrameNanos {}
+        firstResult.requestFocus()
+        toResults = false
+    }
 
     Ground {
         Column(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
             TopTabs(TABS, selected = 4, onSelect = {})
             Spacer(Modifier.height(24.dp))
             Row {
-                Column(Modifier.width(290.dp)) {
+                Column(Modifier.width(290.dp).verticalScroll(rememberScrollState())) {
                     Box(
                         Modifier.fillMaxWidth().height(44.dp).background(Colors.surface, RoundedCornerShape(Corners.control)).padding(horizontal = 14.dp),
                         contentAlignment = Alignment.CenterStart,
@@ -70,14 +101,22 @@ fun SearchPrototype() {
                         onSpace = { query += " " },
                         modifier = Modifier.focusRequester(keyboard),
                     )
+                    Completions(
+                        completions,
+                        onPick = {
+                            query = it
+                            toResults = true
+                        },
+                        modifier = Modifier.padding(top = 14.dp, bottom = Spacing.screenY),
+                    )
                 }
                 Spacer(Modifier.width(40.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Movies · ${results.size}", style = Type.headline, color = Colors.ink)
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(Cards.gap)) {
-                        results.forEach { title ->
-                            TitleCard(painterResource(title.poster), title.name, title.badges, onClick = {})
+                        results.forEachIndexed { i, title ->
+                            TitleCard(painterResource(title.poster), title.name, title.badges, onClick = {}, modifier = if (i == 0) Modifier.focusRequester(firstResult) else Modifier)
                         }
                     }
                     Spacer(Modifier.height(4.dp))
