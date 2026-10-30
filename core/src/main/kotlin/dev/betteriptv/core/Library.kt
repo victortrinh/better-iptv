@@ -533,7 +533,7 @@ class Library private constructor(
         val title = store.title(id) ?: return@withContext null
         val remembered = rememberedTracks()
         val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered) }
+        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id)) }
     }
 
     /**
@@ -564,15 +564,19 @@ class Library private constructor(
         val languages = rankingLanguages(remembered, contentLanguages)
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val original = originalLanguage(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
-                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered) }
+                ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), episode = episode, remembered = remembered, originalLanguage = original) }
             }
         }
         return plans
     }
+
+    /** The language [id] was released in, from TMDB's metadata kept on the device: the details screen has fetched it before Play. */
+    private fun originalLanguage(id: TitleId): String? = (id as? TitleId.Tmdb)?.let(store::anyMetadata)?.let { TitleMetadata(it).originalLanguage }
 
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
@@ -617,7 +621,7 @@ class Library private constructor(
             val remembered = rememberedTracks()
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered)
+            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id))
         }
     }
 

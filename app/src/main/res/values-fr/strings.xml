@@ -101,6 +101,10 @@
     <string name="tracks_audio">Audio</string>
     <string name="tracks_subtitles">Sous-titres</string>
     <string name="subtitles_off">Désactivés</string>
+    <string name="track_original">Original : %1$s</string>
+    <string name="track_none">Aucun</string>
+    <string name="delay_audio_short">Audio %1$s</string>
+    <string name="delay_subtitles_short">Sous-titres %1$s</string>
     <string name="track_unknown_language">Langue inconnue</string>
     <string name="track_closed_captions">Sous-titres codés</string>
     <string name="track_mono">Mono</string>

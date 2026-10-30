@@ -181,17 +181,17 @@ fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modi
 /**
  * A small set of exclusive choices (Quality cap, Background reading). The chosen one is stronger
  * glass with a check; only focus is white. Choices that don't fit beside their label move whole to
- * a second line; a choice's word never breaks.
+ * a second line; a choice's word never breaks. [selectedModifier] goes on the chosen one, to focus it.
  */
 @Composable
-fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedModifier: Modifier = Modifier) {
     val capsule = RoundedCornerShape(50)
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { index, option ->
             val isSelected = index == selected
             FocusSurface(
                 onClick = { onSelect(index) },
-                modifier = Modifier.height(36.dp).then(if (isSelected) Modifier else Modifier.border(1.5.dp, Colors.inkMuted.copy(alpha = 0.5f), capsule)),
+                modifier = Modifier.height(36.dp).then(if (isSelected) selectedModifier else Modifier.border(1.5.dp, Colors.inkMuted.copy(alpha = 0.5f), capsule)),
                 weight = FocusWeight.Control,
                 container = if (isSelected) Colors.surfaceHigh else Color.Transparent,
                 focusedContainer = Colors.focus,
