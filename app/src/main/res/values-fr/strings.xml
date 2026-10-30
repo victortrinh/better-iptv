@@ -163,6 +163,7 @@
     <string name="other_languages_hide">Masquer</string>
     <string name="runtime_minutes">%1$d min</string>
     <string name="runtime_hours">%1$d h %2$02d min</string>
+    <string name="time_left">Il reste %1$s</string>
     <string name="tmdb_attribution">Détails et illustrations des titres fournis par TMDB. Ce produit utilise l\'API TMDB, mais n\'est ni approuvé ni certifié par TMDB.</string>
 
     <string name="settings_title">Paramètres</string>
