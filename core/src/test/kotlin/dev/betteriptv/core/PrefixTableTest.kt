@@ -215,4 +215,19 @@ class PrefixTableTest {
 
         assertEquals(listOf(UnknownPrefix("BR", 1, "BR - Cold Pursuit (2019)")), reopened.syncStatus.value.last?.unknownPrefixes)
     }
+
+    @Test fun `a Listing's language is its description's, worked out once per Prefix and Category`() {
+        val table = PrefixTable.bundled()
+        val listings = listOf(
+            "EN - The Godfather (1972)" to "EN | MOVIES", "FR - Le Parrain (1972)" to "FR - FILMS VOSTFR", "QC - Le Parrain" to "QC - FILMS",
+            "IT - Il Padrino" to "ITALIAN SUB ENG", "The Godfather" to "VOSTFR", "The Godfather" to "MOVIES", "4K-EN - Heat" to "4K MOVIES",
+            "XX - Unknown Prefix" to "MOVIES", "EN - Heat" to "FR - FILMS VOSTFR", "KU - Film" to "KU - KURDISH MOVIES SUB",
+        )
+        // Twice: the second time from what the first worked out.
+        repeat(2) {
+            for ((name, category) in listings) {
+                assertEquals("$name in $category", table.describe(name, category).attributes.language?.value, table.language(name, category))
+            }
+        }
+    }
 }

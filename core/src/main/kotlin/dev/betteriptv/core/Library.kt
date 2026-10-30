@@ -59,6 +59,8 @@ class Library private constructor(
     /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
     private val metadataGeneration = AtomicInteger()
     private val rebuildingSearch = AtomicBoolean()
+    /** The low-priority thread building the search index in the background, while it runs. */
+    @Volatile private var searchBuilder: Thread? = null
     @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
@@ -170,6 +172,7 @@ class Library private constructor(
                 catalogGeneration.incrementAndGet()
                 matchByName()
                 catalogGeneration.incrementAndGet()
+                prepareSearchInBackground()
             }
             _syncStatus.value
         }
@@ -269,7 +272,8 @@ class Library private constructor(
      * Channels are found by their Provider names the same way, Favourites first among equally close
      * matches, then in the Provider's order; finished Event channels aren't.
      *
-     * The first search after a Sync builds an index of the whole catalog; [prepareSearch] builds it ahead.
+     * The search index of the whole catalog is built in the background after a Sync and by
+     * [prepareSearchInBackground]; a search before then waits for it.
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
@@ -375,10 +379,40 @@ class Library private constructor(
         }
     }
 
-    /** Builds the search index now, so the Viewer's first letters don't wait for it. */
+    /**
+     * Builds the search index now, so the Viewer's first letters don't wait for it. A build already
+     * running in the background is sped up to the Viewer's priority and waited for.
+     */
     suspend fun prepareSearch() {
         withContext(Dispatchers.IO) { rebuildSearchIndex() }
     }
+
+    /**
+     * Starts building the search index on a low-priority thread, unless it is built or being built,
+     * so the first search after the app starts doesn't wait for it (about a minute on the stick)
+     * and Home's frames don't either. Each Sync does this once it finishes.
+     */
+    fun prepareSearchInBackground() {
+        if (searchIndexReady || !rebuildingSearch.compareAndSet(false, true)) return
+        val builder = thread(start = false, name = "search-index", isDaemon = true, priority = Thread.MIN_PRIORITY) {
+            try {
+                // A Sync or Matches may change the catalog while it builds: the next build starts at once.
+                // Metadata cached meanwhile waits for the next search, so browsing doesn't keep it building.
+                do rebuildSearchIndex() while (searchIndex?.catalog != catalogGeneration.get())
+            } catch (e: Exception) {
+                // The Library closed meanwhile; the next search tries again.
+            } finally {
+                searchBuilder = null
+                rebuildingSearch.set(false)
+            }
+        }
+        searchBuilder = builder
+        builder.start()
+    }
+
+    /** Whether the search index of the current catalog and metadata is built. */
+    internal val searchIndexReady: Boolean
+        get() = searchIndex?.let { it.catalog == catalogGeneration.get() && it.metadata == metadataGeneration.get() } == true
 
     private class BuiltIndex(val catalog: Int, val metadata: Int, val index: SearchIndex)
 
@@ -389,43 +423,20 @@ class Library private constructor(
     private fun searchIndex(): SearchIndex {
         val built = searchIndex ?: return rebuildSearchIndex()
         if (built.catalog != catalogGeneration.get()) return rebuildSearchIndex()
-        if (built.metadata != metadataGeneration.get() && rebuildingSearch.compareAndSet(false, true)) {
-            thread(name = "search-index", isDaemon = true) {
-                try {
-                    rebuildSearchIndex()
-                } catch (e: Exception) {
-                    // The Library closed meanwhile; the next search tries again.
-                } finally {
-                    rebuildingSearch.set(false)
-                }
-            }
-        }
+        if (built.metadata != metadataGeneration.get()) prepareSearchInBackground()
         return built.index
     }
 
-    private fun rebuildSearchIndex(): SearchIndex = synchronized(searchLock) {
-        val catalog = catalogGeneration.get()
-        val metadata = metadataGeneration.get()
-        searchIndex?.takeIf { it.catalog == catalog && it.metadata == metadata }?.index
-            ?: buildSearchIndex().also { searchIndex = BuiltIndex(catalog, metadata, it) }
-    }
-
-    /** Indexes every Title by its Versions' cleaned names and the metadata cached for it, in any language. */
-    private fun buildSearchIndex(): SearchIndex {
-        class Known(val names: List<String>, val cast: List<String>, val popularity: Double)
-        val known = HashMap<TitleId, Known>()
-        store.forEachMetadata { id, body -> TitleMetadata(body).let { known[id] = Known(it.searchNames, it.cast, it.popularity) } }
-        val builder = SearchIndex.Builder()
-        store.forEachChannel(builder::channel)
-        for (kind in TitleKind.entries) {
-            store.forEachTitle(kind) { id, listings ->
-                val metadata = known[id]
-                val names = listings.mapTo(HashSet()) { prefixTable.cleanName(it.first).name } + metadata?.names.orEmpty()
-                val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.describe(name, category).attributes.language?.value?.let(::primaryLanguage) }
-                builder.title(id, names, languages, metadata?.popularity ?: 0.0, metadata?.cast.orEmpty())
-            }
+    /** The search index of the current catalog and metadata, built now unless it is; the Viewer waits for it. */
+    private fun rebuildSearchIndex(): SearchIndex {
+        // The Viewer is waiting: a background build holding the lock gets their priority.
+        if (Thread.currentThread() != searchBuilder) searchBuilder?.priority = Thread.NORM_PRIORITY
+        return synchronized(searchLock) {
+            val catalog = catalogGeneration.get()
+            val metadata = metadataGeneration.get()
+            searchIndex?.takeIf { it.catalog == catalog && it.metadata == metadata }?.index
+                ?: buildSearchIndex(store, prefixTable).also { searchIndex = BuiltIndex(catalog, metadata, it) }
         }
-        return builder.build()
     }
 
     /** [titles]' cards: TMDB's name and poster in the [appLanguage], and the best Version in the Viewer's [contentLanguages]. */
