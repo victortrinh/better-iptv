@@ -30,18 +30,19 @@ Only you hold this key. CI signs with it, and Android only accepts an update sig
 
 Until the secrets exist, the Release workflow skips with a warning and publishes nothing.
 
-## Once: moving the stick to the release app
+## Once: installing the release app on the stick
 
-The app on the stick today is signed with the debug key, so the first release can't install over it.
+The release app, `dev.betteriptv`, is a separate package from the debug app, `dev.betteriptv.debug`, so it installs beside it: nothing needs uninstalling, and the debug app keeps its catalog and login. The release app keeps its own, so you log in to it separately.
 
-1. Uninstall it: **Settings → Applications → Manage Installed Applications → Zugig → Uninstall** (or `adb uninstall dev.betteriptv`). This deletes the synced catalog and the saved login.
-2. Download the APK from the latest release on GitHub and install it over adb (see `install-on-fire-tv.md` for connecting):
+1. Download the APK from the latest release on GitHub and install it over adb (see `install-on-fire-tv.md` for connecting):
 
    ```bash
    adb install better-iptv-0.1.<versionCode>.apk
    ```
 
-3. Log in again. From then on the app updates itself.
+2. Start Zugig from **Your Apps & Channels** and log in. From then on the app updates itself.
+
+If the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the stick has an old debug-signed build under `dev.betteriptv`, from before debug builds became their own package. Uninstall that one first (`adb uninstall dev.betteriptv`, which deletes its catalog and login), then install again.
 
 ## Building a release locally
 
