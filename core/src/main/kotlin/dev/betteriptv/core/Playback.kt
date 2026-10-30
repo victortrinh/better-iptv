@@ -67,7 +67,8 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
  * languages first, each with its Backups; [version] is among them. Playback starts [from]
  * milliseconds in: where the Viewer stopped last time, or the start. A Show's plan plays its
- * [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
+ * [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live. [originalLanguage]
+ * is the language the Title was released in (TMDB's, ISO 639-1), when known.
  */
 data class PlayPlan(
     val titleId: TitleId?,
@@ -77,6 +78,7 @@ data class PlayPlan(
     val from: Long = 0,
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
+    val originalLanguage: String? = null,
 ) {
     /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
     val live: Boolean get() = titleId == null
@@ -132,6 +134,9 @@ data class PlayPlan(
      */
     fun subtitleLanguages(remembered: RememberedTracks = this.remembered): List<String> =
         (listOfNotNull(remembered.subtitles) + contentLanguages).map(::primaryLanguage).filter { it.length == 2 }.distinct().take(MAX_SUBTITLE_LANGUAGES)
+
+    /** Whether [track] is in the language the Title was released in: the player calls such audio "Original". */
+    fun isOriginal(track: Track): Boolean = originalLanguage?.let { track.isIn(primaryLanguage(it)) } == true
 
     private fun Track.isIn(language: String) = this.language?.let(::trackLanguage) == language
 }

@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -114,9 +116,10 @@ fun Wordmark(modifier: Modifier = Modifier) {
 /**
  * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
  * middle, reached by pressing up. A tab with an icon is a round icon the height of a word tab.
+ * [selectedFocus] focuses the selected tab, for Back from the screen below (see `backToTab`).
  */
 @Composable
-fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null) {
     val capsule = RoundedCornerShape(50)
     Box(modifier.fillMaxWidth()) {
         Wordmark(Modifier.align(Alignment.CenterStart))
@@ -132,7 +135,8 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
                     onClick = { onSelect(index) },
                     // One fixed height for every tab: sized by its content, an icon tab came out taller
                     // than a word tab, whose text renders shorter than the label's line height.
-                    modifier = if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT),
+                    modifier = (if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT))
+                        .then(if (index == selected && selectedFocus != null) Modifier.focusRequester(selectedFocus) else Modifier),
                     weight = FocusWeight.Control,
                     corner = TAB_HEIGHT / 2,
                     container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
@@ -198,17 +202,17 @@ private val PROGRESS_WIDTH = 120.dp
 /**
  * A small set of exclusive choices (Quality cap, Background reading). The chosen one is stronger
  * glass with a check; only focus is white. Choices that don't fit beside their label move whole to
- * a second line; a choice's word never breaks.
+ * a second line; a choice's word never breaks. [selectedModifier] goes on the chosen one, to focus it.
  */
 @Composable
-fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedModifier: Modifier = Modifier) {
     val capsule = RoundedCornerShape(50)
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { index, option ->
             val isSelected = index == selected
             FocusSurface(
                 onClick = { onSelect(index) },
-                modifier = Modifier.height(36.dp).then(if (isSelected) Modifier else Modifier.border(1.5.dp, Colors.inkMuted.copy(alpha = 0.5f), capsule)),
+                modifier = Modifier.height(36.dp).then(if (isSelected) selectedModifier else Modifier.border(1.5.dp, Colors.inkMuted.copy(alpha = 0.5f), capsule)),
                 weight = FocusWeight.Control,
                 container = if (isSelected) Colors.surfaceHigh else Color.Transparent,
                 focusedContainer = Colors.focus,

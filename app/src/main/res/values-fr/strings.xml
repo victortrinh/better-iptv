@@ -101,6 +101,10 @@
     <string name="tracks_audio">Audio</string>
     <string name="tracks_subtitles">Sous-titres</string>
     <string name="subtitles_off">Désactivés</string>
+    <string name="track_original">Original : %1$s</string>
+    <string name="track_none">Aucun</string>
+    <string name="delay_audio_short">Audio %1$s</string>
+    <string name="delay_subtitles_short">Sous-titres %1$s</string>
     <string name="track_unknown_language">Langue inconnue</string>
     <string name="track_closed_captions">Sous-titres codés</string>
     <string name="track_mono">Mono</string>
@@ -160,6 +164,7 @@
     <string name="other_languages_hide">Masquer</string>
     <string name="runtime_minutes">%1$d min</string>
     <string name="runtime_hours">%1$d h %2$02d min</string>
+    <string name="time_left">Il reste %1$s</string>
     <string name="tmdb_attribution">Détails et illustrations des titres fournis par TMDB. Ce produit utilise l\'API TMDB, mais n\'est ni approuvé ni certifié par TMDB.</string>
 
     <string name="settings_title">Paramètres</string>

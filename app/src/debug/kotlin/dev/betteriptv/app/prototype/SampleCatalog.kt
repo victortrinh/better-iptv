@@ -83,10 +83,15 @@ object SampleCatalog {
 
     val featured = general
 
-    data class Row(val heading: String, val titles: List<SampleTitle>, val progress: List<Float>? = null)
+    data class Row(val heading: String, val titles: List<SampleTitle>, val progress: List<Float>? = null, val left: List<String>? = null)
 
     val rows = listOf(
-        Row("Continue watching", listOf(metropolis, sherlockJr, phantom, kid), progress = listOf(0.62f, 0.2f, 0.85f, 0.4f)),
+        Row(
+            "Continue watching",
+            listOf(metropolis, sherlockJr, phantom, kid),
+            progress = listOf(0.62f, 0.2f, 0.85f, 0.4f),
+            left = listOf("58 min left", "36 min left", "14 min left", "41 min left"),
+        ),
         Row("New on your service", listOf(goldRush, safetyLast, caligari, kid, metropolis, sherlockJr, phantom)),
         Row("Comedy", listOf(safetyLast, kid, goldRush, sherlockJr, general)),
     )
