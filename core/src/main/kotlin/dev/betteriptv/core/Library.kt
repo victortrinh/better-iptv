@@ -470,6 +470,7 @@ class Library private constructor(
             genres = metadata?.genres.orEmpty(),
             runtimeMinutes = metadata?.runtimeMinutes,
             backdrop = metadata?.backdrop,
+            logo = metadata?.logo,
             cast = metadata?.cast.orEmpty(),
             fromTmdb = metadata != null,
         )
@@ -550,7 +551,10 @@ class Library private constructor(
         val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
         val stopped = stopped(id)
         ranked.firstOrNull()?.let {
-            PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0, remembered = remembered, length = stopped?.duration)
+            PlayPlan(
+                id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0,
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+            )
         }
     }
 
@@ -583,18 +587,22 @@ class Library private constructor(
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
+        val original = originalLanguage(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
                 ranked.firstOrNull()?.let {
                     val at = stopped[episode]
-                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration)
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, original)
                 }
             }
         }
         return plans
     }
+
+    /** The language [id] was released in, from TMDB's metadata kept on the device: the details screen has fetched it before Play. */
+    private fun originalLanguage(id: TitleId): String? = (id as? TitleId.Tmdb)?.let(store::anyMetadata)?.let { TitleMetadata(it).originalLanguage }
 
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
@@ -640,7 +648,10 @@ class Library private constructor(
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
             val stopped = stopped(id)
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0, remembered = remembered, length = stopped?.duration)
+            PlayPlan(
+                id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0,
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+            )
         }
     }
 
@@ -1023,7 +1034,11 @@ class Library private constructor(
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
         val cached = store.metadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
-        val wanted = tmdbIds.filter { cached[it]?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true }
+        // An answer from before the cloud gave logos is asked again: it would otherwise lack one for a week.
+        val wanted = tmdbIds.filter { id ->
+            val stored = cached[id]
+            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"logoPath\"") == false
+        }
         if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
             try {
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->

@@ -29,6 +29,8 @@ export interface TitleMetadata extends TitleKey {
   runtimeMinutes: number | null;
   posterPath: string | null;
   backdropPath: string | null;
+  /** The Title's logo art (PNG or SVG): the best voted in the requested language, else in English, else null. */
+  logoPath: string | null;
   cast: { name: string; character: string; profilePath: string | null }[];
   imdbId: string | null;
   /** YouTube video IDs, official trailers first. */
@@ -45,14 +47,15 @@ const CAST_SHOWN = 12;
 
 /**
  * Fetches one Title in [language] (ISO 639-1) with a single TMDB request: details, translations,
- * alternative titles, credits, videos and external IDs.
+ * alternative titles, credits, videos, external IDs and logos.
  */
 export async function fetchTitle(env: Env, key: TitleKey, language: string): Promise<TitleMetadata | typeof NOT_FOUND> {
   const path = `${tmdbPath(key.kind)}/${key.tmdbId}`;
   const response = await get(env, path, {
     language,
-    append_to_response: "translations,alternative_titles,credits,videos,external_ids",
+    append_to_response: "translations,alternative_titles,credits,videos,external_ids,images",
     include_video_language: `${language},en`,
+    include_image_language: `${language},en`,
   });
   if (response === NOT_FOUND) return NOT_FOUND;
   return read(key, language, (await response.json()) as TmdbTitle);
@@ -193,6 +196,7 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
     runtimeMinutes: runtime || null,
     posterPath: t.poster_path ?? null,
     backdropPath: t.backdrop_path ?? null,
+    logoPath: bestLogo(t.images?.logos ?? [], language),
     cast: (t.credits?.cast ?? [])
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .slice(0, CAST_SHOWN)
@@ -203,6 +207,25 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
       .sort((a, b) => Number(b.official ?? false) - Number(a.official ?? false))
       .map((v) => v.key),
   };
+}
+
+/** The most voted logo in [language], else in English; logos without a language are text-free marks, so none of those. */
+function bestLogo(logos: TmdbImage[], language: string): string | null {
+  for (const wanted of [language, "en"]) {
+    const best = logos
+      .filter((l) => l.iso_639_1 === wanted && /\.(png|svg)$/i.test(l.file_path))
+      .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0))[0];
+    if (best) return best.file_path;
+  }
+  return null;
+}
+
+/** The parts of a TMDB image the cloud uses. */
+interface TmdbImage {
+  file_path: string;
+  iso_639_1?: string | null;
+  vote_average?: number;
+  vote_count?: number;
 }
 
 /** The parts of a TMDB movie or TV search result the cloud uses. */
@@ -260,4 +283,5 @@ interface TmdbTitle {
   credits?: { cast?: { name: string; character?: string; profile_path?: string | null; order?: number }[] };
   videos?: { results?: { key: string; site: string; type: string; official?: boolean }[] };
   external_ids?: { imdb_id?: string | null };
+  images?: { logos?: TmdbImage[] };
 }

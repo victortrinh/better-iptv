@@ -69,6 +69,7 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * milliseconds in: where the Viewer stopped last time, or the start; [length] is the file's length
  * the player knew then, null when it didn't or the Viewer never stopped in it. A Show's plan plays
  * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
+ * [originalLanguage] is the language the Title was released in (TMDB's, ISO 639-1), when known.
  */
 data class PlayPlan(
     val titleId: TitleId?,
@@ -79,6 +80,7 @@ data class PlayPlan(
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
     val length: Long? = null,
+    val originalLanguage: String? = null,
 ) {
     /** How far in the Viewer stopped, for a progress bar; null at the start or without the file's length. */
     val progress: Float? get() = length?.takeIf { it > 0 && from > 0 }?.let { (from.toFloat() / it).coerceIn(0f, 1f) }
@@ -137,6 +139,9 @@ data class PlayPlan(
      */
     fun subtitleLanguages(remembered: RememberedTracks = this.remembered): List<String> =
         (listOfNotNull(remembered.subtitles) + contentLanguages).map(::primaryLanguage).filter { it.length == 2 }.distinct().take(MAX_SUBTITLE_LANGUAGES)
+
+    /** Whether [track] is in the language the Title was released in: the player calls such audio "Original". */
+    fun isOriginal(track: Track): Boolean = originalLanguage?.let { track.isIn(primaryLanguage(it)) } == true
 
     private fun Track.isIn(language: String) = this.language?.let(::trackLanguage) == language
 }

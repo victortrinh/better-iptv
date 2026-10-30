@@ -22,7 +22,8 @@ import dev.betteriptv.app.ui.theme.Type
  *         --es screen details --ez focus true
  *
  * Screens: home, details, player, search, settings. `focus` moves the first focus from the main
- * button to the first card (home) or Version (details).
+ * button to the first card (home) or Version (details). `--ez tracks true` opens the player's
+ * Audio and subtitles.
  */
 class PrototypeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +35,7 @@ class PrototypeActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     when (screen) {
                         "details" -> DetailsPrototype(focusVersions = focus)
-                        "player" -> PlayerPrototype()
+                        "player" -> PlayerPrototype(tracks = intent.getBooleanExtra("tracks", false))
                         "search" -> SearchPrototype()
                         "settings" -> SettingsPrototype()
                         else -> HomePrototype(focusCard = focus)

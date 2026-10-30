@@ -153,6 +153,14 @@ export const godfather = (language: string) => ({
     ],
   },
   external_ids: { imdb_id: "tt0068646" },
+  images: {
+    logos: [
+      { file_path: "/godfather-logo-en.png", iso_639_1: "en", vote_average: 5.4, vote_count: 3 },
+      { file_path: "/parrain-logo-old.png", iso_639_1: "fr", vote_average: 5.1, vote_count: 1 },
+      { file_path: "/parrain-logo.svg", iso_639_1: "fr", vote_average: 5.3, vote_count: 2 },
+      { file_path: "/godfather-mark.png", iso_639_1: null, vote_average: 9.0, vote_count: 9 },
+    ],
+  },
 });
 
 /** Breaking Bad, shaped like TMDB's TV details: `name` and `first_air_date` instead of `title` and `release_date`. */
@@ -172,4 +180,5 @@ export const breakingBad = (language: string) => ({
   credits: { cast: [{ name: "Bryan Cranston", character: "Walter White", profile_path: null, order: 0 }] },
   videos: { results: [] },
   external_ids: { imdb_id: "tt0903747" },
+  images: { logos: [{ file_path: "/bb-logo.png", iso_639_1: "en", vote_average: 5.2, vote_count: 4 }] },
 });

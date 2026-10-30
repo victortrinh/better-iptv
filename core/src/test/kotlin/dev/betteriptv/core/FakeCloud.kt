@@ -216,7 +216,7 @@ class FakeCloud : Closeable {
     private fun read(text: String): Any? = JsonReader.of(text.byteInputStream().source().buffer()).use { it.readJsonValue() }
 
     private companion object {
-        val json = Moshi.Builder().build().adapter(Any::class.java)
+        val json = Moshi.Builder().build().adapter(Any::class.java).serializeNulls()
     }
 }
 
@@ -233,6 +233,7 @@ fun tmdbTitle(
     runtimeMinutes: Int? = null,
     posterPath: String? = null,
     backdropPath: String? = null,
+    logoPath: String? = null,
     cast: List<String> = emptyList(),
     popularity: Double = 10.0,
     alternativeTitles: List<String> = emptyList(),
@@ -250,6 +251,7 @@ fun tmdbTitle(
     "runtimeMinutes" to runtimeMinutes,
     "posterPath" to posterPath,
     "backdropPath" to backdropPath,
+    "logoPath" to logoPath,
     "cast" to cast.map { mapOf("name" to it, "character" to "", "profilePath" to null) },
     "imdbId" to null,
     "trailers" to emptyList<String>(),
