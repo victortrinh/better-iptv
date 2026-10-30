@@ -386,7 +386,7 @@ private fun PlayLabel(text: String) {
 }
 
 /** `2 h 55 min`, or `48 min` under an hour. */
-private fun Context.runtime(minutes: Int): String =
+internal fun Context.runtime(minutes: Int): String =
     if (minutes < 60) getString(R.string.runtime_minutes, minutes) else getString(R.string.runtime_hours, minutes / 60, minutes % 60)
 
 private fun LazyListScope.languageGroup(
