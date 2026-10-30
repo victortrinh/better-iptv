@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -229,10 +230,21 @@ fun SettingRow(
                 }
             }
             Spacer(Modifier.width(16.dp))
-            Text(value, style = Type.detail, color = if (focused) Colors.onFocus else Colors.inkMuted)
+            // A long value (an Episode in 17 languages) ends in an ellipsis rather than squeezing the label to nothing.
+            Text(
+                value,
+                style = Type.detail,
+                color = if (focused) Colors.onFocus else Colors.inkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = VALUE_MAX_WIDTH),
+            )
         }
     }
 }
+
+/** How wide a row's value can get: an Episode row keeps about 250 dp for its name. */
+private val VALUE_MAX_WIDTH = 560.dp
 
 /** How wide a row's progress bar is: about a card's, so a started Episode reads like a started Movie. */
 private val PROGRESS_WIDTH = 120.dp
