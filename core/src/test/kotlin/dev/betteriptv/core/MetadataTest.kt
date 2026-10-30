@@ -63,6 +63,24 @@ class MetadataTest {
     private suspend fun details(id: TitleId, appLanguage: String, contentLanguages: List<String> = french) =
         library.title(id, contentLanguages, appLanguage) ?: throw AssertionError("no Title $id")
 
+    @Test fun `a play plan knows the language the Title was released in, so the player can call its audio Original`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", originalLanguage = "en"))
+        details(godfather, "fr")
+
+        val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
+        assertEquals("en", plan.originalLanguage)
+        assertTrue(plan.isOriginal(Track("eng")))
+        assertTrue(plan.isOriginal(Track("en-US")))
+        assertFalse(plan.isOriginal(Track("fre")))
+        assertFalse(plan.isOriginal(Track(null)))
+    }
+
+    @Test fun `without TMDB's metadata no audio is Original`() = runBlocking {
+        val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
+        assertNull(plan.originalLanguage)
+        assertFalse(plan.isOriginal(Track("eng")))
+    }
+
     @Test fun `a card and the details show TMDB's name, poster, description and genres in the App language`() = runBlocking {
         cloud.title("fr", leParrain)
 

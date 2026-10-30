@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import dev.betteriptv.app.ui.components.BadgeRow
-import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.EpisodeNumber
@@ -75,9 +74,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
@@ -381,6 +377,7 @@ fun PlayerScreen(
             )
             Panel.Tracks -> TracksPanel(
                 player,
+                isOriginal = plan::isOriginal,
                 settings.subtitleStyle,
                 audioDelay,
                 subtitleDelay,
@@ -418,12 +415,6 @@ private const val SEEK_STEP = 10_000L
 
 /** The keys that scrub a Movie or Episode. */
 private val SCRUB_KEYS = setOf(Key.DirectionLeft, Key.DirectionRight, Key.MediaRewind, Key.MediaFastForward)
-
-/** How long a delay changes with each press, in milliseconds. */
-private const val DELAY_STEP = 50L
-
-/** How far the subtitle delay moves a press: a downloaded subtitle is often off by whole seconds, and finer is unnoticeable. */
-private const val SUBTITLE_DELAY_STEP = 250L
 
 /** How many downloaded subtitles are offered per language: another file is often the fix for one badly off. */
 private const val DOWNLOADS_PER_LANGUAGE = 3
@@ -530,7 +521,7 @@ private fun Media3Surface(player: Media3Engine) {
 private val topScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0.85f), 0.12f to Colors.ground.copy(alpha = 0.6f), 0.28f to Colors.ground.copy(alpha = 0f))
 
 /** The player's scrim over the bottom of the picture, 85% ground at the edge. */
-private val bottomScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f), 1f to Colors.ground.copy(alpha = 0.85f))
+internal val bottomScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f), 1f to Colors.ground.copy(alpha = 0.85f))
 
 /** Names a Version over the top of the picture, with the key that opens the others. */
 @Composable
@@ -847,13 +838,14 @@ internal fun clock(millis: Long): String {
 internal fun clockSlot(longest: Long): String = clock(longest).replace(Regex("[0-9]"), "0")
 
 /**
- * Audio and subtitles, over the bottom of the picture: the file's audio Tracks and subtitle Tracks
- * (with Off), the one on marked; the subtitle style; and the audio and subtitle delays. The first
- * audio Track takes first focus.
+ * Audio and subtitles, as [TrackCards]: the file's audio Tracks, the one in the Title's original
+ * language ([isOriginal]) named so, its subtitle Tracks (with Off) and the subtitles downloaded for
+ * it, the subtitle style, and the audio and subtitle delays.
  */
 @Composable
 private fun TracksPanel(
     player: ControlledEngine?,
+    isOriginal: (Track) -> Boolean,
     style: SubtitleStyle,
     audioDelay: Long,
     subtitleDelay: Long,
@@ -871,130 +863,58 @@ private fun TracksPanel(
     // Read again after each pick: the engine says which Track is on.
     var picks by remember { mutableIntStateOf(0) }
     val tracks = remember(player, picks) { player?.tracks }
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
-    BackHandler(onBack = onClose)
-    val on = context.getString(R.string.player_playing)
-    Box(Modifier.fillMaxSize().background(bottomScrim)) {
-        LazyColumn(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.72f),
-            verticalArrangement = Arrangement.spacedBy(Spacing.s),
-            contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, bottom = Spacing.screenY),
-        ) {
-            item { PanelHeading(stringResource(R.string.tracks_audio), Modifier.focusRequester(first).focusable(tracks?.audio.isNullOrEmpty())) }
-            tracks?.audio.orEmpty().forEachIndexed { index, track ->
-                item {
-                    SettingRow(context.trackName(track), if (index == tracks?.audioOn) on else "", onClick = {
-                        onAudio(index, track)
-                        picks++
-                    }, modifier = if (index == 0) Modifier.focusRequester(first) else Modifier)
-                }
-            }
-            item { PanelHeading(stringResource(R.string.tracks_subtitles)) }
-            item {
-                SettingRow(stringResource(R.string.subtitles_off), if (tracks?.subtitlesOn == null && shownDownload == null) on else "", onClick = {
-                    onSubtitles(null, null)
-                    picks++
-                })
-            }
-            tracks?.subtitles.orEmpty().forEachIndexed { index, track ->
-                item {
-                    SettingRow(context.trackName(track), if (index == tracks?.subtitlesOn && shownDownload == null) on else "", onClick = {
-                        onSubtitles(index, track)
-                        picks++
-                    })
-                }
-            }
-            downloads.forEach { offer ->
-                item {
-                    val detail = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
-                    SettingRow(
-                        stringResource(R.string.subtitle_downloaded, context.trackName(Track(offer.language))),
-                        if (offer.id == shownDownload?.id) on else "",
-                        onClick = {
-                            onDownloaded(offer)
-                            picks++
-                        },
-                        detail = detail.takeIf { it.isNotBlank() },
-                    )
-                }
-            }
-            item { PanelHeading(stringResource(R.string.subtitle_style)) }
-            // libVLC reads the style only when it starts, and restarting it to show a change takes many seconds on the stick.
-            if (player?.engine == Engine.Vlc) item { Text(stringResource(R.string.subtitle_style_vlc), style = Type.body, color = Colors.inkMuted) }
-            item {
-                StyleChoice(R.string.subtitle_size, listOf(R.string.subtitle_small, R.string.subtitle_medium, R.string.subtitle_large, R.string.subtitle_largest), style.size.ordinal) {
-                    onStyle(style.copy(size = SubtitleSize.entries[it]))
-                }
-            }
-            item {
-                StyleChoice(R.string.subtitle_colour, listOf(R.string.subtitle_white, R.string.subtitle_yellow), style.colour.ordinal) {
-                    onStyle(style.copy(colour = SubtitleColour.entries[it]))
-                }
-            }
-            item {
-                StyleChoice(R.string.subtitle_background, listOf(R.string.subtitle_outline, R.string.subtitle_shadow, R.string.subtitle_box), style.background.ordinal) {
-                    onStyle(style.copy(background = SubtitleBackground.entries[it]))
-                }
-            }
-            item {
-                StyleChoice(R.string.subtitle_position, listOf(R.string.subtitle_bottom, R.string.subtitle_raised), style.position.ordinal) {
-                    onStyle(style.copy(position = SubtitlePosition.entries[it]))
-                }
-            }
-            item { PanelHeading(stringResource(R.string.delays)) }
-            item { DelayRow(R.string.audio_delay, audioDelay, DELAY_STEP, stringResource(R.string.delay_value, audioDelay), onAudioDelay) }
-            item {
-                val seconds = String.format(java.util.Locale.getDefault(), "%+.2f", subtitleDelay / 1000.0)
-                DelayRow(R.string.subtitle_delay, subtitleDelay, SUBTITLE_DELAY_STEP, stringResource(R.string.delay_seconds, seconds), onSubtitleDelay)
-            }
-        }
+    val audio = tracks?.audio.orEmpty().mapIndexed { index, track ->
+        TrackOption(context.audioName(track, isOriginal(track)), index == tracks?.audioOn, onClick = {
+            onAudio(index, track)
+            picks++
+        }, short = context.audioName(track, isOriginal(track), withFormat = false))
     }
-}
-
-@Composable
-private fun PanelHeading(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = Type.headline, color = Colors.ink, modifier = modifier.padding(top = Spacing.m, bottom = 2.dp))
-}
-
-/** A subtitle style setting: its label in a column of its own, the choices beside it. */
-@Composable
-private fun StyleChoice(label: Int, options: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
-        ChoiceRow(options.map { stringResource(it) }, selected, onSelect)
+    val off = TrackOption(stringResource(R.string.subtitles_off), tracks?.subtitlesOn == null && shownDownload == null, onClick = {
+        onSubtitles(null, null)
+        picks++
+    })
+    val embedded = tracks?.subtitles.orEmpty().mapIndexed { index, track ->
+        TrackOption(context.trackName(track), index == tracks?.subtitlesOn && shownDownload == null, onClick = {
+            onSubtitles(index, track)
+            picks++
+        })
     }
-}
-
-/** An audio or subtitle delay, made earlier or later a step at a time. */
-@Composable
-private fun DelayRow(label: Int, delay: Long, step: Long, shown: String, onChange: (Long) -> Unit) {
-    Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
-        NuageButton(stringResource(R.string.delay_earlier), onClick = { onChange(delay - step) })
-        Text(
-            shown,
-            style = Type.label,
-            color = Colors.ink,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(96.dp),
+    val downloaded = downloads.map { offer ->
+        val detail = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
+        TrackOption(
+            stringResource(R.string.subtitle_downloaded, context.trackName(Track(offer.language))),
+            offer.id == shownDownload?.id,
+            onClick = {
+                onDownloaded(offer)
+                picks++
+            },
+            detail = detail.takeIf { it.isNotBlank() },
         )
-        NuageButton(stringResource(R.string.delay_later), onClick = { onChange(delay + step) })
     }
+    TrackCards(
+        audio = audio,
+        subtitles = listOf(off) + embedded + downloaded,
+        style = style,
+        // libVLC reads the style only when it starts, and restarting it to show a change takes many seconds on the stick.
+        styleNote = if (player?.engine == Engine.Vlc) stringResource(R.string.subtitle_style_vlc) else null,
+        audioDelay = audioDelay,
+        subtitleDelay = subtitleDelay,
+        onStyle = onStyle,
+        onAudioDelay = onAudioDelay,
+        onSubtitleDelay = onSubtitleDelay,
+        onClose = onClose,
+    )
 }
 
-private val STYLE_LABEL = 200.dp
-
-/** Left and Right stay in this row at its ends, instead of jumping to whatever lies beside it above or below. */
-private fun Modifier.keepsSideFocus() = focusProperties {
-    onExit = { if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange() }
-}.focusGroup()
+/** An audio Track's name, "Original: English · 5.1 · AAC" when it is in the language the Title was released in. */
+internal fun Context.audioName(track: Track, original: Boolean, withFormat: Boolean = true): String =
+    trackName(track, withFormat).let { if (original) getString(R.string.track_original, it) else it }
 
 /**
- * A Track as the Viewer picks it: its language, then for audio its channels and format. A Channel's
- * closed captions are named as such, with their language when they have one.
+ * A Track as the Viewer picks it: its language, then for audio its channels and, unless not [withFormat],
+ * its format. A Channel's closed captions are named as such, with their language when they have one.
  */
-internal fun Context.trackName(track: Track): String {
+internal fun Context.trackName(track: Track, withFormat: Boolean = true): String {
     // A Track tagged `und` (undetermined) has no name in any language.
     val named = track.language?.let { iso639(it) ?: it }?.let(::languageName)?.takeIf { it.isNotEmpty() }
     if (track.isClosedCaptions) return listOfNotNull(getString(R.string.track_closed_captions), named).joinToString(" · ")
@@ -1005,7 +925,7 @@ internal fun Context.trackName(track: Track): String {
         2 -> getString(R.string.track_stereo)
         else -> "${count - 1}.1"
     }
-    return listOfNotNull(language, channels, track.mimeType?.let(::formatName)).joinToString(" · ")
+    return listOfNotNull(language, channels, track.mimeType?.takeIf { withFormat }?.let(::formatName)).joinToString(" · ")
 }
 
 /** A Track's format as people know it: `audio/true-hd` is TrueHD. Null for one without a common name. */
