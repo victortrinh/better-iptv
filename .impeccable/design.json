@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-10-24T22:30:52+00:00",
-  "title": "Design System: NuageTivi",
+  "title": "Design System: Zugig",
   "extensions": {
     "colorMeta": {
       "ground": {
@@ -276,7 +276,7 @@
       "kind": "nav",
       "refersTo": "tab-bar",
       "description": "TopTabs: Wordmark left, destinations in a centred glass capsule; selected is strong glass, focus is white.",
-      "html": "<div class=\"ds-nav\"><span class=\"ds-wordmark\">NuageTivi</span><div class=\"ds-tabs\"><button class=\"ds-tab ds-tab--focus\">Home</button><button class=\"ds-tab ds-tab--sel\">Movies</button><button class=\"ds-tab\">Shows</button><button class=\"ds-tab\">Live</button><button class=\"ds-tab\">Search</button><button class=\"ds-tab\">Settings</button></div></div>",
+      "html": "<div class=\"ds-nav\"><span class=\"ds-wordmark\">zugig</span><div class=\"ds-tabs\"><button class=\"ds-tab ds-tab--focus\">Home</button><button class=\"ds-tab ds-tab--sel\">Movies</button><button class=\"ds-tab\">Shows</button><button class=\"ds-tab\">Live</button><button class=\"ds-tab\">Search</button><button class=\"ds-tab\">Settings</button></div></div>",
       "css": ".ds-nav{font-family: Inter, system-ui, sans-serif;position:relative;display:flex;align-items:center;justify-content:center;padding:27px 48px;background:#07080A;min-height:44px} .ds-wordmark{position:absolute;left:48px;color:#FFFFFF;font-weight:700;font-size:22px;letter-spacing:-0.01em} .ds-tabs{display:flex;gap:4px;padding:4px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.14)} .ds-tab{font-family: Inter, system-ui, sans-serif;border:none;border-radius:20px;padding:6px 14px;background:transparent;color:rgba(255,255,255,0.85);font-weight:600;font-size:15px;line-height:20px;transition:transform 160ms,background 160ms} .ds-tab--sel{background:rgba(255,255,255,0.20);color:#FFFFFF} .ds-tab:focus-visible,.ds-tab--focus{outline:none;background:#FFFFFF;color:#000000;transform:scale(1.06)}"
     },
     {

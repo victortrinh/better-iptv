@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Debug builds are a separate app beside the released one; the launcher tells them apart. -->
-    <string name="launcher_name" translatable="false">NuageTivi debug</string>
+    <string name="launcher_name" translatable="false">Zugig debug</string>
 </resources>

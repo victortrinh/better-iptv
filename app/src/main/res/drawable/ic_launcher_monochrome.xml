@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed icon: only the front cloud, since the system tints every layer one colour. Written by scripts/app_icon.py; edit that, not this. -->
+<!-- Themed icon: only the z, since the system tints every layer one colour. Written by scripts/app_icon.py; edit that, not this. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.12844"
-        android:scaleY="0.12844"
-        android:translateX="19.1"
-        android:translateY="11.79">
+        android:scaleX="0.11719"
+        android:scaleY="0.11719"
+        android:translateX="24"
+        android:translateY="24">
         <path
             android:fillColor="#FFF2F2F4"
-            android:pathData="M119.6,472A60.2,60.2 0 0 1 122.42,351.67A110.08,110.08 0 0 1 340.41,320.77A75.68,75.68 0 0 1 344.92,472Z" />
+            android:pathData="M160.02951699463327 371.0V333.5581395348837L273.3837209302326 192.43112701252238V190.78533094812167H163.5268336314848V141.0H348.06171735241503V181.9391771019678L241.0849731663685 319.5688729874776V321.21466905187833H351.97048300536676V371.0Z" />
     </group>
 </vector>

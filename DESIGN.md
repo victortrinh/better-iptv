@@ -1,5 +1,5 @@
 ---
-name: NuageTivi
+name: Zugig
 description: Verre, tvOS-style glass on a Fire TV. The artwork is the interface; everything else is black, white and translucent white.
 colors:
   ground: "#07080A"
@@ -158,7 +158,7 @@ components:
     textColor: "{colors.on-focus}"
 ---
 
-# Design System: NuageTivi
+# Design System: Zugig
 
 This is direction #3, "Verre", written down for the agents picking up screen tickets. Ground truth is the shipped code: tokens in `app/src/main/kotlin/dev/betteriptv/app/ui/theme/Tokens.kt` (`Colors`, `Type`, `Corners`, `Spacing`, `Cards`, `FocusScale`), the theme and scrolling in `NuageTheme.kt`, components in `ui/components/`. Screens read tokens, never raw values.
 
@@ -306,10 +306,10 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 - **Shape:** a `glass-high` circle, 44 dp by default, holding a white icon half its size. `slot` centres a smaller button in a bigger one's height so a row lines up.
 - **Focus:** `focus` fill, `on-focus` icon, 1.06x, and the button's name in caption `ink` 8 dp under it. The caption slot is always reserved, so nothing moves as focus does.
 - Only for the player's transport, where the icons are universal. Anything less obvious keeps its words (a `NuageButton` with a leading icon).
-- Icons are Material Filled, solid white shapes like the launcher's cloud. `material-icons-core` covers most; the few others (Pause, Replay 10, Forward 10, Subtitles) are copied into `NuageIcons` rather than pulling in `material-icons-extended`.
+- Icons are Material Filled, solid white shapes like the launcher's z. `material-icons-core` covers most; the few others (Pause, Replay 10, Forward 10, Subtitles) are copied into `NuageIcons` rather than pulling in `material-icons-extended`.
 
 ### Navigation (`TopTabs`, `Wordmark`)
-- The Wordmark (NuageTivi) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
+- The Wordmark ("zugig", lowercase like the TV banner) sits left. The tabs sit centred in a `glass` capsule with a 1 dp white-at-14% hairline and 4 dp inner padding, 4 dp between tabs.
 - Home, Movies and Shows are words. Search and Settings are round icon tabs at the end (magnifier, gear): 32 dp circles holding a 20 dp icon, named by its content description.
 - **Tab:** 32 dp tall, every one alike; label type centred with 14 dp padding at the sides. **Selected:** `glass-high` with `ink`. **Inactive:** transparent with white at 85%. **Focus:** `focus` fill, `on-focus` text, 1.06x.
 

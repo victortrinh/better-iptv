@@ -1,4 +1,4 @@
-# Better IPTV
+# Zugig
 
 A TV app that turns an Xtream Codes IPTV subscription into a fast, clean library: one card per film or show, the best copy picked automatically, real trending, and live games easy to find.
 

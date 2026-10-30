@@ -216,9 +216,9 @@
     <string name="update_install">Installer</string>
     <string name="update_failed">La mise à jour n\'a pas pu être téléchargée. %1$s</string>
     <string name="update_retry">Réessayer</string>
-    <string name="update_allow_title">Autorisez NuageTivi à installer ses mises à jour</string>
-    <string name="update_allow_steps">Android le demande une seule fois. Ouvrez les paramètres, activez NuageTivi, puis appuyez sur Retour.</string>
-    <string name="update_allow_fire">Si les paramètres s\'ouvrent ailleurs : Paramètres → Ma Fire TV → Options pour les développeurs → Installer des applis inconnues → NuageTivi : activé.</string>
+    <string name="update_allow_title">Autorisez Zugig à installer ses mises à jour</string>
+    <string name="update_allow_steps">Android le demande une seule fois. Ouvrez les paramètres, activez Zugig, puis appuyez sur Retour.</string>
+    <string name="update_allow_fire">Si les paramètres s\'ouvrent ailleurs : Paramètres → Ma Fire TV → Options pour les développeurs → Installer des applis inconnues → Zugig : activé.</string>
     <string name="update_allow_old">Paramètres → Ma Fire TV → Options pour les développeurs → Applications de sources inconnues : activé, puis revenez ici.</string>
     <string name="update_open_settings">Ouvrir les paramètres</string>
 

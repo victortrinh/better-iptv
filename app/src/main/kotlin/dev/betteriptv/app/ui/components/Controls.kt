@@ -105,10 +105,10 @@ fun NuageIconButton(icon: ImageVector, name: String, onClick: () -> Unit, modifi
 /** A destination in [TopTabs]: a word, or an icon with [name] as its description. */
 data class TopTab(val name: String, val icon: ImageVector? = null)
 
-/** The app's name. */
+/** The app's name, set lowercase like the TV banner. */
 @Composable
 fun Wordmark(modifier: Modifier = Modifier) {
-    Text(stringResource(R.string.app_name), style = Type.headline.copy(fontSize = 22.sp), color = Colors.ink, modifier = modifier)
+    Text(stringResource(R.string.wordmark), style = Type.headline.copy(fontSize = 22.sp), color = Colors.ink, modifier = modifier)
 }
 
 /**

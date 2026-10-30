@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive icon foreground: the glass cloud and the white cloud. Written by scripts/app_icon.py; edit that, not this. -->
+<!-- Adaptive icon foreground: the glass disc and the white z. Written by scripts/app_icon.py; edit that, not this. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.12844"
-        android:scaleY="0.12844"
-        android:translateX="19.1"
-        android:translateY="11.79">
+        android:scaleX="0.11719"
+        android:scaleY="0.11719"
+        android:translateX="24"
+        android:translateY="24">
         <path
             android:fillColor="#FF4A4B50"
-            android:pathData="M204,414A56,56 0 0 1 206.63,302.06A102.4,102.4 0 0 1 409.4,273.33A70.4,70.4 0 0 1 413.6,414Z" />
+            android:pathData="M256,0A256,256 0 1 1 256,512A256,256 0 1 1 256,0Z" />
         <path
             android:fillColor="#FFF2F2F4"
-            android:pathData="M119.6,472A60.2,60.2 0 0 1 122.42,351.67A110.08,110.08 0 0 1 340.41,320.77A75.68,75.68 0 0 1 344.92,472Z" />
+            android:pathData="M160.02951699463327 371.0V333.5581395348837L273.3837209302326 192.43112701252238V190.78533094812167H163.5268336314848V141.0H348.06171735241503V181.9391771019678L241.0849731663685 319.5688729874776V321.21466905187833H351.97048300536676V371.0Z" />
     </group>
 </vector>
