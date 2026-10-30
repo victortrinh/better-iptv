@@ -278,19 +278,24 @@ class Library private constructor(
      * Without the cloud the first results are all there are.
      *
      * Channels are found by their Provider names the same way, Favourites first among equally close
-     * matches, then in the Provider's order; finished Event channels aren't.
+     * matches, then in the Provider's order; finished Event channels aren't. TMDB's genres are found
+     * like people, with their Titles.
+     *
+     * The results offer completions: the names of the best Titles, people and genres found. Before
+     * anything is typed, they are the genres with the most Titles in the Viewer's languages.
      *
      * The search index of the whole catalog is built in the background after a Sync and by
      * [prepareSearchInBackground]; a search before then waits for it.
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
+        if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages)))
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
         val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
         val channels = foundChannels(index, query)
-        emit(searchResults(index, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
+        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
 
         if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
         // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
@@ -307,7 +312,7 @@ class Library private constructor(
         val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
             FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
         }
-        emit(searchResults(index, titles, merged, popularity, contentLanguages, appLanguage).copy(channels = channels))
+        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage).copy(channels = channels))
     }.flowOn(Dispatchers.IO)
 
     /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
@@ -340,12 +345,25 @@ class Library private constructor(
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
     private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
 
+    /** The genres with the most Titles in the Viewer's [contentLanguages], to search before typing. */
+    private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>): List<String> {
+        val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        val inWanted = { titles: IntArray -> titles.count { position -> index.titles[position].languages.any(wanted::contains) } }
+        return index.genres.indices.map { it to inWanted(index.genreTitles[it]) }
+            .filter { (_, count) -> count > 0 }
+            .sortedWith(compareByDescending<Pair<Int, Int>> { it.second }.thenBy { index.genres[it.first] })
+            .take(COMPLETIONS)
+            .map { index.genres[it.first] }
+    }
+
     /**
-     * Ranks [titles] (search index positions and how close they matched) and [people], and shows the
-     * best of them. TMDB's search tells the [popularity] of Titles the device has no metadata for.
+     * Ranks [titles] (search index positions and how close they matched), [people] and the genres
+     * [query] matches, and shows the best of them, with the completions they offer. TMDB's search
+     * tells the [popularity] of Titles the device has no metadata for.
      */
     private fun searchResults(
         index: SearchIndex,
+        query: String,
         titles: Map<Int, Int>,
         people: List<FoundPerson>,
         popularity: Map<Int, Double>,
@@ -365,15 +383,46 @@ class Library private constructor(
             .sortedWith(compareBy<FoundPerson>({ it.distance }, { person -> -person.titles.maxOf(popularityOf) }))
             .take(PEOPLE_FOUND)
             .map { person -> person.name to person.titles.map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+        val shownGenres = index.findGenres(query)
+            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { -index.genreTitles[it.index].size }))
+            .take(GENRES_FOUND)
+            .map { index.genres[it.index] to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
         val ofKind = { kind: TitleKind -> ranked.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) }
-        val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second }).map { index.titles[it.index].id }.distinct()
+        val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
+            .map { index.titles[it.index].id }.distinct()
         val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
         val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
+        // The best Titles of either kind are among those shown, so their names are at hand.
+        val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titles[it.index].id]?.name }
         return SearchResults(
             movies = found(ofKind(TitleKind.Movie)),
             shows = found(ofKind(TitleKind.Show)),
             people = shownPeople.map { (name, hits) -> Person(name, found(hits)) },
+            genres = shownGenres.map { (name, hits) -> Genre(name, found(hits)) },
+            completions = completions(query, titleNames, shownPeople.map { it.first }, shownGenres.map { it.first }),
         )
+    }
+
+    /**
+     * Up to [COMPLETIONS] queries one press away from [query], as Netflix offers them: Title names
+     * first, then people, then genres, each kind keeping a few places and lending the rest. A name
+     * the query already is, or one offered already, isn't offered again.
+     */
+    private fun completions(query: String, titles: List<String>, people: List<String>, genres: List<String>): List<String> {
+        val typed = SearchIndex.words(query)
+        val seen = HashSet<List<String>>()
+        val offered = { names: List<String> -> names.filter { name -> SearchIndex.words(name).let { it != typed && seen.add(it) } } }
+        val kinds = listOf(offered(titles), offered(people), offered(genres))
+        val kept = listOf(COMPLETIONS - 3, 2, 1)
+        val taken = kinds.zip(kept) { names, places -> minOf(names.size, places) }.toMutableList()
+        // Places a kind leaves empty go to the others, Titles first.
+        var spare = COMPLETIONS - taken.sum()
+        for (kind in kinds.indices) {
+            val more = minOf(spare, kinds[kind].size - taken[kind])
+            taken[kind] += more
+            spare -= more
+        }
+        return kinds.indices.flatMap { kinds[it].take(taken[it]) }
     }
 
     /** What TMDB's search finds for [query] through the cloud, or null when the cloud can't say right now. */
@@ -1052,6 +1101,10 @@ class Library private constructor(
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10
+        /** Genres whose names match a query: a few, as a query rarely names one. */
+        private const val GENRES_FOUND = 3
+        /** Completions under the keyboard: as many as fit below it before the list scrolls. */
+        private const val COMPLETIONS = 7
         /** At most this many Channels per search: a row of cards. */
         private const val CHANNELS_FOUND = 40
         /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
