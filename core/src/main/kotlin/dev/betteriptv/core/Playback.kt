@@ -66,9 +66,10 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * [contentLanguages] and [remembered] choices, which choose its Tracks once the player has read
  * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
  * languages first, each with its Backups; [version] is among them. Playback starts [from]
- * milliseconds in: where the Viewer stopped last time, or the start. A Show's plan plays its
- * [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live. [originalLanguage]
- * is the language the Title was released in (TMDB's, ISO 639-1), when known.
+ * milliseconds in: where the Viewer stopped last time, or the start; [length] is the file's length
+ * the player knew then, null when it didn't or the Viewer never stopped in it. A Show's plan plays
+ * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
+ * [originalLanguage] is the language the Title was released in (TMDB's, ISO 639-1), when known.
  */
 data class PlayPlan(
     val titleId: TitleId?,
@@ -78,8 +79,12 @@ data class PlayPlan(
     val from: Long = 0,
     val episode: EpisodeNumber? = null,
     val remembered: RememberedTracks = RememberedTracks(),
+    val length: Long? = null,
     val originalLanguage: String? = null,
 ) {
+    /** How far in the Viewer stopped, for a progress bar; null at the start or without the file's length. */
+    val progress: Float? get() = length?.takeIf { it > 0 && from > 0 }?.let { (from.toFloat() / it).coerceIn(0f, 1f) }
+
     /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
     val live: Boolean get() = titleId == null
 

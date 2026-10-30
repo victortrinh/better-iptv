@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -24,7 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.CertaintyLegend
-import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.ActionRow
+import dev.betteriptv.app.ui.components.PrimaryAction
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.VersionHeader
 import dev.betteriptv.app.ui.components.VersionRow
@@ -34,7 +37,7 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
 
-/** A Title's details: what it is, Play, and every Version grouped by language. */
+/** A Title's details: what it is, its actions led by Play, and every Version grouped by language. */
 @Composable
 fun DetailsPrototype(focusVersions: Boolean) {
         val title = SampleCatalog.general
@@ -62,10 +65,14 @@ fun DetailsPrototype(focusVersions: Boolean) {
                     Text(title.description, style = Type.body, color = Colors.ink, maxLines = 3)
                     Text(title.people, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = 4.dp))
                     Spacer(Modifier.height(18.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        NuageButton("Play", {}, Modifier.focusRequester(play), icon = Icons.Filled.PlayArrow)
-                        Text("English · 4K · HDR10 · Netflix", style = Type.label, color = Colors.inkMuted)
+                    // A Movie the Viewer stopped in: Play names where it continues, the other actions stack under it.
+                    Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        PrimaryAction("Continue from 1:02:13", Icons.Filled.PlayArrow, {}, Modifier.focusRequester(play), progress = 0.55f)
+                        ActionRow("Restart", Icons.Filled.Refresh, {})
+                        ActionRow("Remove from Continue watching", Icons.Filled.Close, {})
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text("English · 4K · HDR10 · Netflix", style = Type.label, color = Colors.inkMuted)
                 }
             }
             item {

@@ -598,7 +598,13 @@ class Library private constructor(
         val title = store.title(id) ?: return@withContext null
         val remembered = rememberedTracks()
         val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
-        ranked.firstOrNull()?.let { PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id)) }
+        val stopped = stopped(id)
+        ranked.firstOrNull()?.let {
+            PlayPlan(
+                id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0,
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+            )
+        }
     }
 
     /**
@@ -629,17 +635,15 @@ class Library private constructor(
         val languages = rankingLanguages(remembered, contentLanguages)
         val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
-        val stopped = store.episodeProgress(id).filter { !it.watched }.associate { it.episode to it.position }
+        val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
         val original = originalLanguage(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
                 ranked.firstOrNull()?.let {
-                    PlayPlan(
-                        id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped[episode] ?: 0,
-                        episode = episode, remembered = remembered, originalLanguage = original,
-                    )
+                    val at = stopped[episode]
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, original)
                 }
             }
         }
@@ -692,7 +696,11 @@ class Library private constructor(
             val remembered = rememberedTracks()
             // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
-            PlayPlan(id, version, contentLanguages, listOf(version) + others, resumeFrom(id), remembered = remembered, originalLanguage = originalLanguage(id))
+            val stopped = stopped(id)
+            PlayPlan(
+                id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0,
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+            )
         }
     }
 
@@ -720,8 +728,8 @@ class Library private constructor(
         }
     }
 
-    /** Where Play starts in [id]: where the Viewer stopped, or the start once they finished it. */
-    private fun resumeFrom(id: TitleId): Long = store.progress(id)?.takeUnless { it.watched }?.position ?: 0
+    /** Where Play starts in [id]: where the Viewer stopped, or null for the start once they finished it. */
+    private fun stopped(id: TitleId): StoredProgress? = store.progress(id)?.takeUnless { it.watched }
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player

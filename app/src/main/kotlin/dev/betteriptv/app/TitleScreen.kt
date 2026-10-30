@@ -20,10 +20,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
@@ -43,6 +43,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -53,7 +58,8 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.Backdrop
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.CertaintyLegend
-import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.ActionRow
+import dev.betteriptv.app.ui.components.PrimaryAction
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.VersionHeader
@@ -80,18 +86,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * A Title's details: what it is, Play with the Version it will start, and every Version grouped by
- * language, the Viewer's languages first and the rest behind "Other languages". A Show has no Play
- * button; it lists its seasons and Episodes first, each Episode with the languages it's available
- * in and how far the Viewer got, once the Provider's show details are read, and choosing one plays
- * it. Focus starts on the Episode to watch next, the one before it peeking above. Episodes TMDB lists
- * as not aired yet say when they will be, and can't be played. TMDB's backdrop fills the screen behind them. Without
- * one, the poster sits beside the header instead: a poster blown up as a backdrop is too blurry and
- * too bright to keep text on it readable.
+ * A Title's details: what it is, a list of actions led by Play with the Version it will start, and
+ * every Version grouped by language, the Viewer's languages first and the rest behind "Other
+ * languages". A Show lists its seasons and Episodes first, each Episode with the languages it's
+ * available in and how far the Viewer got, once the Provider's show details are read, and choosing
+ * one plays it. Episodes TMDB lists as not aired yet say when they will be, and can't be played.
+ * TMDB's backdrop fills the screen behind them. Without one, the poster sits beside the header
+ * instead: a poster blown up as a backdrop is too blurry and too bright to keep text on it readable.
  *
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
- * Play becomes "Continue from 1:02:13" beside Restart and "Remove from Continue watching".
+ * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
+ * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
+ * not started), and the header names that Episode. Down from the actions goes to that Episode in
+ * the list, the one before it peeking above; with nothing to play, focus starts there.
  */
 @Composable
 fun TitleScreen(
@@ -112,17 +120,22 @@ fun TitleScreen(
         val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
-    val episodes by produceState<ShowEpisodes?>(null, id, contentLanguages, appLanguage, reads) {
-        if (id.kind == TitleKind.Show) value = library.episodes(id, contentLanguages, appLanguage)
+    // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
+    val show by produceState<Pair<ShowEpisodes, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads) {
+        if (id.kind != TitleKind.Show) return@produceState
+        val episodes = library.episodes(id, contentLanguages, appLanguage) ?: return@produceState
+        val device = withContext(Dispatchers.Default) { deviceProfile() }
+        value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap) }
     }
+    val episodes = show?.first
     // A Show's reads need its show details, so they start once its Episodes are in.
     val readable = id.kind == TitleKind.Movie || episodes != null
     LaunchedEffect(id, contentLanguages, readable) { if (readable) library.readHeaders(id, contentLanguages) { reads++ } }
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        loaded?.let { (title, plan) ->
+        loaded?.let { (title, moviePlan) ->
             TitleContent(
-                title, plan, episodes,
+                title, moviePlan ?: show?.second, episodes,
                 onPlay = { onPlay(it, title.name) },
                 onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
                 onChoose = { version ->
@@ -159,13 +172,14 @@ private fun TitleContent(
     val nextEpisode = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val isShow = title.id.kind == TitleKind.Show
-    // Play takes first focus. With nothing to start, or on a Show, the first Version takes it, and a
-    // Show's next Episode takes it over once the Episodes are read, unless the Viewer has moved on.
+    // Play takes first focus. With nothing to start, the first Version takes it. A Show's Play comes
+    // with its Episodes and takes focus over then, unless the Viewer has moved on; with no Episode to
+    // play, the next Episode does.
     var firstVersionFocused by remember { mutableStateOf(false) }
     // When the Episodes come first, the first Version isn't laid out yet and nothing takes focus.
     var listHasFocus by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
-    // Removing it from Continue watching takes its button away, so focus goes back to Play.
+    // Removing it from Continue watching takes its row away, so focus goes back to Play.
     val resumable = plan != null && plan.from > 0
     var wasResumable by remember(title.id) { mutableStateOf(resumable) }
     LaunchedEffect(resumable) {
@@ -174,13 +188,32 @@ private fun TitleContent(
     }
     val next = episodes?.next
     val peekPx = with(LocalDensity.current) { PEEK.roundToPx() }
-    LaunchedEffect(title.id, next) {
-        if (episodes == null || next == null || (listHasFocus && !firstVersionFocused)) return@LaunchedEffect
-        // The Episode before the next one peeks above it, so the Viewer sees where they are in the season.
-        // A list opens here once; from then on EdgeScroll moves it.
-        episodes.previousEpisodeIndex(next)?.let { listState.scrollToItem(it, peekPx) }
+    val scope = rememberCoroutineScope()
+    // The Episode before the next one peeks above it, so the Viewer sees where they are in the season.
+    // A list opens here once; from then on EdgeScroll moves it.
+    suspend fun focusNextEpisode(fromActions: Boolean = false) {
+        if (episodes == null || next == null) return
+        val previous = episodes.previousEpisodeIndex(next)
+        // From the actions, a first Episode may not be laid out yet: its headline comes to the top instead.
+        if (previous != null) listState.scrollToItem(previous, peekPx) else if (fromActions) listState.scrollToItem(1)
         withFrameNanos {}
         nextEpisode.requestFocus()
+    }
+    LaunchedEffect(title.id, next, plan != null) {
+        if (episodes == null || next == null || (listHasFocus && !firstVersionFocused)) return@LaunchedEffect
+        if (plan != null) {
+            withFrameNanos {}
+            play.requestFocus()
+        } else {
+            focusNextEpisode()
+        }
+    }
+    val episode = next?.let { number -> episodes.seasons.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } }
+    // Down from the last action goes to the next Episode, rather than the first one on screen.
+    val toNextEpisode = Modifier.onPreviewKeyEvent { event ->
+        if (next == null || event.key != Key.DirectionDown) return@onPreviewKeyEvent false
+        if (event.type == KeyEventType.KeyDown) scope.launch { focusNextEpisode(fromActions = true) }
+        true
     }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
     val shown = title.languages.ifEmpty { title.otherLanguages }
@@ -213,6 +246,19 @@ private fun TitleContent(
                         Spacer(Modifier.width(Spacing.m))
                         BadgeRow(best?.attributes?.cardBadges().orEmpty())
                     }
+                    // A Show's header names the Episode its Play starts.
+                    if (isShow && plan?.episode != null) {
+                        val number = plan.episode!!
+                        Text(
+                            episode?.name?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
+                                ?: stringResource(R.string.details_episode, number.season, number.number),
+                            style = Type.title,
+                            color = Colors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = Spacing.s),
+                        )
+                    }
                     title.description?.let {
                         Spacer(Modifier.height(Spacing.s))
                         Text(it, style = Type.body, color = Colors.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -227,34 +273,41 @@ private fun TitleContent(
                             modifier = Modifier.padding(top = Spacing.xs),
                         )
                     }
-                    // A Show plays from its Episodes.
-                    if (!isShow) {
+                    // A Show's Play comes with an Episode to play.
+                    if (!isShow || plan != null) {
                         Spacer(Modifier.height(Spacing.l))
-                        val label = plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing)
-                        // Continue, Restart and Remove are wider than the text column, so they may run past it.
-                        Row(
-                            if (resumable) Modifier.wrapContentWidth(Alignment.Start, unbounded = true) else Modifier,
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.m),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            NuageButton(
-                                if (resumable) stringResource(R.string.play_continue, clock(plan!!.from)) else stringResource(R.string.play),
+                        val number = plan?.episode
+                        // Having played any of the Show, the Viewer continues it.
+                        val started = episodes?.seasons.orEmpty().any { season -> season.episodes.any { it.progress != null } }
+                        val text = when {
+                            number != null && (started || resumable) -> stringResource(R.string.play_continue_episode, number.season, number.number)
+                            number != null -> stringResource(R.string.play_episode, number.season, number.number)
+                            resumable -> stringResource(R.string.play_continue, clock(plan!!.from))
+                            else -> stringResource(R.string.play)
+                        }
+                        val showRemove = resumable && !isShow
+                        Column(Modifier.width(ACTIONS_WIDTH), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            PrimaryAction(
+                                text,
+                                Icons.Filled.PlayArrow,
                                 onClick = { plan?.let(onPlay) },
-                                modifier = Modifier.focusRequester(play),
-                                icon = Icons.Filled.PlayArrow,
+                                modifier = Modifier.focusRequester(play).then(if (resumable) Modifier else toNextEpisode),
+                                progress = plan?.progress,
                                 enabled = plan != null,
                             )
                             if (resumable) {
-                                NuageButton(stringResource(R.string.play_restart), onClick = { plan?.let { onPlay(it.fromStart()) } }, icon = Icons.Filled.Refresh)
-                                NuageButton(stringResource(R.string.continue_watching_remove), onClick = onRemove)
-                            } else {
-                                PlayLabel(label)
+                                ActionRow(
+                                    stringResource(R.string.play_restart),
+                                    Icons.Filled.Refresh,
+                                    onClick = { plan?.let { onPlay(it.fromStart()) } },
+                                    modifier = if (showRemove) Modifier else toNextEpisode,
+                                )
+                                // Continue watching holds Movies: an Episode's place is kept with the Show.
+                                if (showRemove) ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
                             }
                         }
-                        if (resumable) {
-                            Spacer(Modifier.height(Spacing.s))
-                            PlayLabel(label)
-                        }
+                        Spacer(Modifier.height(Spacing.s))
+                        PlayLabel(plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing))
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -380,6 +433,9 @@ private fun Context.monthDay(date: LocalDate): String {
 
 /** How far the Episode before the next one is scrolled up: through the top margin, to the screen's edge. */
 private val PEEK = Spacing.screenY
+
+/** The action list's width: rows of one width, sized for "Remove from Continue watching" and a progress bar beside "Reprendre à 1:02:13". */
+private val ACTIONS_WIDTH = 360.dp
 
 /** The muted line naming the Version Play starts. */
 @Composable
