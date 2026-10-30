@@ -682,7 +682,8 @@ class Library private constructor(
         val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
         fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
             val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
-            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
+            val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes) }
+            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
         }
         val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
         // The newest movies, then the newest shows, in the Viewer's languages.
@@ -699,7 +700,8 @@ class Library private constructor(
                     HomeRow.ContinueWatching(
                         resumes.map { (progress, title) ->
                             val fraction = progress.duration?.takeIf { it > 0 }?.let { (progress.position.toFloat() / it).coerceIn(0f, 1f) }
-                            InProgress(card(title), metadata[title.id]?.backdrop, fraction)
+                            val left = progress.duration?.takeIf { it > 0 }?.let { Duration.ofMillis((it - progress.position).coerceAtLeast(0)) }
+                            InProgress(card(title), metadata[title.id]?.backdrop, fraction, left)
                         },
                     ),
                 )
