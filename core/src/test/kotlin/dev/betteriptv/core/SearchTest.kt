@@ -56,6 +56,8 @@ class SearchTest {
         cloud.title("en", tmdbTitle(240, "The Godfather Part II", popularity = 60.0, cast = listOf("Al Pacino", "Robert De Niro")))
         library.sync()
         library.titles(0, 1000, english, "en")
+        // As opening Search does: the index built after the Sync predates the metadata just cached.
+        library.prepareSearch()
     }
 
     /** Syncs these movie Listings (name to TMDB ID), newest first, numbered from 1. */
@@ -66,6 +68,8 @@ class SearchTest {
         }
         library.sync()
         library.titles(0, 1000, english, "en")
+        // As opening Search does: the index built after the Sync predates the metadata just cached.
+        library.prepareSearch()
     }
 
     @Test fun `a Title is found by any Listing name of its Versions and by its TMDB names`() = runBlocking {
@@ -200,6 +204,65 @@ class SearchTest {
 
         assertTrue(search("heat").movies.isEmpty())
         assertEquals(1, search("ronin").movies.size)
+    }
+
+    /** Waits up to 10 s for the search index of the current catalog to be built, without searching. */
+    private fun awaitSearchIndex(library: Library = this.library): Boolean {
+        val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (!library.searchIndexReady) {
+            if (System.nanoTime() > until) return false
+            Thread.sleep(20)
+        }
+        return true
+    }
+
+    @Test fun `a Sync builds the search index in the background, before the first search`() = runBlocking {
+        library.sync()
+
+        assertTrue("no search index after the Sync", awaitSearchIndex())
+    }
+
+    @Test fun `the search index can be built in the background when the app starts`() = runBlocking {
+        library.sync()
+        library.close()
+        library = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
+        assertFalse(library.searchIndexReady)
+
+        library.prepareSearchInBackground()
+
+        assertTrue("no search index after starting", awaitSearchIndex())
+        assertEquals(godfather, search("godfather").movies.first().id)
+    }
+
+    @Test fun `names fold to the same words in any script`() {
+        // What words() did before its fast path for plain ASCII names.
+        val reference = { text: String ->
+            java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase(java.util.Locale.ROOT)
+                .split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+        }
+        val names = listOf(
+            "The Godfather: Part II", "  WALL·E  ", "Pokémon: Detective Pikachu", "Amélie", "ÉTÉ 85", "Ocean's Eleven", "Se7en",
+            "Москва слезам не верит", "東京物語", "Ça (It)", "Dr. Strangelove", "naïve-ŒUVRE", "İstanbul", "ß", "", "---", "4K-EN Movie_Title",
+        )
+        for (name in names) assertEquals(name, reference(name), SearchIndex.words(name))
+    }
+
+    @Test fun `search reads only names, cast and popularity from cached metadata`() {
+        val json = com.squareup.moshi.Moshi.Builder().build().adapter(Any::class.java).toJson(
+            tmdbTitle(
+                238, "The Godfather", titles = listOf(Triple("fr", "FR", "Le Parrain"), Triple("en", "US", "The Godfather"), Triple("de", "DE", " ")),
+                alternativeTitles = listOf("Mario Puzo's The Godfather"), descriptions = listOf(Triple("en", "US", "Spanning the years 1945 to 1955…")),
+                genres = listOf("Drama"), cast = listOf("Marlon Brando", "Al Pacino"), popularity = 120.5, posterPath = "/p.jpg",
+            ),
+        )
+        val store = CatalogStore(folder.root.resolve("metadata.db").path)
+        store.saveMetadata("en", mapOf(godfather to json), listOf(godfatherPartTwo), java.time.Instant.now())
+        val found = mutableListOf<List<Any>>()
+
+        store.forEachSearchMetadata { id, names, cast, popularity -> found += listOf(id, names.filter(String::isNotBlank).toSet(), cast, popularity) }
+        store.close()
+
+        assertEquals(listOf(listOf(godfather, setOf("The Godfather", "Le Parrain", "Mario Puzo's The Godfather"), listOf("Marlon Brando", "Al Pacino"), 120.5)), found)
     }
 
     @Test fun `building the search index doesn't hold up reading a Title`() = runBlocking {

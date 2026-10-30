@@ -70,8 +70,10 @@ internal class SearchIndex private constructor(
         return found.orEmpty().map { (entry, distance) -> Hit(entry, distance) }
     }
 
+    /** Takes the catalog's Titles, then the metadata cached for them, and the Channels, in any order. */
     class Builder {
         private val titles = mutableListOf<Entry>()
+        private val positions = HashMap<TitleId, Int>()
         private val titleWords = HashMap<String, Postings>()
         private val people = mutableListOf<String>()
         private val personTitles = mutableListOf<Postings>()
@@ -80,11 +82,19 @@ internal class SearchIndex private constructor(
         private val channels = Postings64()
         private val channelWords = HashMap<String, Postings>()
 
-        /** Adds a Title found by [names], with Versions in [languages], and its [cast]. */
-        fun title(id: TitleId, names: Collection<String>, languages: Set<String>, popularity: Double, cast: List<String>) {
+        /** Adds a Title found by [names], with Versions in [languages]. */
+        fun title(id: TitleId, names: Collection<String>, languages: Set<String>) {
             val index = titles.size
-            titles += Entry(id, languages, popularity)
-            names.flatMapTo(HashSet(), ::words).forEach { titleWords.getOrPut(it, ::Postings).add(index) }
+            titles += Entry(id, languages, 0.0)
+            positions[id] = index
+            addWords(index, names)
+        }
+
+        /** Adds what TMDB says of Title [id]: more [names] it's found by, its [popularity] and [cast]. Titles not added are left out. */
+        fun metadata(id: TitleId, names: Collection<String>, popularity: Double, cast: List<String>) {
+            val index = positions[id] ?: return
+            titles[index] = titles[index].let { Entry(it.id, it.languages, popularity) }
+            addWords(index, names)
             for (name in cast.distinct()) {
                 val person = personIndex.getOrPut(name) {
                     people += name
@@ -96,6 +106,11 @@ internal class SearchIndex private constructor(
             }
         }
 
+        /** Postings skip a Title added twice in a row, so a word in several of its names is kept once. */
+        private fun addWords(index: Int, names: Collection<String>) {
+            for (name in names) for (word in words(name)) titleWords.getOrPut(word, ::Postings).add(index)
+        }
+
         /** Adds Channel [id], found by its Provider [name]. */
         fun channel(id: Long, name: String) {
             val index = channels.size
@@ -105,13 +120,25 @@ internal class SearchIndex private constructor(
 
         fun build() = SearchIndex(
             titles,
-            titleWords.mapValues { it.value.toArray() },
+            drain(titleWords),
             people,
             personTitles.map { it.toArray() },
-            personWords.mapValues { it.value.toArray() },
+            drain(personWords),
             channels.toArray(),
-            channelWords.mapValues { it.value.toArray() },
+            drain(channelWords),
         )
+
+        /** [words]' postings as arrays, letting go of each list once copied so the heap never holds both. */
+        private fun drain(words: HashMap<String, Postings>): Map<String, IntArray> {
+            val arrays = HashMap<String, IntArray>(words.size * 4 / 3 + 1)
+            val each = words.iterator()
+            while (each.hasNext()) {
+                val (word, postings) = each.next()
+                arrays[word] = postings.toArray()
+                each.remove()
+            }
+            return arrays
+        }
     }
 
     /** A growing list of longs that doesn't box them. */
@@ -128,31 +155,81 @@ internal class SearchIndex private constructor(
         fun toArray(): LongArray = values.copyOf(size)
     }
 
-    /** A growing list of ints that doesn't box them: the full catalog has millions. */
+    /** A growing set of ints that doesn't box them: the full catalog has millions. Added in order, they need no sorting. */
     private class Postings {
         private var values = IntArray(2)
         private var size = 0
+        private var sorted = true
 
         fun add(value: Int) {
-            if (size > 0 && values[size - 1] == value) return
+            if (size > 0 && values[size - 1] >= value) {
+                if (values[size - 1] == value) return
+                sorted = false
+            }
             if (size == values.size) values = values.copyOf(size * 2)
             values[size++] = value
         }
 
-        fun toArray(): IntArray = values.copyOf(size)
+        /** The values in order, each once. */
+        fun toArray(): IntArray {
+            val array = values.copyOf(size)
+            if (sorted) return array
+            array.sort()
+            var kept = 0
+            for (value in array) if (kept == 0 || array[kept - 1] != value) array[kept++] = value
+            return array.copyOf(kept)
+        }
     }
 
     companion object {
         /** Search needs this many letters: one finds too much to be useful. */
         const val MIN_LETTERS = 2
 
-        private val MARKS = Regex("\\p{M}+")
-        private val NOT_WORD = Regex("[^\\p{L}\\p{N}]+")
 
         /** [text] as lower-case words without accents: "Pokémon: Detective" is `pokemon`, `detective`. */
-        fun words(text: String): List<String> =
-            Normalizer.normalize(text, Normalizer.Form.NFD).replace(MARKS, "").lowercase(Locale.ROOT)
-                .split(NOT_WORD).filter { it.isNotEmpty() }
+        fun words(text: String): List<String> {
+            // By hand rather than by regexes: the search index splits millions of names, and the
+            // stick spent its time collecting their garbage (#106). Most names are plain ASCII.
+            val folded = if (text.all { it < '\u0080' }) text else withoutMarks(Normalizer.normalize(text, Normalizer.Form.NFD))
+            val lower = folded.lowercase(Locale.ROOT)
+            val words = ArrayList<String>(4)
+            var start = -1
+            var i = 0
+            while (i <= lower.length) {
+                val point = if (i < lower.length) lower.codePointAt(i) else ' '.code
+                if (isWordPart(point)) {
+                    if (start < 0) start = i
+                } else if (start >= 0) {
+                    words += lower.substring(start, i)
+                    start = -1
+                }
+                i += Character.charCount(point)
+            }
+            return words
+        }
+
+        private fun withoutMarks(text: String): String {
+            val kept = StringBuilder(text.length)
+            var i = 0
+            while (i < text.length) {
+                val point = text.codePointAt(i)
+                when (Character.getType(point).toByte()) {
+                    Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> Unit
+                    else -> kept.appendCodePoint(point)
+                }
+                i += Character.charCount(point)
+            }
+            return kept.toString()
+        }
+
+        /** A letter or a number, in any script. */
+        private fun isWordPart(point: Int): Boolean = when {
+            point < 0x80 -> point in 'a'.code..'z'.code || point in 'A'.code..'Z'.code || point in '0'.code..'9'.code
+            else -> Character.isLetter(point) || when (Character.getType(point).toByte()) {
+                Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER -> true
+                else -> false
+            }
+        }
 
         /**
          * How far [typed] is from the catalog's [word], or null when they don't match. A word being
@@ -198,4 +275,28 @@ internal class SearchIndex private constructor(
             return previous[b.length]
         }
     }
+}
+
+/**
+ * Indexes every Title of [store] by its Versions' cleaned names and the metadata cached for it, in
+ * any language, and every Channel by its name. [phase] hears how long each part took, in ms.
+ */
+internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, phase: (name: String, ms: Long) -> Unit = { _, _ -> }): SearchIndex {
+    var started = System.nanoTime()
+    val lap = { name: String -> phase(name, (System.nanoTime() - started) / 1_000_000).also { started = System.nanoTime() } }
+    val builder = SearchIndex.Builder()
+    store.forEachChannel(builder::channel)
+    lap("channels")
+    for (kind in TitleKind.entries) {
+        store.forEachTitle(kind) { id, listings ->
+            val names = listings.mapTo(HashSet()) { prefixTable.cleanName(it.first).name }
+            val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.language(name, category)?.let(::primaryLanguage) }
+            builder.title(id, names, languages)
+        }
+    }
+    lap("titles")
+    // Straight into the index: holding every Title's names until its Listings come by doesn't fit the stick's heap.
+    store.forEachSearchMetadata { id, names, cast, popularity -> builder.metadata(id, names, popularity, cast) }
+    lap("metadata")
+    return builder.build().also { lap("build") }
 }

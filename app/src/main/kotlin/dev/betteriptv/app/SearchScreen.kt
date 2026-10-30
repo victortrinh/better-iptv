@@ -68,9 +68,9 @@ fun SearchScreen(
     val scope = rememberCoroutineScope()
     val status by library.syncStatus.collectAsStateWithLifecycle()
     var results by remember { mutableStateOf(SearchResults.NONE) }
-    // The query [results] answer: the one being typed until the index, built on first use, has them.
+    // The query [results] answer: the one being typed until the index, if still being built, has them.
     var answered by remember { mutableStateOf("") }
-    // Builds the index while the Viewer reaches for the first letters.
+    // Finishes the index at the Viewer's priority, if its build in the background hasn't, while they reach for the first letters.
     LaunchedEffect(status.last) { library.prepareSearch() }
     LaunchedEffect(query, status.last, contentLanguages, appLanguage) {
         // Letters typed in quick succession make one search.

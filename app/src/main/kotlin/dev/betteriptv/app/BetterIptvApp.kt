@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
@@ -38,6 +39,11 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
         )
+        // The first search mustn't wait for the index (over a minute on the stick, #106), nor Home's first rows for its build.
+        scope.launch {
+            delay(SEARCH_INDEX_AFTER)
+            library.prepareSearchInBackground()
+        }
         if (BuildConfig.UPDATE_URL.isNotEmpty()) {
             updates = AppUpdates(
                 BuildConfig.UPDATE_URL,
@@ -88,5 +94,6 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     private companion object {
         const val TAG = "Sync"
         val STALE_AFTER: Duration = Duration.ofHours(6)
+        const val SEARCH_INDEX_AFTER = 5_000L
     }
 }

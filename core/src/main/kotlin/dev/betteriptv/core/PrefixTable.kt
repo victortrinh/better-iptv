@@ -25,6 +25,18 @@ internal class PrefixTable private constructor(
     class Description(val unknownPrefix: String?, val attributes: VersionAttributes, val hidden: Hidden?)
 
     private val categoryRules = ConcurrentHashMap<String, List<Rule>>()
+    /** [language]'s answers by Prefix and Category, with "" for none. */
+    private val languages = ConcurrentHashMap<String, String>()
+
+    /**
+     * The main audio's language [describe] tells for a Listing, without the rest: it depends only
+     * on the Prefix and the Category, so it's worked out once for each. The search index asks for
+     * every Listing's, and describing each one was most of its garbage on the stick (#106).
+     */
+    fun language(name: String, category: String): String? {
+        val prefix = PREFIX.find(name)?.groupValues?.get(1)
+        return languages.getOrPut("${prefix.orEmpty()}\u0000$category") { describe(name, category).attributes.language?.value.orEmpty() }.ifEmpty { null }
+    }
 
     fun describe(name: String, category: String): Description {
         val prefix = PREFIX.find(name)?.groupValues?.get(1)?.replace('=', '-')

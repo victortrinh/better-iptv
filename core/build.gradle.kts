@@ -28,6 +28,8 @@ tasks.test {
     maxHeapSize = "128m"
     // ./gradlew :core:test --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
+    // ./gradlew :core:test --tests '*SearchIndexBenchmark' -Pbenchmark
+    providers.gradleProperty("benchmark").orNull?.let { systemProperty("benchmark", "true") }
     testLogging {
         events("failed")
         showStandardStreams = true

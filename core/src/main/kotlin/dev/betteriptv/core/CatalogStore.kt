@@ -499,21 +499,44 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
-    /** Calls [each] with one cached metadata JSON per Title TMDB has, in whichever language was cached, a page at a time like [forEachTitle]. */
-    fun forEachMetadata(each: (TitleId.Tmdb, String) -> Unit) {
+    /**
+     * Calls [each] with what search needs of the metadata cached for each Title TMDB has, in
+     * whichever language was cached, a page at a time like [forEachTitle]: the names it's found by
+     * (as released, in each language TMDB has, and its other names, some more than once), its cast
+     * and its popularity.
+     * SQLite picks them out of the JSON ([TitleMetadata]'s shape), so the bodies, descriptions and
+     * all, never reach the heap: for the whole catalog they're hundreds of MB (#106).
+     */
+    fun forEachSearchMetadata(each: (id: TitleId.Tmdb, names: List<String>, cast: List<String>, popularity: Double) -> Unit) {
+        class Row(val key: String, val names: List<String>, val cast: List<String>, val popularity: Double)
+        val listed = { column: Int, it: SQLiteStatement -> if (it.isNull(column)) emptyList() else it.getText(column).split(SEPARATOR) }
         var after = ""
         while (true) {
             val page = synchronized(reader) {
                 reader.prepare(
-                    "SELECT title_key, max(body) FROM title_metadata WHERE body IS NOT NULL AND title_key > ? GROUP BY title_key ORDER BY title_key LIMIT $SCAN_PAGE",
+                    """
+                    SELECT key, json_extract(body, '$.originalTitle'), json_extract(body, '$.popularity'),
+                        (SELECT group_concat(json_extract(value, '$.title'), char(31)) FROM json_each(body, '$.titles')),
+                        (SELECT group_concat(value, char(31)) FROM json_each(body, '$.alternativeTitles')),
+                        (SELECT group_concat(json_extract(value, '$.name'), char(31)) FROM json_each(body, '$.cast'))
+                    FROM (
+                        SELECT title_key AS key, jsonb(max(body)) AS body FROM title_metadata WHERE body IS NOT NULL AND title_key > ?
+                        GROUP BY title_key ORDER BY title_key LIMIT $SCAN_PAGE
+                    )
+                    """.trimIndent(),
                 ).use {
                     it.bindText(1, after)
-                    buildList { while (it.step()) add(it.getText(0) to it.getText(1)) }
+                    buildList {
+                        while (it.step()) {
+                            val names = listOfNotNull(if (it.isNull(1)) null else it.getText(1)) + listed(3, it) + listed(4, it)
+                            add(Row(it.getText(0), names.distinct(), listed(5, it), if (it.isNull(2)) 0.0 else it.getDouble(2)))
+                        }
+                    }
                 }
             }
-            page.forEach { (key, body) -> (titleId(key) as? TitleId.Tmdb)?.let { id -> each(id, body) } }
+            page.forEach { row -> (titleId(row.key) as? TitleId.Tmdb)?.let { id -> each(id, row.names, row.cast, row.popularity) } }
             if (page.size < SCAN_PAGE) return
-            after = page.last().first
+            after = page.last().key
         }
     }
 
@@ -794,6 +817,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val SCHEMA_VERSION = 4
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
+        /** What [forEachSearchMetadata] joins names with: the ASCII unit separator, which no name has. */
+        const val SEPARATOR = '\u001f'
         const val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
