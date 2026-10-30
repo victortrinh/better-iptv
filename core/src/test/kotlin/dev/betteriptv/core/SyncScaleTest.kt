@@ -34,4 +34,17 @@ class SyncScaleTest {
         assertEquals("EN - Generated Movie 150000 (2020)", library.movieListings(0, 1).single().name)
         assertEquals("EN - Generated Movie 1 (2020)", library.movieListings(149_999, 50).single().name)
     }
+
+    @Test fun `a full-size Sync leaves no large write-ahead log behind`() = runBlocking {
+        provider.generatedMovies = 150_000
+        library.logIn(provider.login)
+
+        library.sync()
+
+        // On the stick a Sync left a 104 MB catalog.db-wal beside a 65 MB catalog.db, enough to block an install (#107).
+        val wal = folder.root.resolve("catalog.db-wal")
+        val database = folder.root.resolve("catalog.db")
+        println("After a Sync of 150,000 movie Listings: catalog.db ${database.length()} bytes, catalog.db-wal ${wal.length()} bytes")
+        assertTrue("catalog.db-wal is ${wal.length()} bytes", wal.length() <= 4L * 1024 * 1024)
+    }
 }
