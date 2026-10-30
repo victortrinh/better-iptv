@@ -169,7 +169,7 @@ fun SettingRow(label: String, value: String, onClick: () -> Unit, modifier: Modi
                 }
             }
             Spacer(Modifier.width(16.dp))
-            Text(value, style = Type.body, color = if (focused) Colors.onFocus else Colors.inkMuted)
+            Text(value, style = Type.detail, color = if (focused) Colors.onFocus else Colors.inkMuted)
         }
     }
 }

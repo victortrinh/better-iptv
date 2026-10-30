@@ -132,8 +132,9 @@ fun TitlesScreen(
             return@Column
         }
         // The margins are content padding, so a focused card grows into them instead of being clipped.
+        // The columns share the width between them, so the grid ends at the right margin like it starts at the left.
         LazyVerticalGrid(
-            GridCells.FixedSize(Cards.posterWidth),
+            GridCells.Adaptive(Cards.posterWidth),
             Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) },
             state = grid,
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
