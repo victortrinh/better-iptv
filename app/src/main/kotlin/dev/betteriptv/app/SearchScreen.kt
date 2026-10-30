@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -89,6 +90,7 @@ fun SearchScreen(
         }
     }
     val keyboard = remember { FocusRequester() }
+    val tab = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
     // A completion was picked: focus goes to the first result once its query is answered.
     val firstResult = remember { FocusRequester() }
@@ -103,7 +105,7 @@ fun SearchScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
-        BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX))
+        BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxSize()) {
             // Scrolls once focus goes down into the completions, so they all can be reached.
@@ -139,7 +141,7 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(library, contentLanguages, query, results, searching = answered != query, firstResult, onOpen, onWatch) { channel, favourite ->
+            Results(library, contentLanguages, query, results, searching = answered != query, tab, firstResult, onOpen, onWatch) { channel, favourite ->
                 scope.launch {
                     library.setFavourite(channel.id, favourite)
                     results = results.copy(channels = results.channels.map { if (it.id == channel.id) it.copy(favourite = favourite) else it })
@@ -156,6 +158,7 @@ private fun Results(
     query: String,
     results: SearchResults,
     searching: Boolean,
+    tab: FocusRequester,
     firstResult: FocusRequester,
     onOpen: (TitleId) -> Unit,
     onWatch: (Channel) -> Unit,
@@ -180,7 +183,7 @@ private fun Results(
         else -> results.people.first().titles
     }
     // The right margin is content padding, so cards scroll under the edge instead of being clipped.
-    LazyColumn(contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
+    LazyColumn(Modifier.backToTab(tab), contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY)) {
         if (results.movies.isNotEmpty()) item {
             Group(library, contentLanguages, stringResource(R.string.search_movies, results.movies.size), results.movies, onOpen, first.takeIf { firstGroup === results.movies })
         }
@@ -198,7 +201,7 @@ private fun Results(
                 LazyRow(
                     contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
                     horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                    modifier = Modifier.offset(x = -Spacing.m),
+                    modifier = Modifier.offset(x = -Spacing.m).focusRestorer(),
                 ) {
                     itemsIndexed(results.channels, key = { _, channel -> "channel/${channel.id}" }) { i, channel ->
                         ChannelCard(channel, onWatch, onFavourite, if (i == 0 && firstGroup === results.channels) first else Modifier)
@@ -221,6 +224,7 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
         LazyRow(
             contentPadding = PaddingValues(top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+            modifier = Modifier.focusRestorer(),
         ) {
             itemsIndexed(titles, key = { _, title -> title.id.toString() }) { i, title ->
                 TitleCard(

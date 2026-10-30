@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -115,9 +117,10 @@ fun Wordmark(modifier: Modifier = Modifier) {
 /**
  * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
  * middle, reached by pressing up. A tab with an icon is a round icon the height of a word tab.
+ * [selectedFocus] focuses the selected tab, for Back from the screen below (see `backToTab`).
  */
 @Composable
-fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null) {
     val capsule = RoundedCornerShape(50)
     Box(modifier.fillMaxWidth()) {
         Wordmark(Modifier.align(Alignment.CenterStart))
@@ -133,7 +136,8 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
                     onClick = { onSelect(index) },
                     // One fixed height for every tab: sized by its content, an icon tab came out taller
                     // than a word tab, whose text renders shorter than the label's line height.
-                    modifier = if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT),
+                    modifier = (if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT))
+                        .then(if (index == selected && selectedFocus != null) Modifier.focusRequester(selectedFocus) else Modifier),
                     weight = FocusWeight.Control,
                     corner = TAB_HEIGHT / 2,
                     container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
