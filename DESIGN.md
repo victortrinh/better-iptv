@@ -219,7 +219,7 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 **Character:** One family, three weights (400, 600, 700, bundled as `inter_*.ttf`). The display size is bold and tracked tight so a Title's name reads like a poster credit. Everything else is plain and even, built for reading from a couch.
 
 ### Hierarchy
-- **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most.
+- **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most. A Title with a TMDB logo (in the App language, else English) shows the logo there instead (`TitleName`): fitted in a 320 × 104 dp box, the room two Display lines take, and sitting on its bottom edge, with the name as its content description. The box stays empty while the logo loads, and the name shows in Display type when there is no logo or it can't be loaded.
 - **Headline** (`Type.headline`): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. The Wordmark uses it at 22 sp.
 - **Title** (`Type.title`): a Title's name under a focused card, the language group heading over Versions ("English · 3"), the search query.
 - **Body** (`Type.body`): descriptions, metadata lines, Version cells, setting values, field text. Descriptions are capped at 2 lines in the hero and 3 on details.

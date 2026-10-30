@@ -39,6 +39,7 @@ import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.TitleCard
+import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Cards
@@ -87,7 +88,8 @@ fun HomePrototype(focusCard: Boolean) {
             }
             item {
                 Column(Modifier.onFocusChanged { if (it.hasFocus || heroFocused != null || focusCard) heroFocused = it.hasFocus }.padding(start = Spacing.screenX, top = 96.dp, bottom = 28.dp).width(440.dp)) {
-                    Text(featured.name, style = Type.display, color = Colors.ink, maxLines = 2)
+                    // The sample films have no TMDB logo, so the name shows as text.
+                    TitleName(featured.name, logo = null)
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${featured.year} · ${featured.runtime} · ${featured.genres}", style = Type.body, color = Colors.inkMuted)

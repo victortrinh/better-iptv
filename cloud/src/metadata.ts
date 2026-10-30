@@ -29,7 +29,8 @@ export async function metadata(env: Env, keys: TitleKey[], language: string): Pr
   const now = Date.now();
   const stale = keys.filter((key) => {
     const entry = cached.get(id(key));
-    return entry === undefined || now - entry.fetchedAt > (entry.body === null ? NOT_FOUND_FRESH_FOR : FRESH_FOR);
+    if (entry === undefined || (entry.body !== null && !("logoPath" in entry.body))) return true; // Cached before logos were asked for.
+    return now - entry.fetchedAt > (entry.body === null ? NOT_FOUND_FRESH_FOR : FRESH_FOR);
   });
 
   const fetched = new Map<string, TitleMetadata | typeof NOT_FOUND>();

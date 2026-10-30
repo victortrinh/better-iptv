@@ -71,6 +71,8 @@ data class TitleDetails(
     val runtimeMinutes: Int? = null,
     /** A landscape still URL, to fill the screen behind the details. */
     val backdrop: String? = null,
+    /** The Title's logo art URL, drawn in place of its name; null when TMDB has none in the App language or English. */
+    val logo: String? = null,
     /** The main cast's names, billing order. */
     val cast: List<String> = emptyList(),
     /** Whether the metadata came from TMDB, whose terms ask for attribution where it is shown. */
