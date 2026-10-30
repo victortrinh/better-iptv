@@ -78,6 +78,19 @@ class AppUpdatesTest {
         assertEquals(listOf("/latest/update.json", "/build-95/update.json"), requested)
     }
 
+    @Test fun `an absolute APK address is used as it is`() = runBlocking {
+        // GitHub serves update.json from a signed asset address, where a bare name doesn't resolve.
+        files["/elsewhere/app.apk"] = apk
+        files["/build-95/update.json"] = """
+            {"versionCode": 95, "versionName": "0.1.95", "apk": "$host/elsewhere/app.apk", "sha256": "${sha256(apk)}", "size": ${apk.size}}
+        """.trimIndent().toByteArray()
+        val updates = updates()
+        updates.check()
+        assertEquals("$host/elsewhere/app.apk", (updates.state.value as UpdateState.Available).update.apkUrl)
+        updates.update()
+        assertArrayEquals(apk, installer.installed.single())
+    }
+
     @Test fun `the same or an older build is not offered`() = runBlocking {
         publish(versionCode = 91)
         val updates = updates(installedVersionCode = 91)

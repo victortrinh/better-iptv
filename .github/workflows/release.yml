@@ -56,7 +56,10 @@ jobs:
           name="0.1.$code"
           apk="better-iptv-$name.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
-          jq -n --argjson code "$code" --arg name "$name" --arg apk "$apk" \
+          # An absolute address: GitHub redirects update.json to a signed asset address, and a bare
+          # name resolved against that answers 618 (jwt-not-provided).
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/build-$code/$apk"
+          jq -n --argjson code "$code" --arg name "$name" --arg apk "$url" \
             --arg sha256 "$(sha256sum "$apk" | cut -d' ' -f1)" --argjson size "$(stat -c%s "$apk")" \
             '{versionCode: $code, versionName: $name, apk: $apk, sha256: $sha256, size: $size}' > update.json
           cat update.json

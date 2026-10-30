@@ -3,7 +3,7 @@
 The app updates itself (ADR 0006, ADR 0010). On every push to main, the **Release** workflow (`.github/workflows/release.yml`) runs the tests, builds the release APK signed with the release key, and publishes a GitHub release `build-<versionCode>` holding:
 
 - `better-iptv-0.1.<versionCode>.apk`
-- `update.json`: `{"versionCode": 95, "versionName": "0.1.95", "apk": "better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567}`
+- `update.json`: `{"versionCode": 95, "versionName": "0.1.95", "apk": "https://github.com/victortrinh/better-iptv/releases/download/build-95/better-iptv-0.1.95.apk", "sha256": "…", "size": 61234567}`
 
 Release builds read `https://github.com/victortrinh/better-iptv/releases/latest/download/update.json` on launch (`updateUrl` in `gradle.properties`). When it names a higher versionCode, the app shows "Update available" before anything else. "Update now" downloads the APK, checks its size and SHA-256 against `update.json`, and opens Android's installer; "Later" puts it away until the next launch, and Settings → App version offers it too. The first time, Android has to allow the app to install apps, and the app walks the Viewer there.
 

@@ -142,7 +142,8 @@ class AppUpdates(
             val apk = body["apk"] as? String ?: return null
             val sha256 = (body["sha256"] as? String)?.lowercase()?.takeIf { it.matches(SHA256) } ?: return null
             val size = (body["size"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
-            // Against the address the manifest was finally served from, after GitHub's redirects.
+            // Release manifests give an absolute address; a bare name resolves against the address the
+            // manifest was finally served from, which for GitHub is a signed asset address that refuses it.
             val apkUrl = response.request.url.resolve(apk)?.toString() ?: return null
             return AppUpdate(versionCode, versionName, apkUrl, sha256, size)
         }
