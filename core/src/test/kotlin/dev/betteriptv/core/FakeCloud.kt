@@ -13,8 +13,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
 /**
- * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata and
- * Match answers.
+ * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
+ * answers and Charts.
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -36,6 +36,11 @@ class FakeCloud : Closeable {
     private val metadata = HashMap<String, Map<String, Any?>>()
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
+    private val charts = HashMap<String, Map<String, Any?>>()
+
+    /** The Regions the device asked Charts for, as sent. */
+    val chartsAsked: List<String>
+        get() = received.filter { it.path == "/v1/charts" }.map { (read(it.body) as Map<*, *>)["region"] as String }
 
     /** The queries the device sent to `/v1/search`, as sent. */
     val searchAsked: List<String>
@@ -117,6 +122,22 @@ class FakeCloud : Closeable {
         }
     }
 
+    /**
+     * Answers `/v1/charts` for [region] with Netflix's Top 10 [movies] and [shows] (TMDB IDs in rank
+     * order), the world's when [worldwide]. Other Regions get empty lists.
+     */
+    fun charts(region: String, movies: List<Long>, shows: List<Long> = emptyList(), worldwide: Boolean = false) {
+        synchronized(charts) {
+            charts[region] = mapOf(
+                "top" to mapOf(
+                    "worldwide" to worldwide,
+                    "movies" to movies.map { mapOf("kind" to "movie", "tmdbId" to it) },
+                    "shows" to shows.map { mapOf("kind" to "show", "tmdbId" to it) },
+                ),
+            )
+        }
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -167,6 +188,13 @@ class FakeCloud : Closeable {
                     mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong())
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
+            }
+            "/v1/charts" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val region = (read(body) as Map<*, *>)["region"] as String
+                val empty = mapOf("top" to mapOf("worldwide" to false, "movies" to emptyList<Any>(), "shows" to emptyList<Any>()))
+                respond(exchange, 200, synchronized(charts) { charts[region] } ?: empty)
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {

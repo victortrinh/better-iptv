@@ -243,7 +243,7 @@ private fun RegionList(region: String, appLanguage: String, onPick: (String) -> 
     }
 }
 
-private fun countryName(code: String, appLanguage: String): String = Locale("", code).getDisplayCountry(Locale.forLanguageTag(appLanguage))
+internal fun countryName(code: String, appLanguage: String): String = Locale("", code).getDisplayCountry(Locale.forLanguageTag(appLanguage))
 
 @Composable
 private fun Heading(text: String) {

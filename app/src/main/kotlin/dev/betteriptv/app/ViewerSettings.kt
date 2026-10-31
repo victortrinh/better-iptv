@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
 import dev.betteriptv.core.BackgroundPace
+import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,7 +86,7 @@ class ViewerSettingsStore(context: Context) {
             contentLanguages = prefs.getString(CONTENT_LANGUAGES, null)?.split(',')?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(device.language),
             appLanguage = prefs.getString(APP_LANGUAGE, null) ?: device.language.takeIf { it in APP_LANGUAGES } ?: "en",
-            region = prefs.getString(REGION, null) ?: device.country.takeIf { it.length == 2 } ?: "US",
+            region = prefs.getString(REGION, null) ?: device.country.takeIf { it.length == 2 } ?: Library.DEFAULT_REGION,
             qualityCap = prefs.getString(QUALITY_CAP, null)?.let { name -> QualityCap.entries.find { it.name == name } } ?: QualityCap.UHD,
             subtitleStyle = SubtitleStyle(
                 size = read(SUBTITLE_SIZE, SubtitleSize.entries) ?: SubtitleSize.Medium,

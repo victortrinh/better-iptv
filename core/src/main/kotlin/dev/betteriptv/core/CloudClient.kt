@@ -151,6 +151,16 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }
     }
 
+    /**
+     * The Charts for [region] (ISO 3166, `CA`) in [language] (ISO 639-1), as the cloud's JSON, which
+     * [Charts] reads; kept whole, so parts a later app reads are already there.
+     */
+    fun charts(region: String, language: String): String {
+        val answer = authorized { token -> post("v1/charts", json.toJson(mapOf("region" to region, "language" to language)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return json.serializeNulls().toJson(answer)
+    }
+
     /** The subtitle file a search offered as [id]; null when its service no longer has it. */
     fun downloadSubtitle(id: String): DownloadedSubtitle? {
         val answer = try {

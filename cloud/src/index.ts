@@ -1,3 +1,4 @@
+import { charts } from "./charts";
 import { isRegistered, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
@@ -42,6 +43,11 @@ import { upcoming } from "./upcoming";
  *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
  *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
  *   when TMDB can't answer right now and the Show was never asked about.
+ * - `POST /v1/charts`, with `{"region": "CA", "language": "fr"}`: the Charts for that Region,
+ *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]}}`,
+ *   Netflix's Top 10 in rank order as TMDB Titles, the Region's or (worldwide) the world's when
+ *   Netflix doesn't list it. A list its source can't give right now and never gave is empty. Later
+ *   Charts come as parts beside `top`.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */
@@ -106,6 +112,13 @@ export default {
         if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
         throw e;
       }
+    }
+    if (request.method === "POST" && pathname === "/v1/charts") {
+      const { region, language } = ((await request.json().catch(() => null)) ?? {}) as { region?: unknown; language?: unknown };
+      if (typeof region !== "string" || !/^[A-Z]{2}$/.test(region) || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
+        return problem(400, "region must be an ISO 3166 country code, such as \"CA\", and language an ISO 639-1 code, such as \"fr\".");
+      }
+      return json(await charts(env, region, language));
     }
     if (request.method === "POST" && pathname === "/v1/subtitles/download") {
       const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };

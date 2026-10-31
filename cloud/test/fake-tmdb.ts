@@ -16,10 +16,14 @@ export class FakeTmdb {
   private readonly searchable: { path: string; result: (language: string) => SearchResult }[] = [];
   private readonly multi: { names: string[]; result: object }[] = [];
   private readonly people = new Map<number, { cast: object[]; crew: object[] }>();
+  /** Other services' fakes, by the URL prefix they answer for. */
+  private readonly others: { prefix: string; answer: (url: URL) => Response }[] = [];
 
   constructor() {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
+      const other = this.others.find((o) => url.href.startsWith(o.prefix));
+      if (other) return other.answer(url);
       if (!url.href.startsWith("https://api.themoviedb.org/3/")) throw new Error(`unexpected fetch: ${url}`);
       this.requests.push(url);
       this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
@@ -91,6 +95,11 @@ export class FakeTmdb {
   person(id: number, name: string, popularity: number, credits: { cast?: object[]; crew?: object[] }) {
     this.multi.push({ names: [name], result: { media_type: "person", id, name, popularity, known_for: [] } });
     this.people.set(id, { cast: credits.cast ?? [], crew: credits.crew ?? [] });
+  }
+
+  /** Answers the Worker's fetches of URLs starting with [prefix] with [answer], for another service's fake. */
+  alsoServe(prefix: string, answer: (url: URL) => Response) {
+    this.others.push({ prefix, answer });
   }
 
   /** The search requests that reached TMDB. */
