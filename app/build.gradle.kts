@@ -132,4 +132,8 @@ dependencies {
     // A real android.net.Uri for the Media3 classes the player's policies are tested with.
     testImplementation(libs.robolectric)
     testImplementation(libs.coroutines.test)
+    // Focus moves on Home's rows, driven by key presses under Robolectric.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
