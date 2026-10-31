@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -90,14 +91,14 @@ private fun Root(app: BetterIptvApp) {
         // Saved, so the Viewer stays in Settings when changing the App language recreates the screen.
         var tab by rememberSaveable { mutableStateOf(Browse.Home) }
         // Each screen keeps its scroll position while another is shown.
-        val home = remember { HomeState() }
+        val home = remember { RowsState() }
         val movies = remember { TitlesState() }
         val shows = remember { TitlesState() }
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
-        var returnedFrom by remember { mutableStateOf(0) }
-        var returnedToHome by remember { mutableStateOf<HomeCard?>(null) }
+        // The card Back from a Title or Channel returns to, on Home or a Titles tab.
+        var returnedTo by remember { mutableStateOf<RowCard?>(null) }
         // The screen was reached by picking its tab, which keeps focus there.
         var byTab by remember { mutableStateOf(false) }
         var playing by remember { mutableStateOf<NowPlaying?>(null) }
@@ -105,8 +106,7 @@ private fun Root(app: BetterIptvApp) {
         val onTab = { selected: Browse ->
             tab = selected
             byTab = true
-            returnedFrom = -1
-            returnedToHome = null
+            returnedTo = null
         }
         val watch = { channel: Channel ->
             byTab = false
@@ -127,13 +127,13 @@ private fun Root(app: BetterIptvApp) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
                     app.library, contentLanguages, appLanguage, settings.region, home,
-                    restoreFocus = returnedToHome,
+                    restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,
-                    onOpen = { card, id -> opened = OpenedTitle(-1, id, card) },
+                    onOpen = { card, id -> opened = OpenedTitle(id, card) },
                     onWatch = { card, channel ->
                         // Back from the Channel comes back to its card.
-                        returnedToHome = card
+                        returnedTo = card
                         watch(channel)
                     },
                 )
@@ -143,28 +143,30 @@ private fun Root(app: BetterIptvApp) {
                         app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
                         focusTab = byTab,
                         onTab = onTab,
-                        onOpen = { opened = OpenedTitle(-1, it) },
+                        onOpen = { opened = OpenedTitle(it) },
                         onWatch = watch,
                     )
                 }
                 Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, focusTab = byTab, onTab = onTab)
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
-                    TitlesScreen(
-                        app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
-                        restoreFocus = returnedFrom,
-                        focusTab = byTab,
-                        onSyncNow = app::sync,
-                        onTab = onTab,
-                        onOpen = { index, id -> opened = OpenedTitle(index, id) },
-                    )
+                    // Each tab its own screen, so the card to focus on one isn't looked for on the other.
+                    key(kind) {
+                        TitlesScreen(
+                            app.library, kind, contentLanguages, appLanguage, settings.region, if (kind == TitleKind.Movie) movies else shows,
+                            restoreFocus = returnedTo,
+                            focusTab = byTab,
+                            onSyncNow = app::sync,
+                            onTab = onTab,
+                            onOpen = { card, id -> opened = OpenedTitle(id, card) },
+                        )
+                    }
                 }
             }
             else -> {
                 BackHandler {
                     byTab = false
-                    returnedFrom = title.cardIndex
-                    returnedToHome = title.homeCard
+                    returnedTo = title.card
                     opened = null
                 }
                 TitleScreen(
@@ -186,5 +188,5 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
  */
 private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0)
 
-/** The Title whose details are open, and which card opened it (in a list, or on the home screen), so focus goes back there. */
-private data class OpenedTitle(val cardIndex: Int, val id: TitleId, val homeCard: HomeCard? = null)
+/** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
+private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)

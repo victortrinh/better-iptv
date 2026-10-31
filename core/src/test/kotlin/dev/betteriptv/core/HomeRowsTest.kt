@@ -228,6 +228,7 @@ class HomeRowsTest {
                         ChartList.TopMovies -> "top movies"
                         ChartList.TopShows -> "top shows"
                         ChartList.Trending -> "trending"
+                        ChartList.TrendingMovies, ChartList.TrendingShows -> "a tab's trending"
                     }
                     is HomeRow.NewOnYourService -> "new"
                     is HomeRow.Favourites -> "favourites"

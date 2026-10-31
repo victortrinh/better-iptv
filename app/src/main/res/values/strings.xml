@@ -27,6 +27,10 @@
     <string name="row_top_movies_worldwide">Top movies worldwide this week</string>
     <string name="row_top_shows_worldwide">Top shows worldwide this week</string>
     <string name="row_trending">Trending this week</string>
+    <string name="row_trending_movies">Trending movies this week</string>
+    <string name="row_trending_shows">Trending shows this week</string>
+    <string name="row_new_movies">New movies</string>
+    <string name="row_new_shows">New shows</string>
     <string name="rank_movies">#%1$d in movies in %2$s</string>
     <string name="rank_shows">#%1$d in shows in %2$s</string>
     <string name="rank_movies_worldwide">#%1$d in movies worldwide</string>

@@ -13,35 +13,35 @@ class RestoredCardTest {
 
     @Test
     fun aCardStillThereKeepsFocus() {
-        assertEquals(HomeCard("new", "moana"), restoredCard(HomeCard("new", "moana"), home, home))
+        assertEquals(RowCard("new", "moana"), restoredCard(RowCard("new", "moana"), home, home))
     }
 
     @Test
     fun theRowKeepsItsCardWhenContinueWatchingGoes() {
         val after = home - "continue"
 
-        assertEquals(HomeCard("new", "moana"), restoredCard(HomeCard("new", "moana"), home, after))
+        assertEquals(RowCard("new", "moana"), restoredCard(RowCard("new", "moana"), home, after))
     }
 
     @Test
     fun theRowKeepsItsCardWhenContinueWatchingComes() {
         val before = home - "continue"
 
-        assertEquals(HomeCard("new", "moana"), restoredCard(HomeCard("new", "moana"), before, home))
+        assertEquals(RowCard("new", "moana"), restoredCard(RowCard("new", "moana"), before, home))
     }
 
     @Test
     fun aRemovedCardGivesFocusToTheOneNowInItsPlace() {
         val after = home + ("continue" to listOf("verity"))
 
-        assertEquals(HomeCard("continue", "verity"), restoredCard(HomeCard("continue", "moana"), home, after))
+        assertEquals(RowCard("continue", "verity"), restoredCard(RowCard("continue", "moana"), home, after))
     }
 
     @Test
     fun theLastCardRemovedGivesFocusToTheOneBeforeIt() {
         val after = home + ("new" to listOf("lupin", "moana"))
 
-        assertEquals(HomeCard("new", "moana"), restoredCard(HomeCard("new", "tenzing"), home, after))
+        assertEquals(RowCard("new", "moana"), restoredCard(RowCard("new", "tenzing"), home, after))
     }
 
     @Test
@@ -49,18 +49,18 @@ class RestoredCardTest {
         val before = home + ("continue" to listOf("moana"))
         val after = home - "continue"
 
-        assertEquals(HomeCard("new", "lupin"), restoredCard(HomeCard("continue", "moana"), before, after))
+        assertEquals(RowCard("new", "lupin"), restoredCard(RowCard("continue", "moana"), before, after))
     }
 
     @Test
     fun theLastRowGoneGivesFocusToTheRowBeforeIt() {
         val after = home - "genre/Drama"
 
-        assertEquals(HomeCard("new", "lupin"), restoredCard(HomeCard("genre/Drama", "verity"), home, after))
+        assertEquals(RowCard("new", "lupin"), restoredCard(RowCard("genre/Drama", "verity"), home, after))
     }
 
     @Test
     fun noCardsLeaveNothingToFocus() {
-        assertNull(restoredCard(HomeCard("continue", "moana"), home, emptyMap()))
+        assertNull(restoredCard(RowCard("continue", "moana"), home, emptyMap()))
     }
 }
