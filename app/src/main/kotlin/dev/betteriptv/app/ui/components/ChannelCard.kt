@@ -36,7 +36,7 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * One Channel: its logo, whole, on a 16:9 glass card, or its name when there is no logo. Its name
  * and the menu key's hint ([menuHint], to add or remove the Favourite) appear under it while it has
- * focus, unless [named] is false (Home, where [InfoPanel] tells them). Pressing it calls [onClick];
+ * focus, unless [named] is false (Home, where [RailInfo] tells them). Pressing it calls [onClick];
  * the remote's menu key calls [onMenu].
  */
 @Composable

@@ -31,6 +31,8 @@ export interface TitleMetadata extends TitleKey {
   backdropPath: string | null;
   /** The Title's logo art (PNG or SVG): the best voted in the requested language, else in English, else null. */
   logoPath: string | null;
+  /** The most voted poster with no text on it (no language), for art the app lays the logo over; null when TMDB has none. */
+  textlessPosterPath: string | null;
   cast: { name: string; character: string; profilePath: string | null }[];
   imdbId: string | null;
   /** YouTube video IDs, official trailers first. */
@@ -47,7 +49,7 @@ const CAST_SHOWN = 12;
 
 /**
  * Fetches one Title in [language] (ISO 639-1) with a single TMDB request: details, translations,
- * alternative titles, credits, videos, external IDs and logos.
+ * alternative titles, credits, videos, external IDs, logos and posters.
  */
 export async function fetchTitle(env: Env, key: TitleKey, language: string): Promise<TitleMetadata | typeof NOT_FOUND> {
   const path = `${tmdbPath(key.kind)}/${key.tmdbId}`;
@@ -55,7 +57,8 @@ export async function fetchTitle(env: Env, key: TitleKey, language: string): Pro
     language,
     append_to_response: "translations,alternative_titles,credits,videos,external_ids,images",
     include_video_language: `${language},en`,
-    include_image_language: `${language},en`,
+    // `null` brings the language-free images: textless posters.
+    include_image_language: `${language},en,null`,
   });
   if (response === NOT_FOUND) return NOT_FOUND;
   return read(key, language, (await response.json()) as TmdbTitle);
@@ -197,6 +200,7 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
     posterPath: t.poster_path ?? null,
     backdropPath: t.backdrop_path ?? null,
     logoPath: bestLogo(t.images?.logos ?? [], language),
+    textlessPosterPath: mostVoted((t.images?.posters ?? []).filter((p) => p.iso_639_1 == null || p.iso_639_1 === "xx"))?.file_path ?? null,
     cast: (t.credits?.cast ?? [])
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .slice(0, CAST_SHOWN)
@@ -212,12 +216,14 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
 /** The most voted logo in [language], else in English; logos without a language are text-free marks, so none of those. */
 function bestLogo(logos: TmdbImage[], language: string): string | null {
   for (const wanted of [language, "en"]) {
-    const best = logos
-      .filter((l) => l.iso_639_1 === wanted && /\.(png|svg)$/i.test(l.file_path))
-      .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0))[0];
+    const best = mostVoted(logos.filter((l) => l.iso_639_1 === wanted && /\.(png|svg)$/i.test(l.file_path)));
     if (best) return best.file_path;
   }
   return null;
+}
+
+function mostVoted(images: TmdbImage[]): TmdbImage | undefined {
+  return [...images].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0))[0];
 }
 
 /** The parts of a TMDB image the cloud uses. */
@@ -283,5 +289,5 @@ interface TmdbTitle {
   credits?: { cast?: { name: string; character?: string; profile_path?: string | null; order?: number }[] };
   videos?: { results?: { key: string; site: string; type: string; official?: boolean }[] };
   external_ids?: { imdb_id?: string | null };
-  images?: { logos?: TmdbImage[] };
+  images?: { logos?: TmdbImage[]; posters?: TmdbImage[] };
 }

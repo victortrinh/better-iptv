@@ -160,6 +160,11 @@ export const godfather = (language: string) => ({
       { file_path: "/parrain-logo.svg", iso_639_1: "fr", vote_average: 5.3, vote_count: 2 },
       { file_path: "/godfather-mark.png", iso_639_1: null, vote_average: 9.0, vote_count: 9 },
     ],
+    posters: [
+      { file_path: "/parrain.jpg", iso_639_1: "fr", vote_average: 9.5, vote_count: 9 },
+      { file_path: "/godfather-plain-old.jpg", iso_639_1: null, vote_average: 5.1, vote_count: 2 },
+      { file_path: "/godfather-plain.jpg", iso_639_1: null, vote_average: 5.6, vote_count: 4 },
+    ],
   },
 });
 

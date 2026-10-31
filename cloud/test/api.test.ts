@@ -95,6 +95,8 @@ describe("Title metadata", () => {
         backdropPath: "/godfather-backdrop.jpg",
         // The best voted French logo; English and language-free ones come after it.
         logoPath: "/parrain-logo.svg",
+        // The best voted poster with no language, so with no text on it.
+        textlessPosterPath: "/godfather-plain.jpg",
         cast: [
           { name: "Marlon Brando", character: "Don Vito Corleone", profilePath: "/brando.jpg" },
           { name: "Al Pacino", character: "Michael Corleone", profilePath: "/pacino.jpg" },
@@ -107,10 +109,10 @@ describe("Title metadata", () => {
     expect(tmdb.requests[0].searchParams.get("language")).toBe("fr");
   });
 
-  it("asks TMDB for logos in the requested language and English", async () => {
+  it("asks TMDB for images in the requested language, English and none", async () => {
     await metadata(await registerDevice(), "fr", [theGodfather]);
 
-    expect(tmdb.requests[0].searchParams.get("include_image_language")).toBe("fr,en");
+    expect(tmdb.requests[0].searchParams.get("include_image_language")).toBe("fr,en,null");
   });
 
   it("falls back to the English logo, and to none", async () => {
@@ -118,6 +120,7 @@ describe("Title metadata", () => {
     const { titles } = await metadata(await registerDevice(), "fr", [{ kind: "show", tmdbId: 1396 }, { kind: "movie", tmdbId: 11 }]);
 
     expect(titles.map((t) => t.logoPath)).toEqual(["/bb-logo.png", null]);
+    expect(titles.map((t) => t.textlessPosterPath)).toEqual([null, null]);
   });
 
   it("reads Shows from TMDB's TV endpoint, whose IDs are another number space", async () => {
@@ -225,15 +228,15 @@ describe("the metadata cache", () => {
     expect(tmdb.requests).toHaveLength(2);
   });
 
-  it("asks TMDB again for an answer cached before logos were asked for", async () => {
+  it("asks TMDB again for an answer cached before textless posters were asked for", async () => {
     const token = await registerDevice();
     await metadata(token, "en", [theGodfather]);
     const row = await env.DB.prepare("SELECT body FROM title_metadata").first<{ body: string }>();
-    const { logoPath, ...withoutLogo } = JSON.parse(row!.body);
-    await env.DB.prepare("UPDATE title_metadata SET body = ?1").bind(JSON.stringify(withoutLogo)).run();
+    const { textlessPosterPath, ...without } = JSON.parse(row!.body);
+    await env.DB.prepare("UPDATE title_metadata SET body = ?1").bind(JSON.stringify(without)).run();
 
     const again = await metadata(token, "en", [theGodfather]);
-    expect(again.titles[0].logoPath).toBe(logoPath);
+    expect(again.titles[0].textlessPosterPath).toBe(textlessPosterPath);
     expect(tmdb.requests).toHaveLength(2);
   });
 

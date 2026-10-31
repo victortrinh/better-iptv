@@ -841,6 +841,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private fun SQLiteStatement.progress() =
         StoredProgress(titleId(getText(0)), getLong(1), if (isNull(2)) null else getLong(2), getLong(3) != 0L)
 
+    /** When the Viewer last played each Title in [inProgress] and each Show they played an Episode of, last played first, at most [limit]. */
+    fun lastPlayed(limit: Int): List<Pair<TitleId, Instant>> = synchronized(reader) {
+        reader.prepare(
+            "SELECT title_key, updated_at FROM progress WHERE watched = 0 " +
+                "UNION ALL SELECT title_key, MAX(updated_at) FROM episode_progress GROUP BY title_key ORDER BY 2 DESC LIMIT ?",
+        ).use {
+            it.bindLong(1, limit.toLong())
+            buildList { while (it.step()) add(titleId(it.getText(0)) to Instant.ofEpochMilli(it.getLong(1))) }
+        }
+    }
+
     override fun deviceToken(): String? = meta(DEVICE_TOKEN)
 
     override fun saveDeviceToken(token: String) = synchronized(writer) {
