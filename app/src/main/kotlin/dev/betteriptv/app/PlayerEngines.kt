@@ -51,6 +51,7 @@ import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.libvlc.interfaces.IVLCVout
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -419,6 +420,15 @@ class VlcEngine(
     override val duration: Long? get() = length
 
     fun attach(layout: VLCVideoLayout) {
+        // VLC sometimes fails to make its picture (#173): when its surfaces come and go says whether they were there.
+        player.vlcVout.addCallback(object : IVLCVout.Callback {
+            override fun onSurfacesCreated(vout: IVLCVout) {
+                Log.i(PLAYER_TAG, "VLC's surfaces are ready")
+            }
+            override fun onSurfacesDestroyed(vout: IVLCVout) {
+                Log.i(PLAYER_TAG, "VLC's surfaces are gone")
+            }
+        })
         player.attachViews(layout, null, true, false)
         attached.complete(Unit)
     }
@@ -533,6 +543,7 @@ class VlcEngine(
                     MediaPlayer.Event.PausableChanged -> pausable = event.pausable
                     MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> playing = false
                     MediaPlayer.Event.Vout -> if (event.voutCount > 0 && !shown) {
+                        Log.i(PLAYER_TAG, "VLC shows its picture")
                         shown = true
                         // A pause asked for before the picture showed.
                         onVlcThread(::applyPause)
@@ -543,6 +554,7 @@ class VlcEngine(
                     playing = true
                     if (!started) {
                         started = true
+                        Log.i(PLAYER_TAG, "VLC plays")
                         events(PlayerEvent.Started)
                     }
                 }
