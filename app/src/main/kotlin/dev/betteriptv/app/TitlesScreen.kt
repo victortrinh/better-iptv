@@ -1,16 +1,9 @@
 package dev.betteriptv.app
 
 import android.content.Context
-import android.icu.text.DisplayContext
-import android.icu.text.RelativeDateTimeFormatter
-import android.icu.text.RelativeDateTimeFormatter.RelativeUnit
-import android.icu.util.ULocale
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,34 +14,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
-import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
-import dev.betteriptv.core.CatalogNotSaved
-import dev.betteriptv.core.CompletedSync
 import dev.betteriptv.core.Library
-import dev.betteriptv.core.ProviderProblem
-import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.NumberFormat
-import java.time.Duration
-import java.time.Instant
-import java.util.Locale
 
 /**
  * What a Titles tab keeps while another screen shows: its [rows] (scroll positions and the rows
- * read last), and how many Titles it counted last, which shows until it is read again.
+ * read last), and how many Titles it counted last, kept until it is read again.
  */
 @Stable
 class TitlesState {
@@ -57,9 +40,10 @@ class TitlesState {
 }
 
 /**
- * The Movies or Shows tab ([kind]): the Title count, Sync now and how the Sync is going over rows
- * like Home's ([RowsScreen]): the kind's Top 10 in the Viewer's [region], its Trending this week,
- * then New movies (or shows). [restoreFocus] is the card to focus on coming back, the one the
+ * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Top 10 in the
+ * Viewer's [region], its Trending this week, then New movies (or shows). Sync now and how the Sync
+ * is going are in Settings; only a first Sync's progress, or why it failed, shows here, while
+ * there are no Titles yet. [restoreFocus] is the card to focus on coming back, the one the
  * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
@@ -72,7 +56,6 @@ fun TitlesScreen(
     state: TitlesState,
     restoreFocus: RowCard?,
     focusTab: Boolean,
-    onSyncNow: () -> Unit,
     onTab: (Browse) -> Unit,
     onOpen: (RowCard, TitleId) -> Unit,
 ) {
@@ -83,7 +66,9 @@ fun TitlesScreen(
     val context = LocalContext.current
     val described = context.describe(status)
     // A first Sync leaves the tab empty for minutes: say how far it is where the rows will be, readable from the couch.
-    val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching)
+    // A failed one with nothing stored says why there; with a catalog stored, it shows only in Settings.
+    val failed = status is SyncStatus.Failed
+    val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching || failed)
     RowsScreen(
         library, contentLanguages, state.rows, restoreFocus, focusTab,
         reading = listOf(kind, contentLanguages, appLanguage, region),
@@ -93,86 +78,23 @@ fun TitlesScreen(
         placeholder = if (firstSync) {
             {
                 Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
-                    Text(described, style = Type.body, color = Colors.inkMuted, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = FIRST_SYNC_TEXT_WIDTH))
+                    Text(
+                        described,
+                        style = Type.body,
+                        color = if (failed) Colors.error else Colors.inkMuted,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.widthIn(max = FIRST_SYNC_TEXT_WIDTH),
+                    )
                 }
             }
         } else null,
     ) { tab ->
-        Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
-            BrowseTabs(if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab, selectedFocus = tab)
-            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
-                Text(pluralStringResource(R.plurals.titles_count, count, NumberFormat.getIntegerInstance().format(count)), style = Type.body, color = Colors.inkMuted)
-                Spacer(Modifier.width(Spacing.m))
-                NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running && status !is SyncStatus.Matching)
-            }
-        }
-        Text(
-            described,
-            style = Type.caption,
-            color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
-            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.s, bottom = 16.dp),
+        BrowseTabs(
+            if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab,
+            Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp),
+            selectedFocus = tab,
         )
     }
-}
-
-private fun Context.describe(status: SyncStatus): String = when (status) {
-    SyncStatus.NeverSynced -> getString(R.string.sync_never)
-    is SyncStatus.Running -> running(status)
-    is SyncStatus.Synced -> synced(status.last)
-    is SyncStatus.Matching -> synced(status.last) + " " + (
-        status.of?.let { resources.getQuantityString(R.plurals.sync_matching, it, count(status.asked), count(it)) }
-            ?: getString(R.string.sync_matching_start)
-        )
-    is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
-        ?: getString(R.string.sync_failed_empty, describe(status.problem))
-}
-
-/** A first Sync counts the Listings read; a later one tells how far it is by the last one's counts. */
-private fun Context.running(status: SyncStatus.Running): String {
-    val last = status.last
-    if (last == null) {
-        if (status.moviesRead == 0 && status.showsRead == 0) return getString(R.string.sync_first)
-        val movies = resources.getQuantityString(R.plurals.sync_movies_read, status.moviesRead, count(status.moviesRead))
-        val read = if (status.showsRead == 0) movies
-        else getString(R.string.sync_movies_and_shows, movies, resources.getQuantityString(R.plurals.sync_shows_read, status.showsRead, count(status.showsRead)))
-        return getString(R.string.sync_first_progress, read)
-    }
-    val fraction = status.fraction ?: return getString(R.string.sync_running, ago(last))
-    return getString(R.string.sync_running_progress, NumberFormat.getPercentInstance().format(fraction), ago(last))
-}
-
-private fun Context.synced(last: CompletedSync): String =
-    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.toMillis() / 1000.0))
-
-private fun count(n: Int): String = NumberFormat.getIntegerInstance().format(n)
-
-private fun Context.describe(problem: SyncProblem): String = when (problem) {
-    is ProviderProblem -> describe(problem)
-    is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
-}
-
-private fun Context.ago(sync: CompletedSync): String = ago(sync.finishedAt, Instant.now())
-
-/**
- * How long ago a Sync finished, worded to sit mid-sentence: "il y a 5 minutes", not the
- * capitalised "Il y a 5 minutes" DateUtils gives for the start of one.
- */
-internal fun Context.ago(then: Instant, now: Instant): String {
-    val elapsed = Duration.between(then, now)
-    val (amount, unit) = when {
-        elapsed < Duration.ofMinutes(1) -> return getString(R.string.sync_just_now)
-        elapsed < Duration.ofHours(1) -> elapsed.toMinutes() to RelativeUnit.MINUTES
-        elapsed < Duration.ofDays(1) -> elapsed.toHours() to RelativeUnit.HOURS
-        elapsed < Duration.ofDays(7) -> elapsed.toDays() to RelativeUnit.DAYS
-        elapsed < Duration.ofDays(30) -> elapsed.toDays() / 7 to RelativeUnit.WEEKS
-        elapsed < Duration.ofDays(365) -> elapsed.toDays() / 30 to RelativeUnit.MONTHS
-        else -> elapsed.toDays() / 365 to RelativeUnit.YEARS
-    }
-    val formatter = RelativeDateTimeFormatter.getInstance(
-        ULocale.forLocale(resources.configuration.locales[0]), null,
-        RelativeDateTimeFormatter.Style.LONG, DisplayContext.CAPITALIZATION_FOR_MIDDLE_OF_SENTENCE,
-    )
-    return formatter.format(amount.toDouble(), RelativeDateTimeFormatter.Direction.LAST, unit)
 }
 
 /** Wide enough for the French first-Sync line on two lines at body size. */
