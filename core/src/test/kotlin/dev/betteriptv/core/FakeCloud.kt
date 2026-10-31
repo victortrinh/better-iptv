@@ -38,6 +38,7 @@ class FakeCloud : Closeable {
     private val searches = HashMap<String, Map<String, Any?>>()
     private val charts = HashMap<String, Map<String, Any?>>()
     @Volatile private var trending: List<TitleId.Tmdb> = emptyList()
+    private val genres = CopyOnWriteArrayList<Map<String, Any?>>()
 
     /** The Regions the device asked Charts for, as sent. */
     val chartsAsked: List<String>
@@ -144,6 +145,14 @@ class FakeCloud : Closeable {
         trending = titles.toList()
     }
 
+    /**
+     * Answers `/v1/charts` for every Region with TMDB Discover's genre [name] of [kind]: its most
+     * popular Titles, [tmdbIds] in order. Genres are listed in the order given.
+     */
+    fun genre(kind: TitleKind, name: String, vararg tmdbIds: Long) {
+        genres += mapOf("kind" to if (kind == TitleKind.Movie) "movie" else "show", "name" to name, "tmdbIds" to tmdbIds.toList())
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -206,7 +215,7 @@ class FakeCloud : Closeable {
                     "movies" to trending.filter { it.kind == TitleKind.Movie }.map(key),
                     "shows" to trending.filter { it.kind == TitleKind.Show }.map(key),
                 )
-                respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends))
+                respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends) + ("genres" to genres.toList()))
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {
