@@ -140,7 +140,7 @@ private fun Root(app: BetterIptvApp) {
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
                     SearchScreen(
-                        app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage,
+                        app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
                         focusTab = byTab,
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(-1, it) },
@@ -168,7 +168,7 @@ private fun Root(app: BetterIptvApp) {
                     opened = null
                 }
                 TitleScreen(
-                    app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
+                    app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
                     deviceProfile = { readDeviceProfile(context) },
                     onPlay = { plan, name -> playing = NowPlaying(plan, name) },
                 )

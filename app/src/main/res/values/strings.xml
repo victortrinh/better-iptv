@@ -27,6 +27,10 @@
     <string name="row_top_movies_worldwide">Top movies worldwide this week</string>
     <string name="row_top_shows_worldwide">Top shows worldwide this week</string>
     <string name="row_trending">Trending this week</string>
+    <string name="rank_movies">#%1$d in movies in %2$s</string>
+    <string name="rank_shows">#%1$d in shows in %2$s</string>
+    <string name="rank_movies_worldwide">#%1$d in movies worldwide</string>
+    <string name="rank_shows_worldwide">#%1$d in shows worldwide</string>
     <string name="player_live">Live · %1$s</string>
     <string name="channel_add_favourite">≡ Add to Favourites</string>
     <string name="channel_remove_favourite">≡ Remove from Favourites</string>

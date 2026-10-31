@@ -107,6 +107,7 @@ fun TitleScreen(
     id: TitleId,
     contentLanguages: List<String>,
     appLanguage: String,
+    region: String,
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan, String) -> Unit,
@@ -116,8 +117,8 @@ fun TitleScreen(
     // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
     var removals by remember(id) { mutableIntStateOf(0) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads, removals) {
-        val details = library.title(id, contentLanguages, appLanguage) ?: return@produceState
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, region, qualityCap, reads, removals) {
+        val details = library.title(id, contentLanguages, appLanguage, region) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
     }
     // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
@@ -244,7 +245,7 @@ private fun TitleContent(
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         Spacer(Modifier.width(Spacing.m))
-                        BadgeRow(best?.attributes?.cardBadges().orEmpty())
+                        BadgeRow(listOfNotNull(title.rank?.badge()) + best?.attributes?.cardBadges().orEmpty())
                     }
                     // A Show's header names the Episode its Play starts.
                     if (isShow && plan?.episode != null) {

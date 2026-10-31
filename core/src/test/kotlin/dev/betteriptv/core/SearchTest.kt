@@ -426,4 +426,30 @@ class SearchTest {
         val limit = if (System.getenv("CI") != null) 750 else 300
         assertTrue("searched in $searched ms, over $limit ms", searched < limit)
     }
+
+    // Top 10 ranks
+
+    @Test fun `a Top 10 Title found carries its rank, counted among the Provider's Titles in the Content languages`() = runBlocking {
+        syncMovies("EN - Alpha One (2025)" to 1, "FR - Alpha Deux (2025)" to 2, "EN - Alpha Three (2025)" to 3, "EN - Alpha Four (2025)" to 4)
+        cloud.title("en", tmdbTitle(2, "Alpha Deux", originalLanguage = "fr"))
+        // Netflix's #2 isn't on the Provider and its #3 isn't in English.
+        cloud.charts("CA", movies = listOf(1, 99, 2, 3))
+        cloud.trending(TitleId.Tmdb(TitleKind.Movie, 4))
+
+        val found = search("alpha").movies.associate { it.name to it.rank }
+        assertEquals(ChartRank(1, ChartList.TopMovies, "CA"), found["Alpha One"])
+        assertEquals(ChartRank(2, ChartList.TopMovies, "CA"), found["Alpha Three"])
+        // Trending carries no rank.
+        assertEquals(null, found["Alpha Four"])
+        assertEquals(null, found["Alpha Deux"])
+    }
+
+    @Test fun `a rank from the worldwide Top 10 says so, and follows the Region asked`() = runBlocking {
+        syncMovies("EN - Alpha One (2025)" to 1, "EN - Alpha Two (2025)" to 2)
+        cloud.charts("CA", movies = listOf(1, 2), worldwide = true)
+        cloud.charts("FR", movies = listOf(2, 1))
+
+        assertEquals(ChartRank(2, ChartList.TopMovies, null), library.search("alpha", english, "en").last().movies.single { it.name == "Alpha Two" }.rank)
+        assertEquals(ChartRank(1, ChartList.TopMovies, "FR"), library.search("alpha", english, "en", region = "FR").last().movies.single { it.name == "Alpha Two" }.rank)
+    }
 }

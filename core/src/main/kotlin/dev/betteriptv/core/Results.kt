@@ -27,9 +27,15 @@ sealed interface TitleId {
  * A Title's card. [name], [year] and the [image] (a poster URL) come from TMDB in the App language,
  * falling back to English. Without TMDB metadata (an Unmatched Title, or the cloud out of reach),
  * they come from the [best] Version's Listing name and the Provider's image. Home's cards also carry
- * [about], what the info area under a focused card shows.
+ * [about], what the info area under a focused card shows; Search's, the Title's Top 10 [rank].
  */
-data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null)
+data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null, val rank: ChartRank? = null)
+
+/**
+ * A Title's place in a Top 10 [list], as its Top row numbers it: [rank] among the Provider's Titles
+ * in the Viewer's Content languages, in the Viewer's [region] (ISO 3166), or worldwide (null).
+ */
+data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
 
 /**
  * TMDB's description, genres, runtime and logo art (sized for a card) of a Title, in the App
@@ -94,6 +100,8 @@ data class TitleDetails(
     val logo: String? = null,
     /** The main cast's names, billing order. */
     val cast: List<String> = emptyList(),
+    /** Its place in the Region's Top 10, if it has one. */
+    val rank: ChartRank? = null,
     /** Whether the metadata came from TMDB, whose terms ask for attribution where it is shown. */
     val fromTmdb: Boolean = false,
 )

@@ -1,9 +1,14 @@
 package dev.betteriptv.app
 
 import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import dev.betteriptv.app.ui.components.BadgeSpec
 import dev.betteriptv.app.ui.components.Certainty
 import dev.betteriptv.app.ui.components.VersionLine
+import dev.betteriptv.core.ChartList
+import dev.betteriptv.core.ChartRank
 import dev.betteriptv.core.Hdr
 import dev.betteriptv.core.Known
 import dev.betteriptv.core.Provenance
@@ -15,6 +20,20 @@ import java.util.Locale
 /** A card's badges: quality, HDR, then language, as in "4K · HDR · EN". */
 fun VersionAttributes.cardBadges(): List<BadgeSpec> =
     pictureBadges() + listOfNotNull(language?.badge { it.uppercase(Locale.ROOT) })
+
+/**
+ * A Top 10 Title's rank as a badge: "#1 in movies in Canada", "#3 in shows worldwide". Solid, like a
+ * Confirmed attribute: it is a fact, not a guess.
+ */
+@Composable
+fun ChartRank.badge(): BadgeSpec {
+    val movies = list == ChartList.TopMovies
+    val text = when (val country = region?.let { countryName(it, LocalConfiguration.current.locales[0].language) }) {
+        null -> stringResource(if (movies) R.string.rank_movies_worldwide else R.string.rank_shows_worldwide, rank)
+        else -> stringResource(if (movies) R.string.rank_movies else R.string.rank_shows, rank, country)
+    }
+    return BadgeSpec(text, Certainty.Confirmed)
+}
 
 /** A Version row's badges: the picture and Dolby audio. Its languages have their own columns. */
 fun VersionAttributes.versionBadges(): List<BadgeSpec> =

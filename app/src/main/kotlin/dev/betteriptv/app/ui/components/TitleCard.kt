@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,7 +91,8 @@ fun TitleCard(
             // In the reserved area under the card. The gap clears the focus growth.
             Column(Modifier.align(Alignment.BottomStart).offset(y = NAME_AREA_TOP + NAME_AREA).padding(top = NAME_AREA_TOP).height(NAME_AREA)) {
                 Text(name, style = Type.title, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BadgeRow(badges, Modifier.padding(top = 3.dp), compact = true)
+                // Only the focused card shows its slot, so its badges may run on under the next card's: a Top 10 rank is wider than a poster.
+                BadgeRow(badges, Modifier.padding(top = 3.dp).wrapContentWidth(Alignment.Start, unbounded = true), compact = true)
             }
         }
     }
