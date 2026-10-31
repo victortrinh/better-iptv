@@ -1,5 +1,7 @@
 package dev.betteriptv.app
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -36,4 +38,18 @@ fun backToTab(type: KeyEventType, key: Key): BackKey = when {
     key != Key.Back -> BackKey.Pass
     type == KeyEventType.KeyUp -> BackKey.MoveToTab
     else -> BackKey.Hold
+}
+
+/**
+ * Focuses the selected [tab] when the screen was reached by picking that tab ([focusTab]), so Left
+ * and Right keep walking the tabs. The tab picked goes away with the screen before, leaving nothing
+ * focused, and the next press went to the Home tab (#187). Asked as soon as the screen is composed,
+ * not after its first frame: that takes half a second on the stick for a grid, long enough for a
+ * press to land first.
+ */
+@Composable
+fun FocusTabOnArrival(focusTab: Boolean, tab: FocusRequester) {
+    if (focusTab) LaunchedEffect(Unit) {
+        tab.requestFocus()
+    }
 }

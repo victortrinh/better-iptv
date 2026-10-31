@@ -2,6 +2,7 @@ package dev.betteriptv.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -155,7 +158,8 @@ private const val CAP_HEIGHT_EM = 0.7275f
 /**
  * The top navigation: the wordmark on the left and the destinations in a glass capsule in the
  * middle, reached by pressing up. A tab with an icon is a round icon the height of a word tab.
- * [selectedFocus] focuses the selected tab, for Back from the screen below (see `backToTab`).
+ * [selectedFocus] focuses the selected tab, for Back from the screen below (see `backToTab`), and Up
+ * from the screen lands on it too, not on whichever tab is nearest (#187).
  */
 @Composable
 fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null) {
@@ -164,6 +168,7 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
         Wordmark(Modifier.align(Alignment.CenterStart))
         Row(
             Modifier.align(Alignment.Center)
+                .then(if (selectedFocus != null) Modifier.entersAtSelected(selectedFocus) else Modifier)
                 .background(Colors.surface, capsule)
                 .border(1.dp, Colors.ink.copy(alpha = 0.14f), capsule)
                 .padding(4.dp),
@@ -199,6 +204,16 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
 }
 
 private val TAB_HEIGHT = 32.dp
+
+/** Up into the tabs goes to the [selected] one. */
+private fun Modifier.entersAtSelected(selected: FocusRequester) = focusProperties {
+    onEnter = {
+        if (requestedFocusDirection == FocusDirection.Up) {
+            cancelFocusChange()
+            selected.requestFocus()
+        }
+    }
+}.focusGroup()
 
 /**
  * A settings row: what it is on the left, its current value on the right. [progress] (0 to 1) draws
