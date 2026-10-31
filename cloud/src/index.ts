@@ -44,10 +44,11 @@ import { upcoming } from "./upcoming";
  *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
  *   when TMDB can't answer right now and the Show was never asked about.
  * - `POST /v1/charts`, with `{"region": "CA", "language": "fr"}`: the Charts for that Region,
- *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]}}`,
- *   Netflix's Top 10 in rank order as TMDB Titles, the Region's or (worldwide) the world's when
- *   Netflix doesn't list it. A list its source can't give right now and never gave is empty. Later
- *   Charts come as parts beside `top`.
+ *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]},
+ *   "trending": {"all": […], "movies": […], "shows": […]}}`: Netflix's Top 10 in rank order as
+ *   TMDB Titles, the Region's or (worldwide) the world's when Netflix doesn't list it, and TMDB's
+ *   trending this week. A list its source can't give right now and never gave is empty. Later
+ *   Charts come as parts beside these.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */

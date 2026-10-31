@@ -16,6 +16,7 @@ export class FakeTmdb {
   private readonly searchable: { path: string; result: (language: string) => SearchResult }[] = [];
   private readonly multi: { names: string[]; result: object }[] = [];
   private readonly people = new Map<number, { cast: object[]; crew: object[] }>();
+  private readonly trends = new Map<string, object[]>();
   /** Other services' fakes, by the URL prefix they answer for. */
   private readonly others: { prefix: string; answer: (url: URL) => Response }[] = [];
 
@@ -46,6 +47,13 @@ export class FakeTmdb {
         const query = (url.searchParams.get("query") ?? "").toLowerCase();
         const results = this.multi.filter((entry) => entry.names.some((name) => name.toLowerCase().includes(query))).map((entry) => entry.result);
         return Response.json({ page: 1, results, total_results: results.length });
+      }
+      const trend = /^\/3\/trending\/(all|movie|tv)\/(day|week)$/.exec(url.pathname);
+      if (trend) {
+        // Like TMDB, 20 results a page.
+        const all = this.trends.get(`${trend[1]}/${trend[2]}`) ?? [];
+        const page = Number(url.searchParams.get("page") ?? "1");
+        return Response.json({ page, results: all.slice((page - 1) * 20, page * 20), total_pages: Math.ceil(all.length / 20), total_results: all.length });
       }
       const person = /^\/3\/person\/(\d+)\/combined_credits$/.exec(url.pathname);
       if (person) {
@@ -100,6 +108,14 @@ export class FakeTmdb {
   /** Answers the Worker's fetches of URLs starting with [prefix] with [answer], for another service's fake. */
   alsoServe(prefix: string, answer: (url: URL) => Response) {
     this.others.push({ prefix, answer });
+  }
+
+  /**
+   * TMDB's trending list of [kind] (`all`, `movie` or `tv`) over the [window] (`week` or `day`), in
+   * order: each result as TMDB gives it, with its `media_type` in the `all` list.
+   */
+  trending(kind: "all" | "movie" | "tv", window: "day" | "week", ...results: object[]) {
+    this.trends.set(`${kind}/${window}`, results);
   }
 
   /** The search requests that reached TMDB. */

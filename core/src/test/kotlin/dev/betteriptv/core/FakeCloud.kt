@@ -37,6 +37,7 @@ class FakeCloud : Closeable {
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
     private val charts = HashMap<String, Map<String, Any?>>()
+    @Volatile private var trending: List<TitleId.Tmdb> = emptyList()
 
     /** The Regions the device asked Charts for, as sent. */
     val chartsAsked: List<String>
@@ -138,6 +139,11 @@ class FakeCloud : Closeable {
         }
     }
 
+    /** Answers `/v1/charts` for every Region with TMDB's trending this week, movies and shows mixed: [titles], in order. */
+    fun trending(vararg titles: TitleId.Tmdb) {
+        trending = titles.toList()
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -194,7 +200,13 @@ class FakeCloud : Closeable {
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
                 val region = (read(body) as Map<*, *>)["region"] as String
                 val empty = mapOf("top" to mapOf("worldwide" to false, "movies" to emptyList<Any>(), "shows" to emptyList<Any>()))
-                respond(exchange, 200, synchronized(charts) { charts[region] } ?: empty)
+                val key = { id: TitleId.Tmdb -> mapOf("kind" to if (id.kind == TitleKind.Movie) "movie" else "show", "tmdbId" to id.tmdbId) }
+                val trends = mapOf(
+                    "all" to trending.map(key),
+                    "movies" to trending.filter { it.kind == TitleKind.Movie }.map(key),
+                    "shows" to trending.filter { it.kind == TitleKind.Show }.map(key),
+                )
+                respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends))
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {

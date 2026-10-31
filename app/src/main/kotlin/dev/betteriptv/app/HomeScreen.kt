@@ -132,8 +132,8 @@ class HomeState {
 
 /**
  * The home screen's rows: Continue watching (stills with how far the Viewer got), the Top 10
- * movies and shows in the Viewer's [region], New on your service, the Viewer's Favourites, then a
- * row per genre. They are read again whenever the screen
+ * movies and shows in the Viewer's [region], New on your service, Trending this week, the Viewer's
+ * Favourites, then a row per genre. They are read again whenever the screen
  * shows, so a Title just played moves to the front of Continue watching. [restoreFocus] is the card
  * to focus on arrival, the one the Viewer opened before coming back, or the card now in its place
  * when it has gone; the first card when null, unless the screen was reached by picking its tab
@@ -398,9 +398,13 @@ private val CANVAS_WIDTH = 960.dp
 private fun HomeRow.heading(): String = when (this) {
     is HomeRow.ContinueWatching -> stringResource(R.string.row_continue_watching)
     is HomeRow.Favourites -> stringResource(R.string.row_favourites)
-    is HomeRow.Chart -> when (val country = region?.let { countryName(it, LocalConfiguration.current.locales[0].language) }) {
-        null -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies_worldwide else R.string.row_top_shows_worldwide)
-        else -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies else R.string.row_top_shows, country)
+    is HomeRow.Chart -> if (list == ChartList.Trending) {
+        stringResource(R.string.row_trending)
+    } else {
+        when (val country = region?.let { countryName(it, LocalConfiguration.current.locales[0].language) }) {
+            null -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies_worldwide else R.string.row_top_shows_worldwide)
+            else -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies else R.string.row_top_shows, country)
+        }
     }
     is HomeRow.NewOnYourService -> stringResource(R.string.row_new)
     is HomeRow.Genre -> name

@@ -346,7 +346,10 @@ describe("Charts", () => {
   const charts = async (token: string, region = "CA", language = "en") => {
     const response = await call("POST", "/v1/charts", { region, language }, token);
     expect(response.status).toBe(200);
-    return (await response.json()) as { top: { worldwide: boolean; movies: { kind: string; tmdbId: number }[]; shows: { kind: string; tmdbId: number }[] } };
+    return (await response.json()) as {
+      top: { worldwide: boolean; movies: { kind: string; tmdbId: number }[]; shows: { kind: string; tmdbId: number }[] };
+      trending: { all: { kind: string; tmdbId: number }[]; movies: { kind: string; tmdbId: number }[]; shows: { kind: string; tmdbId: number }[] };
+    };
   };
   const ids = (titles: { tmdbId: number }[]) => titles.map((t) => t.tmdbId);
 
@@ -409,7 +412,7 @@ describe("Charts", () => {
     netflix.failWith = 503;
 
     expect(ids((await charts(token)).top.movies)).toEqual([1001, 238]);
-    expect(await charts(token, "AR")).toEqual({ top: { worldwide: false, movies: [], shows: [] } });
+    expect((await charts(token, "AR")).top).toEqual({ worldwide: false, movies: [], shows: [] });
   });
 
   it("serves the last answer while TMDB can't look names up", async () => {
@@ -418,6 +421,52 @@ describe("Charts", () => {
     expect((await charts(token)).top.movies).toEqual([]);
     tmdb.failWith = null;
     expect(ids((await charts(token)).top.movies)).toEqual([1001, 238]);
+  });
+
+  describe("TMDB trending", () => {
+    beforeEach(() => {
+      const movie = (id: number) => ({ id, media_type: "movie", title: `Movie ${id}` });
+      const show = (id: number) => ({ id, media_type: "tv", name: `Show ${id}` });
+      // 25 a week, over two of TMDB's pages; a person TMDB lists among them isn't a Title.
+      tmdb.trending("all", "week", movie(1), show(2), { id: 3, media_type: "person", name: "Someone" }, ...Array.from({ length: 22 }, (_, i) => movie(100 + i)));
+      tmdb.trending("movie", "week", { id: 1, title: "Movie 1" }, { id: 5, title: "Movie 5" });
+      tmdb.trending("tv", "week", { id: 2, name: "Show 2" }, { id: 6, name: "Show 6" });
+      tmdb.trending("all", "day", movie(999));
+    });
+
+    it("answers this week's lists, mixed, movies and shows, as TMDB Titles in order", async () => {
+      const { trending } = await charts(await registerDevice());
+
+      expect(trending.all.slice(0, 3)).toEqual([{ kind: "movie", tmdbId: 1 }, { kind: "show", tmdbId: 2 }, { kind: "movie", tmdbId: 100 }]);
+      expect(trending.all).toHaveLength(24);
+      expect(trending.movies).toEqual([{ kind: "movie", tmdbId: 1 }, { kind: "movie", tmdbId: 5 }]);
+      expect(trending.shows).toEqual([{ kind: "show", tmdbId: 2 }, { kind: "show", tmdbId: 6 }]);
+      expect(tmdb.requests.filter((url) => url.pathname.includes("/trending/")).every((url) => url.pathname.endsWith("/week"))).toBe(true);
+    });
+
+    it("keeps the lists a week, whatever the Region, and serves them while TMDB is down after that", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+      const token = await registerDevice();
+      await charts(token);
+      const asked = () => tmdb.requests.filter((url) => url.pathname.includes("/trending/")).length;
+      const first = asked();
+      vi.setSystemTime(new Date("2026-10-26T08:00:00Z"));
+      await charts(token, "AR");
+      expect(asked()).toBe(first);
+
+      vi.setSystemTime(new Date("2026-10-28T08:00:00Z"));
+      tmdb.failWhen = (url) => url.pathname.includes("/trending/");
+      expect((await charts(token)).trending.movies).toHaveLength(2);
+      expect(asked()).toBeGreaterThan(first);
+    });
+
+    it("has empty lists while TMDB is down and it never had them, and the Top 10 still answers", async () => {
+      tmdb.failWhen = (url) => url.pathname.includes("/trending/");
+      const answer = await charts(await registerDevice());
+      expect(answer.trending).toEqual({ all: [], movies: [], shows: [] });
+      expect(answer.top.movies).toHaveLength(2);
+    });
   });
 
   it("rejects a malformed request", async () => {
