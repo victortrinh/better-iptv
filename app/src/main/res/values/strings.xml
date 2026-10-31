@@ -49,10 +49,6 @@
     <string name="search_movies">Movies · %1$d</string>
     <string name="search_shows">Shows · %1$d</string>
     <string name="search_channels">Channels · %1$d</string>
-    <plurals name="titles_count">
-        <item quantity="one">%1$s Title</item>
-        <item quantity="other">%1$s Titles</item>
-    </plurals>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
     <string name="sync_first">Syncing your catalog for the first time…</string>
@@ -240,6 +236,16 @@
     <string name="update_allow_old">Settings → My Fire TV → Developer options → Apps from Unknown Sources: On, then come back here.</string>
     <string name="update_open_settings">Open settings</string>
 
+    <string name="settings_catalog">Catalog</string>
+    <string name="catalog_counts">%1$s · %2$s</string>
+    <plurals name="catalog_movies">
+        <item quantity="one">%1$s movie</item>
+        <item quantity="other">%1$s movies</item>
+    </plurals>
+    <plurals name="catalog_shows">
+        <item quantity="one">%1$s show</item>
+        <item quantity="other">%1$s shows</item>
+    </plurals>
     <string name="settings_app">App</string>
     <string name="settings_version">App version</string>
     <string name="settings_up_to_date">%1$s · Up to date</string>

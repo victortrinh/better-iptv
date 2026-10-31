@@ -38,9 +38,11 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.FocusSurface
@@ -51,16 +53,21 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
+import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.UpdateState
 import dev.betteriptv.core.offered
 import java.text.Collator
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages and Region under
- * Languages, the Quality cap and whether the next Episode plays by itself under Playback, the App
- * version under App, which offers the [update] when there is one ([onUpdate]). Content languages
+ * Languages, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
+ * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
+ * App, which offers the [update] when there is one ([onUpdate]). Content languages
  * and Region each open a list in place of the column; Back returns to the row that opened it.
  * [focusTab]: reached by picking its tab, which keeps focus.
  */
@@ -71,6 +78,7 @@ fun SettingsScreen(
     update: UpdateState,
     onChange: ((ViewerSettings) -> ViewerSettings) -> Unit,
     onUpdate: () -> Unit,
+    onSyncNow: () -> Unit,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
 ) {
@@ -168,6 +176,8 @@ fun SettingsScreen(
                         )
                     }
                 }
+                item { Heading(stringResource(R.string.settings_catalog)) }
+                item { SyncRow(library, onSyncNow) }
                 item { Heading(stringResource(R.string.settings_app)) }
                 item {
                     val offered = update.offered
@@ -196,6 +206,25 @@ fun SettingsScreen(
             }?.requestFocus()
         }
     }
+}
+
+/** Sync now, with how the Sync is going as its value (in the error colour when it failed) and the Title counts under it. */
+@Composable
+private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
+    val status by library.syncStatus.collectAsStateWithLifecycle()
+    val counts by produceState<Pair<Int, Int>?>(null, status.last) {
+        value = withContext(Dispatchers.IO) { library.titleCount(TitleKind.Movie) to library.titleCount(TitleKind.Show) }
+    }
+    val context = LocalContext.current
+    SettingRow(
+        stringResource(R.string.sync_now),
+        context.describe(status),
+        onClick = onSyncNow,
+        detail = counts?.let { (movies, shows) -> context.catalogCounts(movies, shows) },
+        enabled = status !is SyncStatus.Running && status !is SyncStatus.Matching,
+        valueColor = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
+        valueLines = 2,
+    )
 }
 
 private enum class Picker { ContentLanguages, Region }

@@ -147,7 +147,7 @@ private fun Root(app: BetterIptvApp) {
                         onWatch = watch,
                     )
                 }
-                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, focusTab = byTab, onTab = onTab)
+                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab)
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
                     // Each tab its own screen, so the card to focus on one isn't looked for on the other.
@@ -156,7 +156,6 @@ private fun Root(app: BetterIptvApp) {
                             app.library, kind, contentLanguages, appLanguage, settings.region, if (kind == TitleKind.Movie) movies else shows,
                             restoreFocus = returnedTo,
                             focusTab = byTab,
-                            onSyncNow = app::sync,
                             onTab = onTab,
                             onOpen = { card, id -> opened = OpenedTitle(id, card) },
                         )
