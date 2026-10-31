@@ -3,6 +3,7 @@ package dev.betteriptv.app
 import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
+import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.core.BackgroundPace
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
@@ -23,6 +24,8 @@ data class ViewerSettings(
     /** Whether an Episode's credits count down to the next Episode, which then plays by itself. */
     val playNextAutomatically: Boolean = true,
     val backgroundReading: BackgroundReading = BackgroundReading.Gentle,
+    /** How big the interface text is, for the TV and how far the Viewer sits from it. */
+    val textSize: TextSize = TextSize.Medium,
 )
 
 /** How fast Background reading goes; [pace] is null when it is off. */
@@ -75,6 +78,7 @@ class ViewerSettingsStore(context: Context) {
             .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
             .putBoolean(PLAY_NEXT_AUTOMATICALLY, new.playNextAutomatically)
             .putString(BACKGROUND_READING, new.backgroundReading.name)
+            .putString(TEXT_SIZE, new.textSize.name)
             .apply()
         _settings.value = new
     }
@@ -96,6 +100,7 @@ class ViewerSettingsStore(context: Context) {
             ),
             playNextAutomatically = prefs.getBoolean(PLAY_NEXT_AUTOMATICALLY, true),
             backgroundReading = read(BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
+            textSize = read(TEXT_SIZE, TextSize.entries) ?: TextSize.Medium,
         )
     }
 
@@ -112,6 +117,7 @@ class ViewerSettingsStore(context: Context) {
         const val SUBTITLE_POSITION = "subtitle_position"
         const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
         const val BACKGROUND_READING = "background_reading"
+        const val TEXT_SIZE = "text_size"
     }
 }
 

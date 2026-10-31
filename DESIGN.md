@@ -17,56 +17,56 @@ colors:
 typography:
   display:
     fontFamily: "Inter"
-    fontSize: "42px"
+    fontSize: "38px"
     fontWeight: 700
-    lineHeight: "44px"
+    lineHeight: "40px"
     letterSpacing: "-0.03em"
   headline:
     fontFamily: "Inter"
-    fontSize: "15px"
+    fontSize: "14px"
     fontWeight: 700
-    lineHeight: "20px"
+    lineHeight: "18px"
     letterSpacing: "-0.01em"
   title:
     fontFamily: "Inter"
-    fontSize: "14px"
+    fontSize: "13px"
     fontWeight: 600
-    lineHeight: "19px"
+    lineHeight: "17px"
   body:
     fontFamily: "Inter"
-    fontSize: "14px"
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: "20px"
+    lineHeight: "18px"
   detail:
     fontFamily: "Inter"
-    fontSize: "13px"
+    fontSize: "12px"
     fontWeight: 400
-    lineHeight: "18px"
+    lineHeight: "16px"
   label:
     fontFamily: "Inter"
-    fontSize: "13px"
+    fontSize: "12px"
     fontWeight: 600
-    lineHeight: "18px"
+    lineHeight: "16px"
   rail-meta:
-    fontFamily: "Inter"
-    fontSize: "13px"
-    fontWeight: 600
-    lineHeight: "18px"
-  rail:
-    fontFamily: "Inter"
-    fontSize: "16px"
-    fontWeight: 600
-    lineHeight: "22px"
-  rail-strong:
-    fontFamily: "Inter"
-    fontSize: "16px"
-    fontWeight: 700
-    lineHeight: "22px"
-  caption:
     fontFamily: "Inter"
     fontSize: "11px"
     fontWeight: 600
     lineHeight: "15px"
+  rail:
+    fontFamily: "Inter"
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: "18px"
+  rail-strong:
+    fontFamily: "Inter"
+    fontSize: "13px"
+    fontWeight: 700
+    lineHeight: "18px"
+  caption:
+    fontFamily: "Inter"
+    fontSize: "10px"
+    fontWeight: 600
+    lineHeight: "14px"
     letterSpacing: "0.01em"
 rounded:
   badge: "4px"
@@ -236,20 +236,22 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 **Body Font:** Inter 400 and 600
 **Label/Mono Font:** Inter 600 (no second family)
 
-**Character:** One family, three weights (400, 600, 700, bundled as `inter_*.ttf`). The display size is bold and tracked tight so a Title's name reads like a poster credit. Everything else is plain and even, built for reading from a couch. The sizes were set on the Fire TV Stick itself, close to tvOS and Material for TV on the same canvas: the earlier scale, estimated from photos of Netflix, read too big on the TV (#186).
+**Character:** One family, three weights (400, 600, 700, bundled as `inter_*.ttf`). The display size is bold and tracked tight so a Title's name reads like a poster credit. Everything else is plain and even, built for reading from a couch. The sizes were set on the Fire TV Stick itself, close to tvOS and Material for TV on the same canvas: the earlier scale, estimated from photos of Netflix, read too big on the TV (#186), and then a step smaller again, as it still read too big on a 4K TV (#223).
+
+**Text size.** The sizes here and in the frontmatter are **Medium**, the default. Settings > Display > Text size also offers **Small**, Medium × 0.9 (not rounded), and **Large**, the scale before #223 (about Medium × 1.1: display 42/44, headline 15/20, title 14/19, body, rail and rail-strong 14/20, rail-meta 12/17, detail and label 13/18, caption 11/15). Medium is Large × 0.9 rounded to whole sp, line heights in proportion. TV resolution isn't why: the app draws on a 960 × 540 dp canvas, so text takes the same share of a 1080p and a 4K screen, and Android can't reliably tell a TV's size in inches; the setting covers different TVs and viewing distances. The size is one `TypeScale`, provided by `NuageTheme` through `LocalTypeScale` and read by every `Type.*` style, so it applies everywhere at once with no restart. Only text scales: spacing, card sizes and the canvas don't, nor does the Top row numeral (`Type.numeral`), which is sized to the poster, nor the Wordmark (18 sp) and the login screen's 38 sp name.
 
 ### Hierarchy
 - **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most. A Title with a TMDB logo (in the App language, else English) shows the logo there instead (`TitleName`): fitted in a 320 × 88 dp box, the room two Display lines take, and sitting on its bottom edge, with the name as its content description. The box stays empty while the logo loads, and the name shows in Display type when there is no logo or it can't be loaded.
-- **Headline** (`Type.headline`, 15 sp): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. Kept modest so the posters under a heading lead, as on Netflix (#147). The Wordmark uses it at 18 sp.
+- **Headline** (`Type.headline`, 14 sp): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. Kept modest so the posters under a heading lead, as on Netflix (#147). The Wordmark uses it at 18 sp.
 - **Title** (`Type.title`): a Title's name under a focused card, the language group heading over Versions ("English · 3"), the search query.
-- **Body** (`Type.body`, 14 sp): descriptions, metadata lines, people, messages, field text: what is read from the couch. Descriptions are capped at 2 lines in the hero and 3 on details.
-- **Rail** (`Type.railMeta` 13 sp, `Type.rail` 16 sp, `Type.railStrong` 16 sp bold): the info under Home's focused rail, set as Netflix sets it (#182): a step above body, so the description reads like the artwork's caption, with the metadata line smaller and muted and the time left in Continue watching strongest.
-- **Detail** (`Type.detail`, 13 sp): body beside label type in a row or table: Version cells and bitrate, setting values. It stays at 13 sp, the size of label type, so the French strings still fit the Version columns.
+- **Body** (`Type.body`, 13 sp): descriptions, metadata lines, people, messages, field text: what is read from the couch. Descriptions are capped at 2 lines in the hero and 3 on details.
+- **Rail** (`Type.railMeta` 11 sp, `Type.rail` 13 sp, `Type.railStrong` 13 sp bold): the info under Home's focused rail (#182). It is no bigger than body text: a step above body read as the biggest text on the screen, ahead of the artwork, on a 4K TV (#223). So the description and the Continue watching lines are body's size in 600, the metadata line a step smaller and muted, and the time left in Continue watching strongest by weight alone.
+- **Detail** (`Type.detail`, 12 sp): body beside label type in a row or table: Version cells and bitrate, setting values. It stays at the size of label type, so the French strings still fit the Version columns.
 - **Label** (`Type.label`): buttons, tabs, choices, keys, setting labels, the Source cell of a Version row.
 - **Caption** (`Type.caption`): badges, column headings, field labels, explanations under a setting, the Sync status line.
 
 ### Named Rules
-**The Readable From the Couch Rule.** All text keeps at least 4.5:1 contrast against what is actually behind it. That includes glass over artwork, so for example inactive tab labels use white at 85%, not `ink-muted`. Nothing goes smaller than caption (11 sp).
+**The Readable From the Couch Rule.** All text keeps at least 4.5:1 contrast against what is actually behind it. That includes glass over artwork, so for example inactive tab labels use white at 85%, not `ink-muted`. Nothing goes smaller than caption (10 sp at Medium, 9 sp at Small).
 
 **The French Is Longer Rule.** French strings run about 20% longer. Fixed widths (Version columns, the settings label column, buttons in a row) must hold the French string, and single-line text gets `maxLines` with an ellipsis instead of overflowing.
 
@@ -370,7 +372,8 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Settings (`SettingRow`, `ChoiceRow`)
 - **SettingRow:** a `glass` pill, 16 x 12 dp padding. Label (label type) with optional detail (muted caption) on the left, current value (muted detail type) on the right. Focus is a white fill, with the detail at 70% black. An optional progress bar sits 6 dp under the label: 120 dp by 4 dp, a capsule, `ink` over `ink` at 25% (black over black at 25% when focused). A disabled row, like a disabled button, keeps focus, mutes its label and ignores the click.
-- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. A choice's text stays on one line; when the choices don't fit beside their label, whole capsules move to a second line, 8 dp below. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Quality cap, Background reading).
+- **ChoiceRow:** capsules 36 dp tall, 8 dp apart. A choice's text stays on one line; when the choices don't fit beside their label, whole capsules move to a second line, 8 dp below. **Unselected:** transparent with a 1.5 dp `ink-muted`-at-50% outline. **Selected:** `glass-high` with a 16 dp check. **Focus:** white fill. Only for small exclusive sets (Text size, Quality cap, Background reading).
+- **Display section** (after Languages, before Playback): one `ChoiceRow`, "Text size": Small, Medium (the default) and Large (Typography above), with "For your TV and how far you sit from it" under its label. A choice applies at once, to the Settings screen it is made on too, and is kept like the other settings.
 - **Catalog section** (before App): one `SettingRow`, "Sync now", whose value is the Sync status line as the tabs used to word it (running with its progress, synced with how long ago, matching, failed in the error colour), right-aligned on up to two lines; its detail is the Title counts ("12,345 movies · 3,210 shows"). OK starts a Sync; the row is disabled while a Sync runs or Matches. A failed Sync with a catalog stored shows only here.
 - **Region list:** every country as a `SettingRow`, the chosen one marked ✓, in two groups under headings. **Suggested** (at most 8): the current Region, which takes first focus, the device's country, then the main countries of each Content language in order, each once. **All countries** follows, sorted by name with the App language's collator. A letter rail sits at the left, 16 dp from the list: one 36 dp round `FocusWeight.Control` key per letter that has countries, `ink-muted` on the bare ground, white fill on focus, 2 dp apart, scrolling with focus. A country's letter is its name's first letter without accents, so "États-Unis" is under E. Left from any country moves focus to its letter; Up and Down move between letters; OK or Right jumps to the letter's first country. Back returns to the Region row.
 

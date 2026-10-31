@@ -61,7 +61,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            NuageTheme { Root(app) }
+            val textSize by remember { app.settings.settings.map { it.textSize }.distinctUntilChanged() }
+                .collectAsStateWithLifecycle(app.settings.settings.value.textSize)
+            NuageTheme(textSize) { Root(app) }
         }
     }
 }
