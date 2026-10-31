@@ -168,6 +168,7 @@ class FakeCloud : Closeable {
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
             }
+            "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))

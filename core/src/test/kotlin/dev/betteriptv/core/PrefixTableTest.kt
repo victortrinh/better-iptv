@@ -17,8 +17,10 @@ class PrefixTableTest {
     private val provider = FakeProvider()
     private val credentials = InMemoryCredentials()
     private val libraries = mutableListOf<Library>()
+    private val cloud by lazy { FakeCloud() }
 
-    private fun openLibrary() = Library.open(folder.root.resolve("catalog.db").path, credentials).also { libraries += it }
+    private fun openLibrary(file: String = "catalog.db", cloudAddress: String? = null) =
+        Library.open(folder.root.resolve(file).path, credentials, cloudAddress).also { libraries += it }
 
     private val library by lazy { openLibrary() }
 
@@ -27,6 +29,7 @@ class PrefixTableTest {
     @After fun tearDown() {
         libraries.forEach { it.close() }
         provider.close()
+        cloud.close()
     }
 
     private fun movies() = library.movieListings(0, 10_000)
@@ -36,7 +39,9 @@ class PrefixTableTest {
     private fun likely(value: String) = Known(value, Provenance.Likely)
 
     /** Syncs these Listings, each `name` filed under the Category `category`. */
-    private suspend fun syncListings(vararg listings: Pair<String, String>): SyncStatus {
+    private suspend fun syncListings(vararg listings: Pair<String, String>): SyncStatus = syncListings(library, *listings)
+
+    private suspend fun syncListings(library: Library, vararg listings: Pair<String, String>): SyncStatus {
         val categories = listings.map { it.second }.distinct()
         provider.movieCategoriesOverride = categories.withIndex()
             .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
@@ -181,16 +186,35 @@ class PrefixTableTest {
         )
     }
 
+    @Test fun `Prefixes the stick reported on 2026-10-31 are in the table`() = runBlocking {
+        val status = syncListings(
+            "BR - Cold Pursuit (2019)" to "BR - MOVIES",
+            "AC - All Souls (2023)" to "NORDIC FILM NEW RELEASE",
+            "AL - England’s Lions: The New Generation (2025)" to "NL - AMAZON PRIME",
+            "CD - Call Me Kat (US)" to "GERMANY SERIE",
+            "TR-4K- Kara (2023) (TR)" to "TURKSIH SERIES ⁴ᴷ ³⁸⁴⁰ᴾ",
+        )
+
+        assertEquals(emptyList<UnknownPrefix>(), (status as SyncStatus.Synced).last.unknownPrefixes)
+        val byName = movies().associate { it.name.substringBefore(" ") to it.attributes }
+        assertEquals(likely("pt-BR"), byName.getValue("BR").language)
+        assertEquals(likely("nl"), byName.getValue("AL").language)
+        assertEquals(likely("de"), byName.getValue("CD").language)
+        assertNull(byName.getValue("AC").language)
+        assertEquals(likely("tr"), byName.getValue("TR-4K-").language)
+        assertEquals(Known(Quality.UHD, Provenance.Likely), byName.getValue("TR-4K-").quality)
+    }
+
     @Test fun `every Prefix in the fixture is in the table`() = runBlocking {
         val status = library.sync()
 
         assertEquals(emptyList<UnknownPrefix>(), (status as SyncStatus.Synced).last.unknownPrefixes)
     }
 
-    @Test fun `Prefixes the table doesn't know are reported after Sync, not guessed`() = runBlocking {
+    @Test fun `Prefixes the table doesn't know are kept after Sync, not guessed`() = runBlocking {
         val status = syncListings(
-            "BR - Cold Pursuit (2019)" to "BR - MOVIES",
-            "BR - The App (2019)" to "BR - MOVIES",
+            "XB - Cold Pursuit (2019)" to "XB - MOVIES",
+            "XB - The App (2019)" to "XB - MOVIES",
             "XQ-ZZ - Something (2020)" to "EN - NEW RELEASE",
             "Muriel's Wedding (1994)" to "EN - 2020 & OLD",
             "Spider-Man: No Way Home (2021)" to "EN - 2020 & OLD",
@@ -198,22 +222,43 @@ class PrefixTableTest {
         )
 
         assertEquals(
-            listOf(UnknownPrefix("BR", 2, "BR - Cold Pursuit (2019)"), UnknownPrefix("XQ-ZZ", 1, "XQ-ZZ - Something (2020)")),
+            listOf(UnknownPrefix("XB", 2, "XB - Cold Pursuit (2019)"), UnknownPrefix("XQ-ZZ", 1, "XQ-ZZ - Something (2020)")),
             (status as SyncStatus.Synced).last.unknownPrefixes,
         )
-        val cold = movies().single { it.name == "BR - Cold Pursuit (2019)" }.attributes
+        val cold = movies().single { it.name == "XB - Cold Pursuit (2019)" }.attributes
         assertEquals(VersionAttributes(), cold)
     }
 
     @Test fun `the unknown-Prefix report survives a restart`() = runBlocking {
-        syncListings("BR - Cold Pursuit (2019)" to "BR - MOVIES")
+        syncListings("XB - Cold Pursuit (2019)" to "XB - MOVIES")
         library.close()
         libraries.clear()
         provider.down = true
 
         val reopened = openLibrary()
 
-        assertEquals(listOf(UnknownPrefix("BR", 1, "BR - Cold Pursuit (2019)")), reopened.syncStatus.value.last?.unknownPrefixes)
+        assertEquals(listOf(UnknownPrefix("XB", 1, "XB - Cold Pursuit (2019)")), reopened.syncStatus.value.last?.unknownPrefixes)
+    }
+
+    @Test fun `unknown Prefixes are reported to the cloud under a hash of the Provider's host`() = runBlocking {
+        val reporting = openLibrary("reporting.db", cloud.url)
+        syncListings(reporting, "XB - Cold Pursuit (2019)" to "XB - MOVIES", "EN - Heat (1995)" to "EN - MOVIES")
+
+        val report = cloud.received.single { it.path == "/v1/unknown-prefixes" }
+        assertEquals(
+            mapOf(
+                "provider" to providerKey(provider.login),
+                "prefixes" to listOf(mapOf("prefix" to "XB", "listingCount" to 1.0, "example" to "XB - Cold Pursuit (2019)")),
+            ),
+            com.squareup.moshi.Moshi.Builder().build().adapter(Any::class.java).fromJson(report.body),
+        )
+    }
+
+    @Test fun `a Sync with every Prefix known reports nothing`() = runBlocking {
+        val reporting = openLibrary("reporting.db", cloud.url)
+        syncListings(reporting, "EN - Heat (1995)" to "EN - MOVIES")
+
+        assertTrue(cloud.received.none { it.path == "/v1/unknown-prefixes" })
     }
 
     @Test fun `a Listing's language is its description's, worked out once per Prefix and Category`() {

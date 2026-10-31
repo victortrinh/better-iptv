@@ -173,11 +173,26 @@ class Library private constructor(
             _syncStatus.value = if (finished is SyncStatus.Synced && canAskCloud()) SyncStatus.Matching(finished.last, 0, null) else finished
             if (finished is SyncStatus.Synced) {
                 catalogGeneration.incrementAndGet()
+                reportUnknownPrefixes(finished.last)
                 matchByName(finished)
                 catalogGeneration.incrementAndGet()
                 prepareSearchInBackground()
             }
             _syncStatus.value
+        }
+    }
+
+    /**
+     * Tells the cloud which Prefixes the Sync found that the Prefix table doesn't know, so they get
+     * added to it. The Viewer never sees them; a Sync that can't report them leaves it to the next.
+     */
+    private fun reportUnknownPrefixes(sync: CompletedSync) {
+        if (cloud == null || sync.unknownPrefixes.isEmpty() || !canAskCloud()) return
+        val login = credentials.load() ?: return
+        try {
+            cloud.reportUnknownPrefixes(providerKey(login), sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH))
+        } catch (e: CloudException) {
+            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
         }
     }
 
