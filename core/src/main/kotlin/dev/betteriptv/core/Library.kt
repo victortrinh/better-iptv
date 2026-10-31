@@ -862,11 +862,14 @@ class Library private constructor(
     /**
      * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
      * (or the world's), TMDB's trending of that kind this week, then New movies (or shows): the
-     * newest Titles of that kind, most popular on TMDB first. Each row shows only the Provider's
-     * Titles with a Version in the Viewer's [contentLanguages], or an Untagged one Likely in one, and
-     * a Chart none at all under [MIN_CHART_SIZE]. The tab shows a Title once, in the highest row it
-     * fits ([ScreenRows]), on its own: a Title on Home's Top row is on the tab's too. Rows with no
-     * Titles are left out. Like Home, the Charts kept on the device stand while the cloud can't answer.
+     * newest Titles of that kind, most popular on TMDB first, then a row per genre: its most popular
+     * Titles across TMDB's whole catalog (the cloud's Discover lists), in TMDB's order, the genres with
+     * the most of the Provider's Titles first. Each row shows only the Provider's Titles with a
+     * Version in the Viewer's [contentLanguages], or an Untagged one Likely in one, a Chart none at
+     * all under [MIN_CHART_SIZE] and a genre none under [MIN_GENRE_SIZE]. The tab shows a Title once,
+     * in the highest row it fits ([ScreenRows]), on its own: a Title on Home's Top row is on the
+     * tab's too. Rows with no Titles are left out. Like Home, the Charts and genre lists kept on the
+     * device stand while the cloud can't answer.
      */
     suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
         tabRows(kind, contentLanguages, appLanguage, region, Instant.now())
@@ -884,14 +887,44 @@ class Library private constructor(
         val top = screen.chart(watchable(tops, contentLanguages, metadata), MIN_CHART_SIZE)
         val trending = screen.row(watchable(trends, contentLanguages, metadata), ROW_SIZE, MIN_CHART_SIZE)
         val new = screen.row(watchable(newest, contentLanguages, metadata).sortedWith(popularFirst(metadata)), ROW_SIZE)
-        // The genre rows (#200) go after New, through the same [screen], so they skip what's shown above.
-        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
+        // The genre rows go after New, through the same [screen], so they skip what's shown above.
+        val genres = genreLists(charts.genres.filter { it.kind == kind }, contentLanguages, appLanguage).mapNotNull { (name, titles) ->
+            screen.row(titles, ROW_SIZE, MIN_GENRE_SIZE).takeIf { it.isNotEmpty() }?.let { name to it }
+        }
+        val all = metadata + metadata(genres.flatMap { (_, titles) -> titles.map { it.id } }, appLanguage)
+        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, all) }
         buildList {
             if (top.isNotEmpty()) add(HomeRow.Chart(topList, region.takeUnless { charts.worldwide }, cards(top)))
             if (trending.isNotEmpty()) add(HomeRow.Chart(trendingList, null, cards(trending)))
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(cards(new), kind))
+            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, cards(titles))) }
         }
     }
+
+    /**
+     * Discover's genre [lists] kept to the Provider's Titles the Viewer can watch ([watchable]), each
+     * in TMDB's order (most popular across TMDB first), the genres with the most such Titles first.
+     * Lists run to a few hundred Titles each, so their Titles and Versions are read in a few queries,
+     * and metadata is only read where it decides: for Untagged Titles, whose original language says
+     * whether they are Likely in a Content language. The cloud is asked only about those near the
+     * top of a genre, where they would show; the rest go by the metadata the device already has.
+     */
+    private fun genreLists(lists: List<Charts.GenreList>, contentLanguages: List<String>, appLanguage: String): List<Pair<String, List<StoredTitle>>> {
+        val listed = store.titles(lists.flatMap { it.titles })
+        val versions = candidates(listed.values)
+        fun likely(id: TitleId, originalLanguage: String?) = inContentLanguages(versions.getValue(id), contentLanguages, originalLanguage)
+        val tagged = listed.keys.filterTo(HashSet()) { likely(it, null) }
+        val untagged = listed.keys.filterTo(HashSet()) { id -> id !in tagged && versions.getValue(id).any { it.attributes.language?.value == null } }
+        val nearTop = lists.flatMap { list -> list.titles.filter { it in listed }.take(ROW_SIZE) }.filter { it in untagged }.distinct()
+        val originalLanguages = keptMetadata(untagged - nearTop.toSet(), appLanguage) + metadata(nearTop, appLanguage)
+        return lists
+            .map { list -> list.name to list.titles.filter { it in tagged || it in untagged && likely(it, originalLanguages[it]?.originalLanguage) }.map(listed::getValue) }
+            .sortedByDescending { (_, titles) -> titles.size }
+    }
+
+    /** The TMDB metadata of [ids] the device already has in [appLanguage]'s language, however old, without asking the cloud. */
+    private fun keptMetadata(ids: Collection<TitleId>, appLanguage: String): Map<TitleId, TitleMetadata> =
+        store.metadata(ids.filterIsInstance<TitleId.Tmdb>(), primaryLanguage(appLanguage)).mapNotNull { (id, stored) -> stored.body?.let { id to TitleMetadata(it) } }.toMap()
 
     /** [title]'s card on a row: its best Version in the Viewer's [contentLanguages], and what the info under the rail tells about it. */
     private fun rowCard(title: StoredTitle, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): TitleSummary {
@@ -1258,16 +1291,20 @@ class Library private constructor(
     }
 
     /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
-    private fun candidates(title: StoredTitle): List<Candidate> {
-        val plain = title.listings.map(::candidates)
-        if (title.id.kind != TitleKind.Movie) return plain
-        val ids = title.listings.map { it.id }
-        val reads = store.fileReads(ids)
-        val bitrates = store.movieBitrates(ids)
-        return plain.map { candidate ->
-            val id = candidate.listing.id
-            val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
-            Candidate(candidate.listing, reads[id]?.let(withBitrate::confirmedBy) ?: withBitrate)
+    private fun candidates(title: StoredTitle): List<Candidate> = candidates(listOf(title)).getValue(title.id)
+
+    /** Each of [titles]' Versions, as [candidates] gives them, read with a few queries for all of them. */
+    private fun candidates(titles: Collection<StoredTitle>): Map<TitleId, List<Candidate>> {
+        val ids = titles.filter { it.id.kind == TitleKind.Movie }.flatMap { title -> title.listings.map { it.id } }
+        val reads = ids.chunked(LISTINGS_PER_QUERY).flatMap { store.fileReads(it).entries }.associate { it.key to it.value }
+        val bitrates = ids.chunked(LISTINGS_PER_QUERY).flatMap { store.movieBitrates(it).entries }.associate { it.key to it.value }
+        return titles.associate { title ->
+            val plain = title.listings.map(::candidates)
+            title.id to if (title.id.kind != TitleKind.Movie) plain else plain.map { candidate ->
+                val id = candidate.listing.id
+                val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
+                Candidate(candidate.listing, reads[id]?.let(withBitrate::confirmedBy) ?: withBitrate)
+            }
         }
     }
 
@@ -1308,6 +1345,8 @@ class Library private constructor(
         private const val GENRE_ROWS = 8
         /** A genre with fewer Titles than this, once those shown higher up are skipped, gets no row: a row of two looks broken. */
         private const val MIN_GENRE_SIZE = 5
+        /** Listings read per query: SQLite takes at most 999 bound parameters in older builds. */
+        private const val LISTINGS_PER_QUERY = 900
 
         /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
         private const val MIN_CHART_SIZE = 3

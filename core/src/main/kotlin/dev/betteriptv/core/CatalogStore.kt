@@ -492,6 +492,23 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** The Titles of [ids] the catalog has, each with its Listings, read a few hundred at a time. */
+    fun titles(ids: Collection<TitleId>): Map<TitleId, StoredTitle> = synchronized(reader) {
+        buildMap {
+            ids.distinct().chunked(MAX_BOUND).forEach { chunk ->
+                reader.prepare(
+                    "SELECT t.key, $LISTING_COLUMNS FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position " +
+                        "WHERE t.key IN (${chunk.joinToString(",") { "?" }})",
+                ).use {
+                    chunk.forEachIndexed { i, id -> it.bindText(i + 1, key(id)) }
+                    val listings = LinkedHashMap<String, MutableList<StoredListing>>()
+                    while (it.step()) listings.getOrPut(it.getText(0)) { mutableListOf() } += it.listing(1)
+                    listings.forEach { (key, of) -> titleId(key).let { id -> put(id, StoredTitle(id, of)) } }
+                }
+            }
+        }
+    }
+
     /**
      * Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories.
      * Read a page at a time, so other reads go on while [each] works through one.

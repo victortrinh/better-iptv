@@ -349,6 +349,7 @@ describe("Charts", () => {
     return (await response.json()) as {
       top: { worldwide: boolean; movies: { kind: string; tmdbId: number }[]; shows: { kind: string; tmdbId: number }[] };
       trending: { all: { kind: string; tmdbId: number }[]; movies: { kind: string; tmdbId: number }[]; shows: { kind: string; tmdbId: number }[] };
+      genres: { kind: string; name: string; tmdbIds: number[] }[];
     };
   };
   const ids = (titles: { tmdbId: number }[]) => titles.map((t) => t.tmdbId);
@@ -466,6 +467,110 @@ describe("Charts", () => {
       const answer = await charts(await registerDevice());
       expect(answer.trending).toEqual({ all: [], movies: [], shows: [] });
       expect(answer.top.movies).toHaveLength(2);
+    });
+  });
+
+  describe("TMDB Discover's genre lists", () => {
+    const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i);
+    const discoveries = (genre?: number) => tmdb.discoveries.filter((url) => genre === undefined || url.searchParams.get("with_genres") === String(genre));
+    /** Every fetch the Worker sent out, to TMDB, Netflix or anyone. */
+    const sentOut = () => vi.mocked(globalThis.fetch).mock.calls.length;
+
+    beforeEach(() => {
+      tmdb.genres("movie", "en", { id: 28, name: "Action" }, { id: 35, name: "Comedy" });
+      tmdb.genres("movie", "fr", { id: 28, name: "Action" }, { id: 35, name: "Comédie" });
+      tmdb.genres("tv", "en", { id: 18, name: "Drama" });
+      tmdb.genres("tv", "fr", { id: 18, name: "Drame" });
+      tmdb.discover("movie", 28, 5, 3, 9);
+      tmdb.discover("movie", 35, 7, 3);
+      tmdb.discover("tv", 18, 1396, 2001);
+    });
+
+    it("answers each genre's most popular movies and shows, in TMDB's order, named in the App language", async () => {
+      const { genres } = await charts(await registerDevice(), "CA", "fr");
+
+      expect(genres).toEqual([
+        { kind: "movie", name: "Action", tmdbIds: [5, 3, 9] },
+        { kind: "movie", name: "Comédie", tmdbIds: [7, 3] },
+        { kind: "show", name: "Drame", tmdbIds: [1396, 2001] },
+      ]);
+      expect(discoveries().every((url) => url.searchParams.get("sort_by") === "popularity.desc")).toBe(true);
+    });
+
+    it("reads 15 pages of 20 of a genre: 300 Titles", async () => {
+      tmdb.discover("movie", 28, ...range(1, 400));
+
+      const { genres } = await charts(await registerDevice());
+
+      expect(genres.find((g) => g.name === "Action")!.tmdbIds).toEqual(range(1, 300));
+      expect(discoveries(28).map((url) => Number(url.searchParams.get("page"))).sort((a, b) => a - b)).toEqual(range(1, 15));
+    });
+
+    it("never sends more than 40 requests out for one answer, filling in every genre over the next answers", async () => {
+      const movieGenres = range(1, 19).map((id) => ({ id, name: `Movie genre ${id}` }));
+      const showGenres = range(101, 16).map((id) => ({ id, name: `Show genre ${id}` }));
+      tmdb.genres("movie", "en", ...movieGenres);
+      tmdb.genres("tv", "en", ...showGenres);
+      movieGenres.forEach((g) => tmdb.discover("movie", g.id, ...range(g.id * 1000, 400)));
+      showGenres.forEach((g) => tmdb.discover("tv", g.id, ...range(g.id * 1000, 400)));
+      const token = await registerDevice();
+
+      let answers = 0;
+      let genres: { tmdbIds: number[] }[] = [];
+      while (answers < 25 && (genres.length === 0 || genres.some((g) => g.tmdbIds.length < 300))) {
+        const before = sentOut();
+        genres = (await charts(token)).genres;
+        expect(sentOut() - before).toBeLessThanOrEqual(40);
+        // Every genre is listed from the first answer on; those not read yet are empty.
+        expect(genres).toHaveLength(35);
+        answers++;
+      }
+      expect(genres.every((g) => g.tmdbIds.length === 300)).toBe(true);
+      expect(answers).toBeLessThanOrEqual(19);
+    });
+
+    it("keeps each list a week, then reads it again, serving the old one while TMDB can't answer", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+      const token = await registerDevice();
+      await charts(token);
+      const first = discoveries().length;
+      vi.setSystemTime(new Date("2026-10-26T08:00:00Z"));
+      await charts(token, "AR");
+      expect(discoveries()).toHaveLength(first);
+
+      vi.setSystemTime(new Date("2026-10-28T08:00:00Z"));
+      tmdb.discover("movie", 28, 9, 5);
+      tmdb.failWhen = (url) => url.pathname.startsWith("/3/discover/");
+      expect((await charts(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([5, 3, 9]);
+      expect(discoveries().length).toBeGreaterThan(first);
+
+      tmdb.failWhen = null;
+      expect((await charts(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([9, 5]);
+    });
+
+    it("reads a list once for every App language, asking only for the genres' names again", async () => {
+      const token = await registerDevice();
+      await charts(token, "CA", "en");
+      const read = discoveries().length;
+
+      const { genres } = await charts(token, "CA", "fr");
+
+      expect(genres.map((g) => g.name)).toEqual(["Action", "Comédie", "Drame"]);
+      expect(discoveries()).toHaveLength(read);
+      expect(tmdb.requests.filter((url) => url.pathname.startsWith("/3/genre/")).map((url) => url.searchParams.get("language"))).toEqual(["en", "en", "fr", "fr"]);
+    });
+
+    it("has empty lists while TMDB is down and it never had them, and the Top 10 still answers", async () => {
+      tmdb.failWhen = (url) => url.pathname.startsWith("/3/discover/");
+      const token = await registerDevice();
+      const answer = await charts(token);
+      expect(answer.genres.map((g) => g.tmdbIds)).toEqual([[], [], []]);
+      expect(answer.top.movies).toHaveLength(2);
+
+      // Without the genres' names, there are no genres to list.
+      tmdb.failWhen = (url) => url.pathname.startsWith("/3/genre/");
+      expect((await charts(token, "CA", "fr")).genres).toEqual([]);
     });
   });
 

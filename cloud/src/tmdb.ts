@@ -155,6 +155,39 @@ export async function fetchTrending(env: Env, kind: "all" | Kind, pages: number)
   return titles;
 }
 
+/** One of TMDB's genres: its ID, the same in every language, and its name in the language asked for. */
+export interface Genre {
+  id: number;
+  name: string;
+}
+
+/** TMDB's [kind] genres, named in [language] (ISO 639-1). */
+export async function fetchGenres(env: Env, kind: Kind, language: string): Promise<Genre[]> {
+  const response = await get(env, `genre/${tmdbPath(kind)}/list`, { language });
+  if (response === NOT_FOUND) return [];
+  const { genres } = (await response.json()) as { genres?: Genre[] };
+  return (genres ?? []).map((g) => ({ id: g.id, name: g.name }));
+}
+
+/**
+ * The [kind] Titles TMDB's Discover finds in genre [genreId], most popular first, from its first
+ * [pages] pages of 20: page 1, which tells how many pages there are, then the rest at once. Also
+ * says how many requests it sent.
+ */
+export async function fetchDiscover(env: Env, kind: Kind, genreId: number, pages: number): Promise<{ tmdbIds: number[]; requests: number }> {
+  const page = async (n: number) => {
+    const response = await get(env, `discover/${tmdbPath(kind)}`, { with_genres: String(genreId), sort_by: "popularity.desc", include_adult: "false", language: "en", page: String(n) });
+    if (response === NOT_FOUND) return { ids: [] as number[], total: 0 };
+    const { results, total_pages } = (await response.json()) as { results?: { id: number }[]; total_pages?: number };
+    return { ids: (results ?? []).map((r) => r.id), total: total_pages ?? 1 };
+  };
+  const first = await page(1);
+  const last = Math.min(pages, first.total);
+  const rest = await Promise.all(Array.from({ length: Math.max(0, last - 1) }, (_, i) => page(i + 2)));
+  // A Title moving up between two page reads would otherwise show twice.
+  return { tmdbIds: [...new Set([first, ...rest].flatMap((p) => p.ids))], requests: Math.max(1, last) };
+}
+
 /** The Titles [personId] acted in or directed, by TMDB's combined credits; NOT_FOUND when TMDB has no such person. */
 export async function credits(env: Env, personId: number): Promise<TitleKey[] | typeof NOT_FOUND> {
   const response = await get(env, `person/${personId}/combined_credits`, { language: "en" });

@@ -45,10 +45,12 @@ import { upcoming } from "./upcoming";
  *   when TMDB can't answer right now and the Show was never asked about.
  * - `POST /v1/charts`, with `{"region": "CA", "language": "fr"}`: the Charts for that Region,
  *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]},
- *   "trending": {"all": […], "movies": […], "shows": […]}}`: Netflix's Top 10 in rank order as
- *   TMDB Titles, the Region's or (worldwide) the world's when Netflix doesn't list it, and TMDB's
- *   trending this week. A list its source can't give right now and never gave is empty. Later
- *   Charts come as parts beside these.
+ *   "trending": {"all": […], "movies": […], "shows": […]}, "genres": [{"kind": "movie", "name":
+ *   "Comédie", "tmdbIds": [550, …]}]}`: Netflix's Top 10 in rank order as TMDB Titles, the
+ *   Region's or (worldwide) the world's when Netflix doesn't list it, TMDB's trending this week,
+ *   and each TMDB genre's most popular Titles (Discover), named in the language. A list its source
+ *   can't give right now and never gave is empty; genre lists not read yet fill in over later
+ *   answers.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */

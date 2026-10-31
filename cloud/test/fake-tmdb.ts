@@ -17,6 +17,8 @@ export class FakeTmdb {
   private readonly multi: { names: string[]; result: object }[] = [];
   private readonly people = new Map<number, { cast: object[]; crew: object[] }>();
   private readonly trends = new Map<string, object[]>();
+  private readonly genreLists = new Map<string, { id: number; name: string }[]>();
+  private readonly discovered = new Map<string, object[]>();
   /** Other services' fakes, by the URL prefix they answer for. */
   private readonly others: { prefix: string; answer: (url: URL) => Response }[] = [];
 
@@ -54,6 +56,16 @@ export class FakeTmdb {
         const all = this.trends.get(`${trend[1]}/${trend[2]}`) ?? [];
         const page = Number(url.searchParams.get("page") ?? "1");
         return Response.json({ page, results: all.slice((page - 1) * 20, page * 20), total_pages: Math.ceil(all.length / 20), total_results: all.length });
+      }
+      const genres = /^\/3\/genre\/(movie|tv)\/list$/.exec(url.pathname);
+      if (genres) return Response.json({ genres: this.genreLists.get(`${genres[1]}/${url.searchParams.get("language") ?? "en"}`) ?? [] });
+      const discover = /^\/3\/discover\/(movie|tv)$/.exec(url.pathname);
+      if (discover) {
+        // Only the most popular first is faked.
+        if (url.searchParams.get("sort_by") !== "popularity.desc") return Response.json({ success: false }, { status: 422 });
+        const all = this.discovered.get(`${discover[1]}/${url.searchParams.get("with_genres")}`) ?? [];
+        const page = Number(url.searchParams.get("page") ?? "1");
+        return Response.json({ page, results: all.slice((page - 1) * 20, page * 20), total_pages: Math.max(1, Math.ceil(all.length / 20)), total_results: all.length });
       }
       const person = /^\/3\/person\/(\d+)\/combined_credits$/.exec(url.pathname);
       if (person) {
@@ -116,6 +128,21 @@ export class FakeTmdb {
    */
   trending(kind: "all" | "movie" | "tv", window: "day" | "week", ...results: object[]) {
     this.trends.set(`${kind}/${window}`, results);
+  }
+
+  /** TMDB's list of [kind] genres (`movie` or `tv`), named in [language]. */
+  genres(kind: "movie" | "tv", language: string, ...genres: { id: number; name: string }[]) {
+    this.genreLists.set(`${kind}/${language}`, genres);
+  }
+
+  /** What TMDB's Discover finds of [kind] in genre [genreId], most popular first, 20 a page: [ids] in order. */
+  discover(kind: "movie" | "tv", genreId: number, ...ids: number[]) {
+    this.discovered.set(`${kind}/${genreId}`, ids.map((id) => (kind === "movie" ? { id, title: `Movie ${id}` } : { id, name: `Show ${id}` })));
+  }
+
+  /** The Discover requests that reached TMDB. */
+  get discoveries(): URL[] {
+    return this.requests.filter((url) => url.pathname.startsWith("/3/discover/"));
   }
 
   /** The search requests that reached TMDB. */
