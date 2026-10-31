@@ -1,8 +1,8 @@
 # Roadmap
 
-Settled 2026-10-24 in a design grilling session. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
+Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
 
-Priorities, in order: a fast catalog with the best Version in the Viewer's language, subtitles and smooth playback of every format on a nice interface; then live sports; then trending; then visual polish.
+Priorities, in order: a fast catalog with the best Version in the Viewer's language, subtitles and smooth playback of every format on a nice interface; then trending, so Home is worth opening every day; then live sports; then visual polish.
 
 ## Surveyed Provider (2026-10-24)
 
@@ -73,21 +73,27 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 - In-app updater.
 - Trailers from YouTube IDs, never through the Provider connection.
 
-## M2: Live and sports
+## M2: Trending
+
+Starts while M1's last player bugs are fixed alongside it; [#152](https://github.com/victortrinh/better-iptv/issues/152) (Home's vertical focus) is decided before the Chart rows are laid out.
+
+- Charts, each filtered to the Provider's Titles in the Viewer's Content languages:
+  - Netflix Top 10 for the Region, one row for movies and one for shows. Netflix publishes exactly 10 of each per country every week; the Provider had 8–10 of Canada's 10 in each of the six weeks to 2026-10-18 (matched by name against the 2026-10-24 survey), usually missing one. A Region with no list of its own gets the worldwide one, labelled as such.
+  - TMDB trending this week, one row mixing movies and shows. The weekly list, not the daily one, so the row doesn't swing with one-day spikes.
+- Chart cards are numbered 1…n among the Titles left, so a missing #3 leaves no gap. Rows are named "Top movies in Canada", "Top shows in Canada" and "Trending this week", never "Top 10". A Chart row with fewer than 3 cards is left out.
+- Home, in order: Continue watching, Top movies, Top shows, New on your service, Trending this week, Favourites, genres.
+- Home shows each Title once: rows fill from the top, Charts keep every Title they rank, and the rows below them skip a Title already shown higher up. Continue watching and Favourites take no part. A genre row that falls under its minimum size is left out.
+- The cloud checks Netflix daily (it publishes on Tuesdays) and TMDB weekly; the device gets both with the metadata it already pulls.
+- The Region is changed in Settings only, and falls back to Canada when the device reports no country.
+- No Trakt: its most-watched list mostly repeats TMDB trending, and would cost an API key and a commercial licence. Reconsider if the two Charts feel thin.
+
+## M3: Live and sports
 
 - Channel variants merged like Versions.
 - Sports hub of live and upcoming Games. Matched from Event channel names and schedule broadcasters, with the TV guide as a second signal.
 - Default leagues for Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League. Pinned teams optional.
 - Free schedule sources only, each swappable: ESPN's undocumented API, the NHL's and MLB's public feeds, OpenF1 or Jolpica, football-data.org.
 - Sports replays move into the sports hub.
-
-## M3: Trending
-
-- Charts filtered to the Provider's Titles:
-  - Netflix Top 10 for the Region (weekly)
-  - TMDB trending (daily)
-  - Trakt most watched (weekly)
-- The Region can be switched from the Top 10 row title.
 
 ## M4: Polish
 
@@ -104,11 +110,10 @@ Animations, backdrops, trailers.
 ## Still to decide, before the milestone that needs it
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
-- M2: sports hub screens; rules for merging Channel variants.
-- M3: row layout and refresh times.
+- M2: matching Netflix's titles (names only, no TMDB IDs) to Titles; how a Chart card shows its number.
+- M3: sports hub screens; rules for merging Channel variants.
 - M5: account model, Prefix tables for other Providers, profiles.
 
 ## Accounts the Viewer sets up
 
 - Before M1: Cloudflare, TMDB API key, OpenSubtitles API key.
-- Before M3: Trakt API key.
