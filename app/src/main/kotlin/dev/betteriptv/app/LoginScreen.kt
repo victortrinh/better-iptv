@@ -77,7 +77,7 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = Spacing.xxl)) {
-            Wordmark(style = Type.display.copy(fontSize = 44.sp, lineHeight = 48.sp))
+            Wordmark(style = Type.display.copy(fontSize = 38.sp, lineHeight = 40.sp))
             Spacer(Modifier.height(Spacing.l))
             Text(stringResource(R.string.login_title), style = Type.headline, color = Colors.ink)
             Spacer(Modifier.height(Spacing.s))

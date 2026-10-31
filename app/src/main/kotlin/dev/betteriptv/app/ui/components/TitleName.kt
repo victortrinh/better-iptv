@@ -15,7 +15,7 @@ import dev.betteriptv.app.ui.theme.Type
 
 /**
  * A Title's name at the top of the hero and its details: its [logo] art when it has one, fitted in a
- * 320 × 104 dp box and sitting on its bottom edge, else the name in Display type. The logo keeps the
+ * 320 × 88 dp box and sitting on its bottom edge, else the name in Display type. The logo keeps the
  * name as its content description. While the logo loads the box stays empty, so the name doesn't
  * flash first; if it can't be loaded the caller passes null and the name shows.
  */
@@ -32,4 +32,4 @@ fun TitleName(name: String, logo: Painter?, modifier: Modifier = Modifier) {
 private val LogoWidth = 320.dp
 
 /** Two lines of Display type, so a logo takes the room the name would. */
-private val LogoHeight = 104.dp
+private val LogoHeight = 88.dp

@@ -17,56 +17,56 @@ colors:
 typography:
   display:
     fontFamily: "Inter"
-    fontSize: "50px"
+    fontSize: "42px"
     fontWeight: 700
-    lineHeight: "52px"
+    lineHeight: "44px"
     letterSpacing: "-0.03em"
   headline:
     fontFamily: "Inter"
-    fontSize: "18px"
+    fontSize: "15px"
     fontWeight: 700
-    lineHeight: "24px"
+    lineHeight: "20px"
     letterSpacing: "-0.01em"
   title:
     fontFamily: "Inter"
-    fontSize: "16px"
+    fontSize: "14px"
     fontWeight: 600
-    lineHeight: "22px"
+    lineHeight: "19px"
   body:
     fontFamily: "Inter"
-    fontSize: "17px"
+    fontSize: "14px"
     fontWeight: 400
-    lineHeight: "24px"
+    lineHeight: "20px"
   detail:
     fontFamily: "Inter"
-    fontSize: "15px"
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: "22px"
+    lineHeight: "18px"
   label:
     fontFamily: "Inter"
-    fontSize: "15px"
+    fontSize: "13px"
     fontWeight: 600
-    lineHeight: "20px"
+    lineHeight: "18px"
   rail-meta:
+    fontFamily: "Inter"
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: "18px"
+  rail:
     fontFamily: "Inter"
     fontSize: "16px"
     fontWeight: 600
     lineHeight: "22px"
-  rail:
-    fontFamily: "Inter"
-    fontSize: "19px"
-    fontWeight: 600
-    lineHeight: "25px"
   rail-strong:
     fontFamily: "Inter"
-    fontSize: "19px"
+    fontSize: "16px"
     fontWeight: 700
-    lineHeight: "25px"
+    lineHeight: "22px"
   caption:
     fontFamily: "Inter"
-    fontSize: "12px"
+    fontSize: "11px"
     fontWeight: 600
-    lineHeight: "16px"
+    lineHeight: "15px"
     letterSpacing: "0.01em"
 rounded:
   badge: "4px"
@@ -236,20 +236,20 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 **Body Font:** Inter 400 and 600
 **Label/Mono Font:** Inter 600 (no second family)
 
-**Character:** One family, three weights (400, 600, 700, bundled as `inter_*.ttf`). The display size is bold and tracked tight so a Title's name reads like a poster credit. Everything else is plain and even, built for reading from a couch.
+**Character:** One family, three weights (400, 600, 700, bundled as `inter_*.ttf`). The display size is bold and tracked tight so a Title's name reads like a poster credit. Everything else is plain and even, built for reading from a couch. The sizes were set on the Fire TV Stick itself, close to tvOS and Material for TV on the same canvas: the earlier scale, estimated from photos of Netflix, read too big on the TV (#186).
 
 ### Hierarchy
-- **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most. A Title with a TMDB logo (in the App language, else English) shows the logo there instead (`TitleName`): fitted in a 320 × 104 dp box, the room two Display lines take, and sitting on its bottom edge, with the name as its content description. The box stays empty while the logo loads, and the name shows in Display type when there is no logo or it can't be loaded.
-- **Headline** (`Type.headline`, 18 sp): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. Kept modest so the posters under a heading lead, as on Netflix (#147). The Wordmark uses it at 22 sp.
+- **Display** (`Type.display`): a Title's name in the home hero and at the top of its details page. Two lines at most. A Title with a TMDB logo (in the App language, else English) shows the logo there instead (`TitleName`): fitted in a 320 × 88 dp box, the room two Display lines take, and sitting on its bottom edge, with the name as its content description. The box stays empty while the logo loads, and the name shows in Display type when there is no logo or it can't be loaded.
+- **Headline** (`Type.headline`, 15 sp): row headings ("Continue watching"), screen and section headings ("Versions", "Playback"), the player's Title name. Kept modest so the posters under a heading lead, as on Netflix (#147). The Wordmark uses it at 18 sp.
 - **Title** (`Type.title`): a Title's name under a focused card, the language group heading over Versions ("English · 3"), the search query.
-- **Body** (`Type.body`, 17 sp): descriptions, metadata lines, people, messages, field text: what is read from the couch. Descriptions are capped at 2 lines in the hero and 3 on details.
-- **Rail** (`Type.railMeta` 16 sp, `Type.rail` 19 sp, `Type.railStrong` 19 sp bold): the info under Home's focused rail, set as Netflix sets it (#182): a step above body, so the description reads like the artwork's caption, with the metadata line smaller and muted and the time left in Continue watching strongest.
-- **Detail** (`Type.detail`, 15 sp): body beside label type in a row or table: Version cells and bitrate, setting values. It stays at 15 sp so the French strings still fit the Version columns.
+- **Body** (`Type.body`, 14 sp): descriptions, metadata lines, people, messages, field text: what is read from the couch. Descriptions are capped at 2 lines in the hero and 3 on details.
+- **Rail** (`Type.railMeta` 13 sp, `Type.rail` 16 sp, `Type.railStrong` 16 sp bold): the info under Home's focused rail, set as Netflix sets it (#182): a step above body, so the description reads like the artwork's caption, with the metadata line smaller and muted and the time left in Continue watching strongest.
+- **Detail** (`Type.detail`, 13 sp): body beside label type in a row or table: Version cells and bitrate, setting values. It stays at 13 sp, the size of label type, so the French strings still fit the Version columns.
 - **Label** (`Type.label`): buttons, tabs, choices, keys, setting labels, the Source cell of a Version row.
 - **Caption** (`Type.caption`): badges, column headings, field labels, explanations under a setting, the Sync status line.
 
 ### Named Rules
-**The Readable From the Couch Rule.** All text keeps at least 4.5:1 contrast against what is actually behind it. That includes glass over artwork, so for example inactive tab labels use white at 85%, not `ink-muted`. Nothing goes smaller than caption (12 sp).
+**The Readable From the Couch Rule.** All text keeps at least 4.5:1 contrast against what is actually behind it. That includes glass over artwork, so for example inactive tab labels use white at 85%, not `ink-muted`. Nothing goes smaller than caption (11 sp).
 
 **The French Is Longer Rule.** French strings run about 20% longer. Fixed widths (Version columns, the settings label column, buttons in a row) must hold the French string, and single-line text gets `maxLines` with an ellipsis instead of overflowing.
 

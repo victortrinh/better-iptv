@@ -124,7 +124,7 @@ private val WordmarkDot = Color(0xFF77787E)
  * 0.4 i-dots clear of the g, its top on the cap height. The banner's dot uses the same numbers.
  */
 @Composable
-fun Wordmark(modifier: Modifier = Modifier, style: TextStyle = Type.headline.copy(fontSize = 22.sp)) {
+fun Wordmark(modifier: Modifier = Modifier, style: TextStyle = Type.headline.copy(fontSize = 18.sp)) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val density = LocalDensity.current
     val em = with(density) { style.fontSize.toPx() }
