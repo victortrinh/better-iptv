@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -234,6 +233,8 @@ fun RowsScreen(
                             else -> Cards.posterWidth
                         }
                         val rail = state.rail(row.key, loop)
+                        // The card a row entered for the first time starts at.
+                        val entry = remember { FocusRequester() }
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
                         val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
                         CompositionLocalProvider(LocalBringIntoViewSpec provides when {
@@ -252,14 +253,14 @@ fun RowsScreen(
                                     bottom = 10.dp,
                                 ),
                                 horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                                modifier = Modifier.focusRestorer(),
+                                modifier = Modifier.rowFocus(entry),
                             ) {
                                 items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { if (row is HomeRow.Favourites) "channel" else "title" }) { place ->
                                     val index = loop.card(place)
                                     val focus = remember { FocusRequester() }
                                     val card = RowCard(row.key, keys[index])
                                     // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
-                                    val ends = Modifier.focusRequester(focus).focusProperties {
+                                    val ends = Modifier.focusRequester(focus).entryAt(rail, place, entry).focusProperties {
                                         if (!loop.loops && index == 0) left = FocusRequester.Cancel
                                         if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
                                     }
