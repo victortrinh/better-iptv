@@ -45,6 +45,7 @@ import java.util.Locale
  * Languages, the Quality cap and whether the next Episode plays by itself under Playback, the App
  * version under App, which offers the [update] when there is one ([onUpdate]). Content languages
  * and Region each open a list in place of the column; Back returns to the row that opened it.
+ * [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
 fun SettingsScreen(
@@ -53,6 +54,7 @@ fun SettingsScreen(
     update: UpdateState,
     onChange: ((ViewerSettings) -> ViewerSettings) -> Unit,
     onUpdate: () -> Unit,
+    focusTab: Boolean,
     onTab: (Browse) -> Unit,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
@@ -60,9 +62,11 @@ fun SettingsScreen(
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
+    val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
-        BrowseTabs(Browse.Settings, onTab, Modifier.padding(horizontal = Spacing.screenX))
+        BrowseTabs(Browse.Settings, onTab, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
         when (picking) {
             Picker.ContentLanguages -> {
                 BackHandler { picking = null }
@@ -170,8 +174,9 @@ fun SettingsScreen(
             when (returnTo) {
                 Picker.ContentLanguages -> contentLanguagesRow
                 Picker.Region -> regionRow
-                null -> appLanguageRow
-            }.requestFocus()
+                // Reached by its tab, which keeps focus.
+                null -> appLanguageRow.takeUnless { focusTab }
+            }?.requestFocus()
         }
     }
 }

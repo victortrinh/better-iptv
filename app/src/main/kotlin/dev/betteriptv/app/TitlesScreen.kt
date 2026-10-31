@@ -78,6 +78,7 @@ class TitlesState {
  * One card per movie or show Title ([kind], picked with the tabs), newest first, read from the
  * device database a page at a time, with TMDB's name and poster in the [appLanguage].
  * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
+ * [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
 fun TitlesScreen(
@@ -87,6 +88,7 @@ fun TitlesScreen(
     appLanguage: String,
     state: TitlesState,
     restoreFocus: Int,
+    focusTab: Boolean,
     onSyncNow: () -> Unit,
     onTab: (Browse) -> Unit,
     onOpen: (index: Int, TitleId) -> Unit,
@@ -109,6 +111,7 @@ fun TitlesScreen(
     val focus = remember(grid) { GridFocus(grid, scope) }
     val context = LocalContext.current
     val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
 
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
@@ -137,7 +140,7 @@ fun TitlesScreen(
         // The columns share the width between them, so the grid ends at the right margin like it starts at the left.
         LazyVerticalGrid(
             GridCells.Adaptive(Cards.posterWidth),
-            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.backToTab(tab),
+            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.entersFromAbove(focus).backKeyToTab(tab),
             state = grid,
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),

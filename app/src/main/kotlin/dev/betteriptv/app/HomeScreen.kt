@@ -133,7 +133,8 @@ class HomeState {
  * Favourites, New on your service, then a row per genre. They are read again whenever the screen
  * shows, so a Title just played moves to the front of Continue watching. [restoreFocus] is the card
  * to focus on arrival, the one the Viewer opened before coming back, or the card now in its place
- * when it has gone; the first card when null.
+ * when it has gone; the first card when null, unless the screen was reached by picking its tab
+ * ([focusTab]), which keeps focus.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
@@ -145,6 +146,7 @@ fun HomeScreen(
     appLanguage: String,
     state: HomeState,
     restoreFocus: HomeCard?,
+    focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (HomeCard, TitleId) -> Unit,
     onWatch: (HomeCard, Channel) -> Unit,
@@ -168,7 +170,7 @@ fun HomeScreen(
         checked = true
     }
     val rows = state.rows
-    val focusOn = pending ?: rows?.firstOrNull()?.takeIf { !focused }?.let { HomeCard(it.key, it.keys.first()) }
+    val focusOn = pending ?: rows?.firstOrNull()?.takeIf { !focused && !focusTab }?.let { HomeCard(it.key, it.keys.first()) }
     val onFocused = {
         pending = null
         focused = true
@@ -186,6 +188,7 @@ fun HomeScreen(
     }
 
     val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
     // Like Netflix's: the focused card sits at the left margin and its row's heading at the top of
     // the rows, so focus stays in one place and the rows move under it.
     val density = LocalDensity.current
