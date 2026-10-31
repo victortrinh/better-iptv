@@ -786,7 +786,9 @@ class Library private constructor(
      * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
      * Untagged one Likely in one; Continue watching shows whatever the Viewer started, a Show at the
      * Episode to watch next, until they finish it. Genres come from the TMDB metadata of the newest
-     * Titles, so they need the cloud once a week. Rows with no Titles are left out.
+     * Titles, so they need the cloud once a week. A Title shows in one browse row only, the highest
+     * it fits ([ScreenRows]); a genre row left with too few Titles gives its place to the next
+     * genre. Rows with no Titles are left out.
      */
     suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
         val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
@@ -812,7 +814,15 @@ class Library private constructor(
         val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst)
         val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
         browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
-        val genres = byGenre.entries.filter { it.value.size >= MIN_GENRE_SIZE }.sortedByDescending { it.value.size }.take(GENRE_ROWS)
+        val screen = ScreenRows()
+        val new = screen.row(newest, ROW_SIZE)
+        val genres = buildList {
+            for ((name, titles) in byGenre.entries.sortedByDescending { it.value.size }) {
+                if (size == GENRE_ROWS) break
+                val row = screen.row(titles.sortedWith(popularFirst), ROW_SIZE, MIN_GENRE_SIZE)
+                if (row.isNotEmpty()) add(name to row)
+            }
+        }
         buildList {
             if (resumes.isNotEmpty()) {
                 add(
@@ -832,8 +842,8 @@ class Library private constructor(
                 )
             }
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
-            if (newest.isNotEmpty()) add(HomeRow.NewOnYourService(newest.take(ROW_SIZE).map { card(it) }))
-            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.sortedWith(popularFirst).take(ROW_SIZE).map { card(it) })) }
+            if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
+            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
         }
     }
 
@@ -1198,7 +1208,7 @@ class Library private constructor(
         private const val NEW_MOVIES = 40
         private const val NEW_SHOWS = 15
         private const val GENRE_ROWS = 8
-        /** A genre with fewer Titles than this gets no row: a row of two looks broken. */
+        /** A genre with fewer Titles than this, once those shown higher up are skipped, gets no row: a row of two looks broken. */
         private const val MIN_GENRE_SIZE = 5
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
