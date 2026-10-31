@@ -65,10 +65,6 @@
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
-    <plurals name="sync_unknown_prefixes">
-        <item quantity="one">Prefix not in the Prefix table: %1$s.</item>
-        <item quantity="other">Prefixes not in the Prefix table: %1$s.</item>
-    </plurals>
 
     <string name="badge_confirmed">Confirmed</string>
     <string name="badge_confirmed_meaning">read from the file</string>

@@ -100,6 +100,16 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         authorized { token -> post("v1/file-reads", json.serializeNulls().toJson(body), token) }
     }
 
+    /** Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most [MAX_PREFIX_BATCH]. */
+    fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>) {
+        require(prefixes.size <= MAX_PREFIX_BATCH)
+        val body = mapOf(
+            "provider" to provider,
+            "prefixes" to prefixes.map { mapOf("prefix" to it.prefix, "listingCount" to it.listingCount, "example" to it.example) },
+        )
+        authorized { token -> post("v1/unknown-prefixes", json.toJson(body), token) }
+    }
+
     /**
      * The subtitles to download for a Movie, or a Show's [episode], in [languages] (ISO 639-1, at
      * most [MAX_SUBTITLE_LANGUAGES]): the best few in each language, best first.
@@ -208,6 +218,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
         /** The most Listings one match request may ask about. */
         const val MAX_MATCH_BATCH = 25
+
+        /** The most unknown Prefixes one report may hold. */
+        const val MAX_PREFIX_BATCH = 200
         private val JSON = "application/json".toMediaType()
         private val json = Moshi.Builder().build().adapter(Any::class.java)
 

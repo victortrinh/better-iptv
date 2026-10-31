@@ -1,0 +1,64 @@
+name: Unknown Prefixes
+
+# Lists the Prefixes devices reported in the last 30 days that the Prefix table doesn't know, in one
+# issue, so they get added to core/src/main/resources/dev/betteriptv/core/prefix-table.txt. A Prefix the
+# table has learned stops being reported and drops off the list; with none left, the issue is closed.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+defaults:
+  run:
+    working-directory: cloud
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cloud/package-lock.json
+      - run: npm ci
+      - name: Read the reported Prefixes
+        run: |
+          npx wrangler d1 execute better-iptv --remote --json --command "
+            SELECT prefix, MAX(listing_count) AS listings, MAX(example) AS example, MIN(first_seen) AS first_seen
+            FROM unknown_prefix
+            WHERE last_seen > (unixepoch() - 30 * 86400) * 1000
+            GROUP BY prefix ORDER BY listings DESC, prefix" > prefixes.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Open, update or close the issue
+        run: |
+          title="Unknown Prefixes"
+          issue=$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n1)
+          count=$(jq '.[0].results | length' prefixes.json)
+          if [ "$count" -eq 0 ]; then
+            [ -n "$issue" ] && gh issue close "$issue" --comment "No unknown Prefixes reported in the last 30 days."
+            exit 0
+          fi
+          {
+            echo "Devices' Syncs found these Prefixes that the Prefix table doesn't know, in the last 30 days."
+            echo "Add each to \`core/src/main/resources/dev/betteriptv/core/prefix-table.txt\`; the Viewer never sees this list."
+            echo
+            echo "| Prefix | Listings | Example | First seen |"
+            echo "| --- | ---: | --- | --- |"
+            jq -r '.[0].results[] | "| `\(.prefix)` | \(.listings) | \(.example | gsub("\\|"; "\\|")) | \(.first_seen / 1000 | strftime("%Y-%m-%d")) |"' prefixes.json
+          } > body.md
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file body.md
+          else
+            gh issue create --title "$title" --label needs-triage --body-file body.md
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

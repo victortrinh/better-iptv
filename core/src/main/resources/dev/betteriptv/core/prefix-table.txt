@@ -16,7 +16,8 @@
 #   clutter             not watchable content: kept out of every list
 #
 # A Prefix with no attributes is known but says nothing (a collection label, say). Prefixes missing
-# from the table are reported after each Sync; add them here rather than guessing in code.
+# from the table are reported to the cloud after each Sync (never shown to the Viewer), and the weekly
+# "Unknown Prefixes" issue lists them; add them here rather than guessing in code.
 #
 # Category hints are matched in the Category's name after folding superscripts, accents and case
 # (so "ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ" reads DOLBY AUDIO and "PELÍCULAS" reads PELICULAS), as whole words; a hyphen
@@ -32,6 +33,7 @@
 # Languages
 EN          | language=en
 DE          | language=de
+CD          | language=de               # typo of DE, in GERMANY SERIE
 FR          | language=fr
 QC          | language=fr-CA
 EQC         | language=fr-CA            # typo of QC, in QC - FILMS VIEILLE
@@ -43,7 +45,9 @@ R           | language=fa               # cut-off IR, in PERSIAN SERIES
 ES          | language=es
 LA          | language=es-419           # LA - PELÍCULAS, LATINO SERIE
 PT          | language=pt
+BR          | language=pt-BR            # BR - MOVIES, BR - KIDS: Portuguese audio (Header read 2026-10-31)
 NL          | language=nl
+AL          | language=nl               # typo of NL, in NL - AMAZON PRIME
 BE-NL       | language=nl-BE
 SE          | language=sv
 DK          | language=da
@@ -91,6 +95,7 @@ IN-CAM      | language=hi; cam
 
 # Regions whose language isn't named
 SC          # Nordic: Scandinavian subtitles or dubs, language not named
+AC          # typo of SC, in NORDIC FILM NEW RELEASE
 AS          # ASIA MOVIES (MULTI-SUBS)
 AF          # AFRICA SERIES
 
@@ -115,6 +120,7 @@ ES-4K       | language=es; quality=4K
 4L-PL       | language=pl; quality=4K   # typo of 4K-PL
 4K-PT       | language=pt; quality=4K
 4K-TR       | language=tr; quality=4K
+TR-4K       | language=tr; quality=4K   # TURKSIH SERIES ⁴ᴷ
 4K-TR-HDR   | language=tr; quality=4K; hdr=HDR10
 4K-DK       | language=da; quality=4K
 4K-IN       | language=hi; quality=4K

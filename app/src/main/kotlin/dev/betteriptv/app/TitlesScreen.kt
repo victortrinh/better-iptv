@@ -196,19 +196,13 @@ private fun Context.running(status: SyncStatus.Running): String {
 }
 
 private fun Context.synced(last: CompletedSync): String =
-    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.toMillis() / 1000.0)) + unknownPrefixes(last)
+    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.toMillis() / 1000.0))
 
 private fun count(n: Int): String = NumberFormat.getIntegerInstance().format(n)
 
 private fun Context.describe(problem: SyncProblem): String = when (problem) {
     is ProviderProblem -> describe(problem)
     is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
-}
-
-/** Names the Prefixes the Prefix table should learn, so they get added instead of guessed. */
-private fun Context.unknownPrefixes(sync: CompletedSync): String {
-    val prefixes = sync.unknownPrefixes.ifEmpty { return "" }
-    return " " + resources.getQuantityString(R.plurals.sync_unknown_prefixes, prefixes.size, prefixes.joinToString(", ") { it.prefix })
 }
 
 private fun Context.ago(sync: CompletedSync): String = ago(sync.finishedAt, Instant.now())
