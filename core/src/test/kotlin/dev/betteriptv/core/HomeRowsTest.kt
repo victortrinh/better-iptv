@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -9,6 +10,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
+import java.time.Instant
 
 /** The home screen's rows, seen through the Library after a Sync, with metadata from the fake Cloud. */
 class HomeRowsTest {
@@ -47,7 +49,20 @@ class HomeRowsTest {
     private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0, originalLanguage: String = "en", genres: List<String> = emptyList()) =
         cloud.title("en", tmdbTitle(tmdbId, name, originalLanguage = originalLanguage, genres = genres, popularity = popularity, backdropPath = "/still-$tmdbId.jpg"))
 
-    private suspend fun rows(contentLanguages: List<String> = english) = library.homeRows(contentLanguages, appLanguage = "en")
+    private suspend fun rows(contentLanguages: List<String> = english, region: String = "CA", now: Instant = Instant.now()) =
+        library.homeRows(contentLanguages, appLanguage = "en", region = region, now = now)
+
+    /** Serves these show Listings at the next Sync, numbered from 1, each a Title of its own TMDB ID. */
+    private fun serveShows(vararg listings: Pair<String, Long>) {
+        provider.showCategoriesOverride = """[{"category_id":"2","category_name":"SERIES"}]"""
+        provider.showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
+            """{"series_id":${i + 1},"name":"${listing.first}","tmdb":"${listing.second}","category_id":"2","last_modified":"${1_700_000_000 - i}"}"""
+        }
+    }
+
+    private fun List<HomeRow>.top(list: ChartList) = filterIsInstance<HomeRow.Chart>().singleOrNull { it.list == list }
+
+    private fun List<HomeRow>.topNames(list: ChartList) = top(list)?.titles?.map { it.name }
 
     private fun List<HomeRow>.new() = filterIsInstance<HomeRow.NewOnYourService>().single().titles.map { it.name }
 
@@ -189,5 +204,108 @@ class HomeRowsTest {
         films.forEach { (id, genres) -> tmdb(id, "Film $id", genres = genres) }
 
         assertEquals(listOf("Drama") + others, rows().filterIsInstance<HomeRow.Genre>().map { it.name })
+    }
+
+    // Charts
+
+    @Test fun `Home's rows go Continue watching, Top movies, Top shows, New on your service, Favourites, then genres`() = runBlocking {
+        provider.serveChannels("US: ESPN HD" to "US| SPORT")
+        serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
+        syncMovies(*(newest() + (1L..5L).map { "EN - Film $it (2025)" to it }).toTypedArray())
+        (1L..5L).forEach { tmdb(it, "Film $it", genres = listOf("Drama")) }
+        cloud.charts("CA", movies = listOf(1001, 1002, 1003), shows = listOf(501, 502, 503))
+        library.setFavourite(library.search("ESPN", english, "en").last().channels.single().id, true)
+        library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
+
+        val rows = rows()
+        assertEquals(
+            listOf("continue", "top movies", "top shows", "new", "favourites", "genre"),
+            rows.map {
+                when (it) {
+                    is HomeRow.ContinueWatching -> "continue"
+                    is HomeRow.Chart -> if (it.list == ChartList.TopMovies) "top movies" else "top shows"
+                    is HomeRow.NewOnYourService -> "new"
+                    is HomeRow.Favourites -> "favourites"
+                    is HomeRow.Genre -> "genre"
+                }
+            },
+        )
+        assertEquals(listOf("Show 1", "Show 2", "Show 3"), rows.topNames(ChartList.TopShows))
+    }
+
+    @Test fun `a Top row keeps the Provider's Titles in a Content language, in rank order without gaps`() = runBlocking {
+        syncMovies("EN - Fourth (2025)" to 4, "EN - First (2025)" to 1, "FR - Second (2025)" to 2, "EN - Fifth (2025)" to 5)
+        tmdb(1, "First")
+        tmdb(2, "Second", originalLanguage = "fr")
+        tmdb(4, "Fourth")
+        tmdb(5, "Fifth")
+        // Netflix's #2 isn't on the Provider; #3 has no Version in English.
+        cloud.charts("CA", movies = listOf(1, 99, 2, 4, 5))
+
+        val top = rows().top(ChartList.TopMovies)!!
+        assertEquals(listOf("First", "Fourth", "Fifth"), top.titles.map { it.name })
+        assertEquals("CA", top.region)
+    }
+
+    @Test fun `a Top row of fewer than 3 cards is left out`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+
+        val rows = rows()
+        assertEquals(null, rows.top(ChartList.TopMovies))
+        // Its Titles stay in the rows below.
+        assertEquals(setOf("First", "Second"), rows.new().toSet())
+    }
+
+    @Test fun `the worldwide Top 10 says it is the world's`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3)
+        cloud.charts("CA", movies = listOf(1, 2, 3), worldwide = true)
+
+        assertEquals(null, rows().top(ChartList.TopMovies)!!.region)
+    }
+
+    @Test fun `the Charts are the Region's`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+        cloud.charts("FR", movies = listOf(3, 2, 1))
+
+        assertEquals(listOf("First", "Second", "Third"), rows(region = "CA").topNames(ChartList.TopMovies))
+        assertEquals(listOf("Third", "Second", "First"), rows(region = "FR").topNames(ChartList.TopMovies))
+        assertEquals("FR", rows(region = "FR").top(ChartList.TopMovies)!!.region)
+    }
+
+    @Test fun `a Chart keeps all its Titles, the rows below skip them, and Continue watching keeps its own`() = runBlocking {
+        syncMovies(*newest().toTypedArray())
+        cloud.charts("CA", movies = listOf(1001, 1002, 1003))
+        library.saveProgress(movie(1001), position = 30 * 60_000L, duration = 120 * 60_000L)
+
+        val rows = rows()
+        assertEquals(listOf("New 1", "New 2", "New 3"), rows.topNames(ChartList.TopMovies))
+        assertTrue(rows.new().none { it in setOf("New 1", "New 2", "New 3") })
+        assertEquals(listOf("New 1"), rows.filterIsInstance<HomeRow.ContinueWatching>().single().titles.map { it.title.name })
+    }
+
+    @Test fun `the Charts are kept, asked for again after an hour, and the kept ones used while the cloud fails`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+        rows()
+        rows()
+        assertEquals(listOf("CA"), cloud.chartsAsked)
+
+        cloud.down = true
+        val later = rows(now = Instant.now() + Duration.ofHours(2))
+        assertEquals(listOf("CA", "CA"), cloud.chartsAsked)
+        assertEquals(listOf("First", "Second", "Third"), later.topNames(ChartList.TopMovies))
+        assertEquals(listOf("Fourth"), later.new())
+    }
+
+    @Test fun `without the cloud and no Charts kept, Home has every other row`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+        cloud.down = true
+
+        val rows = rows()
+        assertTrue(rows.none { it is HomeRow.Chart })
+        assertEquals(setOf("First", "Second", "Third"), rows.new().toSet())
     }
 }

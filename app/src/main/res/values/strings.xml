@@ -22,6 +22,10 @@
     <string name="row_continue_watching">Continue watching</string>
     <string name="row_new">New on your service</string>
     <string name="row_favourites">Favourites</string>
+    <string name="row_top_movies">Top movies in %1$s this week</string>
+    <string name="row_top_shows">Top shows in %1$s this week</string>
+    <string name="row_top_movies_worldwide">Top movies worldwide this week</string>
+    <string name="row_top_shows_worldwide">Top shows worldwide this week</string>
     <string name="player_live">Live · %1$s</string>
     <string name="channel_add_favourite">≡ Add to Favourites</string>
     <string name="channel_remove_favourite">≡ Remove from Favourites</string>

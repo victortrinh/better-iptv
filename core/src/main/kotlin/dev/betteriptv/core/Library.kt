@@ -780,17 +780,22 @@ class Library private constructor(
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
 
     /**
-     * The home screen's rows: Continue watching, then the Viewer's Favourites (in the order they
-     * were added; finished Event channels left out), then New on your service (Titles among the most
-     * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
-     * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
-     * Untagged one Likely in one; Continue watching shows whatever the Viewer started, a Show at the
-     * Episode to watch next, until they finish it. Genres come from the TMDB metadata of the newest
-     * Titles, so they need the cloud once a week. A Title shows in one browse row only, the highest
-     * it fits ([ScreenRows]); a genre row left with too few Titles gives its place to the next
-     * genre. Rows with no Titles are left out.
+     * The home screen's rows: Continue watching, then the Charts for the Viewer's [region] (Top
+     * movies, Top shows), then New on your service (Titles among the most recently added, most
+     * popular on TMDB first), then the Viewer's Favourites (in the order they were added; finished
+     * Event channels left out), then one row per TMDB genre, its most common first. Browse rows and
+     * Charts show only Titles with a Version in the Viewer's [contentLanguages], or an Untagged one
+     * Likely in one; a Chart also only the Titles the Provider has, and none at all under
+     * [MIN_CHART_SIZE]. Continue watching shows whatever the Viewer started, a Show at the Episode to
+     * watch next, until they finish it. Genres come from the TMDB metadata of the newest Titles, so
+     * they need the cloud once a week. A Title shows in one browse row only, the highest it fits
+     * ([ScreenRows]); a genre row left with too few Titles gives its place to the next genre. Rows
+     * with no Titles are left out.
      */
-    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
+    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
+        homeRows(contentLanguages, appLanguage, region, Instant.now())
+
+    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
         val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
         // Movies by how far the Viewer got, Shows by the Episode they're at; a Show they Watched to its end is left out.
         val resumes = store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
@@ -800,7 +805,9 @@ class Library private constructor(
         val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
-        val metadata = metadata((resumes.map { it.first } + movies + shows).map { it.id }.distinct(), appLanguage)
+        val charts = charts(region, appLanguage, now)
+        val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
+        val metadata = metadata((resumes.map { it.first } + movies + shows + tops.flatMap { it.second }).map { it.id }.distinct(), appLanguage)
         fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
             val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
             val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
@@ -815,6 +822,9 @@ class Library private constructor(
         val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
         browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
         val screen = ScreenRows()
+        val charted = tops.map { (list, titles) ->
+            list to screen.chart(titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }, MIN_CHART_SIZE)
+        }
         val new = screen.row(newest, ROW_SIZE)
         val genres = buildList {
             for ((name, titles) in byGenre.entries.sortedByDescending { it.value.size }) {
@@ -841,8 +851,9 @@ class Library private constructor(
                     ),
                 )
             }
-            if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
+            charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
+            if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
         }
     }
@@ -1161,6 +1172,27 @@ class Library private constructor(
         return buildMap { cached.forEach { (id, stored) -> stored.body?.let { put(id, TitleMetadata(it)) } } }
     }
 
+    /**
+     * The Charts for [region] in [appLanguage]'s language: the copy kept on the device while it is
+     * under [CHARTS_FRESH_FOR] old, else the cloud's, kept for next time. When the cloud can't answer,
+     * the kept copy stands however old; with none, there are no Charts.
+     */
+    private fun charts(region: String, appLanguage: String, now: Instant): Charts {
+        val language = primaryLanguage(appLanguage)
+        val kept = store.charts(region, language)
+        if (kept != null && kept.fetchedAt.isAfter(now - CHARTS_FRESH_FOR)) return Charts(kept.body)
+        if (cloud != null && now.isAfter(cloudRetryAt)) {
+            try {
+                val body = cloud.charts(region, language)
+                store.saveCharts(region, language, body, now)
+                return Charts(body)
+            } catch (e: CloudException) {
+                cloudRetryAt = now + CLOUD_RETRY_AFTER
+            }
+        }
+        return kept?.let { Charts(it.body) } ?: Charts.NONE
+    }
+
     /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
     private fun candidates(title: StoredTitle): List<Candidate> {
         val plain = title.listings.map(::candidates)
@@ -1210,6 +1242,15 @@ class Library private constructor(
         private const val GENRE_ROWS = 8
         /** A genre with fewer Titles than this, once those shown higher up are skipped, gets no row: a row of two looks broken. */
         private const val MIN_GENRE_SIZE = 5
+
+        /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
+        private const val MIN_CHART_SIZE = 3
+
+        /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
+        private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
+
+        /** The Region when the device doesn't say (CONTEXT.md). */
+        const val DEFAULT_REGION = "CA"
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10

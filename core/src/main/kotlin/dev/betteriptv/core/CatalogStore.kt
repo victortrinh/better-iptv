@@ -72,6 +72,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             execSQL("DROP TABLE show_details")
             execSQL("DROP TABLE episode")
         }
+        // The cloud's Charts answer for a Region in an App language, as its JSON, so Home builds without it.
+        execSQL("CREATE TABLE IF NOT EXISTS chart (region TEXT NOT NULL, language TEXT NOT NULL, body TEXT NOT NULL, fetched_at INTEGER NOT NULL, PRIMARY KEY (region, language))")
         // A show Listing's show details as the Provider gave them while the Show was last changed at `modified`.
         execSQL("CREATE TABLE IF NOT EXISTS show_details (listing_id INTEGER PRIMARY KEY, modified INTEGER, fetched_at INTEGER NOT NULL)")
         // What a movie Listing's file holds, from a Header read, Playback or the cloud; a null body: its header can't be read.
@@ -607,6 +609,26 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         image = if (isNull(from + 4)) null else getText(from + 4),
     )
 
+    /** The Charts the cloud last gave for [region] in [language] (ISO 639-1), as JSON, and when; null before it ever did. */
+    fun charts(region: String, language: String): StoredCharts? = synchronized(reader) {
+        reader.prepare("SELECT body, fetched_at FROM chart WHERE region = ? AND language = ?").use {
+            it.bindText(1, region)
+            it.bindText(2, language)
+            if (it.step()) StoredCharts(it.getText(0), Instant.ofEpochMilli(it.getLong(1))) else null
+        }
+    }
+
+    fun saveCharts(region: String, language: String, body: String, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO chart VALUES (?, ?, ?, ?)").use {
+            it.bindText(1, region)
+            it.bindText(2, language)
+            it.bindText(3, body)
+            it.bindLong(4, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
     /** Any cached metadata of [id], in whichever language was fetched last; null when none is. */
     fun anyMetadata(id: TitleId.Tmdb): String? = synchronized(reader) {
         reader.prepare("SELECT body FROM title_metadata WHERE title_key = ? AND body IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").use {
@@ -928,6 +950,9 @@ internal class StoredTitle(val id: TitleId, val listings: List<StoredListing>)
 
 /** A Title's cached metadata JSON (null: TMDB has no such Title) and when the cloud sent it. */
 internal class StoredMetadata(val body: String?, val fetchedAt: Instant)
+
+/** The cloud's Charts answer as JSON ([Charts]) and when it sent it. */
+internal class StoredCharts(val body: String, val fetchedAt: Instant)
 
 /** [added] is when a movie Listing was added, or when the Provider last changed a show Listing. */
 internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)

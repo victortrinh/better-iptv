@@ -126,7 +126,7 @@ private fun Root(app: BetterIptvApp) {
         } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
-                    app.library, contentLanguages, appLanguage, home,
+                    app.library, contentLanguages, appLanguage, settings.region, home,
                     restoreFocus = returnedToHome,
                     focusTab = byTab,
                     onTab = onTab,

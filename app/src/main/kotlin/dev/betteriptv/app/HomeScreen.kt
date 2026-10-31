@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
@@ -52,6 +53,7 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.ChartList
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
 import kotlinx.coroutines.launch
@@ -129,8 +131,9 @@ class HomeState {
 }
 
 /**
- * The home screen's rows: Continue watching (stills with how far the Viewer got), the Viewer's
- * Favourites, New on your service, then a row per genre. They are read again whenever the screen
+ * The home screen's rows: Continue watching (stills with how far the Viewer got), the Top 10
+ * movies and shows in the Viewer's [region], New on your service, the Viewer's Favourites, then a
+ * row per genre. They are read again whenever the screen
  * shows, so a Title just played moves to the front of Continue watching. [restoreFocus] is the card
  * to focus on arrival, the one the Viewer opened before coming back, or the card now in its place
  * when it has gone; the first card when null, unless the screen was reached by picking its tab
@@ -144,6 +147,7 @@ fun HomeScreen(
     library: Library,
     contentLanguages: List<String>,
     appLanguage: String,
+    region: String,
     state: HomeState,
     restoreFocus: HomeCard?,
     focusTab: Boolean,
@@ -160,9 +164,9 @@ fun HomeScreen(
     var pending by remember(restoreFocus) { mutableStateOf(restoreFocus) }
     var focused by remember(restoreFocus) { mutableStateOf(false) }
     var checked by remember(restoreFocus) { mutableStateOf(false) }
-    LaunchedEffect(synced, contentLanguages, appLanguage) {
+    LaunchedEffect(synced, contentLanguages, appLanguage, region) {
         val before = state.rows
-        state.rows = library.homeRows(contentLanguages, appLanguage)
+        state.rows = library.homeRows(contentLanguages, appLanguage, region)
         if (!checked && restoreFocus != null && before != null) {
             val restored = restoredCard(restoreFocus, before.cards, state.rows.orEmpty().cards)
             if (restored != restoreFocus) pending = restored
@@ -180,7 +184,7 @@ fun HomeScreen(
         scope.launch {
             library.setFavourite(channel.id, favourite)
             val before = state.rows.orEmpty()
-            state.rows = library.homeRows(contentLanguages, appLanguage)
+            state.rows = library.homeRows(contentLanguages, appLanguage, region)
             // Focus goes to its neighbour, or to the row that takes its place.
             if (!favourite) pending = restoredCard(HomeCard(row.key, channelKey(channel)), before.cards, state.rows.orEmpty().cards)
         }
@@ -363,6 +367,7 @@ private val HomeRow.titles: List<TitleSummary>
     get() = when (this) {
         is HomeRow.ContinueWatching -> titles.map { it.title }
         is HomeRow.Favourites -> emptyList()
+        is HomeRow.Chart -> titles
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
     }
@@ -372,6 +377,7 @@ private val HomeRow.key: String
     get() = when (this) {
         is HomeRow.ContinueWatching -> "continue"
         is HomeRow.Favourites -> "favourites"
+        is HomeRow.Chart -> "chart/$list"
         is HomeRow.NewOnYourService -> "new"
         is HomeRow.Genre -> "genre/$name"
     }
@@ -392,6 +398,10 @@ private val CANVAS_WIDTH = 960.dp
 private fun HomeRow.heading(): String = when (this) {
     is HomeRow.ContinueWatching -> stringResource(R.string.row_continue_watching)
     is HomeRow.Favourites -> stringResource(R.string.row_favourites)
+    is HomeRow.Chart -> when (val country = region?.let { countryName(it, LocalConfiguration.current.locales[0].language) }) {
+        null -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies_worldwide else R.string.row_top_shows_worldwide)
+        else -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies else R.string.row_top_shows, country)
+    }
     is HomeRow.NewOnYourService -> stringResource(R.string.row_new)
     is HomeRow.Genre -> name
 }

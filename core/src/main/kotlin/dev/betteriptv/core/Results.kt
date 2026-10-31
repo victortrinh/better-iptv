@@ -45,12 +45,22 @@ sealed interface HomeRow {
     /** The Channels the Viewer saved, in the order they were added. */
     data class Favourites(val channels: List<Channel>) : HomeRow
 
+    /**
+     * A Chart (CONTEXT.md): Netflix's Top 10 [list] for the Viewer's [region] (ISO 3166), or the
+     * world's when Netflix doesn't list it (null), kept to the Titles the Viewer can watch. Its
+     * [titles] are ranked 1…n in order, counted among the Titles kept.
+     */
+    data class Chart(val list: ChartList, val region: String?, val titles: List<TitleSummary>) : HomeRow
+
     /** Titles with recently added Listings, most popular on TMDB first. */
     data class NewOnYourService(val titles: List<TitleSummary>) : HomeRow
 
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 }
+
+/** Which Chart a [HomeRow.Chart] is. */
+enum class ChartList { TopMovies, TopShows }
 
 /**
  * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, how far they got

@@ -126,11 +126,9 @@ class ChannelsTest {
         library.setFavourite(channel("US: ESPN HD").id, true)
 
         assertEquals(listOf("UK: BBC ONE", "US: ESPN HD"), favouritesRow())
-        // With nothing to continue, it's the first row.
-        assertTrue(library.homeRows(english, "en").first() is HomeRow.Favourites)
     }
 
-    @Test fun `Favourites follow Continue watching`() = runBlocking {
+    @Test fun `Favourites follow Continue watching and New on your service`() = runBlocking {
         provider.serveMovies("EN - Started (2020)" to "EN - MOVIES")
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
         library.sync()
@@ -139,7 +137,8 @@ class ChannelsTest {
 
         val rows = library.homeRows(english, "en")
         assertTrue(rows[0] is HomeRow.ContinueWatching)
-        assertTrue(rows[1] is HomeRow.Favourites)
+        assertTrue(rows[1] is HomeRow.NewOnYourService)
+        assertTrue(rows[2] is HomeRow.Favourites)
     }
 
     @Test fun `a Favourite removed leaves the home row`() = runBlocking {
