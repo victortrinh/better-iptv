@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -232,7 +233,13 @@ private fun TitleContent(
                 Column(Modifier.width(470.dp)) {
                     TitleName(title.name, logo)
                     Spacer(Modifier.height(Spacing.s))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The badges go under the line when both don't fit, so a long rank badge ("#1 in movies in
+                    // United States") doesn't cut the genres and Version count off (#208).
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
                         val versions = (title.languages + title.otherLanguages).sumOf { it.versionCount }
                         val count = pluralStringResource(R.plurals.versions_count, versions, versions)
                         Text(
@@ -242,9 +249,7 @@ private fun TitleContent(
                             color = Colors.inkMuted,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
                         )
-                        Spacer(Modifier.width(Spacing.m))
                         BadgeRow(listOfNotNull(title.rank?.badge()) + best?.attributes?.cardBadges().orEmpty())
                     }
                     // A Show's header names the Episode its Play starts.
