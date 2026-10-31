@@ -1,4 +1,4 @@
-import { charts } from "./charts";
+import { charts, fill } from "./charts";
 import { isRegistered, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
@@ -48,9 +48,10 @@ import { upcoming } from "./upcoming";
  *   "trending": {"all": […], "movies": […], "shows": […]}, "genres": [{"kind": "movie", "name":
  *   "Comédie", "tmdbIds": [550, …]}]}`: Netflix's Top 10 in rank order as TMDB Titles, the
  *   Region's or (worldwide) the world's when Netflix doesn't list it, TMDB's trending this week,
- *   and each TMDB genre's most popular Titles (Discover), named in the language. A list its source
- *   can't give right now and never gave is empty; genre lists not read yet fill in over later
- *   answers.
+ *   and each TMDB genre's most popular Titles (Discover), named in the language. Only what the
+ *   cloud keeps is answered: the Cron Trigger reads the sources (#214). A list not read yet is
+ *   empty; a Region not read yet gets the worldwide Top 10, and a language the genres named in
+ *   English, till the Cron Trigger's next runs.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */
@@ -135,6 +136,11 @@ export default {
       }
     }
     return problem(404, "No such endpoint.");
+  },
+
+  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the Charts' sources, a few parts a run. */
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await fill(env);
   },
 } satisfies ExportedHandler<Env>;
 

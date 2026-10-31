@@ -1,7 +1,7 @@
 import type { Env } from "./env";
 import { fetchDiscover, fetchGenres, fetchTrending, search, TmdbUnavailable, type Genre, type Kind, type TitleKey } from "./tmdb";
 
-/** Netflix publishes its Top 10 each Tuesday; a day's wait shows a new list within a day. */
+/** Netflix publishes its Top 10 each Tuesday; reading its files daily shows a new list within a day. */
 const NETFLIX_FRESH_FOR = 24 * 3600_000;
 /** TMDB's weekly trending is asked for once a week, so the row changes weekly, not daily. */
 const TRENDING_FRESH_FOR = 7 * 24 * 3600_000;
@@ -15,11 +15,30 @@ const DISCOVER_FRESH_FOR = 7 * 24 * 3600_000;
  */
 const DISCOVER_PAGES = 15;
 /**
- * The requests one answer may send out. A Worker on the free plan may send 50 (D1 queries count
- * too): 10 are left for the device-token check and the reads and writes of the `chart` table. The
- * Top 10 and trending take what they need first; Discover gets the rest.
+ * The requests one run of the Cron Trigger may send out. A Worker on the free plan may send 50 an
+ * invocation, a Cron Trigger's too; 10 are left spare. Parts are read in order while what each may
+ * send still fits.
  */
 const SUBREQUESTS = 40;
+/** The names a Region's Top 10 has at most: 10 films and 10 shows. */
+const REGION_NAMES = 20;
+/** The names the worldwide Top 10 has at most: English and non-English films and shows, 10 each. */
+const WORLDWIDE_NAMES = 40;
+/**
+ * A part the Cron Trigger started this long ago and that is still due waits till then: one that
+ * stopped its run (out of CPU, say) or whose source was down doesn't hold up the parts after it.
+ */
+const RETRY_AFTER = 15 * 60_000;
+/** A Region or App language not asked for in 30 days is no longer kept fresh. */
+const WANTED_FOR = 30 * 24 * 3600_000;
+/** How long when a Region or language was asked for is left as it is, so most answers write nothing. */
+const ASKED_EVERY = 3600_000;
+/** The key of the worldwide Top 10, among the Regions'. */
+const WORLDWIDE = "*";
+/** How many Regions' weeks the country file's scan saves at a time. */
+const SAVE_EVERY = 25;
+/** How much of Netflix's country file the scan reads at a time. */
+const READ_SIZE = 1 << 20;
 
 /**
  * The Charts a screen shows, for one Region and App language. Each part is its own source with its
@@ -78,148 +97,7 @@ interface Named {
   tmdbId: number | null;
 }
 
-/** How many requests one answer's sources have sent out so far. */
-interface Sent {
-  requests: number;
-}
-
-/** The Charts for [region] (ISO 3166, `CA`) with names in [language] (ISO 639-1). */
-export async function charts(env: Env, region: string, language: string): Promise<Charts> {
-  const sent: Sent = { requests: 0 };
-  const [topLists, trendingLists] = await Promise.all([top(env, region, sent), trending(env, sent)]);
-  // Discover's lists go last: they read what the Top 10 and trending left of the budget.
-  return { top: topLists, trending: trendingLists, genres: await genres(env, language, SUBREQUESTS - sent.requests) };
-}
-
-/**
- * Each TMDB genre's most popular movies or shows, with the genre's name in [language], sending at
- * most [budget] requests to TMDB. Each (kind, genre) list is kept on its own for a week and shared by
- * every language; the genres' names are kept per language. Lists missing or over a week old are read
- * again, missing ones first, then the oldest, as many as [budget] allows; the rest are served as kept,
- * or empty when never read, and later answers fill them in. When TMDB can't answer, the kept copies
- * stand; without the genres' names, there are no genres.
- */
-async function genres(env: Env, language: string, budget: number): Promise<GenreList[]> {
-  const { results } = await env.DB.prepare("SELECT source, key, body, fetched_at FROM chart WHERE source = 'discover' OR (source = 'genres' AND key = ?1)")
-    .bind(language)
-    .all<{ source: string; key: string; body: string; fetched_at: number }>();
-  const now = Date.now();
-  let left = budget;
-  const writes: D1PreparedStatement[] = [];
-  const save = (source: string, key: string, body: unknown) =>
-    writes.push(env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES (?1, ?2, ?3, ?4)").bind(source, key, JSON.stringify(body), now));
-
-  const keptNames = results.find((r) => r.source === "genres");
-  let names: KeptGenres | null = keptNames ? JSON.parse(keptNames.body) : null;
-  if ((!keptNames || now - keptNames.fetched_at > DISCOVER_FRESH_FOR) && left >= 2) {
-    left -= 2;
-    try {
-      const [movie, show] = await Promise.all([fetchGenres(env, "movie", language), fetchGenres(env, "show", language)]);
-      names = { movie, show };
-      save("genres", language, names);
-    } catch (e) {
-      if (!(e instanceof TmdbUnavailable)) throw e;
-      console.warn(`TMDB's genres in ${language} couldn't be fetched: ${e.message}`);
-    }
-  }
-  if (names === null) return [];
-
-  const kept = new Map(results.filter((r) => r.source === "discover").map((r) => [r.key, { tmdbIds: JSON.parse(r.body) as number[], fetchedAt: r.fetched_at }]));
-  const all = (["movie", "show"] as const).flatMap((kind) => names[kind].map((genre) => ({ kind, genre, key: `${kind}/${genre.id}` })));
-  const stale = all
-    .filter(({ key }) => !kept.has(key) || now - kept.get(key)!.fetchedAt > DISCOVER_FRESH_FOR)
-    .sort((a, b) => (kept.get(a.key)?.fetchedAt ?? -1) - (kept.get(b.key)?.fetchedAt ?? -1));
-  // One list at a time, so the requests a short genre doesn't need go to the next one.
-  for (const { kind, genre, key } of stale) {
-    if (left < DISCOVER_PAGES) break;
-    left -= DISCOVER_PAGES;
-    try {
-      const { tmdbIds, requests } = await fetchDiscover(env, kind, genre.id, DISCOVER_PAGES);
-      left += DISCOVER_PAGES - requests;
-      kept.set(key, { tmdbIds, fetchedAt: now });
-      save("discover", key, tmdbIds);
-    } catch (e) {
-      if (!(e instanceof TmdbUnavailable)) throw e;
-      console.warn(`TMDB's Discover couldn't be fetched: ${e.message}`);
-      break;
-    }
-  }
-  if (writes.length > 0) await env.DB.batch(writes);
-  return all.map(({ kind, genre, key }) => ({ kind, name: genre.name, tmdbIds: kept.get(key)?.tmdbIds ?? [] }));
-}
-
-/**
- * TMDB's weekly trending lists, the same for every Region and language, from the cloud's cache
- * when under a week old, else from TMDB. When TMDB can't answer, the last copy stands; with none,
- * the lists are empty.
- */
-async function trending(env: Env, sent: Sent): Promise<TrendingLists> {
-  const cached = await env.DB.prepare("SELECT body, fetched_at FROM chart WHERE source = 'trending' AND key = ''").first<{ body: string; fetched_at: number }>();
-  const now = Date.now();
-  if (cached && now - cached.fetched_at <= TRENDING_FRESH_FOR) return JSON.parse(cached.body);
-  // At most: a list can end before its last page.
-  sent.requests += 3 * TRENDING_PAGES;
-  try {
-    const [all, movies, shows] = await Promise.all([fetchTrending(env, "all", TRENDING_PAGES), fetchTrending(env, "movie", TRENDING_PAGES), fetchTrending(env, "show", TRENDING_PAGES)]);
-    const fresh: TrendingLists = { all, movies, shows };
-    await env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES ('trending', '', ?1, ?2)").bind(JSON.stringify(fresh), now).run();
-    return fresh;
-  } catch (e) {
-    if (!(e instanceof TmdbUnavailable)) throw e;
-    console.warn(`TMDB's trending couldn't be fetched: ${e.message}`);
-    return cached ? JSON.parse(cached.body) : { all: [], movies: [], shows: [] };
-  }
-}
-
-/**
- * [region]'s Top 10, from the cloud's cache when it is under a day old, else from Netflix. When
- * Netflix or TMDB can't answer, the last copy stands; with none, the lists are empty.
- */
-async function top(env: Env, region: string, sent: Sent): Promise<TopLists> {
-  const cached = await env.DB.prepare("SELECT body, fetched_at FROM chart WHERE source = 'netflix' AND key = ?1")
-    .bind(region)
-    .first<{ body: string; fetched_at: number }>();
-  let kept: KeptTop | null = cached ? JSON.parse(cached.body) : null;
-  const now = Date.now();
-  if (!cached || now - cached.fetched_at > NETFLIX_FRESH_FOR) {
-    try {
-      const fresh = await fetchTop(env, region, kept, sent);
-      await env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES ('netflix', ?1, ?2, ?3)")
-        .bind(region, JSON.stringify(fresh), now)
-        .run();
-      kept = fresh;
-    } catch (e) {
-      if (!(e instanceof NetflixUnavailable) && !(e instanceof TmdbUnavailable)) throw e;
-      console.warn(`Netflix's Top 10 for ${region} couldn't be fetched: ${e.message}`);
-    }
-  }
-  const found = (kind: Kind, names: Named[]) => names.flatMap((n) => (n.tmdbId === null ? [] : [{ kind, tmdbId: n.tmdbId }]));
-  return kept ? { worldwide: kept.worldwide, movies: found("movie", kept.movies), shows: found("show", kept.shows) } : { worldwide: false, movies: [], shows: [] };
-}
-
-/** Reads [region]'s newest Top 10 from Netflix, else the worldwide one, and finds each name on TMDB, reusing what [before] found. */
-async function fetchTop(env: Env, region: string, before: KeptTop | null, sent: Sent): Promise<KeptTop> {
-  const names = (await regionTop(env, region, sent)) ?? (await worldwideTop(env, sent));
-  const known = new Map<string, number | null>();
-  before?.movies.forEach((n) => known.set(`movie/${n.name}`, n.tmdbId));
-  before?.shows.forEach((n) => known.set(`show/${n.name}`, n.tmdbId));
-  const find = (kind: Kind, list: string[]) =>
-    Promise.all(
-      list.map(async (name): Promise<Named> => {
-        const id = known.get(`${kind}/${name}`);
-        return { name, tmdbId: id !== undefined ? id : await findOnTmdb(env, kind, name, sent) };
-      }),
-    );
-  return { worldwide: names.worldwide, movies: await find("movie", names.movies), shows: await find("show", names.shows) };
-}
-
-/** The TMDB ID of the most popular [kind] TMDB's search finds by [name], or null when it finds none. */
-async function findOnTmdb(env: Env, kind: Kind, name: string, sent: Sent): Promise<number | null> {
-  sent.requests++;
-  const found = await search(env, kind, name, "en");
-  return found.reduce<(typeof found)[number] | null>((best, f) => (best === null || f.popularity > best.popularity ? f : best), null)?.tmdbId ?? null;
-}
-
+/** A Top 10 as Netflix names it: the newest week of a Region (`netflix-week`), or of the world. */
 interface TopNames {
   worldwide: boolean;
   movies: string[];
@@ -227,73 +105,356 @@ interface TopNames {
 }
 
 /**
- * [region]'s newest week in Netflix's country file, or null when Netflix doesn't list it. The file
- * (32 MB) is grouped by country, newest week first, so it is read as a stream only until that week
- * ends. Bytes that can't hold the Region's rows are skipped without being decoded, which keeps the
- * Worker inside its CPU limit (#32): Canada's rows start 3.5 MB in.
+ * The Charts for [region] (ISO 3166, `CA`) with names in [language] (ISO 639-1), as the cloud keeps
+ * them. Only D1 is read, never TMDB or Netflix, so an answer costs little CPU however stale they are
+ * (#214): the Cron Trigger ([fill]) reads the sources. The Region and language are noted as wanted,
+ * so a new one is read within the next minutes; till then, a Region gets the worldwide Top 10, and a
+ * language the genres named in English.
  */
-async function regionTop(env: Env, region: string, sent: Sent): Promise<TopNames | null> {
-  const needle = new TextEncoder().encode(`\t${region}\t`);
-  const decoder = new TextDecoder();
-  const top: TopNames = { worldwide: false, movies: [], shows: [] };
-  let week: string | null = null;
-  let column: Columns | null = null;
-  for await (let run of runs(env, "all-weeks-countries.tsv", sent)) {
-    if (column === null) {
-      const end = run.indexOf(NEWLINE);
-      column = columns(decoder.decode(end < 0 ? run : run.subarray(0, end)));
-      run = run.subarray(end < 0 ? run.length : end + 1);
-    }
-    if (!holds(run, needle)) {
-      if (week !== null) break; // The Region's block ended where this run starts.
-      continue;
-    }
-    for (const line of decoder.decode(run).split("\n")) {
-      const cells = line.split("\t");
-      if (cells[column.country_iso2] !== region) {
-        if (week !== null) return top;
-        continue;
-      }
-      week ??= cells[column.week];
-      if (cells[column.week] !== week) return top;
-      (cells[column.category] === "TV" ? top.shows : top.movies).push(cells[column.show_title]);
-    }
-  }
-  return week === null ? null : top;
+export async function charts(env: Env, region: string, language: string): Promise<Charts> {
+  const now = Date.now();
+  const want = (part: string, key: string) =>
+    env.DB.prepare("INSERT INTO chart_wanted (part, key, asked_at) VALUES (?1, ?2, ?3) ON CONFLICT (part, key) DO UPDATE SET asked_at = excluded.asked_at WHERE asked_at < ?4")
+      .bind(part, key, now, now - ASKED_EVERY);
+  const [, , { results }] = await env.DB.batch<{ source: string; key: string; body: string }>([
+    want("region", region),
+    want("language", language),
+    env.DB.prepare("SELECT source, key, body FROM chart WHERE (source = 'netflix' AND key IN (?1, ?3)) OR (source = 'trending' AND key = '') OR (source = 'genres' AND key IN (?2, 'en')) OR source = 'discover'")
+      .bind(region, language, WORLDWIDE),
+  ]);
+  const kept = <T>(source: string, key: string): T | null => {
+    const row = results.find((r) => r.source === source && r.key === key);
+    return row ? JSON.parse(row.body) : null;
+  };
+
+  // A Region's own Top 10 once it was read; a copy kept before #214 of the worldwide one under the Region's key is passed over.
+  const own = kept<KeptTop>("netflix", region);
+  const top = own && !own.worldwide ? own : kept<KeptTop>("netflix", WORLDWIDE);
+  const found = (kind: Kind, names: Named[]) => names.flatMap((n) => (n.tmdbId === null ? [] : [{ kind, tmdbId: n.tmdbId }]));
+
+  const names = kept<KeptGenres>("genres", language) ?? kept<KeptGenres>("genres", "en");
+  const lists = new Map(results.filter((r) => r.source === "discover").map((r) => [r.key, r.body]));
+  const genres = names
+    ? (["movie", "show"] as const).flatMap((kind) =>
+        names[kind].map((genre) => ({ kind, name: genre.name, tmdbIds: JSON.parse(lists.get(`${kind}/${genre.id}`) ?? "[]") as number[] })),
+      )
+    : [];
+
+  return {
+    top: top ? { worldwide: top.worldwide, movies: found("movie", top.movies), shows: found("show", top.shows) } : { worldwide: false, movies: [], shows: [] },
+    trending: kept<TrendingLists>("trending", "") ?? { all: [], movies: [], shows: [] },
+    genres,
+  };
 }
 
-/** Whether [bytes] hold [needle] (`\tCA\t`), found by jumping between its first letters with the native indexOf. */
-function holds(bytes: Uint8Array, needle: Uint8Array): boolean {
-  for (let at = bytes.indexOf(needle[1], 1); at >= 0; at = bytes.indexOf(needle[1], at + 1)) {
-    if (needle.every((b, i) => bytes[at - 1 + i] === b)) return true;
+/** One part of the Charts the Cron Trigger reads: its [key] in `chart_try`, the most [requests] it sends out, and [read], which saves what it read and says how many requests it sent. */
+interface Part {
+  key: string;
+  requests: number;
+  /** Read in a run of its own: Netflix's country file, the heaviest part. */
+  alone?: boolean;
+  read: () => Promise<number>;
+}
+
+/**
+ * One run of the Cron Trigger, each minute: reads the parts of the Charts wanted that are missing
+ * or stale (#214), in this order: each App language's genre names, TMDB's trending, Netflix's
+ * worldwide Top 10, Netflix's country file, each Top 10's names found on TMDB, then Discover's
+ * lists, missing ones first, then the oldest. Each part is saved as soon as it is read, so a run
+ * stopped short (out of CPU, say) keeps what it read. A run sends at most [SUBREQUESTS] requests
+ * out, and reads the country file in a run of its own. A part started in the last [RETRY_AFTER] is
+ * passed over: one that stopped a run, or whose source was down, waits while the rest are read.
+ */
+export async function fill(env: Env): Promise<void> {
+  const now = Date.now();
+  const [wanted, rows, tries] = await env.DB.batch([
+    env.DB.prepare("SELECT part, key FROM chart_wanted WHERE asked_at > ?1").bind(now - WANTED_FOR),
+    // Bodies only of the genres' names, which say what Discover lists there are.
+    env.DB.prepare("SELECT source, key, fetched_at, CASE source WHEN 'genres' THEN body END AS body FROM chart"),
+    env.DB.prepare("SELECT part, tried_at FROM chart_try"),
+  ]);
+  const asked = (part: string) => (wanted.results as { part: string; key: string }[]).filter((w) => w.part === part).map((w) => w.key);
+  const languages = asked("language");
+  if (languages.length === 0) return;
+  const kept = new Map((rows.results as { source: string; key: string; fetched_at: number; body: string | null }[]).map((r) => [`${r.source}/${r.key}`, r]));
+  const fetchedAt = (key: string) => kept.get(key)?.fetched_at ?? null;
+  const stale = (key: string, freshFor: number) => (fetchedAt(key) ?? -Infinity) < now - freshFor;
+  const tried = new Map((tries.results as { part: string; tried_at: number }[]).map((t) => [t.part, t.tried_at]));
+
+  const parts: Part[] = [];
+  for (const language of languages) {
+    if (stale(`genres/${language}`, DISCOVER_FRESH_FOR)) parts.push({ key: `genres/${language}`, requests: 2, read: () => readGenres(env, language, now) });
   }
-  return false;
+  if (stale("trending/", TRENDING_FRESH_FOR)) parts.push({ key: "trending", requests: 3 * TRENDING_PAGES, read: () => readTrending(env, now) });
+  if (stale(`netflix-week/${WORLDWIDE}`, NETFLIX_FRESH_FOR)) parts.push({ key: `netflix-week/${WORLDWIDE}`, requests: 1, read: () => readWorldwide(env, now) });
+  if (stale("netflix-scan/", NETFLIX_FRESH_FOR)) parts.push({ key: "netflix-scan", requests: 1, alone: true, read: () => scanCountries(env, now) });
+  // A Top 10 whose names were read since they were last found on TMDB.
+  for (const region of [WORLDWIDE, ...asked("region")]) {
+    const week = fetchedAt(`netflix-week/${region}`);
+    if (week !== null && (fetchedAt(`netflix/${region}`) ?? -Infinity) < week) {
+      parts.push({ key: `netflix/${region}`, requests: region === WORLDWIDE ? WORLDWIDE_NAMES : REGION_NAMES, read: () => findTop(env, region, now) });
+    }
+  }
+  // Every genre named in any language: their IDs are the same in all of them.
+  const lists = new Map<string, { kind: Kind; genreId: number }>();
+  for (const row of kept.values()) {
+    if (row.source !== "genres" || row.body === null) continue;
+    const names: KeptGenres = JSON.parse(row.body);
+    for (const kind of ["movie", "show"] as const) names[kind].forEach((g) => lists.set(`${kind}/${g.id}`, { kind, genreId: g.id }));
+  }
+  [...lists]
+    .filter(([key]) => stale(`discover/${key}`, DISCOVER_FRESH_FOR))
+    .sort(([a], [b]) => (fetchedAt(`discover/${a}`) ?? -1) - (fetchedAt(`discover/${b}`) ?? -1))
+    .forEach(([key, { kind, genreId }]) => parts.push({ key: `discover/${key}`, requests: DISCOVER_PAGES, read: () => readDiscover(env, kind, genreId, now) }));
+
+  let left = SUBREQUESTS;
+  let read = 0;
+  for (const part of parts) {
+    if ((tried.get(part.key) ?? -Infinity) > now - RETRY_AFTER) continue;
+    if (part.alone ? read > 0 : part.requests > left) continue;
+    await env.DB.prepare("INSERT OR REPLACE INTO chart_try (part, tried_at) VALUES (?1, ?2)").bind(part.key, now).run();
+    read++;
+    left -= await part.read();
+    if (part.alone) break;
+  }
+}
+
+const save = (env: Env, source: string, key: string, body: unknown, now: number) =>
+  env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES (?1, ?2, ?3, ?4)").bind(source, key, JSON.stringify(body), now);
+
+/** TMDB's genres of both kinds, named in [language], shared by every Region. When TMDB can't answer, the kept names stand. */
+async function readGenres(env: Env, language: string, now: number): Promise<number> {
+  try {
+    const [movie, show] = await Promise.all([fetchGenres(env, "movie", language), fetchGenres(env, "show", language)]);
+    await save(env, "genres", language, { movie, show } satisfies KeptGenres, now).run();
+  } catch (e) {
+    if (!(e instanceof TmdbUnavailable)) throw e;
+    console.warn(`TMDB's genres in ${language} couldn't be fetched: ${e.message}`);
+  }
+  return 2;
+}
+
+/**
+ * One genre's most popular movies or shows, kept on its own for a week and shared by every
+ * language. When TMDB can't answer, the kept list stands.
+ */
+async function readDiscover(env: Env, kind: Kind, genreId: number, now: number): Promise<number> {
+  try {
+    const { tmdbIds, requests } = await fetchDiscover(env, kind, genreId, DISCOVER_PAGES);
+    await save(env, "discover", `${kind}/${genreId}`, tmdbIds, now).run();
+    return requests;
+  } catch (e) {
+    if (!(e instanceof TmdbUnavailable)) throw e;
+    console.warn(`TMDB's Discover couldn't be fetched: ${e.message}`);
+    return DISCOVER_PAGES;
+  }
+}
+
+/** TMDB's weekly trending lists, the same for every Region and language. When TMDB can't answer, the last copy stands. */
+async function readTrending(env: Env, now: number): Promise<number> {
+  try {
+    const [all, movies, shows] = await Promise.all([fetchTrending(env, "all", TRENDING_PAGES), fetchTrending(env, "movie", TRENDING_PAGES), fetchTrending(env, "show", TRENDING_PAGES)]);
+    await save(env, "trending", "", { all, movies, shows } satisfies TrendingLists, now).run();
+  } catch (e) {
+    if (!(e instanceof TmdbUnavailable)) throw e;
+    console.warn(`TMDB's trending couldn't be fetched: ${e.message}`);
+  }
+  return 3 * TRENDING_PAGES;
+}
+
+/**
+ * Finds [region]'s Top 10 names (`netflix-week`) on TMDB, reusing what any Top 10 kept found, and
+ * keeps it as `netflix`. When TMDB can't answer, the last copy stands.
+ */
+async function findTop(env: Env, region: string, now: number): Promise<number> {
+  const { results } = await env.DB.prepare("SELECT source, body FROM chart WHERE source = 'netflix' OR (source = 'netflix-week' AND key = ?1)")
+    .bind(region)
+    .all<{ source: string; body: string }>();
+  const week = results.find((r) => r.source === "netflix-week");
+  if (!week) return 0;
+  const names: TopNames = JSON.parse(week.body);
+  const known = new Map<string, number | null>();
+  for (const r of results.filter((r) => r.source === "netflix")) {
+    const top: KeptTop = JSON.parse(r.body);
+    top.movies.forEach((n) => known.set(`movie/${n.name}`, n.tmdbId));
+    top.shows.forEach((n) => known.set(`show/${n.name}`, n.tmdbId));
+  }
+  let sent = 0;
+  const find = (kind: Kind, list: string[]) =>
+    Promise.all(
+      list.map(async (name): Promise<Named> => {
+        const id = known.get(`${kind}/${name}`);
+        if (id !== undefined) return { name, tmdbId: id };
+        sent++;
+        return { name, tmdbId: await findOnTmdb(env, kind, name) };
+      }),
+    );
+  try {
+    const [movies, shows] = await Promise.all([find("movie", names.movies), find("show", names.shows)]);
+    await save(env, "netflix", region, { worldwide: names.worldwide, movies, shows } satisfies KeptTop, now).run();
+  } catch (e) {
+    if (!(e instanceof TmdbUnavailable)) throw e;
+    console.warn(`Netflix's Top 10 for ${region} couldn't be found on TMDB: ${e.message}`);
+  }
+  return sent;
+}
+
+/** The TMDB ID of the most popular [kind] TMDB's search finds by [name], or null when it finds none. */
+async function findOnTmdb(env: Env, kind: Kind, name: string): Promise<number | null> {
+  const found = await search(env, kind, name, "en");
+  return found.reduce<(typeof found)[number] | null>((best, f) => (best === null || f.popularity > best.popularity ? f : best), null)?.tmdbId ?? null;
+}
+
+/**
+ * Reads Netflix's country file (32 MB) once through and keeps every Region's newest week as
+ * `netflix-week`, [SAVE_EVERY] Regions at a time, so a run stopped short keeps the Regions it
+ * passed; `netflix-scan` notes the whole file was read. The file is grouped by country, newest week
+ * first, so only the first lines of each country are decoded: a chunk whose last line is still the
+ * country's before is passed over whole. That keeps the Worker's own work per chunk small, leaving
+ * mostly the runtime's handing over of the bytes (#32, #214). When Netflix can't answer, the kept
+ * weeks stand.
+ */
+async function scanCountries(env: Env, now: number): Promise<number> {
+  const decoder = new TextDecoder();
+  let column: Columns | null = null;
+  /** The bytes each line of the country being passed starts with: its cells up to its code's. */
+  let country: Uint8Array | null = null;
+  /** The country whose newest week is being read, while it is. */
+  let reading: (TopNames & { region: string; week: string }) | null = null;
+  const done: D1PreparedStatement[] = [];
+  const finish = () => {
+    if (reading === null) return;
+    done.push(save(env, "netflix-week", reading.region, { worldwide: false, movies: reading.movies, shows: reading.shows } satisfies TopNames, now));
+    reading = null;
+  };
+  const line = (bytes: Uint8Array) => {
+    if (bytes.length === 0) return;
+    if (column === null) {
+      column = columns(decoder.decode(bytes));
+      return;
+    }
+    if (reading !== null) {
+      const cells = decoder.decode(bytes).split("\t");
+      if (cells[column.country_iso2] === reading.region && cells[column.week] === reading.week) {
+        (cells[column.category] === "TV" ? reading.shows : reading.movies).push(cells[column.show_title]);
+        return;
+      }
+      finish();
+    }
+    if (country !== null && startsWith(bytes, 0, country)) return;
+    // A country's first line: the first of its newest week.
+    let end = -1;
+    for (let i = 0; i <= column.country_iso2; i++) end = bytes.indexOf(TAB, end + 1);
+    country = bytes.slice(0, end + 1);
+    const cells = decoder.decode(bytes).split("\t");
+    reading = { worldwide: false, region: cells[column.country_iso2], week: cells[column.week], movies: [], shows: [] };
+    (cells[column.category] === "TV" ? reading.shows : reading.movies).push(cells[column.show_title]);
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(`${env.NETFLIX_TOP10}/all-weeks-countries.tsv`);
+    if (!response.ok || response.body === null) throw new NetflixUnavailable(`Netflix answered HTTP ${response.status} for all-weeks-countries.tsv`);
+  } catch (e) {
+    console.warn(`Netflix's country file couldn't be fetched: ${e instanceof Error ? e.message : e}`);
+    return 1;
+  }
+  // Read [READ_SIZE] at a time into one buffer (workerd's readAtLeast), so the Worker's work is per
+  // megabyte, not per network chunk of a few kilobytes.
+  const reader = response.body.getReader({ mode: "byob" });
+  let buffer = new ArrayBuffer(READ_SIZE);
+  /** How many bytes at the buffer's start are a line the read before ended in. */
+  let kept = 0;
+  try {
+    for (;;) {
+      const { done: ended, value } = await reader.readAtLeast(READ_SIZE - kept, new Uint8Array(buffer, kept));
+      if (value) buffer = value.buffer as ArrayBuffer;
+      const bytes = new Uint8Array(buffer, 0, kept + (value?.length ?? 0));
+      // The file's last line may not end in a newline.
+      const last = ended ? bytes.length : bytes.lastIndexOf(NEWLINE);
+      const lastStart = last > 0 ? bytes.lastIndexOf(NEWLINE, last - 1) + 1 : 0;
+      let at = 0;
+      while (at < last) {
+        if (reading === null && country !== null && startsWith(bytes, at, country)) {
+          // In a country's older weeks. Grouped by country: when the read's last line is still the
+          // country's, so is every line before it; else the next country starts in between.
+          at = startsWith(bytes, lastStart, country) ? last + 1 : nextBlock(bytes, at, lastStart, country);
+          continue;
+        }
+        const end = bytes.indexOf(NEWLINE, at);
+        line(bytes.subarray(at, end < 0 ? last : end));
+        at = end < 0 ? last : end + 1;
+      }
+      if (ended) break;
+      bytes.copyWithin(0, last + 1);
+      kept = bytes.length - last - 1;
+      if (kept === READ_SIZE) throw new NetflixUnavailable(`a line of Netflix's country file is over ${READ_SIZE} bytes`);
+      if (done.length >= SAVE_EVERY) await env.DB.batch(done.splice(0));
+    }
+    finish();
+    done.push(env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES ('netflix-scan', '', '{}', ?1)").bind(now));
+  } catch (e) {
+    console.warn(`Netflix's country file couldn't be read: ${e}`);
+  } finally {
+    await reader.cancel().catch(() => {});
+    if (done.length > 0) await env.DB.batch(done);
+  }
+  return 1;
+}
+
+/**
+ * Where the first line in [bytes] after [from] that doesn't begin with [start] begins, found by
+ * halving: the line at [from] begins with it, the line at [to] doesn't, and the lines that do come
+ * first.
+ */
+function nextBlock(bytes: Uint8Array, from: number, to: number, start: Uint8Array): number {
+  for (;;) {
+    let probe = bytes.lastIndexOf(NEWLINE, (from + to) >> 1) + 1;
+    if (probe <= from) probe = bytes.indexOf(NEWLINE, from) + 1;
+    if (probe >= to) return to;
+    if (startsWith(bytes, probe, start)) from = probe;
+    else to = probe;
+  }
+}
+
+function startsWith(bytes: Uint8Array, at: number, start: Uint8Array): boolean {
+  if (at + start.length > bytes.length) return false;
+  for (let i = 0; i < start.length; i++) if (bytes[at + i] !== start[i]) return false;
+  return true;
 }
 
 /**
  * The newest week of Netflix's worldwide file: its English and non-English lists of each kind,
- * merged by weekly views.
+ * merged by weekly views, kept as `netflix-week` for every Region Netflix doesn't list. When Netflix
+ * can't answer, the kept week stands.
  */
-async function worldwideTop(env: Env, sent: Sent): Promise<TopNames> {
+async function readWorldwide(env: Env, now: number): Promise<number> {
   const viewed = { movies: [] as { name: string; views: number }[], shows: [] as { name: string; views: number }[] };
   const decoder = new TextDecoder();
   let week: string | null = null;
   let column: Columns | null = null;
-  read: for await (const run of runs(env, "all-weeks-global.tsv", sent)) {
-    for (const line of decoder.decode(run).split("\n")) {
-      if (column === null) {
-        column = columns(line);
-        continue;
+  try {
+    read: for await (const run of runs(env, "all-weeks-global.tsv")) {
+      for (const line of decoder.decode(run).split("\n")) {
+        if (column === null) {
+          column = columns(line);
+          continue;
+        }
+        const cells = line.split("\t");
+        week ??= cells[column.week];
+        if (cells[column.week] !== week) break read;
+        const kind = cells[column.category].startsWith("TV") ? viewed.shows : viewed.movies;
+        kind.push({ name: cells[column.show_title], views: Number(cells[column.weekly_views]) || 0 });
       }
-      const cells = line.split("\t");
-      week ??= cells[column.week];
-      if (cells[column.week] !== week) break read;
-      const kind = cells[column.category].startsWith("TV") ? viewed.shows : viewed.movies;
-      kind.push({ name: cells[column.show_title], views: Number(cells[column.weekly_views]) || 0 });
     }
+  } catch (e) {
+    if (!(e instanceof NetflixUnavailable)) throw e;
+    console.warn(`Netflix's worldwide Top 10 couldn't be fetched: ${e.message}`);
+    return 1;
   }
   const names = (list: { name: string; views: number }[]) => [...new Set(list.sort((a, b) => b.views - a.views).map((r) => r.name))];
-  return { worldwide: true, movies: names(viewed.movies), shows: names(viewed.shows) };
+  await save(env, "netflix-week", WORLDWIDE, { worldwide: true, movies: names(viewed.movies), shows: names(viewed.shows) } satisfies TopNames, now).run();
+  return 1;
 }
 
 /** Where each column Netflix's files name in their first line is. */
@@ -306,15 +467,15 @@ function columns(header: string): Columns {
 }
 
 const NEWLINE = 0x0a;
+const TAB = 0x09;
 
 /**
  * Netflix's Top 10 [file] as it arrives, as UTF-8 runs of whole lines (no trailing newline, empty
  * lines left in), so a run decodes on its own. Stopping early cancels the download, so the rest of
  * the file is never fetched.
  */
-async function* runs(env: Env, file: string, sent: Sent): AsyncGenerator<Uint8Array> {
+async function* runs(env: Env, file: string): AsyncGenerator<Uint8Array> {
   let response: Response;
-  sent.requests++;
   try {
     response = await fetch(`${env.NETFLIX_TOP10}/${file}`);
   } catch (e) {

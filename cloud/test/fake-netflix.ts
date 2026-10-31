@@ -79,6 +79,8 @@ export class FakeNetflix {
     let at = 0;
     return new ReadableStream(
       {
+        // A byte stream, like a fetch's body, so the Worker can read it into a buffer of its own.
+        type: "bytes",
         pull: (controller) => {
           if (at >= bytes.length) return controller.close();
           const chunk = bytes.slice(at, at + FakeNetflix.CHUNK);

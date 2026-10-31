@@ -12,6 +12,8 @@ export class FakeTmdb {
   failWith: number | null = null;
   /** Answers only the requests this picks with HTTP 503. */
   failWhen: ((url: URL) => boolean) | null = null;
+  /** Answers the requests this picks with a body that isn't JSON, which stops the Worker's run as running out of CPU does. */
+  breakWhen: ((url: URL) => boolean) | null = null;
   private readonly titles = new Map<string, (language: string) => object>();
   private readonly searchable: { path: string; result: (language: string) => SearchResult }[] = [];
   private readonly multi: { names: string[]; result: object }[] = [];
@@ -32,6 +34,7 @@ export class FakeTmdb {
       this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
       if (this.failWith !== null) return new Response("{}", { status: this.failWith });
       if (this.failWhen?.(url)) return new Response("{}", { status: 503 });
+      if (this.breakWhen?.(url)) return new Response("cut short", { status: 200 });
       const search = /^\/3\/search\/(movie|tv)$/.exec(url.pathname);
       if (search) {
         // Like TMDB, finds a query in the title in the requested language or in the original title, punctuation aside.
