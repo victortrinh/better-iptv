@@ -216,7 +216,9 @@ private fun Modifier.entersAtSelected(selected: FocusRequester) = focusPropertie
 /**
  * A settings row: what it is on the left, its current value on the right. [progress] (0 to 1) draws
  * how far the Viewer got under the label, as on a card. A row that isn't [enabled] keeps focus but
- * ignores the click, its label muted like a disabled button's.
+ * ignores the click, its label muted like a disabled button's. A value can take a [valueColor] (an
+ * error) and wrap to [valueLines] lines, right-aligned, before its ellipsis, taking the width the
+ * label leaves.
  */
 @Composable
 fun SettingRow(
@@ -227,10 +229,14 @@ fun SettingRow(
     detail: String? = null,
     progress: Float? = null,
     enabled: Boolean = true,
+    valueColor: Color = Colors.inkMuted,
+    valueLines: Int = 1,
 ) {
     FocusSurface({ if (enabled) onClick() }, modifier.fillMaxWidth(), weight = FocusWeight.Row, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+            // A value on several lines takes what the label leaves; a one-line value leaves the label the rest.
+            val wraps = valueLines > 1
+            Column(if (wraps) Modifier else Modifier.weight(1f)) {
                 Text(label, style = Type.label, color = if (focused) Colors.onFocus else if (enabled) Colors.ink else Colors.inkMuted)
                 if (detail != null) {
                     Text(detail, style = Type.caption, color = if (focused) Colors.onFocus.copy(alpha = 0.7f) else Colors.inkMuted)
@@ -247,10 +253,11 @@ fun SettingRow(
             Text(
                 value,
                 style = Type.detail,
-                color = if (focused) Colors.onFocus else Colors.inkMuted,
-                maxLines = 1,
+                color = if (focused) Colors.onFocus else valueColor,
+                textAlign = TextAlign.End,
+                maxLines = valueLines,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = VALUE_MAX_WIDTH),
+                modifier = if (wraps) Modifier.weight(1f) else Modifier.widthIn(max = VALUE_MAX_WIDTH),
             )
         }
     }

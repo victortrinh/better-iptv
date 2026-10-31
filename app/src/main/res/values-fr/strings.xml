@@ -15,11 +15,6 @@
 
     <string name="movies_title">Films</string>
     <string name="shows_title">Séries</string>
-    <plurals name="titles_count">
-        <item quantity="one">%1$s titre</item>
-        <item quantity="many">%1$s titres</item>
-        <item quantity="other">%1$s titres</item>
-    </plurals>
     <string name="sync_now">Synchroniser</string>
     <string name="sync_never">Pas encore synchronisé.</string>
     <string name="sync_first">Première synchronisation de votre catalogue…</string>
@@ -244,6 +239,18 @@
     <string name="update_allow_old">Paramètres → Ma Fire TV → Options pour les développeurs → Applications de sources inconnues : activé, puis revenez ici.</string>
     <string name="update_open_settings">Ouvrir les paramètres</string>
 
+    <string name="settings_catalog">Catalogue</string>
+    <string name="catalog_counts">%1$s · %2$s</string>
+    <plurals name="catalog_movies">
+        <item quantity="one">%1$s film</item>
+        <item quantity="many">%1$s films</item>
+        <item quantity="other">%1$s films</item>
+    </plurals>
+    <plurals name="catalog_shows">
+        <item quantity="one">%1$s série</item>
+        <item quantity="many">%1$s séries</item>
+        <item quantity="other">%1$s séries</item>
+    </plurals>
     <string name="settings_app">Appli</string>
     <string name="settings_version">Version de l\'appli</string>
     <string name="settings_up_to_date">%1$s · À jour</string>
