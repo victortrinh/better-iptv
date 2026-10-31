@@ -98,14 +98,20 @@ private fun Root(app: BetterIptvApp) {
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
         var returnedFrom by remember { mutableStateOf(0) }
         var returnedToHome by remember { mutableStateOf<HomeCard?>(null) }
+        // The screen was reached by picking its tab, which keeps focus there.
+        var byTab by remember { mutableStateOf(false) }
         var playing by remember { mutableStateOf<NowPlaying?>(null) }
         val context = LocalContext.current
         val onTab = { selected: Browse ->
             tab = selected
+            byTab = true
             returnedFrom = -1
             returnedToHome = null
         }
-        val watch = { channel: Channel -> playing = NowPlaying(app.library.channelPlayPlan(channel, contentLanguages), channel.name) }
+        val watch = { channel: Channel ->
+            byTab = false
+            playing = NowPlaying(app.library.channelPlayPlan(channel, contentLanguages), channel.name)
+        }
         val now = playing
         if (now != null) {
             BackHandler { playing = null }
@@ -122,6 +128,7 @@ private fun Root(app: BetterIptvApp) {
                 Browse.Home -> HomeScreen(
                     app.library, contentLanguages, appLanguage, home,
                     restoreFocus = returnedToHome,
+                    focusTab = byTab,
                     onTab = onTab,
                     onOpen = { card, id -> opened = OpenedTitle(-1, id, card) },
                     onWatch = { card, channel ->
@@ -134,17 +141,19 @@ private fun Root(app: BetterIptvApp) {
                     BackHandler { onTab(Browse.Movies) }
                     SearchScreen(
                         app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage,
+                        focusTab = byTab,
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(-1, it) },
                         onWatch = watch,
                     )
                 }
-                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onTab = onTab)
+                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, focusTab = byTab, onTab = onTab)
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
                     TitlesScreen(
                         app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
                         restoreFocus = returnedFrom,
+                        focusTab = byTab,
                         onSyncNow = app::sync,
                         onTab = onTab,
                         onOpen = { index, id -> opened = OpenedTitle(index, id) },
@@ -153,6 +162,7 @@ private fun Root(app: BetterIptvApp) {
             }
             else -> {
                 BackHandler {
+                    byTab = false
                     returnedFrom = title.cardIndex
                     returnedToHome = title.homeCard
                     opened = null
