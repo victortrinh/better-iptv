@@ -48,28 +48,28 @@ private val inter = FontFamily(
     Font(R.font.inter_700, FontWeight.Bold),
 )
 
-/** The type scale, in Inter. Sizes are for the 960×540 dp TV canvas, read from about 3 m. */
+/** The type scale, in Inter. Sizes are for the 960×540 dp TV canvas, read from about 3 m, as checked on the Fire TV Stick (#186). */
 object Type {
     /** A Title's name in the hero and on its details page. */
-    val display = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 50.sp, lineHeight = 52.sp, letterSpacing = (-0.03).em)
-    /** Row headings, screen headings, the wordmark. Smaller than it was so the artwork under it leads (#147). */
-    val headline = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 24.sp, letterSpacing = (-0.01).em)
+    val display = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 42.sp, lineHeight = 44.sp, letterSpacing = (-0.03).em)
+    /** Row headings, screen headings, the wordmark. Kept small so the artwork under it leads (#147). */
+    val headline = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.01).em)
     /** A Title's name on a card, a language heading. */
-    val title = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
-    /** Descriptions, metadata lines, messages, field text: what's read from the couch (#147). */
-    val body = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 17.sp, lineHeight = 24.sp)
+    val title = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 19.sp)
+    /** Descriptions, metadata lines, messages, field text: what's read from the couch. */
+    val body = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp)
     /** The info under Home's focused rail: the metadata line, muted, as Netflix sets it (#182). */
-    val railMeta = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
+    val railMeta = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
     /** The info under Home's focused rail: the description, an Episode, a Channel's name. A step above body, as on Netflix. */
-    val rail = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 19.sp, lineHeight = 25.sp)
+    val rail = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
     /** The info under Home's focused rail: the time left in Continue watching, its strongest line. */
-    val railStrong = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 25.sp)
+    val railStrong = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp)
     /** Body beside label type in a table or row: Version cells, a setting's value. Sized so French fits the Version columns. */
-    val detail = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp)
+    val detail = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 18.sp)
     /** Buttons, tabs, settings rows. */
-    val label = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp)
+    val label = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
     /** Badges, metadata, explanations under a setting. */
-    val caption = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.01.em)
+    val caption = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.01.em)
 }
 
 /** Corner radii. Controls are capsules at their 40 dp height. */
