@@ -208,10 +208,8 @@ private val TAB_HEIGHT = 32.dp
 /** Up into the tabs goes to the [selected] one. */
 private fun Modifier.entersAtSelected(selected: FocusRequester) = focusProperties {
     onEnter = {
-        if (requestedFocusDirection == FocusDirection.Up) {
-            cancelFocusChange()
-            selected.requestFocus()
-        }
+        // Focusing the selected tab here redirects the move there.
+        if (requestedFocusDirection == FocusDirection.Up) selected.requestFocus()
     }
 }.focusGroup()
 

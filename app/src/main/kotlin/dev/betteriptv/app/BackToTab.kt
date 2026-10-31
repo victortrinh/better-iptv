@@ -16,7 +16,10 @@ import androidx.compose.ui.input.key.type
  * without scrolling, and Down from the tab comes back to the card that had focus. Give each row of
  * cards inside its own [focusRestorer] too, so the card is found again within its row.
  */
-fun Modifier.backToTab(tab: FocusRequester): Modifier = focusRestorer().onKeyEvent { event ->
+fun Modifier.backToTab(tab: FocusRequester): Modifier = focusRestorer().backKeyToTab(tab)
+
+/** Back moves focus to [tab], as in [backToTab], for cards that find their way back by other means. */
+fun Modifier.backKeyToTab(tab: FocusRequester): Modifier = onKeyEvent { event ->
     when (backToTab(event.type, event.key)) {
         BackKey.Pass -> false
         BackKey.Hold -> true

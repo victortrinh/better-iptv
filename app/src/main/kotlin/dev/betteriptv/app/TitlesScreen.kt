@@ -140,7 +140,7 @@ fun TitlesScreen(
         // The columns share the width between them, so the grid ends at the right margin like it starts at the left.
         LazyVerticalGrid(
             GridCells.Adaptive(Cards.posterWidth),
-            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.backToTab(tab),
+            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.entersFromAbove(focus).backKeyToTab(tab),
             state = grid,
             contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
             horizontalArrangement = Arrangement.spacedBy(Cards.gap),

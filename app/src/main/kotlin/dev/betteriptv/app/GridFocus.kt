@@ -1,10 +1,14 @@
 package dev.betteriptv.app
 
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -34,6 +38,10 @@ class GridFocus(private val grid: LazyGridState, private val scope: CoroutineSco
     fun focused(index: Int) {
         focused = index
     }
+
+    /** The card focus goes to coming into the grid (see [gridEntry]), while it is composed. */
+    fun entry(): FocusRequester? =
+        gridEntry(focused, grid.layoutInfo.visibleItemsInfo.associate { it.index to it.offset.y })?.let { requesters[it] }
 
     /** A card's focus target, known here while the card is composed. */
     fun card(index: Int): Card = Card(index)
@@ -83,6 +91,17 @@ class GridFocus(private val grid: LazyGridState, private val scope: CoroutineSco
 }
 
 /**
+ * Down into the grid from above it, from the tabs, goes to [focus]'s [GridFocus.entry]: the card
+ * focused last, or the first one whole in view, instead of the card nearest the tab.
+ */
+fun Modifier.entersFromAbove(focus: GridFocus): Modifier = focusProperties {
+    onEnter = {
+        // Focusing another card here redirects the move there.
+        if (requestedFocusDirection == FocusDirection.Down) focus.entry()?.requestFocus()
+    }
+}.focusGroup()
+
+/**
  * The card a row below ([down]) or above [focused] in a grid of [count] cards in [columns], or null
  * when focus should leave the grid. Down from the row before a shorter last row goes to its last card.
  */
@@ -94,4 +113,13 @@ fun rowMove(focused: Int, columns: Int, count: Int, down: Boolean): Int? {
         return if (focused < lastRowStart) count - 1 else null
     }
     return (focused - columns).takeIf { it >= 0 }
+}
+
+/**
+ * The card focus goes to coming into a grid: the [focused] one while it is in view, else the first
+ * one whole in view, by the tops of the cards laid out ([tops], by index). Null when none is laid out.
+ */
+fun gridEntry(focused: Int, tops: Map<Int, Int>): Int? {
+    if (focused in tops && tops.getValue(focused) >= 0) return focused
+    return tops.filterValues { it >= 0 }.keys.minOrNull() ?: tops.keys.minOrNull()
 }
