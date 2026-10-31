@@ -110,7 +110,7 @@ Animations, backdrops, trailers.
 ## Still to decide, before the milestone that needs it
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
-- M2: matching Netflix's titles (names only, no TMDB IDs) to Titles; how a Chart card shows its number.
+- M2: matching Netflix's titles (names only, no TMDB IDs) to Titles; how a Chart card shows its number. Waiting on [#182](https://github.com/victortrinh/better-iptv/issues/182) (info under the rails, looping rails), then: whether the Movies and Shows tabs become rows only (their Charts, New, a row per genre) in place of the grid; genre rows from TMDB's most popular per genre, since the device has metadata for only the newest Titles; and whether looping rails or a Chart rank badge change Home showing each Title once.
 - M3: sports hub screens; rules for merging Channel variants.
 - M5: account model, Prefix tables for other Providers, profiles.
 
