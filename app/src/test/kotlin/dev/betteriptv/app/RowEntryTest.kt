@@ -26,7 +26,14 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
+import android.content.Context
+import android.content.pm.ActivityInfo
+import androidx.activity.ComponentActivity
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Rule
+import org.junit.rules.TestRule
+import org.junit.runners.model.Statement
+import org.robolectric.Shadows.shadowOf
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -41,7 +48,27 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w960dp-h540dp-mdpi")
 class RowEntryTest {
-    @get:Rule
+    /**
+     * The compose rule's host activity, which `ui-test-manifest` declares only in debug builds:
+     * registered here so the release and benchmark unit tests run it too.
+     */
+    @get:Rule(order = 0)
+    val host = TestRule { base, _ ->
+        object : Statement() {
+            override fun evaluate() {
+                val context = ApplicationProvider.getApplicationContext<Context>()
+                shadowOf(context.packageManager).addOrUpdateActivity(
+                    ActivityInfo().apply {
+                        name = ComponentActivity::class.java.name
+                        packageName = context.packageName
+                    },
+                )
+                base.evaluate()
+            }
+        }
+    }
+
+    @get:Rule(order = 1)
     val compose = createComposeRule()
 
     /** Tabs over two rows of five cards; the first row loops when [loop] is given, opening at its start. */
