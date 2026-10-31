@@ -29,7 +29,11 @@ tasks.test {
     // ./gradlew :core:test --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     // ./gradlew :core:test --tests '*SearchIndexBenchmark' -Pbenchmark
-    providers.gradleProperty("benchmark").orNull?.let { systemProperty("benchmark", "true") }
+    // Its made-up catalog has more names than the real one (up to 40 translations a Title), so more heap.
+    providers.gradleProperty("benchmark").orNull?.let {
+        systemProperty("benchmark", "true")
+        maxHeapSize = "512m"
+    }
     testLogging {
         events("failed")
         showStandardStreams = true

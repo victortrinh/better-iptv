@@ -293,7 +293,7 @@ class Library private constructor(
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
-        val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
+        val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).toSet()) }
         val channels = foundChannels(index, query)
         emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
 
@@ -348,7 +348,7 @@ class Library private constructor(
     /** The genres with the most Titles in the Viewer's [contentLanguages], to search before typing. */
     private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>): List<String> {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val inWanted = { titles: IntArray -> titles.count { position -> index.titles[position].languages.any(wanted::contains) } }
+        val inWanted = { titles: IntArray -> titles.count { position -> index.languages(position).any(wanted::contains) } }
         return index.genres.indices.map { it to inWanted(index.genreTitles[it]) }
             .filter { (_, count) -> count > 0 }
             .sortedWith(compareByDescending<Pair<Int, Int>> { it.second }.thenBy { index.genres[it.first] })
@@ -371,9 +371,9 @@ class Library private constructor(
         appLanguage: String,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val popularityOf = { position: Int -> maxOf(index.titles[position].popularity, popularity[position] ?: 0.0) }
+        val popularityOf = { position: Int -> maxOf(index.popularity(position), popularity[position] ?: 0.0) }
         val byRank = compareBy<SearchIndex.Hit>(
-            { index.titles[it.index].languages.none(wanted::contains) },
+            { index.languages(it.index).none(wanted::contains) },
             { it.distance },
             { -popularityOf(it.index) },
             { it.index },
@@ -387,13 +387,13 @@ class Library private constructor(
             .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { -index.genreTitles[it.index].size }))
             .take(GENRES_FOUND)
             .map { index.genres[it.index] to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
-        val ofKind = { kind: TitleKind -> ranked.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) }
+        val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
-            .map { index.titles[it.index].id }.distinct()
+            .map { index.titleId(it.index) }.distinct()
         val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
-        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
+        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titleId(it.index)] } }
         // The best Titles of either kind are among those shown, so their names are at hand.
-        val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titles[it.index].id]?.name }
+        val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titleId(it.index)]?.name }
         return SearchResults(
             movies = found(ofKind(TitleKind.Movie)),
             shows = found(ofKind(TitleKind.Show)),

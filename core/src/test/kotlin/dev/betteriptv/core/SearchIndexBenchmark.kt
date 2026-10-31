@@ -31,7 +31,10 @@ class SearchIndexBenchmark {
 
         val prefixTable = PrefixTable.bundled()
         val gc = ManagementFactory.getGarbageCollectorMXBeans()
+        val runtime = Runtime.getRuntime()
         repeat(3) { run ->
+            System.gc()
+            val before = runtime.totalMemory() - runtime.freeMemory()
             val collections = gc.sumOf { it.collectionCount }
             val collecting = gc.sumOf { it.collectionTime }
             val threads = ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
@@ -47,12 +50,11 @@ class SearchIndexBenchmark {
             val total = (System.nanoTime() - started) / 1_000_000
             val allocatedMb = (threads.currentThreadAllocatedBytes - allocated) / (1024 * 1024)
             System.gc()
-            val runtime = Runtime.getRuntime()
-            val heldMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+            val heldMb = (runtime.totalMemory() - runtime.freeMemory() - before) / (1024 * 1024)
             println(
                 "Search index build ${run + 1}: $total ms (" + phases.entries.joinToString { "${it.key} ${it.value}" } + "), " +
                     "$allocatedMb MB allocated, ${gc.sumOf { it.collectionCount } - collections} GCs taking ${gc.sumOf { it.collectionTime } - collecting} ms, " +
-                    "${index.titles.size} Titles, ${index.channels.size} Channels and ${index.people.size} people in $heldMb MB of heap",
+                    "${index.titleCount} Titles, ${index.channels.size} Channels and ${index.peopleCount} people in $heldMb MB of heap",
             )
         }
         store.close()
