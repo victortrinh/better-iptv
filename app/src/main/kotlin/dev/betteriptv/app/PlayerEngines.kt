@@ -238,6 +238,10 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (atTheEnd(player.currentPosition, duration)) {
+                    Log.i(PLAYER_TAG, "Media3 failed at the end of the file: it ended (${error.errorCodeName})")
+                    return finish(null)
+                }
                 finish(if (error.isTheFiles()) CantOpen("Media3 can't play the file", error) else IOException("the stream failed", error))
             }
 
@@ -272,6 +276,15 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
         withTimeoutOrNull(RELEASE_TIMEOUT) { requests.awaitNone() }
     }
 }
+
+/**
+ * Whether playback at [position] is within [END_MARGIN] of the file's [duration]: a failure there,
+ * such as an MKV's when the Viewer scrubs to its last frame, ends the file instead of failing the Version.
+ */
+internal fun atTheEnd(position: Long, duration: Long?): Boolean = duration != null && position >= duration - END_MARGIN
+
+/** How close to the end a failure counts as the file ending, in milliseconds: the last frames are the credits' last. */
+private const val END_MARGIN = 5_000L
 
 /** Longer than Media3's own read timeout, so a request stuck on a stalled Provider closes first. */
 private val RELEASE_TIMEOUT = 10.seconds
@@ -533,8 +546,11 @@ class VlcEngine(
             val listener = MediaPlayer.EventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.EndReached -> if (continuation.isActive) continuation.resume(Unit)
-                    // VLC doesn't say whether the file or the stream failed; it's the last resort either way.
-                    MediaPlayer.Event.EncounteredError -> if (continuation.isActive) continuation.resumeWithException(CantOpen("VLC can't play the file"))
+                    MediaPlayer.Event.EncounteredError -> if (continuation.isActive) {
+                        if (atTheEnd(position, length)) continuation.resume(Unit)
+                        // VLC doesn't say whether the file or the stream failed; it's the last resort either way.
+                        else continuation.resumeWithException(CantOpen("VLC can't play the file"))
+                    }
                     MediaPlayer.Event.TimeChanged -> {
                         time = event.timeChanged
                         timeAt = TimeSource.Monotonic.markNow()
