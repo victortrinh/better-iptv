@@ -28,6 +28,15 @@ class RailLoopTest {
     }
 
     @Test
+    fun aRankedRailNeverLoopsWhateverItsLength() {
+        val top = RailLoop(10, posters, ranked = true)
+        assertFalse(top.loops)
+        assertEquals(10, top.count)
+        assertEquals(0, top.start)
+        assertEquals(9, top.place(9, near = 3))
+    }
+
+    @Test
     fun aLoopingRailOpensOnItsFirstCardWithCardsEitherSide() {
         val loop = RailLoop(20, posters)
         assertEquals(0, loop.card(loop.start))

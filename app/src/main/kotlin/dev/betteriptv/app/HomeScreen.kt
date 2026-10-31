@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalDensity
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.RailInfo
+import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
@@ -198,6 +199,8 @@ fun HomeScreen(
     val density = LocalDensity.current
     val posterKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.posterWidth / 2).toPx()) } }
     val stillKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.wideWidth / 2).toPx()) } }
+    // A Top row's card brings its poster into view, which sits right of the numeral.
+    val rankedKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.numeralWidth + Cards.posterWidth / 2).toPx()) } }
     // How many cards of each width the screen shows at once, on the 960 dp canvas.
     val seen = remember {
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
@@ -238,18 +241,24 @@ fun HomeScreen(
                         val wide = row is HomeRow.ContinueWatching
                         // Favourites' Channel cards are as wide as stills.
                         val still = wide || row is HomeRow.Favourites
+                        val ranked = row.ranked
                         val keys = row.keys
-                        val loop = remember(keys.size, still) { RailLoop(keys.size, if (still) seen.second else seen.first) }
+                        val loop = remember(keys.size, still, ranked) { RailLoop(keys.size, if (still) seen.second else seen.first, ranked) }
+                        val cardWidth = when {
+                            still -> Cards.wideWidth
+                            ranked -> Cards.rankedWidth
+                            else -> Cards.posterWidth
+                        }
                         val rail = state.rail(row.key, loop)
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
                         val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
-                        CompositionLocalProvider(LocalBringIntoViewSpec provides if (still) stillKeyline else posterKeyline) {
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides if (still) stillKeyline else if (ranked) rankedKeyline else posterKeyline) {
                             LazyRow(
                                 state = rail,
                                 // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
                                 contentPadding = PaddingValues(
                                     start = Spacing.screenX,
-                                    end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - if (still) Cards.wideWidth else Cards.posterWidth,
+                                    end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - cardWidth,
                                     top = 10.dp,
                                     bottom = 10.dp,
                                 ),
@@ -287,20 +296,24 @@ fun HomeScreen(
                                     val logo = title.about?.logo
                                     // A poster has its name printed on it, so the logo goes only over a textless one.
                                     val textless = title.about?.textlessPoster
-                                    TitleCard(
-                                        image = rememberArtwork(if (wide) resume?.still ?: title.image else textless ?: title.image, card = true),
-                                        name = title.name,
-                                        badges = emptyList(),
-                                        onClick = { onOpen(card, title.id) },
-                                        modifier = ends,
-                                        wide = wide,
-                                        progress = resume?.progress,
-                                        named = false,
-                                        onFocus = { state.focused = card },
-                                        art = if (wide || textless != null) {
-                                            { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
-                                        } else null,
-                                    )
+                                    val poster = @Composable {
+                                        TitleCard(
+                                            image = rememberArtwork(if (wide) resume?.still ?: title.image else textless ?: title.image, card = true),
+                                            name = title.name,
+                                            badges = emptyList(),
+                                            onClick = { onOpen(card, title.id) },
+                                            modifier = ends,
+                                            wide = wide,
+                                            progress = resume?.progress,
+                                            named = false,
+                                            onFocus = { state.focused = card },
+                                            art = if (wide || textless != null) {
+                                                { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
+                                            } else null,
+                                        )
+                                    }
+                                    // A Chart's Titles are ranked 1…n in order.
+                                    if (ranked) RankedCard(index + 1) { poster() } else poster()
                                 }
                             }
                         }
@@ -371,6 +384,10 @@ private val HomeRow.titles: List<TitleSummary>
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
     }
+
+/** Whether a row is a Top 10, drawn with its ranks and never looping. */
+private val HomeRow.ranked: Boolean
+    get() = this is HomeRow.Chart && (list == ChartList.TopMovies || list == ChartList.TopShows)
 
 /** A row's key, as [HomeCard]s hold it: the same row keeps it when rows before it come or go. */
 private val HomeRow.key: String

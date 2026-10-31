@@ -68,6 +68,8 @@ object Type {
     val detail = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 18.sp)
     /** Buttons, tabs, settings rows. */
     val label = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
+    /** A Top row's rank beside its poster, drawn as an outline (`RankedCard`): about as tall as the poster, as on Netflix. */
+    val numeral = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 200.sp, lineHeight = 200.sp, fontFeatureSettings = "pnum")
     /** Badges, metadata, explanations under a setting. */
     val caption = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.01.em)
 }
@@ -101,6 +103,12 @@ object Cards {
     val wideWidth = 196.dp
     /** Wide enough that a focused card's growth doesn't touch its neighbours. */
     val gap = 20.dp
+    /** A Top row's numeral shows this wide to the left of its poster (`RankedCard`)... */
+    val numeralWidth = 72.dp
+    /** ...and runs on this far under the poster, which overlaps its right edge. */
+    val numeralOverlap = 12.dp
+    /** A Top row's card: the numeral, then the poster. */
+    val rankedWidth = numeralWidth + posterWidth
 }
 
 /** How much things grow on focus. */
