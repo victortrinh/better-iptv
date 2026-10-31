@@ -50,6 +50,7 @@ import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
@@ -65,7 +66,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages and Region under
- * Languages, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
+ * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
  * App, which offers the [update] when there is one ([onUpdate]). Content languages
  * and Region each open a list in place of the column; Back returns to the row that opened it.
@@ -143,6 +144,20 @@ fun SettingsScreen(
                         Modifier.focusRequester(regionRow),
                         detail = stringResource(R.string.settings_region_detail),
                     )
+                }
+                item { Heading(stringResource(R.string.settings_display)) }
+                item {
+                    Labelled(stringResource(R.string.settings_text_size), stringResource(R.string.settings_text_size_detail)) {
+                        ChoiceRow(
+                            listOf(
+                                stringResource(R.string.settings_text_size_small),
+                                stringResource(R.string.settings_text_size_medium),
+                                stringResource(R.string.settings_text_size_large),
+                            ),
+                            selected = TextSize.entries.indexOf(settings.textSize),
+                            onSelect = { index -> onChange { it.copy(textSize = TextSize.entries[index]) } },
+                        )
+                    }
                 }
                 item { Heading(stringResource(R.string.settings_playback)) }
                 item {

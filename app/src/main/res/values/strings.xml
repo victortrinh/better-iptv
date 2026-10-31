@@ -205,6 +205,12 @@
     <string name="settings_region_detail">Sets the Top 10 and the default leagues</string>
     <string name="settings_region_suggested">Suggested</string>
     <string name="settings_region_all">All countries</string>
+    <string name="settings_display">Display</string>
+    <string name="settings_text_size">Text size</string>
+    <string name="settings_text_size_detail">For your TV and how far you sit from it</string>
+    <string name="settings_text_size_small">Small</string>
+    <string name="settings_text_size_medium">Medium</string>
+    <string name="settings_text_size_large">Large</string>
     <string name="settings_playback">Playback</string>
     <string name="settings_quality_cap">Quality cap</string>
     <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>

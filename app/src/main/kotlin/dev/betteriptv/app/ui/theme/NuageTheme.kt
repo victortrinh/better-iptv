@@ -8,10 +8,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
-/** Wraps the app. The TV Material theme is mapped from the tokens so stock components match. */
+/**
+ * Wraps the app. The TV Material theme is mapped from the tokens so stock components match, and
+ * [Type] follows the Viewer's [textSize], everywhere at once.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NuageTheme(content: @Composable () -> Unit) {
+fun NuageTheme(textSize: TextSize = TextSize.Medium, content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Colors.focus,
@@ -25,7 +28,11 @@ fun NuageTheme(content: @Composable () -> Unit) {
             error = Colors.error,
         ),
     ) {
-        CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeScroll, content = content)
+        CompositionLocalProvider(
+            LocalBringIntoViewSpec provides EdgeScroll,
+            LocalTypeScale provides TypeScale.of(textSize),
+            content = content,
+        )
     }
 }
 

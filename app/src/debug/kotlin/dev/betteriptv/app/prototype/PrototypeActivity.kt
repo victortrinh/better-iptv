@@ -1,5 +1,6 @@
 package dev.betteriptv.app.prototype
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
+import dev.betteriptv.app.BetterIptvApp
+import dev.betteriptv.app.localized
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.app.ui.theme.Spacing
@@ -23,15 +26,20 @@ import dev.betteriptv.app.ui.theme.Type
  *
  * Screens: home, details, player, search, settings. `focus` moves the first focus from the main
  * button to the first card (home) or Version (details). `--ez tracks true` opens the player's
- * Audio and subtitles.
+ * Audio and subtitles. They follow the Viewer's App language and Text size, read at launch.
  */
 class PrototypeActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        val appLanguage = (newBase.applicationContext as BetterIptvApp).settings.settings.value.appLanguage
+        super.attachBaseContext(localized(newBase, appLanguage))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val screen = intent.getStringExtra("screen") ?: "home"
         val focus = intent.getBooleanExtra("focus", false)
         setContent {
-            NuageTheme {
+            NuageTheme((application as BetterIptvApp).settings.settings.value.textSize) {
                 Box(Modifier.fillMaxSize()) {
                     when (screen) {
                         "details" -> DetailsPrototype(focusVersions = focus)

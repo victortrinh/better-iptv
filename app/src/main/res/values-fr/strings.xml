@@ -172,6 +172,12 @@
     <string name="settings_region_detail">Détermine le Top 10 et les ligues par défaut</string>
     <string name="settings_region_suggested">Suggestions</string>
     <string name="settings_region_all">Tous les pays</string>
+    <string name="settings_display">Affichage</string>
+    <string name="settings_text_size">Taille du texte</string>
+    <string name="settings_text_size_detail">Selon votre téléviseur et votre distance de l\'écran</string>
+    <string name="settings_text_size_small">Petite</string>
+    <string name="settings_text_size_medium">Moyenne</string>
+    <string name="settings_text_size_large">Grande</string>
     <string name="settings_playback">Lecture</string>
     <string name="settings_quality_cap">Qualité maximale</string>
     <string name="settings_quality_cap_detail">La meilleure qualité que la lecture choisit. Baissez-la si l\'image saccade.</string>
