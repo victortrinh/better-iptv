@@ -46,9 +46,10 @@ sealed interface HomeRow {
     data class Favourites(val channels: List<Channel>) : HomeRow
 
     /**
-     * A Chart (CONTEXT.md): Netflix's Top 10 [list] for the Viewer's [region] (ISO 3166), or the
-     * world's when Netflix doesn't list it (null), kept to the Titles the Viewer can watch. Its
-     * [titles] are ranked 1…n in order, counted among the Titles kept.
+     * A Chart (CONTEXT.md), kept to the Titles the Viewer can watch: Netflix's Top 10 [list] for the
+     * Viewer's [region] (ISO 3166), or the world's when Netflix doesn't list it (null), its [titles]
+     * ranked 1…n in order, counted among the Titles kept; or TMDB's trending this week, unranked and
+     * the same everywhere (no [region]).
      */
     data class Chart(val list: ChartList, val region: String?, val titles: List<TitleSummary>) : HomeRow
 
@@ -60,7 +61,7 @@ sealed interface HomeRow {
 }
 
 /** Which Chart a [HomeRow.Chart] is. */
-enum class ChartList { TopMovies, TopShows }
+enum class ChartList { TopMovies, TopShows, Trending }
 
 /**
  * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, how far they got

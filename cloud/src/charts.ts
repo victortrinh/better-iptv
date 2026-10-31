@@ -1,16 +1,28 @@
 import type { Env } from "./env";
-import { search, TmdbUnavailable, type Kind, type TitleKey } from "./tmdb";
+import { fetchTrending, search, TmdbUnavailable, type Kind, type TitleKey } from "./tmdb";
 
 /** Netflix publishes its Top 10 each Tuesday; a day's wait shows a new list within a day. */
 const NETFLIX_FRESH_FOR = 24 * 3600_000;
+/** TMDB's weekly trending is asked for once a week, so the row changes weekly, not daily. */
+const TRENDING_FRESH_FOR = 7 * 24 * 3600_000;
+/** Pages of 20 of each trending list: enough that a row is left once kept to the Provider's Titles. */
+const TRENDING_PAGES = 2;
 
 /**
  * The Charts a screen shows, for one Region and App language. Each part is its own source with its
  * own freshness; a part a source can't give right now is empty, and the rest still answer. New
- * parts (TMDB trending, Discover's genre lists) are added beside `top`.
+ * parts (Discover's genre lists) are added beside these.
  */
 export interface Charts {
   top: TopLists;
+  trending: TrendingLists;
+}
+
+/** TMDB's trending this week, in its order: movies and shows mixed ([all]), and each kind alone. */
+export interface TrendingLists {
+  all: TitleKey[];
+  movies: TitleKey[];
+  shows: TitleKey[];
 }
 
 /** Netflix's Top 10 movies and shows in rank order, the Region's or, when Netflix doesn't list it, the [worldwide] ones. */
@@ -38,7 +50,29 @@ interface Named {
 /** The Charts for [region] (ISO 3166, `CA`) with names in [language] (ISO 639-1). */
 export async function charts(env: Env, region: string, language: string): Promise<Charts> {
   void language; // Netflix's lists are the same in every language; Discover's genre names won't be.
-  return { top: await top(env, region) };
+  const [topLists, trendingLists] = await Promise.all([top(env, region), trending(env)]);
+  return { top: topLists, trending: trendingLists };
+}
+
+/**
+ * TMDB's weekly trending lists, the same for every Region and language, from the cloud's cache
+ * when under a week old, else from TMDB. When TMDB can't answer, the last copy stands; with none,
+ * the lists are empty.
+ */
+async function trending(env: Env): Promise<TrendingLists> {
+  const cached = await env.DB.prepare("SELECT body, fetched_at FROM chart WHERE source = 'trending' AND key = ''").first<{ body: string; fetched_at: number }>();
+  const now = Date.now();
+  if (cached && now - cached.fetched_at <= TRENDING_FRESH_FOR) return JSON.parse(cached.body);
+  try {
+    const [all, movies, shows] = await Promise.all([fetchTrending(env, "all", TRENDING_PAGES), fetchTrending(env, "movie", TRENDING_PAGES), fetchTrending(env, "show", TRENDING_PAGES)]);
+    const fresh: TrendingLists = { all, movies, shows };
+    await env.DB.prepare("INSERT OR REPLACE INTO chart (source, key, body, fetched_at) VALUES ('trending', '', ?1, ?2)").bind(JSON.stringify(fresh), now).run();
+    return fresh;
+  } catch (e) {
+    if (!(e instanceof TmdbUnavailable)) throw e;
+    console.warn(`TMDB's trending couldn't be fetched: ${e.message}`);
+    return cached ? JSON.parse(cached.body) : { all: [], movies: [], shows: [] };
+  }
 }
 
 /**

@@ -782,7 +782,7 @@ class Library private constructor(
     /**
      * The home screen's rows: Continue watching, then the Charts for the Viewer's [region] (Top
      * movies, Top shows), then New on your service (Titles among the most recently added, most
-     * popular on TMDB first), then the Viewer's Favourites (in the order they were added; finished
+     * popular on TMDB first), then TMDB's trending this week, then the Viewer's Favourites (in the order they were added; finished
      * Event channels left out), then one row per TMDB genre, its most common first. Browse rows and
      * Charts show only Titles with a Version in the Viewer's [contentLanguages], or an Untagged one
      * Likely in one; a Chart also only the Titles the Provider has, and none at all under
@@ -807,7 +807,8 @@ class Library private constructor(
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
         val charts = charts(region, appLanguage, now)
         val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
-        val metadata = metadata((resumes.map { it.first } + movies + shows + tops.flatMap { it.second }).map { it.id }.distinct(), appLanguage)
+        val trends = charts.trendingAll.mapNotNull(store::title)
+        val metadata = metadata((resumes.map { it.first } + movies + shows + tops.flatMap { it.second } + trends).map { it.id }.distinct(), appLanguage)
         fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
             val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
             val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
@@ -826,6 +827,8 @@ class Library private constructor(
             list to screen.chart(titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }, MIN_CHART_SIZE)
         }
         val new = screen.row(newest, ROW_SIZE)
+        // Trending sits below New, so it skips what New shows.
+        val trending = screen.row(trends.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }, ROW_SIZE, MIN_CHART_SIZE)
         val genres = buildList {
             for ((name, titles) in byGenre.entries.sortedByDescending { it.value.size }) {
                 if (size == GENRE_ROWS) break
@@ -853,6 +856,7 @@ class Library private constructor(
             }
             charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
+            if (trending.isNotEmpty()) add(HomeRow.Chart(ChartList.Trending, null, trending.map { card(it) }))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
         }

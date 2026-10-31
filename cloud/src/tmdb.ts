@@ -136,6 +136,25 @@ export async function searchAll(env: Env, query: string): Promise<MultiFound> {
   return found;
 }
 
+/**
+ * TMDB's weekly trending list of [kind] (`all` mixes movies and shows), its first [pages] pages of
+ * 20, in order. People TMDB lists among them are left out.
+ */
+export async function fetchTrending(env: Env, kind: "all" | Kind, pages: number): Promise<TitleKey[]> {
+  const titles: TitleKey[] = [];
+  for (let page = 1; page <= pages; page++) {
+    const response = await get(env, `trending/${kind === "all" ? "all" : tmdbPath(kind)}/week`, { language: "en", page: String(page) });
+    if (response === NOT_FOUND) break;
+    const { results, total_pages } = (await response.json()) as { results?: TmdbMultiResult[]; total_pages?: number };
+    for (const r of results ?? []) {
+      const type = kind === "all" ? r.media_type : tmdbPath(kind);
+      if (type === "movie" || type === "tv") titles.push({ kind: type === "movie" ? "movie" : "show", tmdbId: r.id });
+    }
+    if (page >= (total_pages ?? 1)) break;
+  }
+  return titles;
+}
+
 /** The Titles [personId] acted in or directed, by TMDB's combined credits; NOT_FOUND when TMDB has no such person. */
 export async function credits(env: Env, personId: number): Promise<TitleKey[] | typeof NOT_FOUND> {
   const response = await get(env, `person/${personId}/combined_credits`, { language: "en" });

@@ -208,22 +208,27 @@ class HomeRowsTest {
 
     // Charts
 
-    @Test fun `Home's rows go Continue watching, Top movies, Top shows, New on your service, Favourites, then genres`() = runBlocking {
+    @Test fun `Home's rows go Continue watching, Top movies, Top shows, New, Trending, Favourites, then genres`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
         serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
-        syncMovies(*(newest() + (1L..5L).map { "EN - Film $it (2025)" to it }).toTypedArray())
-        (1L..5L).forEach { tmdb(it, "Film $it", genres = listOf("Drama")) }
+        syncMovies(*(newest() + (1L..8L).map { "EN - Film $it (2025)" to it }).toTypedArray())
+        (1L..8L).forEach { tmdb(it, "Film $it", genres = listOf("Drama")) }
         cloud.charts("CA", movies = listOf(1001, 1002, 1003), shows = listOf(501, 502, 503))
+        cloud.trending(movie(6), movie(7), movie(8))
         library.setFavourite(library.search("ESPN", english, "en").last().channels.single().id, true)
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
 
         val rows = rows()
         assertEquals(
-            listOf("continue", "top movies", "top shows", "new", "favourites", "genre"),
+            listOf("continue", "top movies", "top shows", "new", "trending", "favourites", "genre"),
             rows.map {
                 when (it) {
                     is HomeRow.ContinueWatching -> "continue"
-                    is HomeRow.Chart -> if (it.list == ChartList.TopMovies) "top movies" else "top shows"
+                    is HomeRow.Chart -> when (it.list) {
+                        ChartList.TopMovies -> "top movies"
+                        ChartList.TopShows -> "top shows"
+                        ChartList.Trending -> "trending"
+                    }
                     is HomeRow.NewOnYourService -> "new"
                     is HomeRow.Favourites -> "favourites"
                     is HomeRow.Genre -> "genre"
@@ -307,5 +312,26 @@ class HomeRowsTest {
         val rows = rows()
         assertTrue(rows.none { it is HomeRow.Chart })
         assertEquals(setOf("First", "Second", "Third"), rows.new().toSet())
+    }
+
+    @Test fun `Trending this week mixes movies and shows the Provider has in a Content language, skipping what's shown above`() = runBlocking {
+        serveShows("EN - Show 1 (2025)" to 501, "FR - Série (2025)" to 502)
+        syncMovies(*(newest() + (1L..4L).map { "EN - Film $it (2025)" to it }).toTypedArray())
+        tmdb(1, "Film 1")
+        cloud.title("en", tmdbTitle(502, "Série", kind = "show", originalLanguage = "fr"))
+        cloud.charts("CA", movies = listOf(2, 3, 4))
+        // New 1 shows in New on your service, Film 2 in Top movies; 99 isn't on the Provider; the Série isn't in English.
+        cloud.trending(movie(1), TitleId.Tmdb(TitleKind.Show, 501), movie(1001), movie(2), movie(99), TitleId.Tmdb(TitleKind.Show, 502), movie(1040))
+
+        val rows = rows()
+        assertEquals(listOf("Film 1", "Show 1"), rows.topNames(ChartList.Trending)?.take(2))
+        assertTrue(rows.top(ChartList.Trending)!!.titles.none { it.name in setOf("New 1", "Film 2", "Série") })
+    }
+
+    @Test fun `Trending with fewer than 3 cards left is left out`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2)
+        cloud.trending(movie(1), movie(2))
+
+        assertEquals(null, rows().top(ChartList.Trending))
     }
 }
