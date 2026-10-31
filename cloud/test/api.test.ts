@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { FakeNetflix } from "./fake-netflix";
@@ -8,7 +8,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -322,7 +322,7 @@ describe("Charts", () => {
   let netflix: FakeNetflix;
   beforeEach(() => {
     netflix = new FakeNetflix(tmdb);
-    // Argentina and Canada, newest week first; a Region's block ends where the next country's starts.
+    // Argentina, Canada and France, newest week first; a Region's block ends where the next country's starts.
     netflix.country("Argentina", "AR", { week: "2026-10-18", films: ["Acid"], tv: ["The Trap"] });
     netflix.country(
       "Canada",
@@ -330,8 +330,15 @@ describe("Charts", () => {
       { week: "2026-10-18", films: ["Animals", "The Godfather", "Nobody Has This"], tv: [["Below", "Below: Limited Series"], ["Breaking Bad", "Breaking Bad: Season 5"]] },
       { week: "2026-10-11", films: ["Old News"], tv: ["Older News"] },
     );
+    netflix.country("France", "FR", { week: "2026-10-18", films: ["The Godfather"], tv: ["Breaking Bad"] });
     // Countries are listed by name, so many come after Canada.
     for (let i = 0; i < 40; i++) netflix.country(`Zland ${i}`, `Z${String.fromCharCode(65 + (i % 26))}`, { week: "2026-10-18", films: Array.from({ length: 10 }, (_, n) => `Film ${n}`), tv: [] });
+    netflix.worldwide("2026-10-18", "Films (English)", "Animals", 30_800_000);
+    netflix.worldwide("2026-10-18", "Films (English)", "The Godfather", 2_000_000);
+    netflix.worldwide("2026-10-18", "Films (Non-English)", "Acid", 3_000_000);
+    netflix.worldwide("2026-10-18", "TV (English)", "Breaking Bad", 1_000_000);
+    netflix.worldwide("2026-10-18", "TV (Non-English)", "Below", 7_100_000);
+    netflix.worldwide("2026-10-11", "Films (English)", "Old News", 90_000_000);
     tmdb.searchableMovie(() => ({ id: 1001, title: "Animals", original_title: "Animals", popularity: 80 }));
     // The less popular film of the same name loses.
     tmdb.searchableMovie(() => ({ id: 1002, title: "Animals", original_title: "Animals", popularity: 3 }));
@@ -352,10 +359,24 @@ describe("Charts", () => {
       genres: { kind: string; name: string; tmdbIds: number[] }[];
     };
   };
+  /** Every fetch the Worker sent out, to TMDB, Netflix or anyone. */
+  const sentOut = () => vi.mocked(globalThis.fetch).mock.calls.length;
+  /** One run of the Cron Trigger, as Cloudflare starts it each minute. */
+  const run = () => worker.scheduled(createScheduledController({ cron: "* * * * *", scheduledTime: Date.now() }), env);
+  /** The Cron Trigger's next [runs] runs, all at the same moment. */
+  const fill = async (runs = 10) => {
+    for (let i = 0; i < runs; i++) await run();
+  };
+  /** Asks for the Charts, lets the Cron Trigger fill what that asked for, and asks again. */
+  const filled = async (token: string, region = "CA", language = "en") => {
+    await charts(token, region, language);
+    await fill();
+    return charts(token, region, language);
+  };
   const ids = (titles: { tmdbId: number }[]) => titles.map((t) => t.tmdbId);
 
   it("answers the Region's newest Top 10 as TMDB IDs in rank order, names TMDB can't find left out", async () => {
-    const { top } = await charts(await registerDevice());
+    const { top } = await filled(await registerDevice());
 
     expect(top.worldwide).toBe(false);
     expect(top.movies).toEqual([{ kind: "movie", tmdbId: 1001 }, { kind: "movie", tmdbId: 238 }]);
@@ -364,43 +385,99 @@ describe("Charts", () => {
     expect(tmdb.searches.map((url) => url.searchParams.get("query"))).toContain("Below");
   });
 
-  it("stops reading Netflix's country file after the Region's newest week", async () => {
-    await charts(await registerDevice());
+  it("never reaches TMDB or Netflix while answering, only the Cron Trigger does", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    const token = await registerDevice();
+    const before = sentOut();
+    // Nothing kept yet: the answer has empty lists rather than reading the sources itself.
+    expect(await charts(token)).toEqual({ top: { worldwide: false, movies: [], shows: [] }, trending: { all: [], movies: [], shows: [] }, genres: [] });
+    expect(sentOut()).toBe(before);
 
+    await fill();
+    expect(sentOut()).toBeGreaterThan(before);
+    // Everything kept is over a week old: still only D1 is read.
+    vi.setSystemTime(new Date("2026-10-30T08:00:00Z"));
+    const after = sentOut();
+    expect(ids((await charts(token)).top.movies)).toEqual([1001, 238]);
+    expect(ids((await charts(token, "AR", "fr")).top.movies)).toEqual([1001, 1003, 238]);
+    expect(sentOut()).toBe(after);
+  });
+
+  it("reads Netflix's country file once a day for every Region it lists", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+    const token = await registerDevice();
+    await filled(token, "CA");
     expect(netflix.asked.countries).toBe(1);
-    expect(netflix.sent.countries).toBeLessThan(netflix.countriesSize / 4);
+    expect(netflix.sent.countries).toBe(netflix.countriesSize);
+
+    // Argentina was never asked for, but was read with Canada: only its names are looked up.
+    vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
+    const { top } = await filled(token, "AR");
+    expect(top).toEqual({ worldwide: false, movies: [{ kind: "movie", tmdbId: 1003 }], shows: [] });
+    expect(netflix.asked.countries).toBe(1);
+  });
+
+  it("reads a country file of megabytes, a country's weeks running over many reads", async () => {
+    // Like Netflix's file, which has every week since 2021: 32 MB.
+    const old = Array.from({ length: 30_000 }, (_, i) => ({ week: `2021-${i}`, films: ["Old News"], tv: ["Older News"] }));
+    netflix.country("Argentina", "AR", { week: "2026-10-18", films: ["Acid"], tv: ["The Trap"] }, ...old);
+    netflix.country("Belgium", "BE", { week: "2026-10-18", films: ["Animals"], tv: [] }, ...old);
+    expect(netflix.countriesSize).toBeGreaterThan(4_000_000);
+    const token = await registerDevice();
+
+    expect(ids((await filled(token, "AR")).top.movies)).toEqual([1003]);
+    expect(ids((await filled(token, "BE")).top.movies)).toEqual([1001]);
+    expect(ids((await filled(token, "CA")).top.movies)).toEqual([1001, 238]);
+    expect(ids((await filled(token, "FR")).top.shows)).toEqual([1396]);
+    expect(netflix.asked.countries).toBe(1);
   });
 
   it("answers the worldwide lists for a Region Netflix doesn't list, English and non-English merged by views", async () => {
-    netflix.worldwide("2026-10-18", "Films (English)", "Animals", 30_800_000);
-    netflix.worldwide("2026-10-18", "Films (English)", "The Godfather", 2_000_000);
-    netflix.worldwide("2026-10-18", "Films (Non-English)", "Acid", 3_000_000);
-    netflix.worldwide("2026-10-18", "TV (English)", "Breaking Bad", 1_000_000);
-    netflix.worldwide("2026-10-18", "TV (Non-English)", "Below", 7_100_000);
-    netflix.worldwide("2026-10-11", "Films (English)", "Old News", 90_000_000);
-
-    const { top } = await charts(await registerDevice(), "JP");
+    const { top } = await filled(await registerDevice(), "JP");
 
     expect(top.worldwide).toBe(true);
     expect(ids(top.movies)).toEqual([1001, 1003, 238]);
     expect(ids(top.shows)).toEqual([2001, 1396]);
   });
 
-  it("keeps an answer a day, then reads Netflix again, looking up only the names it hasn't before", async () => {
+  it("fills a Region and an App language asked for the first time in the Cron Trigger's next runs, answering what it keeps till then", async () => {
+    tmdb.genres("movie", "en", { id: 35, name: "Comedy" });
+    tmdb.genres("movie", "fr", { id: 35, name: "Comédie" });
+    tmdb.discover("movie", 35, 7, 3);
+    const token = await registerDevice();
+    await filled(token, "CA", "en");
+
+    // France and French are new: the worldwide Top 10 and the genres named in English stand in.
+    const first = await charts(token, "FR", "fr");
+    expect(first.top.worldwide).toBe(true);
+    expect(ids(first.top.movies)).toEqual([1001, 1003, 238]);
+    expect(first.genres).toEqual([{ kind: "movie", name: "Comedy", tmdbIds: [7, 3] }]);
+
+    await run();
+    await run();
+    const next = await charts(token, "FR", "fr");
+    expect(next.top).toEqual({ worldwide: false, movies: [{ kind: "movie", tmdbId: 238 }], shows: [{ kind: "show", tmdbId: 1396 }] });
+    expect(next.genres).toEqual([{ kind: "movie", name: "Comédie", tmdbIds: [7, 3] }]);
+  });
+
+  it("reads Netflix again after a day, looking up only the names it hasn't before", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
     const token = await registerDevice();
-    await charts(token);
+    await filled(token);
     vi.setSystemTime(new Date("2026-10-21T07:00:00Z"));
-    await charts(token, "CA", "fr");
+    await filled(token, "CA", "fr");
     expect(netflix.asked.countries).toBe(1);
 
     const searches = tmdb.searches.length;
-    netflix.country("Canada", "CA", { week: "2026-10-25", films: ["Acid", "Animals", "The Godfather"], tv: [] });
+    tmdb.searchableMovie(() => ({ id: 1004, title: "Sinners", original_title: "Sinners", popularity: 60 }));
+    netflix.country("Canada", "CA", { week: "2026-10-25", films: ["Sinners", "Animals", "The Godfather"], tv: [] });
     vi.setSystemTime(new Date("2026-10-21T09:00:00Z"));
-    const { top } = await charts(token);
+    const { top } = await filled(token);
     expect(netflix.asked.countries).toBe(2);
-    expect(ids(top.movies)).toEqual([1003, 1001, 238]);
+    expect(ids(top.movies)).toEqual([1004, 1001, 238]);
     expect(tmdb.searches.length - searches).toBe(1);
   });
 
@@ -408,20 +485,26 @@ describe("Charts", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
     const token = await registerDevice();
-    await charts(token);
+    await filled(token);
     vi.setSystemTime(new Date("2026-10-22T08:00:00Z"));
     netflix.failWith = 503;
+    await fill();
 
     expect(ids((await charts(token)).top.movies)).toEqual([1001, 238]);
-    expect((await charts(token, "AR")).top).toEqual({ worldwide: false, movies: [], shows: [] });
+    await env.DB.prepare("DELETE FROM chart WHERE source LIKE 'netflix%'").run();
+    vi.setSystemTime(new Date("2026-10-22T09:00:00Z"));
+    expect((await filled(token, "AR")).top).toEqual({ worldwide: false, movies: [], shows: [] });
   });
 
-  it("serves the last answer while TMDB can't look names up", async () => {
+  it("serves the last answer while TMDB can't look names up, and tries again a while later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
     const token = await registerDevice();
     tmdb.failWith = 503;
-    expect((await charts(token)).top.movies).toEqual([]);
+    expect((await filled(token)).top.movies).toEqual([]);
     tmdb.failWith = null;
-    expect(ids((await charts(token)).top.movies)).toEqual([1001, 238]);
+    vi.setSystemTime(new Date("2026-10-20T08:20:00Z"));
+    expect(ids((await filled(token)).top.movies)).toEqual([1001, 238]);
   });
 
   describe("TMDB trending", () => {
@@ -436,7 +519,7 @@ describe("Charts", () => {
     });
 
     it("answers this week's lists, mixed, movies and shows, as TMDB Titles in order", async () => {
-      const { trending } = await charts(await registerDevice());
+      const { trending } = await filled(await registerDevice());
 
       expect(trending.all.slice(0, 3)).toEqual([{ kind: "movie", tmdbId: 1 }, { kind: "show", tmdbId: 2 }, { kind: "movie", tmdbId: 100 }]);
       expect(trending.all).toHaveLength(24);
@@ -449,22 +532,22 @@ describe("Charts", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
       const token = await registerDevice();
-      await charts(token);
+      await filled(token);
       const asked = () => tmdb.requests.filter((url) => url.pathname.includes("/trending/")).length;
       const first = asked();
       vi.setSystemTime(new Date("2026-10-26T08:00:00Z"));
-      await charts(token, "AR");
+      await filled(token, "AR");
       expect(asked()).toBe(first);
 
       vi.setSystemTime(new Date("2026-10-28T08:00:00Z"));
       tmdb.failWhen = (url) => url.pathname.includes("/trending/");
-      expect((await charts(token)).trending.movies).toHaveLength(2);
+      expect((await filled(token)).trending.movies).toHaveLength(2);
       expect(asked()).toBeGreaterThan(first);
     });
 
     it("has empty lists while TMDB is down and it never had them, and the Top 10 still answers", async () => {
       tmdb.failWhen = (url) => url.pathname.includes("/trending/");
-      const answer = await charts(await registerDevice());
+      const answer = await filled(await registerDevice());
       expect(answer.trending).toEqual({ all: [], movies: [], shows: [] });
       expect(answer.top.movies).toHaveLength(2);
     });
@@ -473,8 +556,6 @@ describe("Charts", () => {
   describe("TMDB Discover's genre lists", () => {
     const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i);
     const discoveries = (genre?: number) => tmdb.discoveries.filter((url) => genre === undefined || url.searchParams.get("with_genres") === String(genre));
-    /** Every fetch the Worker sent out, to TMDB, Netflix or anyone. */
-    const sentOut = () => vi.mocked(globalThis.fetch).mock.calls.length;
 
     beforeEach(() => {
       tmdb.genres("movie", "en", { id: 28, name: "Action" }, { id: 35, name: "Comedy" });
@@ -487,7 +568,7 @@ describe("Charts", () => {
     });
 
     it("answers each genre's most popular movies and shows, in TMDB's order, named in the App language", async () => {
-      const { genres } = await charts(await registerDevice(), "CA", "fr");
+      const { genres } = await filled(await registerDevice(), "CA", "fr");
 
       expect(genres).toEqual([
         { kind: "movie", name: "Action", tmdbIds: [5, 3, 9] },
@@ -500,13 +581,13 @@ describe("Charts", () => {
     it("reads 15 pages of 20 of a genre: 300 Titles", async () => {
       tmdb.discover("movie", 28, ...range(1, 400));
 
-      const { genres } = await charts(await registerDevice());
+      const { genres } = await filled(await registerDevice());
 
       expect(genres.find((g) => g.name === "Action")!.tmdbIds).toEqual(range(1, 300));
       expect(discoveries(28).map((url) => Number(url.searchParams.get("page"))).sort((a, b) => a - b)).toEqual(range(1, 15));
     });
 
-    it("never sends more than 40 requests out for one answer, filling in every genre over the next answers", async () => {
+    it("never sends more than 40 requests out in one run, filling in every genre over the next runs", async () => {
       const movieGenres = range(1, 19).map((id) => ({ id, name: `Movie genre ${id}` }));
       const showGenres = range(101, 16).map((id) => ({ id, name: `Show genre ${id}` }));
       tmdb.genres("movie", "en", ...movieGenres);
@@ -514,47 +595,73 @@ describe("Charts", () => {
       movieGenres.forEach((g) => tmdb.discover("movie", g.id, ...range(g.id * 1000, 400)));
       showGenres.forEach((g) => tmdb.discover("tv", g.id, ...range(g.id * 1000, 400)));
       const token = await registerDevice();
+      await charts(token);
 
-      let answers = 0;
+      let runs = 0;
       let genres: { tmdbIds: number[] }[] = [];
-      while (answers < 25 && (genres.length === 0 || genres.some((g) => g.tmdbIds.length < 300))) {
+      while (runs < 30 && (genres.length === 0 || genres.some((g) => g.tmdbIds.length < 300))) {
         const before = sentOut();
-        genres = (await charts(token)).genres;
+        await run();
         expect(sentOut() - before).toBeLessThanOrEqual(40);
-        // Every genre is listed from the first answer on; those not read yet are empty.
-        expect(genres).toHaveLength(35);
-        answers++;
+        runs++;
+        genres = (await charts(token)).genres;
       }
+      // Every genre is listed once its names are read; those not read yet are empty.
+      expect(genres).toHaveLength(35);
       expect(genres.every((g) => g.tmdbIds.length === 300)).toBe(true);
-      expect(answers).toBeLessThanOrEqual(19);
+      // Two lists a run, after the runs for names, trending and Netflix.
+      expect(runs).toBeLessThanOrEqual(24);
+    });
+
+    it("saves each list as soon as it is read: a run stopped short keeps what it read, and the list it stopped on steps aside a while", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+      tmdb.breakWhen = (url) => url.pathname === "/3/discover/movie" && url.searchParams.get("with_genres") === "35";
+      const token = await registerDevice();
+      await charts(token);
+
+      // Runs until one is stopped on Comedy, as Cloudflare stops a run that runs out of CPU.
+      let stopped = 0;
+      for (let i = 0; i < 10 && stopped === 0; i++) await run().catch(() => stopped++);
+      expect(stopped).toBe(1);
+      expect((await charts(token)).genres.map((g) => g.tmdbIds)).toEqual([[5, 3, 9], [], []]);
+
+      // The next runs read the rest, leaving Comedy till it's been a while.
+      await fill();
+      expect((await charts(token)).genres.map((g) => g.tmdbIds)).toEqual([[5, 3, 9], [], [1396, 2001]]);
+      tmdb.breakWhen = null;
+      vi.setSystemTime(new Date("2026-10-20T08:20:00Z"));
+      await fill();
+      expect((await charts(token)).genres.map((g) => g.tmdbIds)).toEqual([[5, 3, 9], [7, 3], [1396, 2001]]);
     });
 
     it("keeps each list a week, then reads it again, serving the old one while TMDB can't answer", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
       const token = await registerDevice();
-      await charts(token);
+      await filled(token);
       const first = discoveries().length;
       vi.setSystemTime(new Date("2026-10-26T08:00:00Z"));
-      await charts(token, "AR");
+      await filled(token, "AR");
       expect(discoveries()).toHaveLength(first);
 
       vi.setSystemTime(new Date("2026-10-28T08:00:00Z"));
       tmdb.discover("movie", 28, 9, 5);
       tmdb.failWhen = (url) => url.pathname.startsWith("/3/discover/");
-      expect((await charts(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([5, 3, 9]);
+      expect((await filled(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([5, 3, 9]);
       expect(discoveries().length).toBeGreaterThan(first);
 
       tmdb.failWhen = null;
-      expect((await charts(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([9, 5]);
+      vi.setSystemTime(new Date("2026-10-28T08:20:00Z"));
+      expect((await filled(token)).genres.find((g) => g.name === "Action")!.tmdbIds).toEqual([9, 5]);
     });
 
     it("reads a list once for every App language, asking only for the genres' names again", async () => {
       const token = await registerDevice();
-      await charts(token, "CA", "en");
+      await filled(token, "CA", "en");
       const read = discoveries().length;
 
-      const { genres } = await charts(token, "CA", "fr");
+      const { genres } = await filled(token, "CA", "fr");
 
       expect(genres.map((g) => g.name)).toEqual(["Action", "Comédie", "Drame"]);
       expect(discoveries()).toHaveLength(read);
@@ -564,13 +671,14 @@ describe("Charts", () => {
     it("has empty lists while TMDB is down and it never had them, and the Top 10 still answers", async () => {
       tmdb.failWhen = (url) => url.pathname.startsWith("/3/discover/");
       const token = await registerDevice();
-      const answer = await charts(token);
+      const answer = await filled(token);
       expect(answer.genres.map((g) => g.tmdbIds)).toEqual([[], [], []]);
       expect(answer.top.movies).toHaveLength(2);
+    });
 
-      // Without the genres' names, there are no genres to list.
+    it("has no genres while it never had their names in the App language or English", async () => {
       tmdb.failWhen = (url) => url.pathname.startsWith("/3/genre/");
-      expect((await charts(token, "CA", "fr")).genres).toEqual([]);
+      expect((await filled(await registerDevice(), "CA", "fr")).genres).toEqual([]);
     });
   });
 
@@ -578,7 +686,7 @@ describe("Charts", () => {
     const token = await registerDevice();
     expect((await call("POST", "/v1/charts", { region: "Canada", language: "en" }, token)).status).toBe(400);
     expect((await call("POST", "/v1/charts", { region: "CA", language: "eng" }, token)).status).toBe(400);
-    expect(netflix.asked.countries).toBe(0);
+    expect(await env.DB.prepare("SELECT * FROM chart_wanted").all()).toMatchObject({ results: [] });
   });
 });
 
