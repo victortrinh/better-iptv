@@ -4,10 +4,11 @@ package dev.betteriptv.app
  * How a Home rail of [cards] loops, like Netflix's: Right on its last card goes on to the first, and
  * Left on the first back to the last. The rail lays its cards out again and again, [COPIES] times,
  * and opens in the middle, so the Viewer never reaches an end. A rail with no more cards than the
- * screen shows at once ([seen]) doesn't loop: the same card would show twice while it slides.
+ * screen shows at once ([seen]) doesn't loop: the same card would show twice while it slides. A
+ * [ranked] rail (a Top 10) never loops: a ranked list has a start and an end.
  */
-class RailLoop(val cards: Int, seen: Int) {
-    val loops = cards > seen
+class RailLoop(val cards: Int, seen: Int, ranked: Boolean = false) {
+    val loops = !ranked && cards > seen
 
     /** How many places the rail has. */
     val count = if (loops) cards * COPIES else cards
