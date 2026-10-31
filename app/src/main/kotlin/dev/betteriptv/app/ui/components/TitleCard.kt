@@ -30,11 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.FocusScale
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 
 /**
- * One Title: its poster, or a landscape still when [wide] (Continue watching). Its name and badges
+ * One Title: its poster, or a landscape still as tall as a poster when [wide] (Continue watching). Its name and badges
  * (best quality and languages) appear under it while it has focus, so the artwork leads; not when
  * [named] is false (Home, where [RailInfo] tells them).
  * Without an [image], the card is glass with the name on it. [progress] draws how far the Viewer got.
@@ -59,13 +60,14 @@ fun TitleCard(
     // The bottom padding is the name area, reserved so rows don't jump when focus moves.
     Box(
         modifier
-            .width(if (wide) Cards.wideWidth else Cards.posterWidth)
+            .width(if (wide) Cards.continueWidth else Cards.posterWidth)
             .then(if (named) Modifier.padding(bottom = NAME_AREA_TOP + NAME_AREA) else Modifier),
     ) {
         FocusSurface(
             onClick,
             Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 2f / 3f).then(if (named) Modifier.onFocusChanged { focused = it.isFocused } else Modifier),
             container = Colors.surface,
+            cardScale = if (wide) FocusScale.wideCard else FocusScale.card,
             onFocus = onFocus,
         ) { hasFocus ->
             if (image != null) {
@@ -83,8 +85,8 @@ fun TitleCard(
             }
             if (art != null) art()
             if (progress != null) {
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Colors.ground.copy(alpha = 0.6f)))
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(Colors.ink))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(PROGRESS).background(Colors.ground.copy(alpha = 0.6f)))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(PROGRESS).background(Colors.ink))
             }
         }
         if (focused && named) {
@@ -100,3 +102,5 @@ fun TitleCard(
 
 private val NAME_AREA_TOP = 12.dp
 private val NAME_AREA = 44.dp
+/** As thick as the player's scrubber, on a still as tall as a poster. */
+private val PROGRESS = 6.dp

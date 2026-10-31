@@ -44,6 +44,8 @@ fun FocusSurface(
     modifier: Modifier = Modifier,
     weight: FocusWeight = FocusWeight.Card,
     corner: Dp = if (weight == FocusWeight.Card) Corners.card else Corners.control,
+    /** How much a [FocusWeight.Card] grows: less for a wide one. */
+    cardScale: Float = FocusScale.card,
     container: Color = Color.Transparent,
     focusedContainer: Color = container,
     onFocus: () -> Unit = {},
@@ -55,7 +57,7 @@ fun FocusSurface(
     var focused by remember { mutableStateOf(false) }
     val target = when {
         !focused -> 1f
-        weight == FocusWeight.Card -> FocusScale.card
+        weight == FocusWeight.Card -> cardScale
         weight == FocusWeight.Control -> FocusScale.control
         else -> 1f
     }

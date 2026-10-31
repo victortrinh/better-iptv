@@ -47,6 +47,6 @@ private val scrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f),
 private const val SCRIM_HEIGHT = 0.45f
 private const val LOGO_WIDTH = 0.8f
 private const val LOGO_HEIGHT = 0.25f
-// A still is short: its logo may take more of its height, less of its width, as Netflix's do.
-private const val WIDE_LOGO_WIDTH = 0.5f
-private const val WIDE_LOGO_HEIGHT = 0.4f
+// A still is wide: its logo takes less of its width, and about a poster's logo's height, as Netflix's do.
+private const val WIDE_LOGO_WIDTH = 0.4f
+private const val WIDE_LOGO_HEIGHT = 0.3f
