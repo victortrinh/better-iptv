@@ -63,38 +63,60 @@ data class Person(val name: String, val titles: List<TitleSummary>)
  * reduced to words without accents or case, and each distinct word is kept once with the Titles
  * (or people) that have it, so a query only scans the vocabulary, not the catalog. A Listing name
  * is also kept with its year, so "chase 1966" tells The Chase (1966) from The Chase (1994).
+ *
+ * All of it is kept in a few large primitive arrays rather than millions of objects, so holding it
+ * costs the garbage collector next to nothing (#63).
  */
 internal class SearchIndex private constructor(
-    val titles: List<Entry>,
-    private val titleWords: Map<String, IntArray>,
-    val people: List<String>,
-    /** Each person's Titles, as indexes into [titles]. */
-    val personTitles: List<IntArray>,
-    private val personWords: Map<String, IntArray>,
+    /** Each Title's [TitleId], as [key] makes it. */
+    private val titleKeys: LongArray,
+    private val titleLanguages: IntArray,
+    private val titlePopularity: DoubleArray,
+    /** The distinct sets of primary languages Titles have, which [titleLanguages] points into. */
+    private val languageSets: List<Set<String>>,
+    private val positions: LongIntMap,
+    private val titleWords: WordPostings,
+    private val people: StringTable,
+    /** Each person's Titles, as positions. */
+    private val personTitles: PackedPostings,
+    private val personWords: WordPostings,
     /** The Channels' Provider stream ids, in the Provider's order. */
-    val channels: LongArray = LongArray(0),
-    private val channelWords: Map<String, IntArray> = emptyMap(),
+    val channels: LongArray,
+    private val channelWords: WordPostings,
     /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
-    private val titleNames: LongArray = LongArray(0),
+    private val titleNames: LongArray,
     /** TMDB's genres of the Titles with metadata. */
-    val genres: List<String> = emptyList(),
-    /** Each genre's Titles, as indexes into [titles]. */
-    val genreTitles: List<IntArray> = emptyList(),
-    private val genreWords: Map<String, IntArray> = emptyMap(),
+    val genres: List<String>,
+    /** Each genre's Titles, as positions. */
+    val genreTitles: List<IntArray>,
+    private val genreWords: WordPostings,
 ) {
-    /** One Title: its primary languages of Versions, so Content languages can lead, and TMDB's popularity. */
-    class Entry(val id: TitleId, val languages: Set<String>, val popularity: Double)
-
     /**
      * A match and how close it was: [WHOLE_WORD], [STARTED_WORD] or a tolerated typo after them. A
      * Title matches by its [WHOLE_NAME] first, and its words a step after.
      */
     class Hit(val index: Int, val distance: Int)
 
-    private val positions: Map<TitleId, Int> = titles.withIndex().associate { (index, entry) -> entry.id to index }
+    /** How many Titles there are; a Title's position is from 0 to this. */
+    val titleCount: Int get() = titleKeys.size
 
-    /** Where [id] is in [titles], or null when the catalog has no such Title. */
-    fun position(id: TitleId): Int? = positions[id]
+    fun titleId(position: Int): TitleId = id(titleKeys[position])
+
+    /** The primary languages of the Title's Versions, so Content languages can lead. */
+    fun languages(position: Int): Set<String> = languageSets[titleLanguages[position]]
+
+    /** TMDB's popularity of the Title, 0 without metadata. */
+    fun popularity(position: Int): Double = titlePopularity[position]
+
+    val peopleCount: Int get() = people.size
+
+    fun person(index: Int): String = people[index]
+
+    /** The person's Titles, as positions. */
+    fun personTitles(index: Int): IntArray = personTitles[index]
+
+    /** Where [id] is among the Titles, or null when the catalog has no such Title. */
+    fun position(id: TitleId): Int? = positions[key(id)].takeIf { it >= 0 }
 
     /** Titles with a word matching every word of [query], those with a name of just those words first (#137). */
     fun findTitles(query: String): List<Hit> {
@@ -114,14 +136,19 @@ internal class SearchIndex private constructor(
     fun findChannels(query: String): List<Hit> = find(query, channelWords)
 
     /** The entries that have a word matching every word of [query]; the worst word's distance counts. */
-    private fun find(query: String, words: Map<String, IntArray>): List<Hit> {
+    private fun find(query: String, words: WordPostings): List<Hit> {
         val wanted = words(query).ifEmpty { return emptyList() }
+        val known = words.words.view()
+        val entries = words.entries
         var found: HashMap<Int, Int>? = null
         for (word in wanted) {
             val forWord = HashMap<Int, Int>()
-            for ((known, entries) in words) {
-                val distance = distance(word, known) ?: continue
-                for (entry in entries) if (distance < (forWord[entry] ?: Int.MAX_VALUE)) forWord[entry] = distance
+            for (number in 0 until words.words.size) {
+                val distance = distance(word, known.of(number)) ?: continue
+                for (at in entries.start(number) until entries.end(number)) {
+                    val entry = entries.value(at)
+                    if (distance < (forWord[entry] ?: Int.MAX_VALUE)) forWord[entry] = distance
+                }
             }
             found = found?.let { before ->
                 HashMap<Int, Int>().apply { before.forEach { (entry, d) -> forWord[entry]?.let { put(entry, maxOf(d, it)) } } }
@@ -133,26 +160,35 @@ internal class SearchIndex private constructor(
 
     /** Takes the catalog's Titles, then the metadata cached for them, and the Channels, in any order. */
     class Builder {
-        private val titles = mutableListOf<Entry>()
-        private val positions = HashMap<TitleId, Int>()
-        private val titleWords = HashMap<String, Postings>()
-        private val people = mutableListOf<String>()
-        private val personTitles = mutableListOf<Postings>()
-        private val personWords = HashMap<String, Postings>()
-        private val personIndex = HashMap<String, Int>()
+        private var titleKeys = LongArray(1 shl 10)
+        private var titleLanguages = IntArray(1 shl 10)
+        private var titlePopularity = DoubleArray(1 shl 10)
+        private var titles = 0
+        private val languageSets = mutableListOf<Set<String>>()
+        private val languageSetIndex = HashMap<Set<String>, Int>()
+        private val positions = LongIntMap()
+        private val titleWords = WordPostings.Builder()
+        private val people = StringTable()
+        private val personTitles = PostingsBuilder()
+        private val personWords = WordPostings.Builder()
         private val channels = Postings64()
-        private val channelWords = HashMap<String, Postings>()
+        private val channelWords = WordPostings.Builder()
         private val titleNames = Postings64()
-        private val genres = mutableListOf<String>()
-        private val genreTitles = mutableListOf<Postings>()
-        private val genreWords = HashMap<String, Postings>()
-        private val genreIndex = HashMap<String, Int>()
+        private val genres = StringTable()
+        private val genreTitles = PostingsBuilder()
+        private val genreWords = WordPostings.Builder()
 
         /** Adds a Title found by [names], with Versions in [languages]. */
         fun title(id: TitleId, names: Collection<String>, languages: Set<String>) {
-            val index = titles.size
-            titles += Entry(id, languages, 0.0)
-            positions[id] = index
+            if (titles == titleKeys.size) {
+                titleKeys = titleKeys.copyOf(titles * 2)
+                titleLanguages = titleLanguages.copyOf(titles * 2)
+                titlePopularity = titlePopularity.copyOf(titles * 2)
+            }
+            val index = titles++
+            titleKeys[index] = key(id)
+            titleLanguages[index] = languageSetIndex.getOrPut(languages) { languageSets += languages; languageSets.size - 1 }
+            positions[key(id)] = index
             addWords(index, names)
         }
 
@@ -161,34 +197,28 @@ internal class SearchIndex private constructor(
          * [genres]. Titles not added are left out.
          */
         fun metadata(id: TitleId, names: Collection<String>, popularity: Double, cast: List<String>, genres: List<String>) {
-            val index = positions[id] ?: return
-            titles[index] = titles[index].let { Entry(it.id, it.languages, popularity) }
+            val index = positions[key(id)].takeIf { it >= 0 } ?: return
+            titlePopularity[index] = popularity
             addWords(index, names)
             for (name in cast.distinct()) {
-                val person = personIndex.getOrPut(name) {
-                    people += name
-                    personTitles += Postings()
-                    words(name).forEach { word -> personWords.getOrPut(word, ::Postings).add(people.size - 1) }
-                    people.size - 1
-                }
-                personTitles[person].add(index)
+                val known = people.size
+                val person = people.add(name)
+                if (person == known) words(name).forEach { word -> personWords.add(word, person) }
+                personTitles.add(person, index)
             }
             for (name in genres.distinct()) {
-                val genre = genreIndex.getOrPut(name) {
-                    this.genres += name
-                    genreTitles += Postings()
-                    words(name).forEach { word -> genreWords.getOrPut(word, ::Postings).add(this.genres.size - 1) }
-                    this.genres.size - 1
-                }
-                genreTitles[genre].add(index)
+                val known = this.genres.size
+                val genre = this.genres.add(name)
+                if (genre == known) words(name).forEach { word -> genreWords.add(word, genre) }
+                genreTitles.add(genre, index)
             }
         }
 
-        /** Postings skip a Title added twice in a row, so a word in several of its names is kept once. */
+        /** A word in several of a Title's names is kept once. */
         private fun addWords(index: Int, names: Collection<String>) {
             for (name in names) {
                 val words = words(name)
-                for (word in words) titleWords.getOrPut(word, ::Postings).add(index)
+                for (word in words) titleWords.add(word, index)
                 titleNames.add(nameKey(words).toLong() shl 32 or index.toLong())
             }
         }
@@ -197,33 +227,28 @@ internal class SearchIndex private constructor(
         fun channel(id: Long, name: String) {
             val index = channels.size
             channels.add(id)
-            words(name).forEach { channelWords.getOrPut(it, ::Postings).add(index) }
+            words(name).forEach { channelWords.add(it, index) }
         }
 
-        fun build() = SearchIndex(
-            titles,
-            drain(titleWords),
-            people,
-            personTitles.map { it.toArray() },
-            drain(personWords),
-            channels.toArray(),
-            drain(channelWords),
-            titleNames.toArray().apply { sort() },
-            genres,
-            genreTitles.map { it.toArray() },
-            drain(genreWords),
-        )
-
-        /** [words]' postings as arrays, letting go of each list once copied so the heap never holds both. */
-        private fun drain(words: HashMap<String, Postings>): Map<String, IntArray> {
-            val arrays = HashMap<String, IntArray>(words.size * 4 / 3 + 1)
-            val each = words.iterator()
-            while (each.hasNext()) {
-                val (word, postings) = each.next()
-                arrays[word] = postings.toArray()
-                each.remove()
-            }
-            return arrays
+        fun build(): SearchIndex {
+            val genreTitles = genreTitles.freeze(genres.size)
+            return SearchIndex(
+                titleKeys.copyOf(titles),
+                titleLanguages.copyOf(titles),
+                titlePopularity.copyOf(titles),
+                languageSets.toList(),
+                positions,
+                titleWords.build(),
+                people.freeze(),
+                personTitles.freeze(people.size),
+                personWords.build(),
+                channels.toArray(),
+                channelWords.build(),
+                titleNames.toArray().apply { sort() },
+                List(genres.size) { genres[it] },
+                List(genres.size) { genreTitles[it] },
+                genreWords.build(),
+            )
         }
     }
 
@@ -241,32 +266,6 @@ internal class SearchIndex private constructor(
         fun toArray(): LongArray = values.copyOf(size)
     }
 
-    /** A growing set of ints that doesn't box them: the full catalog has millions. Added in order, they need no sorting. */
-    private class Postings {
-        private var values = IntArray(2)
-        private var size = 0
-        private var sorted = true
-
-        fun add(value: Int) {
-            if (size > 0 && values[size - 1] >= value) {
-                if (values[size - 1] == value) return
-                sorted = false
-            }
-            if (size == values.size) values = values.copyOf(size * 2)
-            values[size++] = value
-        }
-
-        /** The values in order, each once. */
-        fun toArray(): IntArray {
-            val array = values.copyOf(size)
-            if (sorted) return array
-            array.sort()
-            var kept = 0
-            for (value in array) if (kept == 0 || array[kept - 1] != value) array[kept++] = value
-            return array.copyOf(kept)
-        }
-    }
-
     companion object {
         /** Search needs this many letters: one finds too much to be useful. */
         const val MIN_LETTERS = 2
@@ -279,6 +278,21 @@ internal class SearchIndex private constructor(
 
         /** A word the Viewer is still typing, or a Title found by TMDB's search alone. */
         const val STARTED_WORD = 1
+
+        private const val UNMATCHED = 1L shl 62
+        private const val KIND_SHIFT = 61
+
+        /** [id] as one long: whether it is Unmatched, its kind, and its TMDB or Listing ID. */
+        private fun key(id: TitleId): Long = (id.kind.ordinal.toLong() shl KIND_SHIFT) or when (id) {
+            is TitleId.Tmdb -> id.tmdbId
+            is TitleId.Unmatched -> UNMATCHED or id.listingId
+        }
+
+        private fun id(key: Long): TitleId {
+            val kind = TitleKind.entries[(key ushr KIND_SHIFT and 1).toInt()]
+            val value = key and ((1L shl KIND_SHIFT) - 1)
+            return if (key and UNMATCHED != 0L) TitleId.Unmatched(kind, value) else TitleId.Tmdb(kind, value)
+        }
 
         /** A name's words, hashed: two names of the same words have the same key. */
         private fun nameKey(words: List<String>): Int = words.joinToString(" ").hashCode()
@@ -334,9 +348,10 @@ internal class SearchIndex private constructor(
          * Longer words tolerate typos, each a step further: one in four letters or more, two in
          * eight or more, the first letter always right.
          */
-        fun distance(typed: String, word: String): Int? {
-            if (word == typed) return WHOLE_WORD
-            if (word.startsWith(typed)) return STARTED_WORD
+        fun distance(typed: String, word: CharSequence): Int? {
+            if (word.length >= typed.length && word.regionMatches(0, typed, 0, typed.length)) {
+                return if (word.length == typed.length) WHOLE_WORD else STARTED_WORD
+            }
             val allowed = when {
                 typed.length >= 8 -> 2
                 typed.length >= 4 -> 1
@@ -344,21 +359,21 @@ internal class SearchIndex private constructor(
             }
             if (word[0] != typed[0] || word.length < typed.length - allowed) return null
             // The whole word, or its start when the Viewer is still typing it.
-            val whole = if (word.length <= typed.length + allowed) editDistance(typed, word, allowed) else Int.MAX_VALUE
-            val start = editDistance(typed, word.take(typed.length), allowed)
+            val whole = if (word.length <= typed.length + allowed) editDistance(typed, word, word.length, allowed) else Int.MAX_VALUE
+            val start = editDistance(typed, word, minOf(word.length, typed.length), allowed)
             return minOf(whole, start).takeIf { it <= allowed }?.plus(STARTED_WORD)
         }
 
-        /** Optimal string alignment distance (a swap of neighbours is one typo), giving up past [limit]. */
-        private fun editDistance(a: String, b: String, limit: Int): Int {
-            if (kotlin.math.abs(a.length - b.length) > limit) return Int.MAX_VALUE
-            var beforePrevious = IntArray(b.length + 1)
-            var previous = IntArray(b.length + 1) { it }
-            var current = IntArray(b.length + 1)
+        /** Optimal string alignment distance (a swap of neighbours is one typo) to [b]'s first [length] letters, giving up past [limit]. */
+        private fun editDistance(a: String, b: CharSequence, length: Int, limit: Int): Int {
+            if (kotlin.math.abs(a.length - length) > limit) return Int.MAX_VALUE
+            var beforePrevious = IntArray(length + 1)
+            var previous = IntArray(length + 1) { it }
+            var current = IntArray(length + 1)
             for (i in 1..a.length) {
                 current[0] = i
                 var best = current[0]
-                for (j in 1..b.length) {
+                for (j in 1..length) {
                     val cost = if (a[i - 1] == b[j - 1]) 0 else 1
                     var d = minOf(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
                     if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) d = minOf(d, beforePrevious[j - 2] + 1)
@@ -371,7 +386,7 @@ internal class SearchIndex private constructor(
                 previous = current
                 current = recycled
             }
-            return previous[b.length]
+            return previous[length]
         }
     }
 }
