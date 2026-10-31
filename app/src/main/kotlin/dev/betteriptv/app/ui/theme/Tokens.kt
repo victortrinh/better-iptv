@@ -99,8 +99,10 @@ object Spacing {
 object Cards {
     /** About 5.5 posters across between the margins, `gap` apart: (960 − 2 × 48) / (136 + 20) ≈ 5.5. */
     val posterWidth = 136.dp
-    /** A landscape (16:9) card: Continue watching. */
+    /** A landscape (16:9) card: Favourites' Channels. */
     val wideWidth = 196.dp
+    /** Continue watching's 16:9 still, as tall as a poster (204 dp), as on Netflix (#221). */
+    val continueWidth = 363.dp
     /** Wide enough that a focused card's growth doesn't touch its neighbours. */
     val gap = 20.dp
     /** A Top row's numeral shows this wide to the left of its poster (`RankedCard`)... */
@@ -114,5 +116,7 @@ object Cards {
 /** How much things grow on focus. */
 object FocusScale {
     const val card = 1.12f
+    /** A Continue watching still is wide: at [card] it would grow into its neighbours, `gap` away. */
+    const val wideCard = 1.08f
     const val control = 1.06f
 }

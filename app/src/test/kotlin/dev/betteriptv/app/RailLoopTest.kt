@@ -1,5 +1,6 @@
 package dev.betteriptv.app
 
+import dev.betteriptv.app.ui.theme.Cards
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,20 +10,33 @@ class RailLoopTest {
     // Home's posters: 136 dp, 20 dp apart, the first at the 48 dp margin of a 960 dp screen.
     private val posters = RailLoop.seen(width = 136f, gap = 20f, screen = 960f, margin = 48f)
 
-    // Continue watching's stills: 196 dp.
-    private val stills = RailLoop.seen(width = 196f, gap = 20f, screen = 960f, margin = 48f)
+    // Favourites' Channel cards: 196 dp.
+    private val channels = RailLoop.seen(width = 196f, gap = 20f, screen = 960f, margin = 48f)
+
+    // Continue watching's stills, as tall as a poster: 363 dp.
+    private val stills = RailLoop.seen(width = Cards.continueWidth.value, gap = 20f, screen = 960f, margin = 48f)
 
     @Test
-    fun theScreenShowsSevenPostersAndSixStillsCountingTheOneInTheMargin() {
+    fun aContinueWatchingStillIsAsTallAsAPoster() {
+        assertEquals(Cards.posterWidth.value * 3 / 2, Cards.continueWidth.value * 9 / 16, 0.5f)
+    }
+
+    @Test
+    fun theScreenShowsSevenPostersSixChannelsAndFourStillsCountingTheOneInTheMargin() {
         assertEquals(7, posters)
-        assertEquals(6, stills)
+        assertEquals(6, channels)
+        assertEquals(4, stills)
     }
 
     @Test
     fun onlyARailLongerThanTheScreenLoops() {
         assertFalse(RailLoop(7, posters).loops)
         assertTrue(RailLoop(8, posters).loops)
-        assertTrue(RailLoop(7, stills).loops)
+        assertTrue(RailLoop(7, channels).loops)
+        // A short Continue watching stops at its ends.
+        assertFalse(RailLoop(3, stills).loops)
+        assertFalse(RailLoop(4, stills).loops)
+        assertTrue(RailLoop(5, stills).loops)
         assertEquals(7, RailLoop(7, posters).count)
         assertEquals(0, RailLoop(7, posters).start)
     }

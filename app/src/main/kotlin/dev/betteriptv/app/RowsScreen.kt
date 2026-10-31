@@ -178,13 +178,14 @@ fun RowsScreen(
     // the rows, so focus stays in one place and the rows move under it.
     val density = LocalDensity.current
     val posterKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.posterWidth / 2).toPx()) } }
-    val stillKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.wideWidth / 2).toPx()) } }
+    val stillKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.continueWidth / 2).toPx()) } }
+    val channelKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.wideWidth / 2).toPx()) } }
     // A Top row's card brings its poster into view, which sits right of the numeral.
     val rankedKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.numeralWidth + Cards.posterWidth / 2).toPx()) } }
     // How many cards of each width the screen shows at once, on the 960 dp canvas.
     val seen = remember {
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
-        seen(Cards.posterWidth) to seen(Cards.wideWidth)
+        Seen(posters = seen(Cards.posterWidth), stills = seen(Cards.continueWidth), channels = seen(Cards.wideWidth))
     }
     val focusedRow = rows?.indexOfFirst { it.key == state.focused?.row } ?: -1
     LaunchedEffect(focusedRow) {
@@ -220,20 +221,27 @@ fun RowsScreen(
                             modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
                         )
                         val wide = row is HomeRow.ContinueWatching
-                        // Favourites' Channel cards are as wide as stills.
-                        val still = wide || row is HomeRow.Favourites
+                        val channels = row is HomeRow.Favourites
                         val ranked = row.ranked
                         val keys = row.keys
-                        val loop = remember(keys.size, still, ranked) { RailLoop(keys.size, if (still) seen.second else seen.first, ranked) }
+                        val loop = remember(keys.size, wide, channels, ranked) {
+                            RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters, ranked)
+                        }
                         val cardWidth = when {
-                            still -> Cards.wideWidth
+                            wide -> Cards.continueWidth
+                            channels -> Cards.wideWidth
                             ranked -> Cards.rankedWidth
                             else -> Cards.posterWidth
                         }
                         val rail = state.rail(row.key, loop)
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
                         val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
-                        CompositionLocalProvider(LocalBringIntoViewSpec provides if (still) stillKeyline else if (ranked) rankedKeyline else posterKeyline) {
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides when {
+                            wide -> stillKeyline
+                            channels -> channelKeyline
+                            ranked -> rankedKeyline
+                            else -> posterKeyline
+                        }) {
                             LazyRow(
                                 state = rail,
                                 // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
@@ -391,6 +399,9 @@ private val HomeRow.keys: List<String>
 private fun channelKey(channel: Channel) = "channel/${channel.id}"
 
 private val CANVAS_WIDTH = 960.dp
+
+/** How many cards each kind of rail shows at once ([RailLoop.seen]). */
+private class Seen(val posters: Int, val stills: Int, val channels: Int)
 
 @Composable
 private fun HomeRow.heading(): String = when (this) {
