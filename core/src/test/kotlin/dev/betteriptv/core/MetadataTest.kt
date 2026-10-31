@@ -128,14 +128,26 @@ class MetadataTest {
         assertNull(details(ballerina, "fr").logo)
     }
 
-    @Test fun `metadata kept from before the cloud gave logos is asked again`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather") - "logoPath")
+    @Test fun `a Home card lays its logo over a textless poster, which it takes only with a logo`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg", textlessPosterPath = "/godfather-plain.jpg"))
+        cloud.title("fr", tmdbTitle(541671, "Ballerina", textlessPosterPath = "/ballerina-plain.jpg"))
+        val cards = library.homeRows(french, "fr").filterIsInstance<HomeRow.NewOnYourService>().single().titles
+
+        val about = cards.first { it.id == godfather }.about!!
+        assertEquals("https://image.tmdb.org/t/p/w300/parrain-logo.png", about.logo)
+        assertEquals("https://image.tmdb.org/t/p/w342/godfather-plain.jpg", about.textlessPoster)
+        // Without a logo, the card keeps the poster with the name printed on it.
+        assertNull(cards.first { it.id == ballerina }.about!!.textlessPoster)
+    }
+
+    @Test fun `metadata kept from before the cloud gave textless posters is asked again`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather") - "logoPath" - "textlessPosterPath")
         details(godfather, "fr")
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png"))
 
         assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
-        // Once it has the logo field, even null, it is kept for the week.
+        // Once it has the field, even null, it is kept for the week.
         details(godfather, "fr")
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
     }

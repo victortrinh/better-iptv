@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.time.Duration
 import java.time.LocalDate
 
 /**
@@ -111,12 +112,6 @@ class NextEpisodeTest {
         assertTrue(episodes().episode(1, 1).watched)
     }
 
-    @Test fun `Episodes don't land in Continue watching`() = runBlocking {
-        play(1, 1, minutes = 20)
-
-        assertTrue(library.homeRows(english, "en").none { it is HomeRow.ContinueWatching })
-    }
-
     @Test fun `Episodes TMDB lists as not aired yet are added until a Version has them, named in the App language`() = runBlocking {
         cloud.upcoming(
             62104, "fr",
@@ -153,6 +148,29 @@ class NextEpisodeTest {
         val show = episodes()
 
         assertEquals(listOf(1, 2, 3), show.seasons.single { it.number == 2 }.episodes.map { it.number })
+    }
+
+    @Test fun `Continue watching shows a Show at its next Episode, beside Movies, until the Viewer Watched its last`() = runBlocking {
+        suspend fun resumes() = library.homeRows(english, appLanguage = "en").filterIsInstance<HomeRow.ContinueWatching>().singleOrNull()?.titles.orEmpty()
+        assertTrue(resumes().isEmpty())
+
+        play(1, 1, minutes = 20)
+        var show = resumes().single()
+        assertEquals(bureau, show.title.id)
+        assertEquals(NextEpisode(EpisodeNumber(1, 1), name = null, started = true), show.episode)
+        assertEquals(0.4f, show.progress)
+        assertEquals(Duration.ofMinutes(30), show.left)
+
+        // Watched, the next one waits to be started.
+        play(1, 1, minutes = 49)
+        show = resumes().single()
+        assertEquals(NextEpisode(EpisodeNumber(1, 2), name = null, started = false), show.episode)
+        assertNull(show.progress)
+        assertNull(show.left)
+
+        // The last of season 2 Watched (specials don't count), the Show leaves the row.
+        play(2, 3, minutes = 49)
+        assertTrue(resumes().isEmpty())
     }
 
     private fun details(episodes: List<String>) = """{"seasons":[],"info":{},"episodes":[${episodes.joinToString(",")}]}"""

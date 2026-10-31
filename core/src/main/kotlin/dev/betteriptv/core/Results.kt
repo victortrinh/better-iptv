@@ -31,8 +31,11 @@ sealed interface TitleId {
  */
 data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null)
 
-/** TMDB's description, genres and runtime of a Title, in the App language, falling back to English. */
-data class TitleAbout(val description: String?, val genres: List<String>, val runtimeMinutes: Int?)
+/**
+ * TMDB's description, genres, runtime and logo art (sized for a card) of a Title, in the App
+ * language, falling back to English, and a [textlessPoster] to lay the logo over, only with a logo.
+ */
+data class TitleAbout(val description: String?, val genres: List<String>, val runtimeMinutes: Int?, val logo: String? = null, val textlessPoster: String? = null)
 
 /** A row on the home screen. */
 sealed interface HomeRow {
@@ -51,9 +54,13 @@ sealed interface HomeRow {
 
 /**
  * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, how far they got
- * (0 to 1) and how much is [left], both null when the player didn't know the file's length.
+ * (0 to 1) and how much is [left], both null when the player didn't know the file's length. For a
+ * Show, those are about its [episode], the one to watch next.
  */
-data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?, val left: Duration? = null)
+data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?, val left: Duration? = null, val episode: NextEpisode? = null)
+
+/** The Episode of a Show the Viewer is at: the one they stopped in ([started]), else the one after the last they Watched. Its [name] is null when the Provider gives none. */
+data class NextEpisode(val number: EpisodeNumber, val name: String?, val started: Boolean)
 
 /**
  * A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the

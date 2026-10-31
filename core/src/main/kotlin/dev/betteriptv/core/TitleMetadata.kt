@@ -22,9 +22,13 @@ internal class TitleMetadata(json: String) {
     val year: Int? = (tree["releaseDate"] as? String)?.take(4)?.toIntOrNull()
     val runtimeMinutes: Int? = (tree["runtimeMinutes"] as? Number)?.toInt()
     val poster: String? = image(tree["posterPath"], POSTER_SIZE)
+    /** A poster with no text on it, for Home's cards, which lay the [cardLogo] over it; null when TMDB has none. */
+    val textlessPoster: String? = image(tree["textlessPosterPath"], POSTER_SIZE)
     val backdrop: String? = image(tree["backdropPath"], BACKDROP_SIZE)
     /** The Title's logo art in the App language or English, as a PNG with transparency; null when TMDB has none. */
     val logo: String? = image((tree["logoPath"] as? String)?.replace(SVG, ".png"), LOGO_SIZE)
+    /** The same logo for a card on Home, where it is about 110 dp wide. */
+    val cardLogo: String? = image((tree["logoPath"] as? String)?.replace(SVG, ".png"), CARD_LOGO_SIZE)
     /** TMDB's popularity score: higher is more watched lately. */
     val popularity: Double = (tree["popularity"] as? Number)?.toDouble() ?: 0.0
     val cast: List<String> = (tree["cast"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("name") as? String }
@@ -59,6 +63,8 @@ internal class TitleMetadata(json: String) {
         const val BACKDROP_SIZE = "w1280"
         /** The logo box is 320 dp wide, 640 px on the stick; TMDB's next size up is the original, often thousands wide. */
         const val LOGO_SIZE = "w500"
+        /** 220 px on the stick. */
+        const val CARD_LOGO_SIZE = "w300"
         /** TMDB serves an SVG logo as a PNG of the size asked for under the `.png` name, so no SVG decoder is needed. */
         val SVG = Regex("\\.svg$", RegexOption.IGNORE_CASE)
 

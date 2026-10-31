@@ -58,6 +58,12 @@ object Type {
     val title = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
     /** Descriptions, metadata lines, messages, field text: what's read from the couch (#147). */
     val body = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 17.sp, lineHeight = 24.sp)
+    /** The info under Home's focused rail: the metadata line, muted, as Netflix sets it (#182). */
+    val railMeta = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
+    /** The info under Home's focused rail: the description, an Episode, a Channel's name. A step above body, as on Netflix. */
+    val rail = TextStyle(fontFamily = inter, fontWeight = FontWeight.SemiBold, fontSize = 19.sp, lineHeight = 25.sp)
+    /** The info under Home's focused rail: the time left in Continue watching, its strongest line. */
+    val railStrong = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 25.sp)
     /** Body beside label type in a table or row: Version cells, a setting's value. Sized so French fits the Version columns. */
     val detail = TextStyle(fontFamily = inter, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp)
     /** Buttons, tabs, settings rows. */
