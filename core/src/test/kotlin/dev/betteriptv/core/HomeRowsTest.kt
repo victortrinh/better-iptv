@@ -334,4 +334,15 @@ class HomeRowsTest {
 
         assertEquals(null, rows().top(ChartList.Trending))
     }
+
+    @Test fun `a Title's details carry its Top 10 rank, as its Top row numbers it`() = runBlocking {
+        serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
+        syncMovies("EN - First (2025)" to 1)
+        cloud.charts("CA", movies = listOf(1), shows = listOf(599, 503, 502, 501))
+
+        val show = TitleId.Tmdb(TitleKind.Show, 502)
+        assertEquals(ChartRank(2, ChartList.TopShows, "CA"), library.title(show, english, "en", region = "CA")!!.rank)
+        assertEquals(listOf("Show 3", "Show 2", "Show 1"), rows().topNames(ChartList.TopShows))
+        assertEquals(null, library.title(movie(1), english, "en", region = "FR")!!.rank)
+    }
 }

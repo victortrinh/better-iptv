@@ -73,6 +73,7 @@ fun SearchScreen(
     onEdit: ((String) -> String) -> Unit,
     contentLanguages: List<String>,
     appLanguage: String,
+    region: String,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
@@ -85,11 +86,11 @@ fun SearchScreen(
     var answered by remember { mutableStateOf("") }
     // Finishes the index at the Viewer's priority, if its build in the background hasn't, while they reach for the first letters.
     LaunchedEffect(status.last) { library.prepareSearch() }
-    LaunchedEffect(query, status.last, contentLanguages, appLanguage) {
+    LaunchedEffect(query, status.last, contentLanguages, appLanguage, region) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
         // The device's own matches, then again with what TMDB's search adds.
-        library.search(query, contentLanguages, appLanguage).collect {
+        library.search(query, contentLanguages, appLanguage, region).collect {
             results = it
             answered = query
         }
@@ -234,7 +235,8 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
             TitleCard(
                 rememberArtwork(title.image, card = true),
                 title.name,
-                cardBest(library, title, contentLanguages).cardBadges(),
+                // A Top 10 rank fills a poster's width, so it stands alone; the details show the rest.
+                title.rank?.let { listOf(it.badge()) } ?: cardBest(library, title, contentLanguages).cardBadges(),
                 onClick = { onOpen(title.id) },
                 modifier = modifier,
             )

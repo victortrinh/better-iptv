@@ -302,7 +302,7 @@ class Library private constructor(
      * The search index of the whole catalog is built in the background after a Sync and by
      * [prepareSearchInBackground]; a search before then waits for it.
      */
-    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
+    fun search(query: String, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
         if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages)))
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
@@ -310,7 +310,8 @@ class Library private constructor(
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
         val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).toSet()) }
         val channels = foundChannels(index, query)
-        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
+        val ranks = topRanks(region, contentLanguages, appLanguage)
+        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks).copy(channels = channels))
 
         if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
         // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
@@ -327,7 +328,7 @@ class Library private constructor(
         val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
             FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
         }
-        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage).copy(channels = channels))
+        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks).copy(channels = channels))
     }.flowOn(Dispatchers.IO)
 
     /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
@@ -384,6 +385,7 @@ class Library private constructor(
         popularity: Map<Int, Double>,
         contentLanguages: List<String>,
         appLanguage: String,
+        ranks: Map<TitleId, ChartRank>,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
         val popularityOf = { position: Int -> maxOf(index.popularity(position), popularity[position] ?: 0.0) }
@@ -405,7 +407,7 @@ class Library private constructor(
         val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
             .map { index.titleId(it.index) }.distinct()
-        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
+        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associate { it.id to it.copy(rank = ranks[it.id]) }
         val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titleId(it.index)] } }
         // The best Titles of either kind are among those shown, so their names are at hand.
         val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titleId(it.index)]?.name }
@@ -522,7 +524,7 @@ class Library private constructor(
     }
 
     /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
-    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String): TitleDetails? = withContext(Dispatchers.IO) {
+    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): TitleDetails? = withContext(Dispatchers.IO) {
         val title = store.title(id) ?: return@withContext null
         val candidates = candidates(title)
         val metadata = metadata(listOf(id), appLanguage)[id]
@@ -536,6 +538,7 @@ class Library private constructor(
             backdrop = metadata?.backdrop,
             logo = metadata?.logo,
             cast = metadata?.cast.orEmpty(),
+            rank = topRanks(region, contentLanguages, appLanguage)[id],
             fromTmdb = metadata != null,
         )
     }
@@ -823,12 +826,10 @@ class Library private constructor(
         val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
         browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
         val screen = ScreenRows()
-        val charted = tops.map { (list, titles) ->
-            list to screen.chart(titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }, MIN_CHART_SIZE)
-        }
+        val charted = tops.map { (list, titles) -> list to screen.chart(watchable(titles, contentLanguages, metadata), MIN_CHART_SIZE) }
         val new = screen.row(newest, ROW_SIZE)
         // Trending sits below New, so it skips what New shows.
-        val trending = screen.row(trends.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }, ROW_SIZE, MIN_CHART_SIZE)
+        val trending = screen.row(watchable(trends, contentLanguages, metadata), ROW_SIZE, MIN_CHART_SIZE)
         val genres = buildList {
             for ((name, titles) in byGenre.entries.sortedByDescending { it.value.size }) {
                 if (size == GENRE_ROWS) break
@@ -1174,6 +1175,25 @@ class Library private constructor(
             }
         }
         return buildMap { cached.forEach { (id, stored) -> stored.body?.let { put(id, TitleMetadata(it)) } } }
+    }
+
+    /** A Chart's [titles] the Viewer can watch: those with a Version in their [contentLanguages], or an Untagged one Likely in one. */
+    private fun watchable(titles: List<StoredTitle>, contentLanguages: List<String>, metadata: Map<TitleId, TitleMetadata>): List<StoredTitle> =
+        titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
+
+    /**
+     * Each Top 10 Title's rank in [region], as its Top row on Home numbers it: counted among the
+     * Provider's Titles the Viewer can watch ([watchable]). Trending carries none.
+     */
+    private fun topRanks(region: String, contentLanguages: List<String>, appLanguage: String): Map<TitleId, ChartRank> {
+        val charts = charts(region, appLanguage, Instant.now())
+        val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
+        val metadata = metadata(tops.flatMap { it.second }.map { it.id }, appLanguage)
+        return buildMap {
+            tops.forEach { (list, titles) ->
+                watchable(titles, contentLanguages, metadata).forEachIndexed { i, title -> put(title.id, ChartRank(i + 1, list, region.takeUnless { charts.worldwide })) }
+            }
+        }
     }
 
     /**

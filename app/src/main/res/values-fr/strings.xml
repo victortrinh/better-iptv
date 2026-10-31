@@ -197,6 +197,10 @@
     <string name="row_top_movies_worldwide">Top films de la semaine dans le monde</string>
     <string name="row_top_shows_worldwide">Top séries de la semaine dans le monde</string>
     <string name="row_trending">Tendances de la semaine</string>
+    <string name="rank_movies">N° %1$d des films · %2$s</string>
+    <string name="rank_shows">N° %1$d des séries · %2$s</string>
+    <string name="rank_movies_worldwide">N° %1$d des films dans le monde</string>
+    <string name="rank_shows_worldwide">N° %1$d des séries dans le monde</string>
     <string name="player_live">En direct · %1$s</string>
     <string name="channel_add_favourite">≡ Ajouter aux favoris</string>
     <string name="channel_remove_favourite">≡ Retirer des favoris</string>
