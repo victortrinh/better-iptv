@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
@@ -238,7 +239,13 @@ fun HomeScreen(
                         CompositionLocalProvider(LocalBringIntoViewSpec provides if (still) stillKeyline else posterKeyline) {
                             LazyRow(
                                 state = rail,
-                                contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 10.dp),
+                                // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
+                                contentPadding = PaddingValues(
+                                    start = Spacing.screenX,
+                                    end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - if (still) Cards.wideWidth else Cards.posterWidth,
+                                    top = 10.dp,
+                                    bottom = 10.dp,
+                                ),
                                 horizontalArrangement = Arrangement.spacedBy(Cards.gap),
                                 modifier = Modifier.focusRestorer(),
                             ) {
@@ -246,6 +253,11 @@ fun HomeScreen(
                                     val index = loop.card(place)
                                     val focus = remember { FocusRequester() }
                                     val card = HomeCard(row.key, keys[index])
+                                    // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
+                                    val ends = Modifier.focusRequester(focus).focusProperties {
+                                        if (!loop.loops && index == 0) left = FocusRequester.Cancel
+                                        if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
+                                    }
                                     if (card == focusOn && place == target) LaunchedEffect(Unit) {
                                         focus.requestFocus()
                                         onFocused()
@@ -255,7 +267,7 @@ fun HomeScreen(
                                             row.channels[index],
                                             onWatch = { onWatch(card, it) },
                                             onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
-                                            modifier = Modifier.focusRequester(focus),
+                                            modifier = ends,
                                             named = false,
                                             onFocus = { state.focused = card },
                                         )
@@ -273,7 +285,7 @@ fun HomeScreen(
                                         name = title.name,
                                         badges = emptyList(),
                                         onClick = { onOpen(card, title.id) },
-                                        modifier = Modifier.focusRequester(focus),
+                                        modifier = ends,
                                         wide = wide,
                                         progress = resume?.progress,
                                         named = false,
