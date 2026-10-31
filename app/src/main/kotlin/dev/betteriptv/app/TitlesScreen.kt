@@ -5,35 +5,21 @@ import android.icu.text.DisplayContext
 import android.icu.text.RelativeDateTimeFormatter
 import android.icu.text.RelativeDateTimeFormatter.RelativeUnit
 import android.icu.util.ULocale
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -42,8 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
-import dev.betteriptv.app.ui.components.TitleCard
-import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -55,7 +39,6 @@ import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
-import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
@@ -64,21 +47,20 @@ import java.time.Instant
 import java.util.Locale
 
 /**
- * What a Titles tab keeps while another screen shows: its scroll position, and how many Titles it
- * counted last. The count shows until it is read again, so coming back from a Title doesn't lay
- * the grid out empty, which would put it back at its top (#116).
+ * What a Titles tab keeps while another screen shows: its [rows] (scroll positions and the rows
+ * read last), and how many Titles it counted last, which shows until it is read again.
  */
 @Stable
 class TitlesState {
-    val grid = LazyGridState()
+    val rows = RowsState()
     var count by mutableStateOf(0)
 }
 
 /**
- * One card per movie or show Title ([kind], picked with the tabs), newest first, read from the
- * device database a page at a time, with TMDB's name and poster in the [appLanguage].
- * [restoreFocus] is the card to focus on arrival: the first, or the one the Viewer opened before coming back.
- * [focusTab]: reached by picking its tab, which keeps focus.
+ * The Movies or Shows tab ([kind]): the Title count, Sync now and how the Sync is going over rows
+ * like Home's ([RowsScreen]): the kind's Top 10 in the Viewer's [region], its Trending this week,
+ * then New movies (or shows). [restoreFocus] is the card to focus on coming back, the one the
+ * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
 fun TitlesScreen(
@@ -86,34 +68,36 @@ fun TitlesScreen(
     kind: TitleKind,
     contentLanguages: List<String>,
     appLanguage: String,
+    region: String,
     state: TitlesState,
-    restoreFocus: Int,
+    restoreFocus: RowCard?,
     focusTab: Boolean,
     onSyncNow: () -> Unit,
     onTab: (Browse) -> Unit,
-    onOpen: (index: Int, TitleId) -> Unit,
+    onOpen: (RowCard, TitleId) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    // A finished Sync swaps in a new catalog, and Listings Matched by name afterwards regroup its
-    // Titles: either way, drop the pages read before.
     val synced = status.last
-    val scope = rememberCoroutineScope()
-    val pages = remember(synced, kind, contentLanguages, appLanguage) {
-        TitlePages(scope) { offset, limit -> library.titles(offset, limit, contentLanguages, appLanguage, kind) }
-    }
-    val grid = state.grid
     LaunchedEffect(synced, kind) { state.count = withContext(Dispatchers.IO) { library.titleCount(kind) } }
     val count = state.count
-    LaunchedEffect(pages, count) {
-        snapshotFlow { grid.layoutInfo.visibleItemsInfo.let { (it.firstOrNull()?.index ?: 0) to (it.lastOrNull()?.index ?: 0) } }
-            .collect { (first, last) -> pages.showing(first, last, count) }
-    }
-    val focus = remember(grid) { GridFocus(grid, scope) }
     val context = LocalContext.current
-    val tab = remember { FocusRequester() }
-    FocusTabOnArrival(focusTab, tab)
-
-    Column(Modifier.fillMaxSize().background(Colors.ground)) {
+    val described = context.describe(status)
+    // A first Sync leaves the tab empty for minutes: say how far it is where the rows will be, readable from the couch.
+    val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching)
+    RowsScreen(
+        library, contentLanguages, state.rows, restoreFocus, focusTab,
+        reading = listOf(kind, contentLanguages, appLanguage, region),
+        read = { library.tabRows(kind, contentLanguages, appLanguage, region) },
+        empty = stringResource(R.string.home_empty),
+        onOpen = onOpen,
+        placeholder = if (firstSync) {
+            {
+                Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
+                    Text(described, style = Type.body, color = Colors.inkMuted, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = FIRST_SYNC_TEXT_WIDTH))
+                }
+            }
+        } else null,
+    ) { tab ->
         Box(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY)) {
             BrowseTabs(if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab, selectedFocus = tab)
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
@@ -122,54 +106,13 @@ fun TitlesScreen(
                 NuageButton(stringResource(R.string.sync_now), onSyncNow, enabled = status !is SyncStatus.Running && status !is SyncStatus.Matching)
             }
         }
-        val described = context.describe(status)
         Text(
             described,
             style = Type.caption,
             color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
-            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.s),
+            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.s, bottom = 16.dp),
         )
-        // A first Sync leaves the grid empty for minutes: say how far it is where the cards will be, readable from the couch.
-        if (count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching)) {
-            Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
-                Text(described, style = Type.body, color = Colors.inkMuted, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = EMPTY_GRID_TEXT_WIDTH))
-            }
-            return@Column
-        }
-        // The margins are content padding, so a focused card grows into them instead of being clipped.
-        // The columns share the width between them, so the grid ends at the right margin like it starts at the left.
-        LazyVerticalGrid(
-            GridCells.Adaptive(Cards.posterWidth),
-            Modifier.fillMaxSize().onPreviewKeyEvent { focus.onKey(it, count) }.entersFromAbove(focus).backKeyToTab(tab),
-            state = grid,
-            contentPadding = PaddingValues(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.l, bottom = Spacing.screenY),
-            horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-        ) {
-            items(count) { index -> Card(library, contentLanguages, pages, focus, index, focusNow = index == restoreFocus, onOpen) }
-        }
     }
-}
-
-@Composable
-private fun Card(
-    library: Library,
-    contentLanguages: List<String>,
-    pages: TitlePages<TitleSummary>,
-    gridFocus: GridFocus,
-    index: Int,
-    focusNow: Boolean,
-    onOpen: (index: Int, TitleId) -> Unit,
-) {
-    val title = pages[index]
-    val focus = remember(index) { gridFocus.card(index) }.requester
-    if (focusNow) LaunchedEffect(Unit) { focus.requestFocus() }
-    TitleCard(
-        image = rememberArtwork(title?.image, card = true),
-        name = title?.name.orEmpty(),
-        badges = title?.let { cardBest(library, it, contentLanguages) }?.cardBadges().orEmpty(),
-        onClick = { title?.let { onOpen(index, it.id) } },
-        modifier = Modifier.focusRequester(focus).onFocusChanged { if (it.hasFocus) gridFocus.focused(index) }.padding(vertical = 10.dp),
-    )
 }
 
 private fun Context.describe(status: SyncStatus): String = when (status) {
@@ -233,4 +176,4 @@ internal fun Context.ago(then: Instant, now: Instant): String {
 }
 
 /** Wide enough for the French first-Sync line on two lines at body size. */
-private val EMPTY_GRID_TEXT_WIDTH = 440.dp
+private val FIRST_SYNC_TEXT_WIDTH = 440.dp
