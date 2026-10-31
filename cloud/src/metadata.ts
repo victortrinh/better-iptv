@@ -29,7 +29,7 @@ export async function metadata(env: Env, keys: TitleKey[], language: string): Pr
   const now = Date.now();
   const stale = keys.filter((key) => {
     const entry = cached.get(id(key));
-    if (entry === undefined || (entry.body !== null && !("logoPath" in entry.body))) return true; // Cached before logos were asked for.
+    if (entry === undefined || (entry.body !== null && !("textlessPosterPath" in entry.body))) return true; // Cached before textless posters were asked for.
     return now - entry.fetchedAt > (entry.body === null ? NOT_FOUND_FRESH_FOR : FRESH_FOR);
   });
 

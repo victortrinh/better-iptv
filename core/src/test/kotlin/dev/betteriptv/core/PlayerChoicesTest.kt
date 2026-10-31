@@ -169,7 +169,10 @@ class PlayerChoicesTest {
         player.end()
         withTimeout(5_000) { session.state.first { it == PlaybackState.Ended } }
         job.join()
-        assertEquals(emptyList<InProgress>(), (library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().flatMap { it.titles }))
+        // The Show stays in Continue watching, at its next Episode.
+        val resume = library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().single().titles.single()
+        assertEquals(EpisodeNumber(1, 2), resume.episode?.number)
+        assertEquals(false, resume.episode?.started)
     }
 
     /** Plays [plan] until it reaches [position] of [duration], then leaves, as the Viewer pressing Back would. */

@@ -3,6 +3,7 @@ import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
+import { isUnknownPrefix, MAX_PREFIX_BATCH, saveUnknownPrefixes, type UnknownPrefix } from "./prefixes";
 import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
@@ -30,6 +31,9 @@ import { upcoming } from "./upcoming";
  *   those movie Listings' files. Listings nobody read are left out.
  * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}}]}`:
  *   keeps those reads, `204`.
+ * - `POST /v1/unknown-prefixes`, with `{"provider": "…", "prefixes": [{"prefix": "BR", "listingCount": 260,
+ *   "example": "BR - Cold Pursuit (2019)"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't
+ *   know, for the developer to add, `204`.
  * - `POST /v1/subtitles`, with `{"kind": "movie", "tmdbId": 238, "season": null, "episode": null,
  *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
  *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
@@ -78,6 +82,12 @@ export default {
       const asked = await fileReadsRequest(request, "files");
       if (typeof asked === "string") return problem(400, asked);
       await saveFileReads(env.DB, asked.provider, asked.files);
+      return new Response(null, { status: 204 });
+    }
+    if (request.method === "POST" && pathname === "/v1/unknown-prefixes") {
+      const asked = await unknownPrefixesRequest(request);
+      if (typeof asked === "string") return problem(400, asked);
+      await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
       return new Response(null, { status: 204 });
     }
     if (request.method === "POST" && pathname === "/v1/subtitles") {
@@ -193,6 +203,21 @@ async function fileReadsRequest(request: Request, part: "listings" | "files"): P
     if (!isListingId(file?.listingId) || !isFile(file.file)) return "Each file must be {\"listingId\": a positive integer, \"file\": an object of at most 8 KB}.";
   }
   return { provider, listings: [], files: asked as FileRead[] };
+}
+
+/** Reads an unknown Prefixes report, or says what's wrong with it. */
+async function unknownPrefixesRequest(request: Request): Promise<{ provider: string; prefixes: UnknownPrefix[] } | string> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return "The body must be JSON.";
+  }
+  const { provider, prefixes } = (body ?? {}) as { provider?: unknown; prefixes?: unknown };
+  if (!isProviderKey(provider)) return "provider must be the SHA-256 of the Provider's host, in lowercase hex.";
+  if (!Array.isArray(prefixes) || prefixes.length > MAX_PREFIX_BATCH) return `prefixes must be a list of at most ${MAX_PREFIX_BATCH}.`;
+  if (!prefixes.every(isUnknownPrefix)) return "Each Prefix must be {\"prefix\": 1 to 32 characters, \"listingCount\": a positive integer, \"example\": a Listing's name}.";
+  return { provider, prefixes };
 }
 
 /** Reads a subtitle search request, or says what's wrong with it. */

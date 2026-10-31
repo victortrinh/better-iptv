@@ -184,11 +184,11 @@ A row of cards on Home: Continue watching, a Chart, New on your service, Favouri
 _Avoid_: Shelf, carousel, category
 
 **Continue watching**:
-The Movies the Viewer stopped partway through and hasn't Watched, last played first. Their Title page offers "Continue from 1:02:13", "Restart" and "Remove from Continue watching", which forgets where they stopped.
+The Movies the Viewer stopped partway through and hasn't Watched, and the Shows they played an Episode of until they Watched its last, last played first. A Show shows the Episode to watch next: the one they stopped in, else the one after the last they Watched ("Start next episode"). A Movie's Title page offers "Continue from 1:02:13", "Restart" and "Remove from Continue watching", which forgets where they stopped.
 _Avoid_: Resume list, in progress
 
 **Watched**:
-A Movie or Episode the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched one from the beginning, and any other from where the Viewer stopped. Episodes stay out of Continue watching.
+A Movie or Episode the Viewer played to the end, or stopped in its last 10% or its last 10 minutes, whichever is shorter (about where the credits start; ADR 0008). Play starts a Watched one from the beginning, and any other from where the Viewer stopped.
 _Avoid_: Finished, completed, seen
 
 **New on your service**:

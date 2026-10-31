@@ -173,11 +173,26 @@ class Library private constructor(
             _syncStatus.value = if (finished is SyncStatus.Synced && canAskCloud()) SyncStatus.Matching(finished.last, 0, null) else finished
             if (finished is SyncStatus.Synced) {
                 catalogGeneration.incrementAndGet()
+                reportUnknownPrefixes(finished.last)
                 matchByName(finished)
                 catalogGeneration.incrementAndGet()
                 prepareSearchInBackground()
             }
             _syncStatus.value
+        }
+    }
+
+    /**
+     * Tells the cloud which Prefixes the Sync found that the Prefix table doesn't know, so they get
+     * added to it. The Viewer never sees them; a Sync that can't report them leaves it to the next.
+     */
+    private fun reportUnknownPrefixes(sync: CompletedSync) {
+        if (cloud == null || sync.unknownPrefixes.isEmpty() || !canAskCloud()) return
+        val login = credentials.load() ?: return
+        try {
+            cloud.reportUnknownPrefixes(providerKey(login), sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH))
+        } catch (e: CloudException) {
+            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
         }
     }
 
@@ -293,7 +308,7 @@ class Library private constructor(
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
-        val people = index.findPeople(query).map { FoundPerson(index.people[it.index], it.distance, index.personTitles[it.index].toSet()) }
+        val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).toSet()) }
         val channels = foundChannels(index, query)
         emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage).copy(channels = channels))
 
@@ -348,7 +363,7 @@ class Library private constructor(
     /** The genres with the most Titles in the Viewer's [contentLanguages], to search before typing. */
     private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>): List<String> {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val inWanted = { titles: IntArray -> titles.count { position -> index.titles[position].languages.any(wanted::contains) } }
+        val inWanted = { titles: IntArray -> titles.count { position -> index.languages(position).any(wanted::contains) } }
         return index.genres.indices.map { it to inWanted(index.genreTitles[it]) }
             .filter { (_, count) -> count > 0 }
             .sortedWith(compareByDescending<Pair<Int, Int>> { it.second }.thenBy { index.genres[it.first] })
@@ -371,9 +386,9 @@ class Library private constructor(
         appLanguage: String,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val popularityOf = { position: Int -> maxOf(index.titles[position].popularity, popularity[position] ?: 0.0) }
+        val popularityOf = { position: Int -> maxOf(index.popularity(position), popularity[position] ?: 0.0) }
         val byRank = compareBy<SearchIndex.Hit>(
-            { index.titles[it.index].languages.none(wanted::contains) },
+            { index.languages(it.index).none(wanted::contains) },
             { it.distance },
             { -popularityOf(it.index) },
             { it.index },
@@ -387,13 +402,13 @@ class Library private constructor(
             .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { -index.genreTitles[it.index].size }))
             .take(GENRES_FOUND)
             .map { index.genres[it.index] to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
-        val ofKind = { kind: TitleKind -> ranked.filter { index.titles[it.index].id.kind == kind }.take(TITLES_FOUND) }
+        val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
-            .map { index.titles[it.index].id }.distinct()
+            .map { index.titleId(it.index) }.distinct()
         val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
-        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titles[it.index].id] } }
+        val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titleId(it.index)] } }
         // The best Titles of either kind are among those shown, so their names are at hand.
-        val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titles[it.index].id]?.name }
+        val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titleId(it.index)]?.name }
         return SearchResults(
             movies = found(ofKind(TitleKind.Movie)),
             shows = found(ofKind(TitleKind.Show)),
@@ -769,19 +784,24 @@ class Library private constructor(
      * were added; finished Event channels left out), then New on your service (Titles among the most
      * recently added, most popular on TMDB first), then one row per TMDB genre, its most common
      * first. Browse rows show only Titles with a Version in the Viewer's [contentLanguages], or an
-     * Untagged one Likely in one; Continue watching shows whatever the Viewer started. Genres come
-     * from the TMDB metadata of the newest Titles, so they need the cloud once a week. Rows with no
-     * Titles are left out.
+     * Untagged one Likely in one; Continue watching shows whatever the Viewer started, a Show at the
+     * Episode to watch next, until they finish it. Genres come from the TMDB metadata of the newest
+     * Titles, so they need the cloud once a week. Rows with no Titles are left out.
      */
     suspend fun homeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> = withContext(Dispatchers.IO) {
-        val resumes = store.inProgress(ROW_SIZE).mapNotNull { progress -> store.title(progress.id)?.let { progress to it } }
+        val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
+        // Movies by how far the Viewer got, Shows by the Episode they're at; a Show they Watched to its end is left out.
+        val resumes = store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
+            val title = store.title(id) ?: return@mapNotNull null
+            if (id.kind == TitleKind.Show) showInProgress(title, contentLanguages)?.let { title to it } else progress[id]?.let { title to it }
+        }
         val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
-        val metadata = metadata((resumes.map { it.second } + movies + shows).map { it.id }.distinct(), appLanguage)
+        val metadata = metadata((resumes.map { it.first } + movies + shows).map { it.id }.distinct(), appLanguage)
         fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
             val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
-            val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes) }
+            val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
             return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
         }
         val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
@@ -797,10 +817,16 @@ class Library private constructor(
             if (resumes.isNotEmpty()) {
                 add(
                     HomeRow.ContinueWatching(
-                        resumes.map { (progress, title) ->
-                            val fraction = progress.duration?.takeIf { it > 0 }?.let { (progress.position.toFloat() / it).coerceIn(0f, 1f) }
-                            val left = progress.duration?.takeIf { it > 0 }?.let { Duration.ofMillis((it - progress.position).coerceAtLeast(0)) }
-                            InProgress(card(title), metadata[title.id]?.backdrop, fraction, left)
+                        resumes.map { (title, at) ->
+                            val played = when (at) {
+                                is StoredProgress -> at.position to at.duration
+                                is ShowInProgress -> at.played?.let { it.position to it.duration }
+                                else -> null
+                            }
+                            val duration = played?.second?.takeIf { it > 0 }
+                            val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
+                            val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
+                            InProgress(card(title), metadata[title.id]?.backdrop, fraction, left, (at as? ShowInProgress)?.next)
                         },
                     ),
                 )
@@ -810,6 +836,26 @@ class Library private constructor(
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.sortedWith(popularFirst).take(ROW_SIZE).map { card(it) })) }
         }
     }
+
+    /**
+     * Where the Viewer is in Show [title], from the show details read when its details last opened:
+     * the Episode to watch next and how far they got in it. Null once they Watched its last Episode,
+     * or when its details were never read.
+     */
+    private fun showInProgress(title: StoredTitle, contentLanguages: List<String>): ShowInProgress? {
+        val read = store.showDetails(title.listings.map { it.id })
+        val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id).episodes }
+        val played = store.episodeProgress(title.id)
+        val seasons = withUpcomingAndProgress(mergeEpisodes(shows, contentLanguages), emptyList(), played, LocalDate.now())
+        val next = nextEpisode(seasons, played) ?: return null
+        val episode = seasons.flatMap { it.episodes }.single { it.id == next }
+        if (episode.watched) return null
+        val stopped = played.firstOrNull { it.episode == next }
+        return ShowInProgress(NextEpisode(next, episode.name, started = stopped != null), stopped)
+    }
+
+    /** The Episode of a Show the Viewer is at, and where they stopped in it when they [played] it. */
+    private class ShowInProgress(val next: NextEpisode, val played: StoredEpisodeProgress?)
 
     /**
      * Takes the Viewer's connection to play [version], waiting until the [Connection] holding it is
@@ -1083,10 +1129,10 @@ class Library private constructor(
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
         val cached = store.metadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
-        // An answer from before the cloud gave logos is asked again: it would otherwise lack one for a week.
+        // An answer from before the cloud gave textless posters (and logos) is asked again: it would otherwise lack them for a week.
         val wanted = tmdbIds.filter { id ->
             val stored = cached[id]
-            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"logoPath\"") == false
+            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"textlessPosterPath\"") == false
         }
         if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
             try {

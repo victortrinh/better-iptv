@@ -48,11 +48,6 @@
     <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
     <string name="sync_just_now">à l\'instant</string>
     <string name="sync_failed_empty">Échec de la synchronisation : %1$s</string>
-    <plurals name="sync_unknown_prefixes">
-        <item quantity="one">Préfixe absent de la table des préfixes : %1$s.</item>
-        <item quantity="many">Préfixes absents de la table des préfixes : %1$s.</item>
-        <item quantity="other">Préfixes absents de la table des préfixes : %1$s.</item>
-    </plurals>
 
     <string name="badge_confirmed">Confirmé</string>
     <string name="badge_confirmed_meaning">lu dans le fichier</string>
@@ -169,6 +164,7 @@
     <string name="runtime_minutes">%1$d min</string>
     <string name="runtime_hours">%1$d h %2$02d min</string>
     <string name="time_left">Il reste %1$s</string>
+    <string name="start_next_episode">Commencer l\'épisode suivant</string>
     <string name="tmdb_attribution">Détails et illustrations des titres fournis par TMDB. Ce produit utilise l\'API TMDB, mais n\'est ni approuvé ni certifié par TMDB.</string>
 
     <string name="settings_title">Paramètres</string>

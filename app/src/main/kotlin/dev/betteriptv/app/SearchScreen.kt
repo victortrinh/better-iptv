@@ -63,7 +63,8 @@ import kotlinx.coroutines.delay
  * pressed faster than the stick redraws aren't lost. Under the keyboard, completions replace the
  * query in one press and move focus to the first result; before anything is typed they are genre
  * shortcuts. A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu
- * key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]).
+ * key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]). The
+ * keyboard takes focus on arrival, unless the screen was reached by picking its tab ([focusTab]).
  */
 @Composable
 fun SearchScreen(
@@ -72,6 +73,7 @@ fun SearchScreen(
     onEdit: ((String) -> String) -> Unit,
     contentLanguages: List<String>,
     appLanguage: String,
+    focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
     onWatch: (Channel) -> Unit,
@@ -94,7 +96,8 @@ fun SearchScreen(
     }
     val keyboard = remember { FocusRequester() }
     val tab = remember { FocusRequester() }
-    LaunchedEffect(Unit) { keyboard.requestFocus() }
+    if (!focusTab) LaunchedEffect(Unit) { keyboard.requestFocus() }
+    FocusTabOnArrival(focusTab, tab)
     // A completion was picked: focus goes to the first result once its query is answered.
     val firstResult = remember { FocusRequester() }
     var toResults by remember { mutableStateOf(false) }

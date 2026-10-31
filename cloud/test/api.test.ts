@@ -7,7 +7,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -95,6 +95,8 @@ describe("Title metadata", () => {
         backdropPath: "/godfather-backdrop.jpg",
         // The best voted French logo; English and language-free ones come after it.
         logoPath: "/parrain-logo.svg",
+        // The best voted poster with no language, so with no text on it.
+        textlessPosterPath: "/godfather-plain.jpg",
         cast: [
           { name: "Marlon Brando", character: "Don Vito Corleone", profilePath: "/brando.jpg" },
           { name: "Al Pacino", character: "Michael Corleone", profilePath: "/pacino.jpg" },
@@ -107,10 +109,10 @@ describe("Title metadata", () => {
     expect(tmdb.requests[0].searchParams.get("language")).toBe("fr");
   });
 
-  it("asks TMDB for logos in the requested language and English", async () => {
+  it("asks TMDB for images in the requested language, English and none", async () => {
     await metadata(await registerDevice(), "fr", [theGodfather]);
 
-    expect(tmdb.requests[0].searchParams.get("include_image_language")).toBe("fr,en");
+    expect(tmdb.requests[0].searchParams.get("include_image_language")).toBe("fr,en,null");
   });
 
   it("falls back to the English logo, and to none", async () => {
@@ -118,6 +120,7 @@ describe("Title metadata", () => {
     const { titles } = await metadata(await registerDevice(), "fr", [{ kind: "show", tmdbId: 1396 }, { kind: "movie", tmdbId: 11 }]);
 
     expect(titles.map((t) => t.logoPath)).toEqual(["/bb-logo.png", null]);
+    expect(titles.map((t) => t.textlessPosterPath)).toEqual([null, null]);
   });
 
   it("reads Shows from TMDB's TV endpoint, whose IDs are another number space", async () => {
@@ -225,15 +228,15 @@ describe("the metadata cache", () => {
     expect(tmdb.requests).toHaveLength(2);
   });
 
-  it("asks TMDB again for an answer cached before logos were asked for", async () => {
+  it("asks TMDB again for an answer cached before textless posters were asked for", async () => {
     const token = await registerDevice();
     await metadata(token, "en", [theGodfather]);
     const row = await env.DB.prepare("SELECT body FROM title_metadata").first<{ body: string }>();
-    const { logoPath, ...withoutLogo } = JSON.parse(row!.body);
-    await env.DB.prepare("UPDATE title_metadata SET body = ?1").bind(JSON.stringify(withoutLogo)).run();
+    const { textlessPosterPath, ...without } = JSON.parse(row!.body);
+    await env.DB.prepare("UPDATE title_metadata SET body = ?1").bind(JSON.stringify(without)).run();
 
     const again = await metadata(token, "en", [theGodfather]);
-    expect(again.titles[0].logoPath).toBe(logoPath);
+    expect(again.titles[0].textlessPosterPath).toBe(textlessPosterPath);
     expect(tmdb.requests).toHaveLength(2);
   });
 
@@ -343,5 +346,38 @@ describe("file reads", () => {
     const huge = { audio: Array.from({ length: 500 }, () => ({ language: "eng", codec: "audio/eac3", channels: 6 })) };
     expect((await call("POST", "/v1/file-reads", { provider, files: [{ listingId: 12, file: huge }] }, token)).status).toBe(400);
     expect((await call("POST", "/v1/file-reads/lookup", { provider, listings: [0] }, token)).status).toBe(400);
+  });
+});
+
+describe("unknown Prefixes", () => {
+  const provider = "a".repeat(64);
+  const rows = () =>
+    env.DB.prepare("SELECT prefix, listing_count, example, first_seen, last_seen FROM unknown_prefix ORDER BY prefix").all().then((r) => r.results);
+
+  it("keeps what each Sync reports, and when each Prefix was first and last seen", async () => {
+    const token = await registerDevice();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T08:00:00Z"));
+    const first = { provider, prefixes: [{ prefix: "BR", listingCount: 260, example: "BR - Cold Pursuit (2019)" }] };
+    expect((await call("POST", "/v1/unknown-prefixes", first, token)).status).toBe(204);
+
+    vi.setSystemTime(new Date("2026-10-31T08:00:00Z"));
+    const second = { provider, prefixes: [{ prefix: "BR", listingCount: 261, example: "BR - Sonic the Hedgehog (2020)" }, { prefix: "CD", listingCount: 1, example: "CD - Call Me Kat (US)" }] };
+    expect((await call("POST", "/v1/unknown-prefixes", second, token)).status).toBe(204);
+
+    const day1 = Date.parse("2026-10-30T08:00:00Z"), day2 = Date.parse("2026-10-31T08:00:00Z");
+    expect(await rows()).toEqual([
+      { prefix: "BR", listing_count: 261, example: "BR - Sonic the Hedgehog (2020)", first_seen: day1, last_seen: day2 },
+      { prefix: "CD", listing_count: 1, example: "CD - Call Me Kat (US)", first_seen: day2, last_seen: day2 },
+    ]);
+  });
+
+  it("takes a hash of the Provider's host and well-formed Prefixes", async () => {
+    const token = await registerDevice();
+    const report = (body: unknown) => call("POST", "/v1/unknown-prefixes", body, token).then((r) => r.status);
+    expect(await report({ provider: "provider.example:8080", prefixes: [] })).toBe(400);
+    expect(await report({ provider, prefixes: [{ prefix: "BR", listingCount: 0, example: "BR - X" }] })).toBe(400);
+    expect(await report({ provider, prefixes: [{ prefix: "", listingCount: 1, example: "X" }] })).toBe(400);
+    expect(await report({ provider, prefixes: "BR" })).toBe(400);
   });
 });

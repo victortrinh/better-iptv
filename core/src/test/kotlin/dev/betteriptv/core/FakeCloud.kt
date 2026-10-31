@@ -168,6 +168,7 @@ class FakeCloud : Closeable {
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
             }
+            "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
@@ -234,6 +235,7 @@ fun tmdbTitle(
     posterPath: String? = null,
     backdropPath: String? = null,
     logoPath: String? = null,
+    textlessPosterPath: String? = null,
     cast: List<String> = emptyList(),
     popularity: Double = 10.0,
     alternativeTitles: List<String> = emptyList(),
@@ -252,6 +254,7 @@ fun tmdbTitle(
     "posterPath" to posterPath,
     "backdropPath" to backdropPath,
     "logoPath" to logoPath,
+    "textlessPosterPath" to textlessPosterPath,
     "cast" to cast.map { mapOf("name" to it, "character" to "", "profilePath" to null) },
     "imdbId" to null,
     "trailers" to emptyList<String>(),

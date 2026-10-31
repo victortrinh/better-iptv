@@ -2,6 +2,7 @@ package dev.betteriptv.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,8 +35,9 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * One Title: its poster, or a landscape still when [wide] (Continue watching). Its name and badges
  * (best quality and languages) appear under it while it has focus, so the artwork leads; not when
- * [named] is false (Home, where [InfoPanel] tells them).
+ * [named] is false (Home, where [RailInfo] tells them).
  * Without an [image], the card is glass with the name on it. [progress] draws how far the Viewer got.
+ * [art] draws over the artwork: Home's [CardLogo].
  */
 @Composable
 fun TitleCard(
@@ -48,6 +50,7 @@ fun TitleCard(
     progress: Float? = null,
     named: Boolean = true,
     onFocus: () -> Unit = {},
+    art: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -63,7 +66,7 @@ fun TitleCard(
             Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 2f / 3f).then(if (named) Modifier.onFocusChanged { focused = it.isFocused } else Modifier),
             container = Colors.surface,
             onFocus = onFocus,
-        ) {
+        ) { hasFocus ->
             if (image != null) {
                 Box(Modifier.matchParentSize().paint(image, contentScale = ContentScale.Crop).semantics { contentDescription = name })
             } else {
@@ -77,6 +80,7 @@ fun TitleCard(
                     modifier = Modifier.align(Alignment.Center).padding(horizontal = Spacing.s),
                 )
             }
+            if (art != null) art()
             if (progress != null) {
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Colors.ground.copy(alpha = 0.6f)))
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(Colors.ink))
