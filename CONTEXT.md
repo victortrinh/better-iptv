@@ -144,7 +144,7 @@ The language of the app's own interface and of Title metadata (titles, descripti
 _Avoid_: UI language, locale
 
 **Region**:
-The country that sets the Top 10 Chart and the default leagues.
+The country that sets the Top 10 Chart and the default leagues. Canada when the device doesn't say.
 _Avoid_: Country, locale, market
 
 ### Live and sports
@@ -176,8 +176,12 @@ _Avoid_: Favourite team, followed team
 ### Discovery
 
 **Chart**:
-An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending, Trakt most watched), filtered to Titles the Provider has.
+An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending this week), filtered to Titles the Provider has in the Viewer's Content languages. The Top 10's Titles carry their rank, counted among the Titles left, so a missing Title leaves no gap; trending's carry none.
 _Avoid_: Trending list, top list
+
+**Row**:
+A row of cards on Home, Movies or Shows: Continue watching, a Chart, New on your service, Favourites or a genre. A Title shows in one row of a screen only, the highest it fits; a Chart keeps every Title it ranks, and the rows below it skip what it shows. Continue watching and Favourites stand apart.
+_Avoid_: Shelf, carousel, category
 
 **Continue watching**:
 The Movies the Viewer stopped partway through and hasn't Watched, and the Shows they played an Episode of until they Watched its last, last played first. A Show shows the Episode to watch next: the one they stopped in, else the one after the last they Watched ("Start next episode"). A Movie's Title page offers "Continue from 1:02:13", "Restart" and "Remove from Continue watching", which forgets where they stopped.
