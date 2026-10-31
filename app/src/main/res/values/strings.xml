@@ -207,6 +207,8 @@
     <string name="settings_content_languages_detail">Cards and Play pick Versions in these first</string>
     <string name="settings_region">Region</string>
     <string name="settings_region_detail">Sets the Top 10 and the default leagues</string>
+    <string name="settings_region_suggested">Suggested</string>
+    <string name="settings_region_all">All countries</string>
     <string name="settings_playback">Playback</string>
     <string name="settings_quality_cap">Quality cap</string>
     <string name="settings_quality_cap_detail">The highest quality Play picks. Lower it if playback stutters.</string>
