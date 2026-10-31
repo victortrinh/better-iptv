@@ -43,7 +43,7 @@ data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
  */
 data class TitleAbout(val description: String?, val genres: List<String>, val runtimeMinutes: Int?, val logo: String? = null, val textlessPoster: String? = null)
 
-/** A row on the home screen. */
+/** A row on Home, or on the Movies or Shows tab. */
 sealed interface HomeRow {
     /** The Titles the Viewer started and didn't finish, last played first. */
     data class ContinueWatching(val titles: List<InProgress>) : HomeRow
@@ -55,19 +55,25 @@ sealed interface HomeRow {
      * A Chart (CONTEXT.md), kept to the Titles the Viewer can watch: Netflix's Top 10 [list] for the
      * Viewer's [region] (ISO 3166), or the world's when Netflix doesn't list it (null), its [titles]
      * ranked 1…n in order, counted among the Titles kept; or TMDB's trending this week, unranked and
-     * the same everywhere (no [region]).
+     * the same everywhere (no [region]): movies and shows mixed on Home, one kind on its tab.
      */
     data class Chart(val list: ChartList, val region: String?, val titles: List<TitleSummary>) : HomeRow
 
-    /** Titles with recently added Listings, most popular on TMDB first. */
-    data class NewOnYourService(val titles: List<TitleSummary>) : HomeRow
+    /**
+     * Titles with recently added Listings, most popular on TMDB first: movies and shows on Home
+     * ([kind] null), one kind on its tab (New movies, New shows).
+     */
+    data class NewOnYourService(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 }
 
-/** Which Chart a [HomeRow.Chart] is. */
-enum class ChartList { TopMovies, TopShows, Trending }
+/**
+ * Which Chart a [HomeRow.Chart] is: a Top 10, or TMDB's trending this week, mixed on Home and one
+ * kind on the Movies and Shows tabs.
+ */
+enum class ChartList { TopMovies, TopShows, Trending, TrendingMovies, TrendingShows }
 
 /**
  * A Title the Viewer stopped in: its card, a landscape [still] URL from TMDB, how far they got

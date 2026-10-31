@@ -812,12 +812,8 @@ class Library private constructor(
         val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
         val trends = charts.trendingAll.mapNotNull(store::title)
         val metadata = metadata((resumes.map { it.first } + movies + shows + tops.flatMap { it.second } + trends).map { it.id }.distinct(), appLanguage)
-        fun card(title: StoredTitle, candidates: List<Candidate> = candidates(title)): TitleSummary {
-            val shown = shown(candidates, contentLanguages, metadata[title.id], appLanguage)
-            val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
-            return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
-        }
-        val popularFirst = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
+        fun card(title: StoredTitle) = rowCard(title, contentLanguages, appLanguage, metadata)
+        val popularFirst = popularFirst(metadata)
         // The newest movies, then the newest shows, in the Viewer's languages.
         val browsable = listOf(movies, shows).map { titles ->
             titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
@@ -862,6 +858,50 @@ class Library private constructor(
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
         }
     }
+
+    /**
+     * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
+     * (or the world's), TMDB's trending of that kind this week, then New movies (or shows): the
+     * newest Titles of that kind, most popular on TMDB first. Each row shows only the Provider's
+     * Titles with a Version in the Viewer's [contentLanguages], or an Untagged one Likely in one, and
+     * a Chart none at all under [MIN_CHART_SIZE]. The tab shows a Title once, in the highest row it
+     * fits ([ScreenRows]), on its own: a Title on Home's Top row is on the tab's too. Rows with no
+     * Titles are left out. Like Home, the Charts kept on the device stand while the cloud can't answer.
+     */
+    suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
+        tabRows(kind, contentLanguages, appLanguage, region, Instant.now())
+
+    internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+        val charts = charts(region, appLanguage, now)
+        val movies = kind == TitleKind.Movie
+        val topList = if (movies) ChartList.TopMovies else ChartList.TopShows
+        val trendingList = if (movies) ChartList.TrendingMovies else ChartList.TrendingShows
+        val tops = (if (movies) charts.topMovies else charts.topShows).mapNotNull(store::title)
+        val trends = (if (movies) charts.trendingMovies else charts.trendingShows).mapNotNull(store::title)
+        val newest = store.titles(kind, 0, TAB_NEW)
+        val metadata = metadata((tops + trends + newest).map { it.id }.distinct(), appLanguage)
+        val screen = ScreenRows()
+        val top = screen.chart(watchable(tops, contentLanguages, metadata), MIN_CHART_SIZE)
+        val trending = screen.row(watchable(trends, contentLanguages, metadata), ROW_SIZE, MIN_CHART_SIZE)
+        val new = screen.row(watchable(newest, contentLanguages, metadata).sortedWith(popularFirst(metadata)), ROW_SIZE)
+        // The genre rows (#200) go after New, through the same [screen], so they skip what's shown above.
+        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
+        buildList {
+            if (top.isNotEmpty()) add(HomeRow.Chart(topList, region.takeUnless { charts.worldwide }, cards(top)))
+            if (trending.isNotEmpty()) add(HomeRow.Chart(trendingList, null, cards(trending)))
+            if (new.isNotEmpty()) add(HomeRow.NewOnYourService(cards(new), kind))
+        }
+    }
+
+    /** [title]'s card on a row: its best Version in the Viewer's [contentLanguages], and what the info under the rail tells about it. */
+    private fun rowCard(title: StoredTitle, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): TitleSummary {
+        val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
+        val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
+        return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
+    }
+
+    /** Titles most popular on TMDB first; those without metadata last, in their order. */
+    private fun popularFirst(metadata: Map<TitleId, TitleMetadata>) = compareByDescending<StoredTitle> { metadata[it.id]?.popularity ?: 0.0 }
 
     /**
      * Where the Viewer is in Show [title], from the show details read when its details last opened:
@@ -1263,6 +1303,8 @@ class Library private constructor(
         /** Of those, the ones New on your service is picked from. */
         private const val NEW_MOVIES = 40
         private const val NEW_SHOWS = 15
+        /** The newest Titles of its kind a tab's New row is picked from. */
+        private const val TAB_NEW = 40
         private const val GENRE_ROWS = 8
         /** A genre with fewer Titles than this, once those shown higher up are skipped, gets no row: a row of two looks broken. */
         private const val MIN_GENRE_SIZE = 5

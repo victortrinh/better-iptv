@@ -20,6 +20,12 @@ internal class Charts(json: String) {
     /** TMDB's trending this week, movies and shows mixed, in its order. */
     val trendingAll: List<TitleId.Tmdb> = titles(trending?.get("all"))
 
+    /** TMDB's trending movies this week, in its order, for the Movies tab. */
+    val trendingMovies: List<TitleId.Tmdb> = titles(trending?.get("movies"))
+
+    /** TMDB's trending shows this week, in its order, for the Shows tab. */
+    val trendingShows: List<TitleId.Tmdb> = titles(trending?.get("shows"))
+
     private fun titles(list: Any?): List<TitleId.Tmdb> = (list as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title ->
         val kind = when (title["kind"]) {
             "movie" -> TitleKind.Movie
