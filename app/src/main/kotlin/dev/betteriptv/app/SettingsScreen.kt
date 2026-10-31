@@ -1,5 +1,6 @@
 package dev.betteriptv.app
 
+import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -10,25 +11,40 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.ChoiceRow
+import dev.betteriptv.app.ui.components.FocusSurface
+import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
@@ -39,6 +55,7 @@ import dev.betteriptv.core.UpdateState
 import dev.betteriptv.core.offered
 import java.text.Collator
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages and Region under
@@ -74,7 +91,7 @@ fun SettingsScreen(
             }
             Picker.Region -> {
                 BackHandler { picking = null }
-                RegionList(settings.region, settings.appLanguage, onPick = { region ->
+                RegionList(settings.region, settings.appLanguage, settings.contentLanguages, onPick = { region ->
                     onChange { it.copy(region = region) }
                     picking = null
                 })
@@ -216,30 +233,92 @@ private fun ContentLanguagesList(library: Library, chosen: List<String>, onChang
     }
 }
 
-/** Every country, by its name in the [appLanguage], the Viewer's [region] first. */
+/**
+ * Every country, by its name in the [appLanguage]: the [suggestedRegions] under Suggested, the
+ * Viewer's [region] first, then All countries beside an A–Z rail. Left from a country moves to its
+ * letter on the rail; OK or Right on a letter jumps to that letter's first country.
+ */
 @Composable
-private fun RegionList(region: String, appLanguage: String, onPick: (String) -> Unit) {
+private fun RegionList(region: String, appLanguage: String, contentLanguages: List<String>, onPick: (String) -> Unit) {
     val countries = remember(appLanguage) {
         val collator = Collator.getInstance(Locale.forLanguageTag(appLanguage))
         Locale.getISOCountries().sortedWith { a, b -> collator.compare(countryName(a, appLanguage), countryName(b, appLanguage)) }
     }
-    val order = remember(countries) { listOf(region) + (countries - region) }
+    // The system's country, not the app's: the app's locale follows the App language.
+    val suggested = remember(region, contentLanguages) { suggestedRegions(region, Resources.getSystem().configuration.locales[0].country, contentLanguages) }
+    val letterOf = remember(countries) { countries.associateWith { indexLetter(countryName(it, appLanguage)) } }
+    // Sorted by the App language's collator, so a letter's countries follow one another.
+    val firstOfLetter = remember(countries) { countries.reversed().associateBy { letterOf.getValue(it) }.toSortedMap() }
+    val rows = remember(countries) { countries.associateWith { FocusRequester() } }
+    val letters = remember(firstOfLetter) { firstOfLetter.keys.associateWith { FocusRequester() } }
+    val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    fun jump(letter: Char) {
+        val country = firstOfLetter.getValue(letter)
+        scope.launch {
+            // The headings and Suggested come before All countries.
+            list.scrollToItem(2 + suggested.size + countries.indexOf(country))
+            withFrameNanos {}
+            rows.getValue(country).requestFocus()
+        }
+    }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.requestFocus() }
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.width(COLUMN_WIDTH),
-    ) {
-        item { Heading(stringResource(R.string.settings_region)) }
-        items(order, key = { it }) { country ->
-            SettingRow(
-                countryName(country, appLanguage),
-                if (country == region) CHOSEN else "",
-                onClick = { onPick(country) },
-                if (country == region) Modifier.focusRequester(first) else Modifier,
-            )
+    Row(Modifier.padding(start = Spacing.screenX)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            for ((letter, focus) in letters) {
+                LetterKey(letter, onClick = { jump(letter) }, Modifier.focusRequester(focus))
+            }
         }
+        Spacer(Modifier.width(16.dp))
+        LazyColumn(
+            state = list,
+            contentPadding = PaddingValues(end = Spacing.screenX, top = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.width(COLUMN_WIDTH),
+        ) {
+            @Composable
+            fun Country(country: String, modifier: Modifier) {
+                SettingRow(
+                    countryName(country, appLanguage),
+                    if (country == region) CHOSEN else "",
+                    onClick = { onPick(country) },
+                    modifier.focusProperties { left = letters.getValue(letterOf.getValue(country)) },
+                )
+            }
+            item { Heading(stringResource(R.string.settings_region_suggested)) }
+            items(suggested, key = { "suggested:$it" }) { country ->
+                Country(country, if (country == region) Modifier.focusRequester(first) else Modifier)
+            }
+            item { Heading(stringResource(R.string.settings_region_all)) }
+            items(countries, key = { it }) { country -> Country(country, Modifier.focusRequester(rows.getValue(country))) }
+        }
+    }
+}
+
+/** A letter on the Region list's rail; Right, like OK, jumps to its countries. */
+@Composable
+private fun LetterKey(letter: Char, onClick: () -> Unit, modifier: Modifier) {
+    FocusSurface(
+        onClick,
+        modifier.size(LETTER).onPreviewKeyEvent { event ->
+            if (event.key == Key.DirectionRight && event.type == KeyEventType.KeyDown) onClick()
+            event.key == Key.DirectionRight
+        },
+        weight = FocusWeight.Control,
+        corner = LETTER / 2,
+        focusedContainer = Colors.focus,
+    ) { focused ->
+        Text(
+            letter.toString(),
+            style = Type.label,
+            color = if (focused) Colors.onFocus else Colors.inkMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.Center),
+        )
     }
 }
 
@@ -265,6 +344,8 @@ private fun Labelled(label: String, detail: String, content: @Composable () -> U
 }
 
 private val COLUMN_WIDTH = 760.dp
+
+private val LETTER = 36.dp
 
 /** The value of a chosen row in a list. */
 private const val CHOSEN = "✓"
