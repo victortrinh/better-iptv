@@ -73,10 +73,11 @@ fun TitleCard(
             if (image != null) {
                 Box(Modifier.matchParentSize().paint(image, contentScale = ContentScale.Crop).semantics { contentDescription = name })
             } else {
+                val label = Type.label
                 Text(
                     name,
                     // A poster is narrow: long words break with a hyphen rather than anywhere.
-                    style = Type.label.copy(hyphens = Hyphens.Auto),
+                    style = remember(label) { label.copy(hyphens = Hyphens.Auto) },
                     color = Colors.ink,
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,

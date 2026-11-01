@@ -43,9 +43,12 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () ->
     // The line keeps room above and below the digits, more above than below, so the numeral is
     // centred on its drawn glyph: moved by how far the glyph's middle sits from the line's.
     var lift by remember { mutableFloatStateOf(0f) }
-    val typeface = LocalFontFamilyResolver.current.resolve(Type.numeral.fontFamily, Type.numeral.fontWeight ?: FontWeight.Normal).value as Typeface
+    // Resolved once a card, not at each composition.
+    val resolver = LocalFontFamilyResolver.current
+    val typeface = remember(resolver) { resolver.resolve(Type.numeral.fontFamily, Type.numeral.fontWeight ?: FontWeight.Normal) }.value as Typeface
     val size = with(density) { Type.numeral.fontSize.toPx() }
     val middle = remember(rank, typeface, size) { inkMiddle(rank.toString(), typeface, size) }
+    val outline = remember(stroke) { Type.numeral.copy(drawStyle = Stroke(width = stroke * 2)) }
     Box(modifier.width(Cards.rankedWidth)) {
         // As tall as the poster, which sets the card's height.
         Box(Modifier.matchParentSize().wrapContentWidth(Alignment.Start).width(Cards.numeralWidth + Cards.numeralOverlap)) {
@@ -62,7 +65,7 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () ->
             // Inter's digits are made of overlapping shapes, whose inner edges would show otherwise.
             Text(
                 rank.toString(),
-                style = Type.numeral.copy(drawStyle = Stroke(width = stroke * 2)),
+                style = outline,
                 color = Colors.inkMuted,
                 softWrap = false,
                 maxLines = 1,
@@ -81,9 +84,18 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () ->
 /**
  * Where the middle of [text]'s drawn glyph sits below its baseline (negative: above it), as
  * [Type.numeral] draws it at [size] px in [typeface]. Read off the glyph's outline: at this size
- * the paint's own text bounds are a few pixels out.
+ * the paint's own text bounds are a few pixels out. The walk takes thousands of steps, so each
+ * numeral is measured once, not each time its card comes on screen (#63).
  */
-private fun inkMiddle(text: String, typeface: Typeface, size: Float): Float {
+private fun inkMiddle(text: String, typeface: Typeface, size: Float): Float =
+    inkMiddles.getOrPut(InkKey(text, typeface, size)) { measureInkMiddle(text, typeface, size) }
+
+private data class InkKey(val text: String, val typeface: Typeface, val size: Float)
+
+/** The numerals [inkMiddle] has measured. Composition, which asks, runs on the main thread only. */
+private val inkMiddles = HashMap<InkKey, Float>()
+
+private fun measureInkMiddle(text: String, typeface: Typeface, size: Float): Float {
     val paint = Paint().apply {
         this.typeface = typeface
         textSize = size

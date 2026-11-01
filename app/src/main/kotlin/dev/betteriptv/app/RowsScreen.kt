@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,9 +101,16 @@ fun restoredCard(card: RowCard, before: Map<String, List<String>>, after: Map<St
  * blank the screen, the card the info under its rail tells about, the one focused last, and the row
  * showing that info.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Stable
 class RowsState {
-    val list = LazyListState()
+    /**
+     * Keeps about a row composed past each edge of the screen, and composes the next one ahead
+     * between frames. Without it, rows came and went at the screen's edges while Down was held, as
+     * focus moved ahead of the scroll: 150 Down on the Movies tab composed its ~22 rows 69 times
+     * (489 cards); with it, 33 times (255 cards), on the emulator (#63).
+     */
+    val list = LazyListState(LazyLayoutCacheWindow(ahead = ROW_CACHE, behind = ROW_CACHE))
     var rows by mutableStateOf<List<HomeRow>?>(null)
     var focused by mutableStateOf<RowCard?>(null)
 
@@ -197,7 +206,9 @@ fun RowsScreen(
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
         Seen(posters = seen(Cards.posterWidth), stills = seen(Cards.continueWidth), channels = seen(Cards.wideWidth))
     }
-    val focusedRow = rows?.indexOfFirst { it.key == state.focused?.row } ?: -1
+    // Only the focused row's place is read here, so a press along a row doesn't compose the screen
+    // again (#63).
+    val focusedRow by remember(state) { derivedStateOf { state.rows?.indexOfFirst { it.key == state.focused?.row } ?: -1 } }
     LaunchedEffect(focusedRow) {
         if (focusedRow < 0) return@LaunchedEffect
         state.list.animateScrollToItem(focusedRow)
@@ -234,7 +245,9 @@ fun RowsScreen(
                         val wide = row is HomeRow.ContinueWatching
                         val channels = row is HomeRow.Favourites
                         val ranked = row.ranked
-                        val keys = row.keys
+                        // Kept with the row: new lists would compose each of its cards again.
+                        val keys = remember(row) { row.keys }
+                        val titles = remember(row) { row.titles }
                         val loop = remember(keys.size, wide, channels, ranked) {
                             RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters, ranked)
                         }
@@ -291,7 +304,7 @@ fun RowsScreen(
                                         )
                                         return@items
                                     }
-                                    val title = row.titles[index]
+                                    val title = titles[index]
                                     val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                                     // The info under the rail shows the badges, so the card only counts as on screen.
                                     OnScreen(library, title.id)
@@ -319,9 +332,7 @@ fun RowsScreen(
                                 }
                             }
                         }
-                        if (state.settled == row.key) {
-                            RailInfo(library, row, state.focused, contentLanguages, Modifier.padding(start = Spacing.screenX, top = 12.dp))
-                        }
+                        SettledInfo(library, row, state, contentLanguages)
                         Spacer(Modifier.height(14.dp))
                     }
                 }
@@ -331,6 +342,17 @@ fun RowsScreen(
             }
         }
     }
+}
+
+/**
+ * The info under [row] while it is the row settled at the top ([RowsState.settled]). The focused
+ * and settled cards are read here, not in the row: there they composed the rows on screen and each
+ * of their cards again at every press (#63).
+ */
+@Composable
+private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>) {
+    if (state.settled != row.key) return
+    RailInfo(library, row, state.focused, contentLanguages, Modifier.padding(start = Spacing.screenX, top = 12.dp))
 }
 
 /** The info under [row], telling about [card], the card focused last, when it is one of the row's. */
@@ -412,6 +434,9 @@ private val HomeRow.keys: List<String>
 private fun channelKey(channel: Channel) = "channel/${channel.id}"
 
 private val CANVAS_WIDTH = 960.dp
+
+/** About a row of posters with its heading: what [RowsState.list] keeps composed past each edge. */
+private val ROW_CACHE = 300.dp
 
 /** How many cards each kind of rail shows at once ([RailLoop.seen]). */
 private class Seen(val posters: Int, val stills: Int, val channels: Int)
