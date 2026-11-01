@@ -35,7 +35,7 @@ Refreshing the device's copy of the Provider's catalog.
 _Avoid_: Refresh, import, scan
 
 **Clutter**:
-Listings that aren't watchable content: separator rows, finished Event channels, radio, music videos and audiobooks.
+Listings that aren't watchable content: separator rows, finished Event channels and empty Event slots ("NO EVENT STREAMING", "No event"), radio, music videos and audiobooks.
 _Avoid_: Junk
 
 ### Titles and versions
@@ -89,8 +89,8 @@ A Version whose Prefix names a Source but no language.
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.
 
 **Sports replay**:
-A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`).
-_Avoid_: Highlight
+A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its TMDB ID, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own.
+_Avoid_: Highlight (a highlights show is not a Replay)
 
 ### Tracks and quality
 
@@ -150,24 +150,44 @@ _Avoid_: Country, locale, market
 ### Live and sports
 
 **Channel**:
-A live Listing that broadcasts continuously.
+A live broadcast as one thing, however many Listings the Provider has for it: `VIP: TNT SPORT 1 ᴴᴰ` and `GOLD: TNT SPORT 1 SD` are one Channel. It is named without its Tier tag or quality words; its country tag tells it from a namesake elsewhere, so `UK: CNN` and `US: CNN` are two Channels.
 _Avoid_: Stream, station
 
 **Channel variant**:
-One of several Listings of the same Channel at different qualities (HD, SD, 4K, RAW).
+One Listing of a Channel: a copy at one quality (4K, HD, SD, RAW), Likely from its name. Watching a Channel starts its best variant within the Quality cap, and the others stand in when it fails, as Versions and Backups do for a Movie. Two Listings under the identical name are variants of each other.
 _Avoid_: Duplicate channel
 
+**Tier tag**:
+The package word at the start of a live Listing's name (`VIP:`, `GOLD:`, `4K:`, `8K:`) that says which Provider package it comes from. It is not part of the Channel.
+_Avoid_: Prefix (which is the Movie and Show word)
+
 **Event channel**:
-A live Listing that carries one scheduled Game and is named after it, such as `Football: Wolfsburg vs Köln @ Oct 24 11:55`.
+A live Listing that carries one scheduled Game and is named after it, such as `Football: Wolfsburg vs Köln @ Oct 24 11:55`. Its name, not the TV guide, is how a Game finds it: the Provider's guide covers none of them.
 _Avoid_: PPV channel, game channel
 
+**Event Category**:
+A Category whose Listings are mostly Event channels and empty Event slots, such as `US| ESPN+ PPV`. Its live Games show in the hub; the Category itself is not browsed.
+_Avoid_: PPV category
+
 **Game**:
-A scheduled sports contest from schedule data, including races and fights.
+A scheduled sports contest from schedule data, including races and fights. The hub shows it once, never with a score, and its page lists its Feeds.
 _Avoid_: Event, match, fixture
 
+**Feed**:
+One way of watching a Game: a Channel or an Event channel carrying it, with a language and, where known, a Broadcaster. The best Feed is in a Content language, dedicated to the Game (an Event channel) rather than a network that may show another game, then of the best quality. The Viewer can mark a Feed "Not this game" to drop it for that Game.
+_Avoid_: Stream, source, link
+
+**Broadcaster**:
+The network the schedule says carries a Game, such as Fox, ESPN+ or Apple TV. Its Channel is one of the Game's Feeds only when the schedule names it for that Game.
+_Avoid_: Network, provider
+
 **Favourite**:
-A Channel the Viewer has saved.
+A Channel the Viewer has saved. It stays saved whichever variants the Provider lists for the Channel from one Sync to the next.
 _Avoid_: Bookmark
+
+**League**:
+A competition whose Games the sports hub follows, such as the NHL or the Premier League. The Region picks the default Leagues (Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League); the Viewer turns Leagues on and off in Settings.
+_Avoid_: Competition, sport
 
 **Pinned team**:
 A team whose Games are shown first.
@@ -180,7 +200,7 @@ An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending 
 _Avoid_: Trending list, top list
 
 **Row**:
-A row of cards on Home, Movies or Shows: Continue watching, a Chart, New on your service, Favourites or a genre. A Title shows in one row of a screen only, the highest it fits; a Chart keeps every Title it ranks, and the rows below it skip what it shows. Continue watching and Favourites stand apart.
+A row of cards on Home, Movies, Shows or Live: Continue watching, a Chart, New on your service, Favourites or a genre; on Live, Live now, Today, a League, More live events, Replays, Favourites and the Channels' countries. A Title, or a Game, shows in one row of a screen only, the highest it fits; a Chart keeps every Title it ranks, and the rows below it skip what it shows. Continue watching and Favourites stand apart.
 _Avoid_: Shelf, carousel, category
 
 **Continue watching**:
