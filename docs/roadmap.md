@@ -1,6 +1,6 @@
 # Roadmap
 
-Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
+Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled; on 2026-11-01 live and sports' details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
 
 Priorities, in order: a fast catalog with the best Version in the Viewer's language, subtitles and smooth playback of every format on a nice interface; then trending, so Home is worth opening every day; then live sports; then visual polish.
 
@@ -13,7 +13,7 @@ Re-run with `python3 -I scripts/survey.py` (reads `.env`, writes to the git-igno
 - TMDB ID on 94% of movie and show Listings.
 - Names follow `PREFIX - Title (Year)` with 105 distinct Prefixes; Category names add hints ("MULTI-SUBS", "Dolby Vision", "DOLBY AUDIO", "VOSTFR").
 - Movie details rarely list Tracks; Episode details list resolution and the first audio Track's language.
-- 6,725 Event channels; the TV guide covers 15% of Channels.
+- 6,725 Event channels by a broad count; on the survey day 4,550 of them were dated and live or upcoming, 965 marked finished and 6,424 empty slots. The TV guide covers 15% of Channels (6,689 Listings, 3,498 guide ids, generic titles such as "Live: NHL Hockey") and no Event channel. 919 Channels have 3 or 7 days of catch-up. Merging Channel variants (quality words and Tier tags stripped) collapses 12,913 Listings into 4,086 Channels; 5,053 Sports replays, almost all `SOC - Team at Team dd.mm.yyyy`.
 
 ## M0: Foundations
 
@@ -96,11 +96,17 @@ Starts while M1's last player bugs are fixed alongside it. Builds on Home's rail
 
 ## M3: Live and sports
 
-- Channel variants merged like Versions.
-- Sports hub of live and upcoming Games. Matched from Event channel names and schedule broadcasters, with the TV guide as a second signal.
-- Default leagues for Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League. Pinned teams optional.
-- Free schedule sources only, each swappable: ESPN's undocumented API, the NHL's and MLB's public feeds, OpenF1 or Jolpica, football-data.org.
-- Sports replays move into the sports hub.
+Settled 2026-11-01 in a grilling session against the 2026-10-24 survey, ESPN's scoreboard API and the code as #216 left it. The goal is that the household stops using TiviMate.
+
+- **Channels merge like Titles.** A Channel is the broadcast; its Listings are Channel variants. Two Listings are the same Channel when their names match once Unicode superscripts are normalised and the quality words (HD, SD, FHD, UHD, 4K, HEVC, RAW, 60FPS, (720P), (SAT), ◉) and the Tier tag (`VIP:`, `GOLD:`, `4K:`, `8K:`, `PRIME`) are stripped; the country tag (`UK:`, `US:`, `CA EN:`) stays part of the identity, since `UK: CNN` and `US: CNN` are different feeds. Identical names are variants too. The rule lives in the Prefix table. OK plays the best variant within the Quality cap (4K/UHD, then HD/FHD/RAW, then SD; HEVC preferred within a tier when the stick decodes it), TS then HLS, then the next variant; the player's menu key lists the variants as it lists Versions. Favourites become Channels, keyed by the merged name, migrated once from their stream ids.
+- **Schedule: ESPN's scoreboard API alone**, behind a per-League source interface so the NHL's and others' feeds can replace it later. Checked 2026-11-01: it answers for all seven default Leagues with Game state (pre/in/post), teams (display name, short name, abbreviation, logo), a per-day query, and US-market Broadcasters only (Fox, CBS, ESPN+, Apple TV, NHL Net, regional nets; never TSN or Sportsnet). Its CFL endpoint answered out of season with a 2022 game. Fifteen team-sport Leagues are offered in Settings (the seven, plus Champions League, La Liga, Bundesliga, Serie A, Ligue 1, NCAA football, NCAA men's basketball, WNBA), each fetched only while a device has it on. F1 and UFC (drivers and fighters, not two teams) are the first follow-up.
+- **The cloud fetches, the device matches.** The Worker keeps each wanted League's days in D1, refreshed every 5 minutes while wanted (the Charts' `chart_wanted` pattern), and answers with Games: League, start, state, teams with aliases and logos, Broadcasters. The device matches Games to its catalog: Event channels naming both teams (or one team and the League) the same day, then Channels of the Game's named Broadcasters, then the League's own network. Team matching ignores case and accents as Search does. The TV guide is not a signal: it covers no Event channel and its titles are generic. The device asks when Live or Home opens and every 2 minutes while a Games row shows.
+- **Feeds, no scores.** A Game's Feeds are ranked Content language first, then Event channel before Broadcaster Channel (a national network shows a different regional game by market), then quality. OK on a Game opens its page, like a Title's: Play starts the best Feed; the Feeds are listed below by language with their variants; the player's menu key switches Feed, and "Not this game" drops a Feed for that Game on this device. No score or period is ever shown; cards say "Live" or the start time. Game cards carry both team logos on glass, home right, and fall back to the short names.
+- **The Live tab**, a `RowsScreen`: Live now, Today, a row per League on (the week ahead; a League with no Game in seven days is left out), More live events (active unmatched Event channels within 6 hours either way, as `ChannelCard`s), Replays, Favourites, then Channels (country cards). A Game shows once per screen, highest row first. An upcoming Game with no Feed shows disabled ("No stream found"); a live one with no Feed is hidden. Home gets one row, Live now, after Continue watching, only while a Game with a Feed is in progress.
+- **Replays**: the Sports replays whose two teams match the Viewer's Leagues, newest first by the date in the name (then `added`), as Game cards; the rest, and highlights shows, through Search as "Replays · n". A finished Game's page shows its Replay once one matches its teams and date. Their TMDB IDs are wrong and ignored.
+- **The Channel browser** (ADR 0007, amended): a row of the Provider's countries (the Region first, then the Content languages' countries, then by Channel count), each opening a screen laid out like Search: the country's Categories in the left column with their counts, the focused Category's Channels on the right as rows with logo, name and, muted, what's on now and when the next programme starts. OK watches, the menu key favourites, Back returns to the country card. Category names drop the country code and the tags and merge when identical; Clutter Categories stay hidden; Event Categories are left out (their Games are in the hub). Now-and-next comes from the Provider's per-Channel guide call, for the Channels on screen and the Favourites, cached until its programmes are over, stopped for the day at the first refusal; the first ticket measures it on the stick. It also shows under a focused Favourite and in the player's top scrim. No time grid.
+- Empty Event slots the Clutter rules miss ("RFEF EVENTO N | No event", "LIVE EVENT 21 - NO EVENT", 81 Listings) become Clutter.
+- Pinned teams, F1 and UFC, a time grid over the Favourites, catch-up, and sharing "Not this game" between Viewers (M5) are follow-ups.
 
 ## M4: Polish
 
@@ -118,7 +124,6 @@ Animations, backdrops, trailers.
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
 - M2: matching Netflix's titles (names only, no TMDB IDs) to Titles.
-- M3: sports hub screens; rules for merging Channel variants.
 - M5: account model, Prefix tables for other Providers, profiles.
 
 ## Accounts the Viewer sets up
