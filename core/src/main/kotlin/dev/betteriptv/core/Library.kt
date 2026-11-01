@@ -58,7 +58,7 @@ class Library private constructor(
 
     private val syncLock = Mutex()
     private val searchLock = Any()
-    /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt before the next search. */
+    /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt in the background, the old one serving meanwhile. */
     private val catalogGeneration = AtomicInteger()
     /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
     private val metadataGeneration = AtomicInteger()
@@ -321,7 +321,8 @@ class Library private constructor(
      * anything is typed, they are the genres with the most Titles in the Viewer's languages.
      *
      * The search index of the whole catalog is built in the background after a Sync and by
-     * [prepareSearchInBackground]; a search before then waits for it.
+     * [prepareSearchInBackground]; a search before the first one waits for it, and one during or
+     * after a Sync answers from the index built before it until the new one is.
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
@@ -513,27 +514,37 @@ class Library private constructor(
     private class BuiltIndex(val catalog: Int, val metadata: Int, val index: SearchIndex)
 
     /**
-     * The search index of the current catalog. Metadata cached since it was built (often for the
-     * results of the last search) only starts a rebuild in the background, so typing never waits on one.
+     * The search index last built. A Sync, Matches or metadata cached since then (often for the
+     * results of the last search) only start a rebuild in the background, so typing never waits on
+     * one (#241): only the first search with no index at all does. The old index's Titles and
+     * Channels the catalog no longer has drop out of the results, and new ones show once it's rebuilt.
      */
     private fun searchIndex(): SearchIndex {
-        val built = searchIndex ?: return rebuildSearchIndex()
-        if (built.catalog != catalogGeneration.get()) return rebuildSearchIndex()
-        if (built.metadata != metadataGeneration.get()) prepareSearchInBackground()
+        val built = searchIndex ?: return rebuildSearchIndex(anyBuilt = true)
+        if (!searchIndexReady) prepareSearchInBackground()
         return built.index
     }
 
-    /** The search index of the current catalog and metadata, built now unless it is; the Viewer waits for it. */
-    private fun rebuildSearchIndex(): SearchIndex {
+    /**
+     * The search index of the current catalog and metadata, built now unless it is, or [anyBuilt]
+     * one; the Viewer waits for it.
+     */
+    private fun rebuildSearchIndex(anyBuilt: Boolean = false): SearchIndex {
         // The Viewer is waiting: a background build holding the lock gets their priority.
         if (Thread.currentThread() != searchBuilder) searchBuilder?.priority = Thread.NORM_PRIORITY
         return synchronized(searchLock) {
             val catalog = catalogGeneration.get()
             val metadata = metadataGeneration.get()
-            searchIndex?.takeIf { it.catalog == catalog && it.metadata == metadata }?.index
-                ?: buildSearchIndex(store, prefixTable).also { searchIndex = BuiltIndex(catalog, metadata, it) }
+            searchIndex?.takeIf { anyBuilt || it.catalog == catalog && it.metadata == metadata }?.index
+                ?: run {
+                    onSearchIndexBuild()
+                    buildSearchIndex(store, prefixTable).also { searchIndex = BuiltIndex(catalog, metadata, it) }
+                }
         }
     }
+
+    /** Runs before each build of the search index: tests hold a build there, as the stick's minute-long one would. */
+    @Volatile internal var onSearchIndexBuild: () -> Unit = {}
 
     /** [titles]' cards: TMDB's name and poster in the [appLanguage], and the best Version in the Viewer's [contentLanguages]. */
     private fun summaries(titles: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> {
