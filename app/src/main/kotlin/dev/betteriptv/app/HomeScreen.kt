@@ -5,15 +5,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 
 /** The browsing screens, in tab order. */
@@ -57,6 +60,9 @@ fun HomeScreen(
     onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit,
 ) {
+    val status by library.syncStatus.collectAsStateWithLifecycle()
+    // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Movies and Shows.
+    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
     RowsScreen(
         library, contentLanguages, state, restoreFocus, focusTab,
         reading = listOf(contentLanguages, appLanguage, region),
@@ -64,6 +70,9 @@ fun HomeScreen(
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
         onWatch = onWatch,
+        placeholder = if (firstSync) {
+            { FirstSync(status) }
+        } else null,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab)
     }

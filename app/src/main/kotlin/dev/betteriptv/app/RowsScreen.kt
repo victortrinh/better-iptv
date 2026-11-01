@@ -1,6 +1,16 @@
 package dev.betteriptv.app
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import dev.betteriptv.app.ui.theme.Corners
+import dev.betteriptv.core.SyncStatus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -114,7 +124,8 @@ class RowsState {
  * of Continue watching. [restoreFocus] is the card to focus on arrival, the one the Viewer opened
  * before coming back, or the card now in its place when it has gone; the first card when null,
  * unless the screen was reached by picking its tab ([focusTab]), which keeps focus. [placeholder],
- * when given, shows in place of the rows; [empty] says why there are none.
+ * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
+ * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
@@ -199,6 +210,7 @@ fun RowsScreen(
     Column(Modifier.fillMaxSize().background(Colors.ground)) {
         header(tab)
         if (placeholder != null) return@Column placeholder()
+        if (rows == null) return@Column PlaceholderRows()
         CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
             LazyColumn(
                 Modifier.fillMaxSize().backToTab(tab),
@@ -426,3 +438,51 @@ private fun HomeRow.heading(): String = when (this) {
     )
     is HomeRow.Genre -> name
 }
+
+/**
+ * Where the rows go while they are first read: two rows of glass posters in their places, without
+ * headings, focus or motion, so the screen under the tabs is never blank (#213).
+ */
+@Composable
+private fun PlaceholderRows() {
+    Column(Modifier.fillMaxSize()) {
+        repeat(PLACEHOLDER_ROWS) {
+            Box(Modifier.padding(start = Spacing.screenX).size(PLACEHOLDER_HEADING_WIDTH, PLACEHOLDER_HEADING_HEIGHT).background(Colors.surface, RoundedCornerShape(Corners.badge)))
+            Row(
+                Modifier.wrapContentWidth(Alignment.Start, unbounded = true).padding(start = Spacing.screenX, top = 12.dp + 10.dp, bottom = 10.dp + 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+            ) {
+                repeat(PLACEHOLDER_POSTERS) {
+                    Box(Modifier.size(Cards.posterWidth, Cards.posterWidth * 3 / 2).background(Colors.surface, RoundedCornerShape(Corners.card)))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A first Sync's progress, or why it failed, centred where the rows will be, readable from the
+ * couch: Home and the Movies and Shows tabs show it while no catalog is stored. Once one is, a
+ * Sync's progress and failures show only in Settings.
+ */
+@Composable
+internal fun FirstSync(status: SyncStatus) {
+    Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
+        Text(
+            LocalContext.current.describe(status),
+            style = Type.body,
+            color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = FIRST_SYNC_TEXT_WIDTH),
+        )
+    }
+}
+
+/** Wide enough for the French first-Sync line on two lines at body size. */
+private val FIRST_SYNC_TEXT_WIDTH = 440.dp
+private const val PLACEHOLDER_ROWS = 2
+/** As many posters as the screen shows, the last peeking at the right edge. */
+private const val PLACEHOLDER_POSTERS = 6
+private val PLACEHOLDER_HEADING_WIDTH = 160.dp
+private val PLACEHOLDER_HEADING_HEIGHT = 16.dp
+

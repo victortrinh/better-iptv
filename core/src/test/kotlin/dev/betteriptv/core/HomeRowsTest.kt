@@ -1,7 +1,10 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,6 +14,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** The home screen's rows, seen through the Library after a Sync, with metadata from the fake Cloud. */
 class HomeRowsTest {
@@ -345,5 +350,41 @@ class HomeRowsTest {
         assertEquals(ChartRank(2, ChartList.TopShows, "CA"), library.title(show, english, "en", region = "CA")!!.rank)
         assertEquals(listOf("Show 3", "Show 2", "Show 1"), rows().topNames(ChartList.TopShows))
         assertEquals(null, library.title(movie(1), english, "en", region = "FR")!!.rank)
+    }
+
+    @Test fun `Home reads what's stored while a Sync downloads, though its Charts and metadata are asked again`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+        // An answer from before textless posters is asked again on every read, so this one saves metadata each time.
+        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessPosterPath")
+        rows()
+        // The Sync stops in the middle of the show list, holding the catalog's writer, until released.
+        val downloading = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        provider.onRequest = { action ->
+            if (action == "get_series") {
+                downloading.countDown()
+                release.await(30, TimeUnit.SECONDS)
+            }
+        }
+        val sync = launch(Dispatchers.IO) { library.sync() }
+        try {
+            assertTrue(downloading.await(10, TimeUnit.SECONDS))
+            // Over an hour later, so the kept Charts are asked again.
+            val later = Instant.now() + Duration.ofHours(2)
+            val rows = withTimeout(5_000) { rows(now = later) }
+            assertEquals(listOf("CA", "CA"), cloud.chartsAsked)
+            assertEquals(listOf("First", "Second", "Third"), rows.topNames(ChartList.TopMovies))
+            assertEquals(listOf("Fourth"), rows.new())
+            // The answer is kept meanwhile: the next read doesn't ask again.
+            withTimeout(5_000) { rows(now = later) }
+            assertEquals(listOf("CA", "CA"), cloud.chartsAsked)
+        } finally {
+            release.countDown()
+            sync.join()
+        }
+        provider.onRequest = null
+        rows(now = Instant.now() + Duration.ofHours(2))
+        assertEquals(listOf("CA", "CA"), cloud.chartsAsked)
     }
 }
