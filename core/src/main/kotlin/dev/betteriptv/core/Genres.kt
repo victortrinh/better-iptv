@@ -5,6 +5,7 @@ package dev.betteriptv.core
  * languages (#242). Cached metadata names its genres in whichever language it was cached in, so
  * search keeps a genre by its English name, finds it by any of its names, and shows it in the App
  * language. A genre TMDB names the same in a language, or one not listed, keeps the name it has.
+ * The French names are TMDB's own (its `genre/movie/list` and `genre/tv/list` in `fr`).
  */
 internal object Genres {
     private val names: Map<String, Map<String, String>> = mapOf(
@@ -23,7 +24,6 @@ internal object Genres {
             "TV Movie" to "Téléfilm",
             "War" to "Guerre",
             "Sci-Fi & Fantasy" to "Science-Fiction & Fantastique",
-            "War & Politics" to "Guerre & Politique",
         ),
     )
     private val english: Map<String, String> = names.values.flatMap { it.entries }.associate { (english, named) -> named to english }
