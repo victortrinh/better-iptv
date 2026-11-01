@@ -1,9 +1,12 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -324,6 +327,50 @@ class SearchTest {
 
         assertTrue(search("heat").movies.isEmpty())
         assertEquals(1, search("ronin").movies.size)
+    }
+
+    @Test fun `searching while a Sync runs and right after it answers from the index built before it (#241)`() = runBlocking {
+        syncMovies("EN - Heat (1995)" to 949, "EN - Alien (1979)" to 348)
+        // Every build of the index from here waits until released: on the stick one takes 70 to 90 s (#106).
+        val building = CountDownLatch(1)
+        val built = CountDownLatch(1)
+        library.onSearchIndexBuild = {
+            building.countDown()
+            built.await(30, TimeUnit.SECONDS)
+        }
+        // The next Sync drops Alien for Ronin, and stops in the middle of the show list until released.
+        provider.movieListOverride = """[{"stream_id":1,"name":"EN - Heat (1995)","tmdb":"949","category_id":"1","added":"1700000000"},""" +
+            """{"stream_id":3,"name":"EN - Ronin (1998)","tmdb":"8195","category_id":"1","added":"1699999999"}]"""
+        val downloading = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        provider.onRequest = { action ->
+            if (action == "get_series") {
+                downloading.countDown()
+                release.await(30, TimeUnit.SECONDS)
+            }
+        }
+        val sync = launch(Dispatchers.IO) { library.sync() }
+        try {
+            assertTrue(downloading.await(10, TimeUnit.SECONDS))
+            assertEquals(1, withTimeout(5_000) { search("heat") }.movies.size)
+
+            release.countDown()
+            sync.join()
+            assertTrue("no new index being built", building.await(10, TimeUnit.SECONDS))
+            // The old index answers meanwhile: Alien, gone from the catalog, drops out, and Ronin isn't found yet.
+            assertEquals(1, withTimeout(5_000) { search("heat") }.movies.size)
+            assertTrue(withTimeout(5_000) { search("alien") }.movies.isEmpty())
+            assertTrue(withTimeout(5_000) { search("ronin") }.movies.isEmpty())
+        } finally {
+            release.countDown()
+            built.countDown()
+            sync.join()
+        }
+        provider.onRequest = null
+        // Swapped in once built.
+        assertTrue("no search index after the Sync", awaitSearchIndex())
+        assertEquals(1, search("ronin").movies.size)
+        assertTrue(search("alien").movies.isEmpty())
     }
 
     /** Waits up to 10 s for the search index of the current catalog to be built, without searching. */
