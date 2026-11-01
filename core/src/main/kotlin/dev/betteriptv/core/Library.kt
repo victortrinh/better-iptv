@@ -29,7 +29,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.SortedMap
 import java.util.TreeMap
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
@@ -69,6 +73,17 @@ class Library private constructor(
     /** Details pages reading right now: Background reading waits for them. */
     private val detailsReading = AtomicInteger()
     @Volatile private var cardsOnScreen: List<TitleId> = emptyList()
+    /**
+     * Saves the cloud's Charts and metadata answers one at a time, in order, apart from the read
+     * that asked for them: a Sync holds the catalog's writer while it downloads, for minutes on the
+     * Fire TV Stick, and Home's rows mustn't wait for it (#213). Until its save lands, an answer is
+     * read from [unsavedCharts] or [unsavedMetadata] as if it were stored.
+     */
+    private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
+    private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
+    private val unsavedMetadata = ConcurrentHashMap<Pair<String, TitleId.Tmdb>, StoredMetadata>()
+    /** Whether a Sync is replacing the catalog, holding its writer: saves then don't wait for it. */
+    @Volatile private var syncWriting = false
     private val _confirmations = MutableSharedFlow<TitleId>(extraBufferCapacity = 64)
 
     /** The Titles whose card's Version Background reading just Confirmed, so their badges update. */
@@ -110,54 +125,60 @@ class Library private constructor(
                 val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
                 var moviesRead = 0
                 var showsRead = 0
-                store.replaceListings(
-                    fill = { staging ->
-                        val movieCategories = HashMap<String, String>()
-                        val showCategories = HashMap<String, String>()
-                        val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String? ->
-                            val description = prefixTable.describe(name, category)
-                            description.unknownPrefix?.let { prefix ->
-                                unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
+                // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
+                syncWriting = true
+                try {
+                    store.replaceListings(
+                        fill = { staging ->
+                            val movieCategories = HashMap<String, String>()
+                            val showCategories = HashMap<String, String>()
+                            val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String? ->
+                                val description = prefixTable.describe(name, category)
+                                description.unknownPrefix?.let { prefix ->
+                                    unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
+                                }
+                                val hidden = description.hidden != null
+                                staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                                if (!hidden) {
+                                    if (kind == TitleKind.Movie) moviesRead++ else showsRead++
+                                    _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
+                                }
                             }
-                            val hidden = description.hidden != null
-                            staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
-                            if (!hidden) {
-                                if (kind == TitleKind.Movie) moviesRead++ else showsRead++
-                                _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
+                            client.movieCategories { id, name ->
+                                movieCategories[id] = name
+                                staging.category(TitleKind.Movie, id, name)
                             }
-                        }
-                        client.movieCategories { id, name ->
-                            movieCategories[id] = name
-                            staging.category(TitleKind.Movie, id, name)
-                        }
-                        client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
-                            listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container)
-                        }
-                        client.showCategories { id, name ->
-                            showCategories[id] = name
-                            staging.category(TitleKind.Show, id, name)
-                        }
-                        client.showListings { id, name, categoryId, modified, tmdbId, image ->
-                            listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
-                        }
-                        val liveCategories = HashMap<String, String>()
-                        client.liveCategories { id, name -> liveCategories[id] = name }
-                        val now = Instant.now()
-                        client.liveListings { id, name, categoryId, image ->
-                            if (!prefixTable.isLiveClutter(name, liveCategories[categoryId].orEmpty())) staging.channel(id, name, image, eventStart(name, now))
-                        }
-                    },
-                    completed = { movieCount, showCount, rematched ->
-                        CompletedSync(
-                            Instant.now(),
-                            Duration.ofNanos(System.nanoTime() - started),
-                            movieCount,
-                            unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
-                            rematched,
-                            showCount,
-                        )
-                    },
-                )
+                            client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
+                                listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container)
+                            }
+                            client.showCategories { id, name ->
+                                showCategories[id] = name
+                                staging.category(TitleKind.Show, id, name)
+                            }
+                            client.showListings { id, name, categoryId, modified, tmdbId, image ->
+                                listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
+                            }
+                            val liveCategories = HashMap<String, String>()
+                            client.liveCategories { id, name -> liveCategories[id] = name }
+                            val now = Instant.now()
+                            client.liveListings { id, name, categoryId, image ->
+                                if (!prefixTable.isLiveClutter(name, liveCategories[categoryId].orEmpty())) staging.channel(id, name, image, eventStart(name, now))
+                            }
+                        },
+                        completed = { movieCount, showCount, rematched ->
+                            CompletedSync(
+                                Instant.now(),
+                                Duration.ofNanos(System.nanoTime() - started),
+                                movieCount,
+                                unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
+                                rematched,
+                                showCount,
+                            )
+                        },
+                    )
+                } finally {
+                    syncWriting = false
+                }
                 SyncStatus.Synced(store.lastSync()!!)
             } catch (e: ProviderException) {
                 SyncStatus.Failed(e.problem, last)
@@ -924,7 +945,44 @@ class Library private constructor(
 
     /** The TMDB metadata of [ids] the device already has in [appLanguage]'s language, however old, without asking the cloud. */
     private fun keptMetadata(ids: Collection<TitleId>, appLanguage: String): Map<TitleId, TitleMetadata> =
-        store.metadata(ids.filterIsInstance<TitleId.Tmdb>(), primaryLanguage(appLanguage)).mapNotNull { (id, stored) -> stored.body?.let { id to TitleMetadata(it) } }.toMap()
+        storedMetadata(ids.filterIsInstance<TitleId.Tmdb>(), primaryLanguage(appLanguage)).mapNotNull { (id, stored) -> stored.body?.let { id to TitleMetadata(it) } }.toMap()
+
+    /** The metadata of [ids] in [language] the device has, with the cloud's answers still waiting on their save. */
+    private fun storedMetadata(ids: List<TitleId.Tmdb>, language: String): Map<TitleId.Tmdb, StoredMetadata> {
+        val stored = store.metadata(ids, language)
+        if (unsavedMetadata.isEmpty()) return stored
+        return stored + ids.mapNotNull { id -> unsavedMetadata[language to id]?.let { id to it } }
+    }
+
+    /**
+     * Runs [save] on the saving thread ([saves]), then [after], whether it saved or not. It waits for
+     * the save while no Sync holds the writer, so what is read next (the search index) has it, and
+     * stops waiting once one does. A save that fails loses nothing but a cached answer, asked of the
+     * cloud again next time.
+     */
+    private fun saveLater(after: () -> Unit = {}, save: () -> Unit) {
+        val saving = try {
+            saves.submit {
+                try {
+                    save()
+                } catch (e: Exception) {
+                    // The catalog is closing, or the disk is full: the answer is asked for again.
+                } finally {
+                    after()
+                }
+            }
+        } catch (e: RejectedExecutionException) {
+            return after()
+        }
+        while (!syncWriting) {
+            try {
+                saving.get(SAVE_WAIT_STEP_MS, TimeUnit.MILLISECONDS)
+                return
+            } catch (e: TimeoutException) {
+                // Still saving: wait on, unless a Sync has taken the writer meanwhile.
+            }
+        }
+    }
 
     /** [title]'s card on a row: its best Version in the Viewer's [contentLanguages], and what the info under the rail tells about it. */
     private fun rowCard(title: StoredTitle, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): TitleSummary {
@@ -1226,7 +1284,7 @@ class Library private constructor(
     private fun metadata(ids: List<TitleId>, appLanguage: String): Map<TitleId, TitleMetadata> {
         val language = primaryLanguage(appLanguage)
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
-        val cached = store.metadata(tmdbIds, language).toMutableMap()
+        val cached = storedMetadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
         // An answer from before the cloud gave textless posters (and logos) is asked again: it would otherwise lack them for a week.
         val wanted = tmdbIds.filter { id ->
@@ -1237,10 +1295,16 @@ class Library private constructor(
             try {
                 wanted.chunked(CloudClient.MAX_BATCH).forEach { batch ->
                     val answer = cloud.metadata(language, batch)
-                    store.saveMetadata(language, answer.found, answer.notFound, now)
-                    if (answer.found.isNotEmpty()) metadataGeneration.incrementAndGet()
-                    answer.found.forEach { (id, body) -> cached[id] = StoredMetadata(body, now) }
-                    answer.notFound.forEach { cached[it] = StoredMetadata(null, now) }
+                    val answered = answer.found.map { (id, body) -> id to StoredMetadata(body, now) } + answer.notFound.map { it to StoredMetadata(null, now) }
+                    answered.forEach { (id, stored) ->
+                        cached[id] = stored
+                        unsavedMetadata[language to id] = stored
+                    }
+                    // Saved without waiting on a Sync; the search index is built with it once it is.
+                    saveLater(after = { answered.forEach { (id, stored) -> unsavedMetadata.remove(language to id, stored) } }) {
+                        store.saveMetadata(language, answer.found, answer.notFound, now)
+                        if (answer.found.isNotEmpty()) metadataGeneration.incrementAndGet()
+                    }
                 }
             } catch (e: CloudException) {
                 // The cards show what the Provider says until the cloud is back.
@@ -1276,12 +1340,16 @@ class Library private constructor(
      */
     private fun charts(region: String, appLanguage: String, now: Instant): Charts {
         val language = primaryLanguage(appLanguage)
-        val kept = store.charts(region, language)
+        val key = region to language
+        val kept = unsavedCharts[key] ?: store.charts(region, language)
         if (kept != null && kept.fetchedAt.isAfter(now - CHARTS_FRESH_FOR)) return Charts(kept.body)
         if (cloud != null && now.isAfter(cloudRetryAt)) {
             try {
                 val body = cloud.charts(region, language)
-                store.saveCharts(region, language, body, now)
+                val asked = StoredCharts(body, now)
+                unsavedCharts[key] = asked
+                // Saved without waiting on a Sync.
+                saveLater(after = { unsavedCharts.remove(key, asked) }) { store.saveCharts(region, language, body, now) }
                 return Charts(body)
             } catch (e: CloudException) {
                 cloudRetryAt = now + CLOUD_RETRY_AFTER
@@ -1310,7 +1378,12 @@ class Library private constructor(
 
     private fun candidates(listing: StoredListing) = Candidate(listing, prefixTable.describe(listing.name, listing.category).attributes)
 
-    override fun close() = store.close()
+    override fun close() {
+        // The answers waiting are saved first, unless a Sync keeps them waiting.
+        saves.shutdown()
+        saves.awaitTermination(SAVES_ON_CLOSE_SECONDS, TimeUnit.SECONDS)
+        store.close()
+    }
 
     companion object {
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
@@ -1353,6 +1426,10 @@ class Library private constructor(
 
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
+        /** How long closing waits for the answers still to be saved. */
+        private const val SAVES_ON_CLOSE_SECONDS = 5L
+        /** How often a read waiting on a save checks that no Sync has taken the writer. */
+        private const val SAVE_WAIT_STEP_MS = 50L
 
         /** The Region when the device doesn't say (CONTEXT.md). */
         const val DEFAULT_REGION = "CA"

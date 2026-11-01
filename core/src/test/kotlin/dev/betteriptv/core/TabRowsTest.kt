@@ -1,6 +1,9 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -9,6 +12,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** The Movies and Shows tabs' rows, seen through the Library after a Sync, with metadata and Charts from the fake Cloud. */
 class TabRowsTest {
@@ -263,5 +268,33 @@ class TabRowsTest {
 
         val rows = rows()
         assertEquals(listOf("New Movie"), rows.names())
+    }
+
+    @Test fun `a tab reads what's stored while a Sync downloads, though its Charts and metadata are asked again`() = runBlocking {
+        syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
+        cloud.charts("CA", movies = listOf(1, 2, 3))
+        // An answer from before textless posters is asked again on every read, so this one saves metadata each time.
+        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessPosterPath")
+        rows()
+        // The Sync stops in the middle of the show list, holding the catalog's writer, until released.
+        val downloading = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        provider.onRequest = { action ->
+            if (action == "get_series") {
+                downloading.countDown()
+                release.await(30, TimeUnit.SECONDS)
+            }
+        }
+        val sync = launch(Dispatchers.IO) { library.sync() }
+        try {
+            assertTrue(downloading.await(10, TimeUnit.SECONDS))
+            // Over an hour later, so the kept Charts are asked again.
+            val rows = withTimeout(5_000) { library.tabRows(TitleKind.Movie, english, "en", "CA", Instant.now().plusSeconds(2 * 3600)) }
+            assertEquals(listOf("First", "Second", "Third"), rows.chartNames(ChartList.TopMovies))
+            assertEquals(listOf("Fourth"), rows.newNames())
+        } finally {
+            release.countDown()
+            sync.join()
+        }
     }
 }
