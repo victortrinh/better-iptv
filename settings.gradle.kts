@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "better-iptv"
-include(":core", ":app")
+include(":core", ":app", ":baselineprofile")

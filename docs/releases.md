@@ -62,3 +62,23 @@ Build two release builds signed with any test key, pointed at a local manifest (
 ```
 
 The versionCode is the commit count, so build N, commit, then build N+1. `AppUpdatesTest` covers the check, the first-update permission, the download's checks and the installer with fakes.
+
+## The Baseline Profile and the browse benchmarks
+
+The `.dm` holds the libraries' Baseline Profiles and the app's own rules, `app/src/main/generated/baselineProfiles/baseline-prof.txt`: app start to Home's rows, Right along a row, Down through the rows, and the Movies tab's rows (#63). The `:baselineprofile` module generates them and holds Macrobenchmarks for the runs in the roadmap's Measurements table. Both run on a device or emulator, never in CI.
+
+They drive the debug app, `dev.betteriptv.debug`, which the `nonMinifiedRelease` and `benchmarkRelease` builds install over: log it in, let it sync, set it to English and leave it on Home first. Nothing presses OK on a card, so no stream opens. With more than one device connected, set `ANDROID_SERIAL`.
+
+- Regenerate the rules (Android 13 or later, or a rooted device; the stick's Fire OS 7 can't), then commit the file:
+
+  ```bash
+  ./gradlew :app:generateBaselineProfile
+  ```
+
+- Frame timings of Home's 30 Right then 12 Down and the Movies tab's 150 Down, fresh and warm, uncompiled and with the profile compiled:
+
+  ```bash
+  ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
+  ```
+
+On the Android TV emulator, add `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR`, and force-stop Google Play services and the keyboard first (`adb shell am force-stop com.google.android.gms`, then `com.google.android.inputmethod.latin`): their tracing doesn't answer Perfetto's last flush, and the benchmark fails with "Failed to stop perfetto". Emulator numbers aren't the stick's.
