@@ -51,7 +51,7 @@ sealed interface SearchGroup {
     data class OfPerson(val person: Person) : SearchGroup
 }
 
-/** One of TMDB's genres ([name], as the cached metadata has it), with its Titles the Provider has, best first. */
+/** One of TMDB's genres ([name], in the App language), with its Titles the Provider has, best first. */
 data class Genre(val name: String, val titles: List<TitleSummary>)
 
 /** Someone in TMDB's cast of Titles the Provider has, with those Titles, best first. */
@@ -85,7 +85,7 @@ internal class SearchIndex private constructor(
     private val channelWords: WordPostings,
     /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
     private val titleNames: LongArray,
-    /** TMDB's genres of the Titles with metadata. */
+    /** TMDB's genres of the Titles with metadata, by their English names ([Genres]). */
     val genres: List<String>,
     /** Each genre's Titles, as positions. */
     val genreTitles: List<IntArray>,
@@ -129,7 +129,7 @@ internal class SearchIndex private constructor(
 
     fun findPeople(query: String): List<Hit> = find(query, personWords)
 
-    /** Genres whose names match [query], as indexes into [genres]. */
+    /** Genres whose names in any App language match [query], as indexes into [genres]. */
     fun findGenres(query: String): List<Hit> = find(query, genreWords)
 
     /** Channels whose names match [query], as indexes into [channels]. */
@@ -206,10 +206,11 @@ internal class SearchIndex private constructor(
                 if (person == known) words(name).forEach { word -> personWords.add(word, person) }
                 personTitles.add(person, index)
             }
-            for (name in genres.distinct()) {
+            // One genre, whichever language its metadata was cached in.
+            for (name in genres.map(Genres::english).distinct()) {
                 val known = this.genres.size
                 val genre = this.genres.add(name)
-                if (genre == known) words(name).forEach { word -> genreWords.add(word, genre) }
+                if (genre == known) Genres.every(name).flatMap(::words).distinct().forEach { word -> genreWords.add(word, genre) }
                 genreTitles.add(genre, index)
             }
         }

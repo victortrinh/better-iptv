@@ -318,7 +318,8 @@ class Library private constructor(
      * like people, with their Titles.
      *
      * The results offer completions: the names of the best Titles, people and genres found. Before
-     * anything is typed, they are the genres with the most Titles in the Viewer's languages.
+     * anything is typed, they are the genres with the most Titles in the Viewer's languages. Genres
+     * are named in the App language and found by their names in any ([Genres]).
      *
      * The search index of the whole catalog is built in the background after a Sync and by
      * [prepareSearchInBackground]; a search before the first one waits for it, and one during or
@@ -326,7 +327,7 @@ class Library private constructor(
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
-        if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages)))
+        if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages, appLanguage)))
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
@@ -383,15 +384,15 @@ class Library private constructor(
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
     private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
 
-    /** The genres with the most Titles in the Viewer's [contentLanguages], to search before typing. */
-    private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>): List<String> {
+    /** The genres with the most Titles in the Viewer's [contentLanguages], named in the [appLanguage], to search before typing. */
+    private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>, appLanguage: String): List<String> {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
         val inWanted = { titles: IntArray -> titles.count { position -> index.languages(position).any(wanted::contains) } }
-        return index.genres.indices.map { it to inWanted(index.genreTitles[it]) }
+        return index.genres.indices.map { Genres.named(index.genres[it], appLanguage) to inWanted(index.genreTitles[it]) }
             .filter { (_, count) -> count > 0 }
-            .sortedWith(compareByDescending<Pair<Int, Int>> { it.second }.thenBy { index.genres[it.first] })
+            .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
             .take(COMPLETIONS)
-            .map { index.genres[it.first] }
+            .map { it.first }
     }
 
     /**
@@ -425,7 +426,7 @@ class Library private constructor(
         val shownGenres = index.findGenres(query)
             .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { -index.genreTitles[it.index].size }))
             .take(GENRES_FOUND)
-            .map { index.genres[it.index] to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+            .map { Genres.named(index.genres[it.index], appLanguage) to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
         val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
             .map { index.titleId(it.index) }.distinct()

@@ -257,6 +257,27 @@ class SearchTest {
         assertEquals(SearchResults.NONE, search("h"))
     }
 
+    @Test fun `genre shortcuts are named in the App language and find the same Titles in either (#242)`() = runBlocking {
+        cloud.title("en", tmdbTitle(1, "Heat", genres = listOf("Drama", "Crime", "Thriller"), popularity = 50.0))
+        cloud.title("en", tmdbTitle(2, "Brooklyn", genres = listOf("Drama", "Romance"), popularity = 30.0))
+        cloud.title("en", tmdbTitle(3, "Superbad", genres = listOf("Comedy"), popularity = 20.0))
+        // Metadata cached in French, as browsing in French does, names its genres in French.
+        cloud.title("fr", tmdbTitle(4, "Intouchables", genres = listOf("Drame", "Comédie"), popularity = 40.0))
+        syncMovies("EN - Heat (1995)" to 1, "EN - Brooklyn (2015)" to 2, "EN - Superbad (2007)" to 3, "EN - Intouchables (2011)" to 4)
+        library.titles(0, 1000, english, "fr")
+        library.prepareSearch()
+
+        assertEquals(listOf("Drama", "Comedy", "Crime", "Romance", "Thriller"), search("").completions)
+        assertEquals(listOf("Drame", "Comédie", "Crime", "Romance", "Thriller"), search("", appLanguage = "fr").completions)
+        val ids = { genre: Genre -> genre.titles.map { (it.id as TitleId.Tmdb).tmdbId }.toSet() }
+        val drama = search("Drama").groups("Drama").first() as SearchGroup.OfGenre
+        val drame = search("Drame", appLanguage = "fr").groups("Drame").first() as SearchGroup.OfGenre
+        assertEquals("Drame", drame.genre.name)
+        assertEquals(setOf(1L, 2L, 4L), ids(drama.genre))
+        assertEquals(ids(drama.genre), ids(drame.genre))
+        assertEquals("Comédie", (search("comedie", appLanguage = "fr").groups("comedie").first() as SearchGroup.OfGenre).genre.name)
+    }
+
     @Test fun `TMDB's search finds a Title by a name the device has no metadata for`() = runBlocking {
         syncMovies("EN - The Godfather (1972)" to 238, "EN - Heat (1995)" to 949)
         cloud.search("der pate", titles = listOf(godfather to 120.0, TitleId.Tmdb(TitleKind.Movie, 999_999) to 300.0))
