@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.FocusScale
+import dev.betteriptv.app.ui.theme.Motion
 import kotlinx.coroutines.launch
 
 /** How a surface shows focus. */
@@ -76,7 +77,7 @@ fun FocusSurface(
                 if (it.isFocused != focused) {
                     focused = it.isFocused
                     val target = if (focused) grown else 1f
-                    if (scale.targetValue != target) scope.launch { scale.animateTo(target, tween(160)) }
+                    if (scale.targetValue != target) scope.launch { scale.animateTo(target, tween(Motion.focusMillis)) }
                     if (focused) onFocus()
                 }
             }

@@ -232,6 +232,8 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
         // A focused card grows past the column's edge: the row starts that much further left, as
         // Channels' does, so the card isn't clipped, and its cards still line up with the heading.
         ResultRow(titles, key = { it.id.toString() }, first) { title, modifier ->
+            // Focused, it grows into its textless backdrop (#216); at rest it is the regular poster.
+            val grown = remember(title) { cardArt(title.image, title.about, textlessPosters = false).grown }
             TitleCard(
                 rememberArtwork(title.image, card = true),
                 title.name,
@@ -239,6 +241,7 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
                 title.rank?.let { listOf(it.badge()) } ?: cardBest(library, title, contentLanguages).cardBadges(),
                 onClick = { onOpen(title.id) },
                 modifier = modifier,
+                grown = grown?.let { { GrownArtwork(it, title.name) } },
             )
         }
         Spacer(Modifier.height(14.dp))
@@ -246,7 +249,7 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
 }
 
 /**
- * A row of result [items], `m` further left so a focused card isn't clipped; [first] modifies the
+ * A row of result [items], `l` further left so a focused card, grown and lifted 1.08x, isn't clipped; [first] modifies the
  * first card. Search answers again once TMDB's search adds what it knows, reordering the row best
  * first, but a `LazyRow` follows the card that was first: so a new answer shows the row from its
  * start, unless focus is in it, where moving the row under the Viewer would be worse (#169). Focus
@@ -271,9 +274,9 @@ internal fun <T> ResultRow(items: List<T>, key: (T) -> Any, first: Modifier?, ca
     }
     LazyRow(
         state = row,
-        contentPadding = PaddingValues(start = Spacing.m, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
+        contentPadding = PaddingValues(start = Spacing.l, top = 12.dp, bottom = 10.dp, end = Spacing.screenX),
         horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-        modifier = Modifier.offset(x = -Spacing.m).focusRestorer().onFocusChanged { if (!it.hasFocus) focused = null },
+        modifier = Modifier.offset(x = -Spacing.l).focusRestorer().onFocusChanged { if (!it.hasFocus) focused = null },
     ) {
         itemsIndexed(items, key = { _, item -> key(item) }) { i, item ->
             val modifier = Modifier.onFocusChanged { if (it.isFocused) focused = i }

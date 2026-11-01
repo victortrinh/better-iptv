@@ -98,6 +98,8 @@ describe("Title metadata", () => {
         logoPath: "/parrain-logo.svg",
         // The best voted poster with no language, so with no text on it.
         textlessPosterPath: "/godfather-plain.jpg",
+        // The best voted backdrop with no language ("xx" counts as none), so with no text on it.
+        textlessBackdropPath: "/godfather-wide.jpg",
         cast: [
           { name: "Marlon Brando", character: "Don Vito Corleone", profilePath: "/brando.jpg" },
           { name: "Al Pacino", character: "Michael Corleone", profilePath: "/pacino.jpg" },
@@ -122,6 +124,7 @@ describe("Title metadata", () => {
 
     expect(titles.map((t) => t.logoPath)).toEqual(["/bb-logo.png", null]);
     expect(titles.map((t) => t.textlessPosterPath)).toEqual([null, null]);
+    expect(titles.map((t) => t.textlessBackdropPath)).toEqual([null, null]);
   });
 
   it("reads Shows from TMDB's TV endpoint, whose IDs are another number space", async () => {
@@ -229,15 +232,15 @@ describe("the metadata cache", () => {
     expect(tmdb.requests).toHaveLength(2);
   });
 
-  it("asks TMDB again for an answer cached before textless posters were asked for", async () => {
+  it("asks TMDB again for an answer cached before textless backdrops were asked for", async () => {
     const token = await registerDevice();
     await metadata(token, "en", [theGodfather]);
     const row = await env.DB.prepare("SELECT body FROM title_metadata").first<{ body: string }>();
-    const { textlessPosterPath, ...without } = JSON.parse(row!.body);
+    const { textlessBackdropPath, ...without } = JSON.parse(row!.body);
     await env.DB.prepare("UPDATE title_metadata SET body = ?1").bind(JSON.stringify(without)).run();
 
     const again = await metadata(token, "en", [theGodfather]);
-    expect(again.titles[0].textlessPosterPath).toBe(textlessPosterPath);
+    expect(again.titles[0].textlessBackdropPath).toBe(textlessBackdropPath);
     expect(tmdb.requests).toHaveLength(2);
   });
 

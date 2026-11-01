@@ -220,6 +220,11 @@ export const godfather = (language: string) => ({
       { file_path: "/godfather-plain-old.jpg", iso_639_1: null, vote_average: 5.1, vote_count: 2 },
       { file_path: "/godfather-plain.jpg", iso_639_1: null, vote_average: 5.6, vote_count: 4 },
     ],
+    backdrops: [
+      { file_path: "/godfather-titled.jpg", iso_639_1: "en", vote_average: 9.1, vote_count: 9 },
+      { file_path: "/godfather-wide-old.jpg", iso_639_1: "xx", vote_average: 5.2, vote_count: 3 },
+      { file_path: "/godfather-wide.jpg", iso_639_1: null, vote_average: 5.7, vote_count: 6 },
+    ],
   },
 });
 

@@ -5,6 +5,7 @@ import android.graphics.Path
 import android.graphics.PathMeasure
 import android.graphics.Typeface
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -30,7 +31,7 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * A card in a Top row, as Netflix's Top 10 draws it: the [rank] as a big outlined numeral, and the
  * [card] (a poster [TitleCard]) overlapping its right edge. The numeral never takes focus; the poster
- * does, and grows over it.
+ * does, and grows over it, and widens to the right into its backdrop.
  */
 @Composable
 fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () -> Unit) {
@@ -49,7 +50,8 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () ->
     val size = with(density) { Type.numeral.fontSize.toPx() }
     val middle = remember(rank, typeface, size) { inkMiddle(rank.toString(), typeface, size) }
     val outline = remember(stroke) { Type.numeral.copy(drawStyle = Stroke(width = stroke * 2)) }
-    Box(modifier.width(Cards.rankedWidth)) {
+    // As wide as the numeral and the card: a focused poster grows to the right of the numeral, which stays put (#216).
+    Box(modifier) {
         // As tall as the poster, which sets the card's height.
         Box(Modifier.matchParentSize().wrapContentWidth(Alignment.Start).width(Cards.numeralWidth + Cards.numeralOverlap)) {
             val numeral = Modifier
@@ -77,7 +79,7 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, card: @Composable () ->
             )
             Text(rank.toString(), style = Type.numeral, color = Colors.ground, softWrap = false, maxLines = 1, modifier = numeral)
         }
-        Box(Modifier.align(Alignment.BottomEnd)) { card() }
+        Box(Modifier.padding(start = Cards.numeralWidth)) { card() }
     }
 }
 

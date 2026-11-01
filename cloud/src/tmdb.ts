@@ -33,6 +33,8 @@ export interface TitleMetadata extends TitleKey {
   logoPath: string | null;
   /** The most voted poster with no text on it (no language), for art the app lays the logo over; null when TMDB has none. */
   textlessPosterPath: string | null;
+  /** The most voted backdrop with no text on it (no language), for the horizontal art a focused card grows into; null when TMDB has none. */
+  textlessBackdropPath: string | null;
   cast: { name: string; character: string; profilePath: string | null }[];
   imdbId: string | null;
   /** YouTube video IDs, official trailers first. */
@@ -49,7 +51,7 @@ const CAST_SHOWN = 12;
 
 /**
  * Fetches one Title in [language] (ISO 639-1) with a single TMDB request: details, translations,
- * alternative titles, credits, videos, external IDs, logos and posters.
+ * alternative titles, credits, videos, external IDs, logos, posters and backdrops.
  */
 export async function fetchTitle(env: Env, key: TitleKey, language: string): Promise<TitleMetadata | typeof NOT_FOUND> {
   const path = `${tmdbPath(key.kind)}/${key.tmdbId}`;
@@ -57,7 +59,7 @@ export async function fetchTitle(env: Env, key: TitleKey, language: string): Pro
     language,
     append_to_response: "translations,alternative_titles,credits,videos,external_ids,images",
     include_video_language: `${language},en`,
-    // `null` brings the language-free images: textless posters.
+    // `null` brings the language-free images: textless posters and backdrops.
     include_image_language: `${language},en,null`,
   });
   if (response === NOT_FOUND) return NOT_FOUND;
@@ -252,7 +254,8 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
     posterPath: t.poster_path ?? null,
     backdropPath: t.backdrop_path ?? null,
     logoPath: bestLogo(t.images?.logos ?? [], language),
-    textlessPosterPath: mostVoted((t.images?.posters ?? []).filter((p) => p.iso_639_1 == null || p.iso_639_1 === "xx"))?.file_path ?? null,
+    textlessPosterPath: mostVoted(textless(t.images?.posters ?? []))?.file_path ?? null,
+    textlessBackdropPath: mostVoted(textless(t.images?.backdrops ?? []))?.file_path ?? null,
     cast: (t.credits?.cast ?? [])
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .slice(0, CAST_SHOWN)
@@ -272,6 +275,11 @@ function bestLogo(logos: TmdbImage[], language: string): string | null {
     if (best) return best.file_path;
   }
   return null;
+}
+
+/** Images with no language, so with no text on them. */
+function textless(images: TmdbImage[]): TmdbImage[] {
+  return images.filter((i) => i.iso_639_1 == null || i.iso_639_1 === "xx");
 }
 
 function mostVoted(images: TmdbImage[]): TmdbImage | undefined {
@@ -341,5 +349,5 @@ interface TmdbTitle {
   credits?: { cast?: { name: string; character?: string; profile_path?: string | null; order?: number }[] };
   videos?: { results?: { key: string; site: string; type: string; official?: boolean }[] };
   external_ids?: { imdb_id?: string | null };
-  images?: { logos?: TmdbImage[]; posters?: TmdbImage[] };
+  images?: { logos?: TmdbImage[]; posters?: TmdbImage[]; backdrops?: TmdbImage[] };
 }

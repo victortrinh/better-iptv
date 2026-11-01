@@ -25,6 +25,8 @@ internal class TitleMetadata(json: String) {
     /** A poster with no text on it, for Home's cards, which lay the [cardLogo] over it; null when TMDB has none. */
     val textlessPoster: String? = image(tree["textlessPosterPath"], POSTER_SIZE)
     val backdrop: String? = image(tree["backdropPath"], BACKDROP_SIZE)
+    /** A backdrop with no text on it, sized for a card: what a focused poster grows into (#216); null when TMDB has none. */
+    val textlessBackdrop: String? = image(tree["textlessBackdropPath"], CARD_BACKDROP_SIZE)
     /** The Title's logo art in the App language or English, as a PNG with transparency; null when TMDB has none. */
     val logo: String? = image((tree["logoPath"] as? String)?.replace(SVG, ".png"), LOGO_SIZE)
     /** The same logo for a card on Home, where it is about 110 dp wide. */
@@ -61,6 +63,8 @@ internal class TitleMetadata(json: String) {
         /** Cards and the details poster are 104 dp wide, 208 px on the stick. */
         const val POSTER_SIZE = "w342"
         const val BACKDROP_SIZE = "w1280"
+        /** A grown card is 363 dp wide, 726 px on the stick. */
+        const val CARD_BACKDROP_SIZE = "w780"
         /** The logo box is 320 dp wide, 640 px on the stick; TMDB's next size up is the original, often thousands wide. */
         const val LOGO_SIZE = "w500"
         /** 220 px on the stick. */
