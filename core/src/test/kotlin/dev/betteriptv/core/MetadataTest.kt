@@ -140,8 +140,33 @@ class MetadataTest {
         assertNull(cards.first { it.id == ballerina }.about!!.textlessPoster)
     }
 
+    @Test fun `a card grows into a card-sized textless backdrop, on the rows and in Search`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg", textlessBackdropPath = "/godfather-wide.jpg"))
+        cloud.title("fr", tmdbTitle(541671, "Ballerina"))
+        val cards = library.homeRows(french, "fr").filterIsInstance<HomeRow.NewOnYourService>().single().titles
+
+        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", cards.first { it.id == godfather }.about!!.textlessBackdrop)
+        assertNull(cards.first { it.id == ballerina }.about!!.textlessBackdrop)
+        // Search's cards, read through the same summaries, grow too.
+        val found = card(godfather, "fr").about!!
+        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", found.textlessBackdrop)
+        assertEquals("https://image.tmdb.org/t/p/w300/parrain-logo.png", found.logo)
+    }
+
+    @Test fun `metadata kept from before the cloud gave textless backdrops is asked again`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png") - "textlessBackdropPath")
+        card(godfather, "fr")
+        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png", textlessBackdropPath = "/godfather-wide.jpg"))
+
+        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", card(godfather, "fr").about!!.textlessBackdrop)
+        assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
+        // Once it has the field, even null, it is kept for the week.
+        card(godfather, "fr")
+        assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
+    }
+
     @Test fun `metadata kept from before the cloud gave textless posters is asked again`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather") - "logoPath" - "textlessPosterPath")
+        cloud.title("fr", tmdbTitle(238, "The Godfather") - "logoPath" - "textlessPosterPath" - "textlessBackdropPath")
         details(godfather, "fr")
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png"))
 

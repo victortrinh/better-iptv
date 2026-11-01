@@ -56,17 +56,9 @@ private object EdgeScroll : BringIntoViewSpec {
 }
 
 /**
- * Scrolls a list on every press so the focused item's centre sits [centre] px from the list's
- * start, as far as the list can scroll: Home's rails, which keep the focused card at the left
- * margin like Netflix's (#167). The centre, because a focused card grows from it as it is brought
- * into view. Everywhere else lists use EdgeScroll.
+ * Never scrolls a list to bring focus into view: for a list that scrolls itself as focus moves
+ * (Home's rows, and their rails, which glide the focused card to the left margin).
  */
-@OptIn(ExperimentalFoundationApi::class)
-class Keyline(private val centre: Float) : BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = offset + size / 2 - centre
-}
-
-/** Never scrolls a list to bring focus into view: for a list that scrolls itself as focus moves (Home's rows). */
 @OptIn(ExperimentalFoundationApi::class)
 object StayPut : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f

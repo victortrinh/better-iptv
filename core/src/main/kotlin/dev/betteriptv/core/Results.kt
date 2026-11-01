@@ -41,7 +41,15 @@ data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
  * TMDB's description, genres, runtime and logo art (sized for a card) of a Title, in the App
  * language, falling back to English, and a [textlessPoster] to lay the logo over, only with a logo.
  */
-data class TitleAbout(val description: String?, val genres: List<String>, val runtimeMinutes: Int?, val logo: String? = null, val textlessPoster: String? = null)
+data class TitleAbout(
+    val description: String?,
+    val genres: List<String>,
+    val runtimeMinutes: Int?,
+    val logo: String? = null,
+    val textlessPoster: String? = null,
+    /** A backdrop with no text on it, sized for a card: what the card grows into once focused (#216). */
+    val textlessBackdrop: String? = null,
+)
 
 /** A row on Home, or on the Movies or Shows tab. */
 sealed interface HomeRow {

@@ -273,8 +273,8 @@ class TabRowsTest {
     @Test fun `a tab reads what's stored while a Sync downloads, though its Charts and metadata are asked again`() = runBlocking {
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
         cloud.charts("CA", movies = listOf(1, 2, 3))
-        // An answer from before textless posters is asked again on every read, so this one saves metadata each time.
-        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessPosterPath")
+        // An answer from before textless backdrops is asked again on every read, so this one saves metadata each time.
+        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessBackdropPath")
         rows()
         // The Sync stops in the middle of the show list, holding the catalog's writer, until released.
         val downloading = CountDownLatch(1)

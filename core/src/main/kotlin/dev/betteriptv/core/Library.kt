@@ -547,13 +547,13 @@ class Library private constructor(
     /** Runs before each build of the search index: tests hold a build there, as the stick's minute-long one would. */
     @Volatile internal var onSearchIndexBuild: () -> Unit = {}
 
-    /** [titles]' cards: TMDB's name and poster in the [appLanguage], and the best Version in the Viewer's [contentLanguages]. */
+    /**
+     * [titles]' cards: TMDB's name and poster in the [appLanguage], the best Version in the Viewer's
+     * [contentLanguages], and the art a focused card grows into.
+     */
     private fun summaries(titles: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> {
         val metadata = metadata(titles.map { it.id }, appLanguage)
-        return titles.map { title ->
-            val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
-            TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes)
-        }
+        return titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
     }
 
     /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
@@ -999,7 +999,7 @@ class Library private constructor(
     /** [title]'s card on a row: its best Version in the Viewer's [contentLanguages], and what the info under the rail tells about it. */
     private fun rowCard(title: StoredTitle, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): TitleSummary {
         val shown = shown(candidates(title), contentLanguages, metadata[title.id], appLanguage)
-        val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }) }
+        val about = metadata[title.id]?.let { TitleAbout(it.description(appLanguage), it.genres, it.runtimeMinutes, it.cardLogo, it.textlessPoster.takeIf { _ -> it.cardLogo != null }, it.textlessBackdrop) }
         return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
     }
 
@@ -1298,10 +1298,10 @@ class Library private constructor(
         val tmdbIds = ids.filterIsInstance<TitleId.Tmdb>()
         val cached = storedMetadata(tmdbIds, language).toMutableMap()
         val now = Instant.now()
-        // An answer from before the cloud gave textless posters (and logos) is asked again: it would otherwise lack them for a week.
+        // An answer from before the cloud gave textless backdrops (and textless posters and logos) is asked again: it would otherwise lack them for a week.
         val wanted = tmdbIds.filter { id ->
             val stored = cached[id]
-            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"textlessPosterPath\"") == false
+            stored?.fetchedAt?.isAfter(now - METADATA_FRESH_FOR) != true || stored.body?.contains("\"textlessBackdropPath\"") == false
         }
         if (cloud != null && wanted.isNotEmpty() && now.isAfter(cloudRetryAt)) {
             try {

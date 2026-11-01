@@ -1,5 +1,7 @@
 package dev.betteriptv.app
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -47,7 +49,6 @@ import androidx.tv.material3.Text
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.RailInfo
@@ -55,7 +56,6 @@ import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
-import dev.betteriptv.app.ui.theme.Keyline
 import dev.betteriptv.app.ui.theme.StayPut
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -194,13 +194,8 @@ fun RowsScreen(
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
     // Like Netflix's: the focused card sits at the left margin and its row's heading at the top of
-    // the rows, so focus stays in one place and the rows move under it.
-    val density = LocalDensity.current
-    val posterKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.posterWidth / 2).toPx()) } }
-    val stillKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.continueWidth / 2).toPx()) } }
-    val channelKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.wideWidth / 2).toPx()) } }
-    // A Top row's card brings its poster into view, which sits right of the numeral.
-    val rankedKeyline = remember(density) { with(density) { Keyline((Spacing.screenX + Cards.numeralWidth + Cards.posterWidth / 2).toPx()) } }
+    // the rows, so focus stays in one place and the rows move under it. A Top row's card starts
+    // with its numeral, so the numeral sits there and the poster right of it.
     // How many cards of each width the screen shows at once, on the 960 dp canvas.
     val seen = remember {
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
@@ -262,74 +257,79 @@ fun RowsScreen(
                         val entry = remember { FocusRequester() }
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
                         val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
-                        CompositionLocalProvider(LocalBringIntoViewSpec provides when {
-                            wide -> stillKeyline
-                            channels -> channelKeyline
-                            ranked -> rankedKeyline
-                            else -> posterKeyline
-                        }) {
-                            LazyRow(
-                                state = rail,
-                                // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
-                                contentPadding = PaddingValues(
-                                    start = Spacing.screenX,
-                                    end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - cardWidth,
-                                    top = 10.dp,
-                                    bottom = 10.dp,
-                                ),
-                                horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                                modifier = Modifier.rowFocus(entry),
-                            ) {
-                                items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { if (row is HomeRow.Favourites) "channel" else "title" }) { place ->
-                                    val index = loop.card(place)
-                                    val focus = remember { FocusRequester() }
-                                    val card = RowCard(row.key, keys[index])
-                                    // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
-                                    val ends = Modifier.focusRequester(focus).entryAt(rail, place, entry).focusProperties {
-                                        if (!loop.loops && index == 0) left = FocusRequester.Cancel
-                                        if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
-                                    }
-                                    if (card == focusOn && place == target) LaunchedEffect(Unit) {
-                                        focus.requestFocus()
-                                        onFocused()
-                                    }
-                                    if (row is HomeRow.Favourites) {
-                                        ChannelCard(
-                                            row.channels[index],
-                                            onWatch = { onWatch(card, it) },
-                                            onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
-                                            modifier = ends,
-                                            named = false,
-                                            onFocus = { state.focused = card },
-                                        )
-                                        return@items
-                                    }
-                                    val title = titles[index]
-                                    val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
-                                    // The info under the rail shows the badges, so the card only counts as on screen.
-                                    OnScreen(library, title.id)
-                                    val logo = title.about?.logo
-                                    // A poster has its name printed on it, so the logo goes only over a textless one.
-                                    val textless = title.about?.textlessPoster
-                                    val poster = @Composable {
-                                        TitleCard(
-                                            image = rememberArtwork(if (wide) resume?.still ?: title.image else textless ?: title.image, card = true),
-                                            name = title.name,
-                                            badges = emptyList(),
-                                            onClick = { onOpen(card, title.id) },
-                                            modifier = ends,
-                                            wide = wide,
-                                            progress = resume?.progress,
-                                            named = false,
-                                            onFocus = { state.focused = card },
-                                            art = if (wide || textless != null) {
-                                                { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
-                                            } else null,
-                                        )
-                                    }
-                                    // A Chart's Titles are ranked 1…n in order.
-                                    if (ranked) RankedCard(index + 1) { poster() } else poster()
+                        // The rail keeps the focused card at the left margin by gliding there ([glideTo]),
+                        // not by bringing it into view, which a card growing as it scales would throw off.
+                        LazyRow(
+                            state = rail,
+                            // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
+                            contentPadding = PaddingValues(
+                                start = Spacing.screenX,
+                                end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - cardWidth,
+                                top = 10.dp,
+                                bottom = 10.dp,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+                            modifier = Modifier.rowFocus(entry),
+                        ) {
+                            items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { if (row is HomeRow.Favourites) "channel" else "title" }) { place ->
+                                val index = loop.card(place)
+                                val focus = remember { FocusRequester() }
+                                val card = RowCard(row.key, keys[index])
+                                val onFocus = {
+                                    state.focused = card
+                                    scope.launch { rail.glideTo(place) }
+                                    Unit
                                 }
+                                // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
+                                val ends = Modifier.focusRequester(focus).entryAt(rail, place, entry).focusProperties {
+                                    if (!loop.loops && index == 0) left = FocusRequester.Cancel
+                                    if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
+                                }
+                                if (card == focusOn && place == target) LaunchedEffect(Unit) {
+                                    focus.requestFocus()
+                                    onFocused()
+                                }
+                                if (row is HomeRow.Favourites) {
+                                    ChannelCard(
+                                        row.channels[index],
+                                        onWatch = { onWatch(card, it) },
+                                        onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
+                                        modifier = ends,
+                                        named = false,
+                                        onFocus = onFocus,
+                                    )
+                                    return@items
+                                }
+                                val title = titles[index]
+                                val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
+                                // The info under the rail shows the badges, so the card only counts as on screen.
+                                OnScreen(library, title.id)
+                                val logo = title.about?.logo
+                                // A poster has its name printed on it, so the logo goes only over a textless one;
+                                // focused, it grows into its textless backdrop (#216).
+                                val art = remember(title) { cardArt(title.image, title.about, textlessPosters = true) }
+                                val grown = art.grown
+                                val poster = @Composable {
+                                    TitleCard(
+                                        image = rememberArtwork(if (wide) resume?.still ?: title.image else art.poster, card = true),
+                                        name = title.name,
+                                        badges = emptyList(),
+                                        onClick = { onOpen(card, title.id) },
+                                        modifier = ends,
+                                        wide = wide,
+                                        progress = resume?.progress,
+                                        named = false,
+                                        onFocus = onFocus,
+                                        art = if (wide || art.posterLogo != null) {
+                                            { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
+                                        } else null,
+                                        grown = if (!wide && grown != null) {
+                                            { GrownArtwork(grown, title.name) }
+                                        } else null,
+                                    )
+                                }
+                                // A Chart's Titles are ranked 1…n in order.
+                                if (ranked) RankedCard(index + 1) { poster() } else poster()
                             }
                         }
                         SettledInfo(library, row, state, contentLanguages)
@@ -432,6 +432,28 @@ private val HomeRow.keys: List<String>
     get() = if (this is HomeRow.Favourites) channels.map(::channelKey) else titles.map { it.id.toString() }
 
 private fun channelKey(channel: Channel) = "channel/${channel.id}"
+
+/**
+ * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do
+ * (#167). The distance left is read again at every frame and covered in proportion to the time
+ * left, so the card lands exactly there though the card focused before shrinks and this one grows
+ * meanwhile (#216). A card not laid out is jumped to.
+ */
+private suspend fun LazyListState.glideTo(place: Int) {
+    fun distance() = layoutInfo.visibleItemsInfo.firstOrNull { it.index == place }?.offset?.toFloat()
+    if (distance() == null) return scrollToItem(place)
+    scroll {
+        var done = 0f
+        animate(0f, 1f, animationSpec = GLIDE) { progress, _ ->
+            val left = distance() ?: return@animate
+            scrollBy(if (progress >= 1f || done >= 1f) left else left * (progress - done) / (1f - done))
+            done = progress
+        }
+    }
+}
+
+/** As bringing a card into view moved a rail before (#167): quick, without overshooting. */
+private val GLIDE = spring<Float>(visibilityThreshold = 0.001f)
 
 private val CANVAS_WIDTH = 960.dp
 
