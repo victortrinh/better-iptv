@@ -3,6 +3,7 @@ name: Zugig
 description: Verre, tvOS-style glass on a Fire TV. The artwork is the interface; everything else is black, white and translucent white.
 colors:
   ground: "#07080A"
+  picture: "#000000"
   glass: "rgba(255, 255, 255, 0.12)"
   glass-high: "rgba(255, 255, 255, 0.20)"
   ink: "#FFFFFF"
@@ -217,6 +218,7 @@ Achromatic by design: black ground, white ink, white glass. Colour on screen com
 
 ### Neutral
 - **Near-Black Ground** (`ground`): behind everything, and the colour every scrim fades artwork into.
+- **Picture Black** (`picture`, `#000000`): only behind the player's picture, on both engines (the player screen, Media3's shutter and view, VLC's layout), so letterbox bands are pure black (#273). Everywhere else, the player's scrims included, keeps `ground`: on a TV with HDR or Dolby Vision output the UI's near-black can be lifted to dark grey, which shows in the bands.
 - **Glass** (`glass`, white at 12%): the resting surface of rows, fields, keys and the tab bar. Translucent, so artwork shows through.
 - **Strong Glass** (`glass-high`, white at 20%): unfocused buttons, the selected tab, the selected choice, and focused Version rows and text fields.
 - **Ink** (`ink`): primary text, the text cursor, card progress bars.

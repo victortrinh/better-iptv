@@ -25,6 +25,11 @@ import kotlin.math.roundToInt
 object Colors {
     /** Behind everything, and what scrims fade artwork into. */
     val ground = Color(0xFF07080A)
+    /**
+     * Pure black, only behind the player's picture, where letterbox bands show it (#273). Not
+     * [ground]: with HDR or Dolby Vision output a TV can lift the UI's near-black to dark grey.
+     */
+    val picture = Color(0xFF000000)
     /** Glass: rows, fields, unfocused buttons and tabs. Translucent, so artwork shows through. */
     val surface = Color(0x1FFFFFFF)
     /** Stronger glass: unfocused buttons, the selected tab. */
