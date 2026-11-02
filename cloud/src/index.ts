@@ -1,10 +1,12 @@
-import { charts, fill } from "./charts";
+import { charts, fill, SUBREQUESTS } from "./charts";
 import { isRegistered, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
+import { fillGames, games } from "./games";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
 import { isUnknownPrefix, MAX_PREFIX_BATCH, saveUnknownPrefixes, type UnknownPrefix } from "./prefixes";
+import { isLeague, type League, LEAGUES } from "./schedule";
 import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
@@ -52,6 +54,16 @@ import { upcoming } from "./upcoming";
  *   cloud keeps is answered: the Cron Trigger reads the sources (#214). A list not read yet is
  *   empty; a Region not read yet gets the worldwide Top 10, and a language the genres named in
  *   English, till the Cron Trigger's next runs.
+ * - `POST /v1/games`, with `{"leagues": ["nhl", "premier-league"]}` (the Leagues a device has on,
+ *   by the ids in schedule.ts): each League's Games for today and the next seven days,
+ *   `{"leagues": [{"league": "nhl", "games": [{"id": "401892633", "league": "nhl", "start":
+ *   "2026-11-04T00:00:00.000Z", "state": "upcoming", "home": {"id": "21", "name": "Toronto Maple
+ *   Leafs", "shortName": "Maple Leafs", "abbreviation": "TOR", "aliases": ["Toronto Maple Leafs",
+ *   "Maple Leafs", "TOR", "Toronto"], "logo": "https://…/tor.png"}, "away": {…}, "broadcasters":
+ *   ["ESPN+"]}]}]}`, by start; state is upcoming, live or over, and the Broadcasters are the
+ *   national networks the schedule names (US-market). Never a score or a period. Only what the
+ *   cloud keeps is answered: the Cron Trigger reads each League's schedule source (ESPN) while a
+ *   device wants it (#252). A League not read yet is absent; one read with no Games has `[]`.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
  */
@@ -124,6 +136,13 @@ export default {
       }
       return json(await charts(env, region, language));
     }
+    if (request.method === "POST" && pathname === "/v1/games") {
+      const { leagues } = ((await request.json().catch(() => null)) ?? {}) as { leagues?: unknown };
+      if (!Array.isArray(leagues) || leagues.length > LEAGUES.length || !leagues.every(isLeague)) {
+        return problem(400, `leagues must be a list of League ids among ${LEAGUES.join(", ")}.`);
+      }
+      return json(await games(env, leagues as League[]));
+    }
     if (request.method === "POST" && pathname === "/v1/subtitles/download") {
       const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
       if (!isOfferId(id)) return problem(400, "id must be the id of an offer a subtitle search gave.");
@@ -138,9 +157,10 @@ export default {
     return problem(404, "No such endpoint.");
   },
 
-  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the Charts' sources, a few parts a run. */
+  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then the Charts' sources, a few parts a run, out of one budget of requests. */
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await fill(env);
+    const sent = await fillGames(env);
+    await fill(env, SUBREQUESTS - sent);
   },
 } satisfies ExportedHandler<Env>;
 
