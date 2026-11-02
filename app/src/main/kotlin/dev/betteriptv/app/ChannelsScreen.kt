@@ -94,9 +94,9 @@ class ChannelsState {
  */
 @Composable
 fun ChannelsScreen(library: Library, country: LiveCountry, appLanguage: String, state: ChannelsState, onWatch: (Channel) -> Unit) {
-    val status by library.syncStatus.collectAsStateWithLifecycle()
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     var categories by remember { mutableStateOf<List<BrowsedCategory>?>(null) }
-    LaunchedEffect(country, status.last) { categories = library.browsedCategories(country.code) }
+    LaunchedEffect(country, catalog) { categories = library.browsedCategories(country.code) }
     val context = LocalContext.current
     val guideChanges by library.guideChanges.collectAsStateWithLifecycle()
     val minute by produceState(0) {

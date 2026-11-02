@@ -89,19 +89,38 @@
     <string name="search_replays">Replays · %1$d</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
-    <string name="sync_first">Syncing your catalog for the first time…</string>
+    <!-- The first-Sync checklist, centred where the rows will be: its title and its steps, in order. -->
+    <string name="sync_checklist_title">Setting up your catalog</string>
+    <string name="sync_step_channels">Channels</string>
+    <string name="sync_step_movies">Movies</string>
+    <string name="sync_step_shows">Shows</string>
+    <string name="sync_step_saving">Saving</string>
+    <string name="sync_retry">Retry</string>
+    <!-- Settings' Sync row while a first Sync runs: the step, then the step and how many entries (Channels, movies and shows) are read. -->
+    <string name="sync_running_step">Syncing… %1$s</string>
+    <string name="sync_running_step_entries">Syncing… %1$s · %2$s</string>
+    <plurals name="sync_entries">
+        <item quantity="one">%1$s entry</item>
+        <item quantity="other">%1$s entries</item>
+    </plurals>
     <string name="sync_running">Syncing… (showing the catalog from %1$s)</string>
     <string name="sync_running_progress">Syncing… %1$s (showing the catalog from %2$s)</string>
-    <plurals name="sync_matching">
-        <item quantity="one">Still regrouping titles: %1$s of %2$s name checked.</item>
-        <item quantity="other">Still regrouping titles: %1$s of %2$s names checked.</item>
-    </plurals>
-    <string name="sync_matching_start">Still regrouping titles: finding the names to check.</string>
+    <!-- A later Sync finished and its catalog waits to show, between screens. -->
+    <string name="sync_ready">Synced %1$s. It shows when you come back.</string>
     <string name="sync_done">Synced %1$s in %2$s s.</string>
     <string name="sync_failed">Sync failed: %1$s Showing the catalog from %2$s.</string>
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
+    <!-- Settings' Checking titles row, under Sync now only while the cloud is asked about the catalog's suspects. -->
+    <string name="matching_row">Checking titles</string>
+    <string name="matching_finding">Finding the names to check…</string>
+    <plurals name="matching_checking">
+        <item quantity="one">%1$s of %2$s name checked</item>
+        <item quantity="other">%1$s of %2$s names checked</item>
+    </plurals>
+    <!-- Over Home's placeholder rows while a first Sync, its Channels landed, still reads the Titles. -->
+    <string name="home_titles_pending">Movies and shows arrive once syncing finishes.</string>
 
     <string name="badge_confirmed">Confirmed</string>
     <string name="badge_confirmed_meaning">read from the file</string>

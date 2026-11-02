@@ -6,11 +6,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.text.style.TextAlign
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.core.SyncStatus
 import androidx.compose.foundation.background
@@ -164,6 +162,7 @@ fun RowsScreen(
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -248,7 +247,7 @@ fun RowsScreen(
                 Modifier.fillMaxSize().backToTab(tab),
                 state = state.list,
             ) {
-                if (rows?.isEmpty() == true) {
+                if (rows?.isEmpty() == true && trailing == null) {
                     item(key = "empty") {
                         Text(empty, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
                     }
@@ -391,6 +390,7 @@ fun RowsScreen(
                 }
                 // Room under the last row, so it too comes up to the top of the rows. Only with the
                 // rows: alone, it would be the item the list keeps in place as they arrive above it.
+                if (trailing != null) item(key = "trailing", contentType = "trailing") { trailing() }
                 if (!rows.isNullOrEmpty()) item(key = "end") { Spacer(Modifier.fillParentMaxHeight()) }
             }
         }
@@ -510,7 +510,7 @@ private val HomeRow.ranked: Boolean
 private val HomeRow.key: String
     get() = when (this) {
         is HomeRow.ContinueWatching -> "continue"
-        is HomeRow.Favourites -> "favourites"
+        is HomeRow.Favourites -> FAVOURITES_ROW
         is HomeRow.Channels -> "channels"
         is HomeRow.Chart -> "chart/$list"
         is HomeRow.NewOnYourService -> "new"
@@ -615,11 +615,16 @@ private fun HomeRow.heading(): String = when (this) {
 
 /**
  * Where the rows go while they are first read: two rows of glass posters in their places, without
- * headings, focus or motion, so the screen under the tabs is never blank (#213).
+ * headings, focus or motion, so the screen under the tabs is never blank (#213). With a [caption],
+ * they hold the places of rows still to come (Home's Title rows while a first Sync reads them), and
+ * the caption says so above them.
  */
 @Composable
-private fun PlaceholderRows() {
+internal fun PlaceholderRows(caption: String? = null) {
     Column(Modifier.fillMaxSize()) {
+        if (caption != null) {
+            Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(start = Spacing.screenX, bottom = 12.dp))
+        }
         repeat(PLACEHOLDER_ROWS) {
             Box(Modifier.padding(start = Spacing.screenX).size(PLACEHOLDER_HEADING_WIDTH, PLACEHOLDER_HEADING_HEIGHT).background(Colors.surface, RoundedCornerShape(Corners.badge)))
             Row(
@@ -634,26 +639,8 @@ private fun PlaceholderRows() {
     }
 }
 
-/**
- * A first Sync's progress, or why it failed, centred where the rows will be, readable from the
- * couch: Home and the Movies and Shows tabs show it while no catalog is stored. Once one is, a
- * Sync's progress and failures show only in Settings.
- */
-@Composable
-internal fun FirstSync(status: SyncStatus) {
-    Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
-        Text(
-            LocalContext.current.describe(status),
-            style = Type.body,
-            color = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = FIRST_SYNC_TEXT_WIDTH),
-        )
-    }
-}
-
-/** Wide enough for the French first-Sync line on two lines at body size. */
-private val FIRST_SYNC_TEXT_WIDTH = 440.dp
+/** The Favourites row's key: the one row under where Home's Title rows land, which a first Sync mustn't move under focus. */
+internal const val FAVOURITES_ROW = "favourites"
 private const val PLACEHOLDER_ROWS = 2
 /** As many posters as the screen shows, the last peeking at the right edge. */
 private const val PLACEHOLDER_POSTERS = 6

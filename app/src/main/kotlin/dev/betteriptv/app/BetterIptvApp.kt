@@ -10,7 +10,6 @@ import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,7 +28,6 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var syncJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -69,23 +67,50 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         return loader
     }
 
-    /** Starts a Sync unless one finished recently. The catalog on screen stays until the new one is ready. */
+    /**
+     * Whether the player is open: a held catalog isn't applied and no Sync starts while it is, so
+     * nothing moves under what the Viewer watches. Set by the root screen.
+     */
+    @Volatile var playerOpen = false
+
+    /**
+     * The app came to the front (launch or resume): a held Sync's catalog lands now, between screens,
+     * or else a Sync starts if the last one is stale. Nothing while the player is open or before login.
+     */
+    fun onResumed() {
+        if (!library.isLoggedIn || playerOpen) return
+        if (library.hasPendingCatalog) applyPendingCatalog() else syncIfStale()
+    }
+
+    /** Lands a held Sync's catalog ([Library.applyPendingCatalog]), on entering a top-level screen; never while the player is open. */
+    fun applyPendingCatalog() {
+        if (playerOpen || !library.hasPendingCatalog) return
+        scope.launch { library.applyPendingCatalog() }
+    }
+
+    /** Starts a Sync unless one finished recently or waits to be applied. The catalog on screen stays until the new one lands. */
     fun syncIfStale() {
-        val last = library.syncStatus.value.last
+        val status = library.syncStatus.value
+        if (status is SyncStatus.Ready) return
+        val last = status.last
         if (last == null || Duration.between(last.finishedAt, Instant.now()) > STALE_AFTER) sync()
     }
 
-    /** Starts a Sync unless one is already running. */
+    /**
+     * Starts a Sync unless one is running. A later Sync's catalog is held for [applyPendingCatalog],
+     * so rows never move under focus; Matching after a Sync doesn't hold the next one up.
+     */
     fun sync() {
-        if (syncJob?.isActive == true) return
-        syncJob = scope.launch {
+        if (library.syncStatus.value is SyncStatus.Running) return
+        scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
-            when (val status = library.sync()) {
+            when (val status = library.sync(hold = true)) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
                     "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.rematchedListings} Matched by name",
                 )
-                is SyncStatus.Failed -> Log.w(TAG, "Sync failed: ${status.problem}")
+                is SyncStatus.Ready -> Log.i(TAG, "Synced; the catalog waits to be applied")
+                is SyncStatus.Failed -> Log.w(TAG, "Sync failed at ${status.step}: ${status.problem}")
                 else -> Unit
             }
         }
