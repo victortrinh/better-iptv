@@ -158,11 +158,28 @@ class Library private constructor(
                             client.showListings { id, name, categoryId, modified, tmdbId, image ->
                                 listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
                             }
-                            val liveCategories = HashMap<String, String>()
+                            val liveCategories = LinkedHashMap<String, String>()
                             client.liveCategories { id, name -> liveCategories[id] = name }
                             val now = Instant.now()
-                            client.liveListings { id, name, categoryId, image ->
-                                if (!prefixTable.isLiveClutter(name, liveCategories[categoryId].orEmpty())) staging.channel(id, name, image, eventStart(name, now))
+                            // Per Category, how many Listings it has and how many are Event channels or empty Event slots.
+                            val tallies = HashMap<String?, IntArray>()
+                            client.liveListings { id, name, categoryId, image, guideId ->
+                                val category = liveCategories[categoryId].orEmpty()
+                                val start = eventStart(name, now)
+                                val listing = prefixTable.describeLive(name, category)
+                                val tally = tallies.getOrPut(categoryId) { IntArray(2) }
+                                tally[0]++
+                                if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, now)) tally[1]++
+                                if (listing == PrefixTable.LiveListing.Channel) staging.channel(id, name, image, start, categoryId, guideId)
+                            }
+                            liveCategories.forEach { (id, name) ->
+                                val tally = tallies[id]
+                                val kind = when {
+                                    prefixTable.isClutterCategory(name) -> CategoryKind.Clutter
+                                    tally != null && tally[1] * 2 > tally[0] -> CategoryKind.Event
+                                    else -> CategoryKind.Regular
+                                }
+                                staging.liveCategory(id, name, normalisedCategoryName(name), categoryCountry(name), kind)
                             }
                         },
                         completed = { movieCount, showCount, rematched ->
@@ -370,6 +387,9 @@ class Library private constructor(
 
     /** Saves Channel [channel] as a Favourite, or removes it when [favourite] is false. */
     suspend fun setFavourite(channel: Long, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(channel, favourite, Instant.now()) }
+
+    /** The live Categories the last Sync stored, in the Provider's order, with their normalised names and kinds. */
+    suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
 
     /**
      * What watching [channel] starts: its live stream as MPEG-TS, with the same stream as HLS as its

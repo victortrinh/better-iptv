@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import java.text.Normalizer
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -9,9 +10,56 @@ import java.time.temporal.ChronoUnit
 
 /**
  * A Channel's card: the Provider's [name] for it, its logo [image] URL, and whether the Viewer keeps
- * it as a [favourite]. [id] is the Provider's stream id.
+ * it as a [favourite]. [id] is the Provider's stream id. [categoryId] is the Provider's id of the
+ * Category the Listing was filed under (null when the Provider gave none), and [guideId] is what
+ * the Provider's guide knows the Channel by, empty when the guide doesn't cover it.
  */
-data class Channel(val id: Long, val name: String, val image: String?, val favourite: Boolean)
+data class Channel(
+    val id: Long,
+    val name: String,
+    val image: String?,
+    val favourite: Boolean,
+    val categoryId: String? = null,
+    val guideId: String = "",
+)
+
+/**
+ * A live Category as a Sync stored it: the Provider's [name] (`US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), its
+ * [normalisedName] with the country code and the Provider's tags stripped (`NBC`), the [country]
+ * code the name starts with (`US`, null when it has none) and its [kind]. [id] is the Provider's
+ * category id.
+ */
+data class LiveCategory(val id: String, val name: String, val normalisedName: String, val country: String?, val kind: CategoryKind)
+
+/** What a live Category holds: Channels to browse, Clutter (radio, karaoke, audiobooks), or an Event Category. */
+enum class CategoryKind {
+    Regular,
+    Clutter,
+    /** An Event Category: most of its Listings are Event channels or empty Event slots. */
+    Event,
+}
+
+/**
+ * A live Category's name without the Provider's dressing: the country code before a bar (`US| `,
+ * `CA FR| `) and the superscript tags (`ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`, `ⱽᴵᴾ`, `ᴳᴼᴸᴰ`) are dropped, the rest is
+ * NFKC-normalised (fullwidth letters and ligatures become plain ones), spaces collapsed and trimmed.
+ * `US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ` is "NBC". A name that is nothing but tags (`ᴬᴿᴱᴺᴬ`) keeps them as plain
+ * letters ("ARENA") rather than vanish.
+ */
+internal fun normalisedCategoryName(name: String): String {
+    val rest = name.replace(COUNTRY_CODE, "")
+    fun plain(text: String) = Normalizer.normalize(text, Normalizer.Form.NFKC).replace(SPACES, " ").trim()
+    return plain(rest.replace(SUPERSCRIPT_TAGS, " ")).ifEmpty { plain(rest) }.ifEmpty { name.trim() }
+}
+
+/** The country code a live Category's name starts with (`US` in `US| NBC`), or null. */
+internal fun categoryCountry(name: String): String? = COUNTRY_CODE.find(name)?.groupValues?.get(1)?.replace(SPACES, " ")
+
+/**
+ * Whether a live Listing's name is an Event channel's: it carries a Game's start, or is marked
+ * `Live |` or `Next |`. Numbered slots without a date (`UK: TNT SPORTS EVENT 12`) can't be told.
+ */
+internal fun isEventChannel(name: String, now: Instant): Boolean = MARKED_ON.containsMatchIn(name) || eventStart(name, now) != null
 
 /** An Event channel counts as finished this long after the start its name gives: long enough for a match, a race or a fight card. */
 internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)
@@ -60,6 +108,14 @@ private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "au
 private const val MONTH = "(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?"
 
 private val MARKED_ON = Regex("""^\s*(Live|Next)\s*\|""", RegexOption.IGNORE_CASE)
+/** `US| `, `CA FR| `, `UK |`: a country code, maybe with a language, before a bar at the start of a Category's name. */
+private val COUNTRY_CODE = Regex("""^\s*([A-Z]{2}(?:\s*[A-Z]{2})?)\s*\|\s*""")
+/**
+ * Runs of superscript and modifier letters and digits, the Provider's tags (`ᴴᴰ`, `ⱽᴵᴾ`, `⁶⁰ᶠᵖˢ`,
+ * `ʰᵉᵛᶜ`), with the `/` that joins two of them. Small capitals (`ᴀʙᴄ`) are letters, not tags.
+ */
+private val SUPERSCRIPT_TAGS = Regex("""[\u00B9\u00B2\u00B3\u02B0-\u02B8\u02E0-\u02E4\u1D2C-\u1D6A\u1D78\u1D9B-\u1DBF\u2070-\u209C\u2C7C\u2C7D]+(?:\s*/\s*[\u00B9\u00B2\u00B3\u02B0-\u02B8\u02E0-\u02E4\u1D2C-\u1D6A\u1D78\u1D9B-\u1DBF\u2070-\u209C\u2C7C\u2C7D]+)*""")
+private val SPACES = Regex("""\s+""")
 private val YEAR_FIRST = Regex("""(20\d\d)-(\d\d)-(\d\d)\s*\|?\s*(\d{1,2}):(\d\d)""")
 private val DAY_FIRST = Regex("""(?<!\d)(\d\d)-(\d\d)-(20\d\d)\s*\|?\s*(\d{1,2}):(\d\d)""")
 private val MONTH_NAME_FIRST = Regex("""\b$MONTH\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)

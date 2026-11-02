@@ -169,16 +169,30 @@ class FakeProvider : Closeable {
         }
     }
 
-    /** Serves these live Listings, as (name, Category name), numbered from 1 in this order. */
-    fun serveChannels(vararg listings: Pair<String, String>) {
-        val categories = listings.map { it.second }.distinct()
+    /** Serves these live Listings, as (name, Category name), numbered from 1 in this order, none known to the guide. */
+    fun serveChannels(vararg listings: Pair<String, String>) = serveChannels(*listings.map { (name, category) -> LiveListing(name, category) }.toTypedArray())
+
+    /**
+     * Serves these live Listings, numbered from 1 in this order, filed under their Categories (numbered
+     * from 1 in order of first appearance) and known to the Provider's guide by their guide ids.
+     */
+    fun serveChannels(vararg listings: LiveListing) {
+        val categories = listings.map { it.category }.distinct()
         liveCategoriesOverride = categories.withIndex()
             .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
         liveListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            """{"num":${i + 1},"stream_id":${i + 1},"name":${json(listing.first)},"stream_type":"live","stream_icon":"http://logo/${i + 1}.png",""" +
-                """"category_id":"${categories.indexOf(listing.second) + 1}","epg_channel_id":"","tv_archive":0}"""
+            val guide = listing.guideId?.let { ""","epg_channel_id":${json(it)}""" }.orEmpty()
+            """{"num":${i + 1},"stream_id":${i + 1},"name":${json(listing.name)},"stream_type":"live","stream_icon":"http://logo/${i + 1}.png",""" +
+                """"category_id":"${categories.indexOf(listing.category) + 1}"$guide,"tv_archive":0}"""
         }
     }
+
+    /**
+     * A live Listing to serve: its [name], the [category] it's filed under and its [guideId], what the
+     * Provider's guide knows it by. Null leaves the field out, as some Providers do for Channels their
+     * guide doesn't cover; the surveyed one sends "".
+     */
+    class LiveListing(val name: String, val category: String, val guideId: String? = "")
 
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
