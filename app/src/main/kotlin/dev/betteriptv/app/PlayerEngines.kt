@@ -33,6 +33,7 @@ import dev.betteriptv.core.MIN_FRAMES_FOR_RATE
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
+import dev.betteriptv.core.Quality
 import dev.betteriptv.core.RememberedTracks
 import dev.betteriptv.core.Track
 import dev.betteriptv.core.TrackChoice
@@ -58,6 +59,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
@@ -394,7 +396,10 @@ class VlcEngine(
 
     // To read a file's index and to seek, VLC opens a new request before closing the one it has.
     override val overlapsRequests = true
-    private val vlc = LibVLC(context.applicationContext, arrayListOf("--http-reconnect") + style.vlcOptions())
+    private val vlc = LibVLC(
+        context.applicationContext,
+        arrayListOf("--http-reconnect") + style.vlcOptions(vlcSubtitleHeight(plan.version.attributes.quality?.value, context.resources.displayMetrics.heightPixels)),
+    )
     private val player = MediaPlayer(vlc)
     private val calls = Executors.newSingleThreadExecutor { Thread(it, "vlc-calls") }
     private val onVlc = calls.asCoroutineDispatcher()
@@ -739,14 +744,43 @@ internal fun SubtitleView.draw(style: SubtitleStyle) {
 /** The dark box behind subtitles, at 70%. */
 private const val SUBTITLE_BOX = 0xB3000000.toInt()
 
-/** VLC's options for drawing subtitles in this style. */
-private fun SubtitleStyle.vlcOptions(): List<String> = listOfNotNull(
-    "--sub-text-scale=${(size.scale * 100).toInt()}",
+/**
+ * VLC's options for drawing subtitles in this style, the same size and height as Media3 draws them
+ * on a picture [height] pixels tall. VLC sizes text at 6.25% of the picture's height (Media3 at
+ * 5.33%), times `--sub-text-scale`. It lifts text 4% of the picture's height off the bottom by
+ * itself, and `--sub-margin` adds a fixed count of pixels to that, of the picture it draws subtitles
+ * on, so the margin has to be worked out for the height (VLC 3's `substext.h` and `vout_subpictures.c`).
+ */
+@OptIn(UnstableApi::class)
+internal fun SubtitleStyle.vlcOptions(height: Int): List<String> = listOfNotNull(
+    "--sub-text-scale=${(size.scale * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION / VLC_TEXT_SIZE_FRACTION * 100).roundToInt()}",
     "--freetype-color=${colour.argb and 0xFFFFFF}",
-    "--sub-margin=${(position.fromBottom * 400).toInt()}",
+    "--sub-margin=${((position.fromBottom - VLC_BOTTOM_MARGIN_FRACTION) * height).roundToInt().coerceAtLeast(0)}",
     when (background) {
         SubtitleBackground.Outline -> "--freetype-outline-thickness=4"
         SubtitleBackground.Shadow -> "--freetype-shadow-opacity=200"
         SubtitleBackground.Box -> "--freetype-background-opacity=180"
     },
 )
+
+/**
+ * The height in pixels of the picture VLC draws subtitles on: the file's own or the one it shows on
+ * the screen, whichever is taller, so a 4K file's are drawn on 2160 lines and a 1080p file's on 1080. LibVLC takes `--sub-margin` before it opens the file and can't change it
+ * after, so the file's height is the one its Version's [quality] names, and the screen's
+ * [screenHeight] when it names none.
+ */
+internal fun vlcSubtitleHeight(quality: Quality?, screenHeight: Int): Int = maxOf(
+    screenHeight,
+    when (quality) {
+        Quality.UHD -> 2160
+        Quality.FullHD -> 1080
+        Quality.HD -> 720
+        Quality.SD, null -> 0
+    },
+)
+
+/** VLC's default subtitle text size, as a share of the picture's height (its `STYLE_DEFAULT_REL_FONT_SIZE`). */
+private const val VLC_TEXT_SIZE_FRACTION = 0.0625f
+
+/** How far VLC lifts subtitles off the picture's bottom by itself, as a share of its height. */
+private const val VLC_BOTTOM_MARGIN_FRACTION = 0.04f
