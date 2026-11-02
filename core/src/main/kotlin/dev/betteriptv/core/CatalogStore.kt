@@ -1107,6 +1107,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
             // The lead variant of each Channel, in the Provider's order, for the search index's scan.
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
+            // The Event channels on, read for the Live tab's Games every couple of minutes.
+            "CREATE INDEX IF NOT EXISTS channel_event_start ON channel (event_start)",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */

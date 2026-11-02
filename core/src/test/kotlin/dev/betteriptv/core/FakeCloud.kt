@@ -338,8 +338,9 @@ fun tmdbTitle(
 
 /**
  * A Game shaped like the cloud's answer (cloud/src/schedule.ts): [home] against [away] (full
- * names, each also known by its last word, its first word and a three-letter abbreviation) at
- * [start] (UTC ISO 8601) in [state] (`upcoming`, `live`, `over`), carried by [broadcasters].
+ * names, each with the aliases ESPN gives: the name, the nickname as its short name, a three-letter
+ * abbreviation and the location, "Toronto Maple Leafs" being Toronto's "Maple Leafs") at [start]
+ * (UTC ISO 8601) in [state] (`upcoming`, `live`, `over`), carried by [broadcasters].
  */
 fun game(
     id: String,
@@ -351,9 +352,18 @@ fun game(
     league: String = "nhl",
 ): Map<String, Any?> {
     val team = { name: String ->
-        val shortName = name.substringAfterLast(' ')
+        // ESPN's nickname is the name's last word, or its last two for the few that have them.
+        val nickname = TWO_WORD_NICKNAMES.firstOrNull { name.endsWith(" $it") } ?: name.substringAfterLast(' ')
+        val location = name.removeSuffix(nickname).trim()
         val abbreviation = name.take(3).uppercase()
-        mapOf("id" to abbreviation, "name" to name, "shortName" to shortName, "abbreviation" to abbreviation, "aliases" to listOf(name, shortName, abbreviation, name.substringBefore(' ')), "logo" to "https://logos.example/$abbreviation.png")
+        mapOf(
+            "id" to abbreviation, "name" to name, "shortName" to nickname, "abbreviation" to abbreviation,
+            // As cloud/src/espn.ts lists them: display name, short display name, abbreviation, location, nickname, each once.
+            "aliases" to listOf(name, nickname, abbreviation, location).distinct(), "logo" to "https://logos.example/$abbreviation.png",
+        )
     }
     return mapOf("id" to id, "league" to league, "start" to start, "state" to state, "home" to team(home), "away" to team(away), "broadcasters" to broadcasters)
 }
+
+/** The nicknames of more than one word among the teams the tests name. */
+private val TWO_WORD_NICKNAMES = listOf("Maple Leafs", "Golden Knights", "Blue Jackets", "Red Wings")

@@ -19,6 +19,14 @@ class LeaguesTest {
         assertNull(League.byKey("f1"))
     }
 
+    @Test fun `a Leagues choice saved under the first release's ESPN slugs still finds its Leagues`() {
+        assertEquals(
+            listOf(League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1, League.NcaaFootball, League.NcaaMensBasketball),
+            listOf("usa.1", "eng.1", "uefa.champions", "esp.1", "ger.1", "ita.1", "fra.1", "college-football", "mens-college-basketball").map(League::byKey),
+        )
+        assertEquals(League.Nhl, League.byKey("nhl"))
+    }
+
     @Test fun `Canada's defaults are the seven from CONTEXT`() {
         assertEquals(
             setOf(League.Nhl, League.Nfl, League.Nba, League.Mlb, League.Cfl, League.Mls, League.PremierLeague),

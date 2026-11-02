@@ -25,8 +25,18 @@ enum class League(val key: String, val names: List<String>) {
     Wnba("wnba", listOf("WNBA"));
 
     companion object {
-        /** The League with this [key], or null for one this release doesn't offer. */
-        fun byKey(key: String): League? = entries.firstOrNull { it.key == key }
+        /**
+         * The League with this [key], or null for one this release doesn't offer. A key an earlier
+         * release kept a Leagues choice by ([LEGACY_KEYS]: #253's ESPN slugs, before the keys became
+         * the cloud's ids) still finds its League, so the choice survives the update.
+         */
+        fun byKey(key: String): League? = entries.firstOrNull { it.key == key } ?: LEGACY_KEYS[key]
+
+        /** The keys the first Live tab release (#253) saved Leagues by, to the Leagues they meant. */
+        private val LEGACY_KEYS = mapOf(
+            "usa.1" to Mls, "eng.1" to PremierLeague, "uefa.champions" to ChampionsLeague, "esp.1" to LaLiga, "ger.1" to Bundesliga,
+            "ita.1" to SerieA, "fra.1" to Ligue1, "college-football" to NcaaFootball, "mens-college-basketball" to NcaaMensBasketball,
+        )
 
         /**
          * The Leagues on until the Viewer chooses, by [region] (ISO 3166): Canada's seven from

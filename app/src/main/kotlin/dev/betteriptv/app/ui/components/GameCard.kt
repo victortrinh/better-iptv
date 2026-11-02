@@ -27,7 +27,7 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 
 /**
- * One Game (CONTEXT.md): both teams' logos on a 16:9 glass card, the visiting team's ([away]) on the
+ * One Game (CONTEXT.md): both teams' logos on a 16:9 glass card, the away team's ([away]) on the
  * left and the home team's ([home]) on the right, each whole and never cropped, with the [caption]
  * ("Live", or when it starts) at the bottom left. A logo that hasn't loaded or can't be shows its
  * team's short name in its place instead, so a card is never blank. With [disabled] set (an

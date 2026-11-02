@@ -39,9 +39,15 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * Each of [games] with the Feeds the catalog has for it (docs/roadmap.md, M3, "The cloud fetches,
  * the device matches"), the Feeds ranked for the Viewer's [contentLanguages]: among [events], the
  * Event channels whose Provider name holds an alias of both teams, or of one team and one of the
- * League's names ([League.names]), and whose start is the Game's ([sameEvent]); then, among [broadcasters] (Channels by their lower-cased name), the Channels named
- * exactly like one of the Game's Broadcasters. Names are compared as Search compares them: lower
+ * League's names ([League.names]), and whose start is the Game's ([sameEvent]); then, among
+ * [broadcasters] (Channels by their lower-cased name), the Channels named exactly like one of the
+ * Game's Broadcasters ("ESPN 2" is not ESPN). Names are compared as Search compares them: lower
  * case, accents dropped, an alias found only as whole words in order, so "Jets" is not "Jetsons".
+ *
+ * Two guards keep a city's other team's Game out: an Event channel naming another offered League
+ * ("NBA: Toronto vs Boston" for the Leafs and the Bruins) is never this Game's, and a match resting
+ * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
+ * either) needs the Game's League named too.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -59,12 +65,20 @@ internal fun matchFeeds(
         if (words.isEmpty()) return emptySet()
         return index[words.first()].orEmpty().filterTo(HashSet()) { containsPhrase(names[it], words) }
     }
-    fun holdingAny(phrases: List<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
+    fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
+    val byLeague = League.entries.associateWith { holdingAny(it.names) }
     return games.map { game ->
-        val home = holdingAny(game.home.aliases)
-        val away = holdingAny(game.away.aliases)
-        val league = holdingAny(League.byKey(game.league)?.names.orEmpty())
-        val named = (home intersect away) + ((home + away) intersect league)
+        val thisLeague = League.byKey(game.league)
+        val league = thisLeague?.let { byLeague[it] }.orEmpty()
+        val otherLeague = byLeague.filterKeys { it != thisLeague }.values.flatten().toSet()
+        val home = TeamAliases(game.home)
+        val away = TeamAliases(game.away)
+        val homeStrong = holdingAny(home.strong)
+        val awayStrong = holdingAny(away.strong)
+        val homeAny = homeStrong + holdingAny(home.weak)
+        val awayAny = awayStrong + holdingAny(away.weak)
+        val both = (homeAny intersect awayAny) intersect (homeStrong + awayStrong + league)
+        val named = (both + ((homeAny + awayAny) intersect league)) - otherLeague
         val eventFeeds = named.sorted().map { events[it] }.filter { sameEvent(game, it.start, now) }.map { listing ->
             Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country))
         }
@@ -72,6 +86,29 @@ internal fun matchFeeds(
             broadcasters[broadcaster.lowercase()].orEmpty().map { Feed(it, FeedKind.Broadcaster, languageOf(it.country), broadcaster) }
         }
         GameFeeds(game, rankedFeeds((eventFeeds + broadcasterFeeds).distinctBy { it.channel.key }, contentLanguages))
+    }
+}
+
+/**
+ * A team's aliases sorted by how surely they name it: [strong] ones (its name, short name,
+ * abbreviation and nickname, as the schedule gives them, plus the last word of a nickname of more
+ * than one word, "Leafs" from "Maple Leafs", when it has [NICKNAME_WORD_LETTERS] letters or more
+ * and is no League's word, since that is how Providers write Event channels) and [weak] ones, its
+ * location ("Toronto"), which another team shares.
+ */
+internal class TeamAliases(team: GameTeam) {
+    val weak: List<String> = team.aliases.filter { it != team.name && it != team.shortName && it != team.abbreviation && team.name.startsWith(it) && !team.shortName.startsWith(it) }
+    val strong: List<String> = (team.aliases - weak.toSet() + listOfNotNull(nicknameWord(team.shortName), nicknameWord(team.name))).distinct()
+
+    private fun nicknameWord(name: String): String? {
+        val words = SearchIndex.words(name)
+        val last = words.lastOrNull() ?: return null
+        return last.takeIf { words.size > 1 && it.length >= NICKNAME_WORD_LETTERS && it !in LEAGUE_WORDS }
+    }
+
+    private companion object {
+        const val NICKNAME_WORD_LETTERS = 4
+        val LEAGUE_WORDS: Set<String> = League.entries.flatMap { league -> league.names.flatMap(SearchIndex::words) }.toSet()
     }
 }
 

@@ -167,12 +167,25 @@ fun RowsScreen(
     var pending by remember(restoreFocus) { mutableStateOf(restoreFocus) }
     var focused by remember(restoreFocus) { mutableStateOf(false) }
     var checked by remember(restoreFocus) { mutableStateOf(false) }
+    val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
     LaunchedEffect(synced, reading) {
         val before = state.rows
         state.rows = reader()
+        val after = state.rows.orEmpty().cards
         if (!checked && restoreFocus != null && before != null) {
-            val restored = restoredCard(restoreFocus, before.cards, state.rows.orEmpty().cards)
+            val restored = restoredCard(restoreFocus, before.cards, after)
             if (restored != restoreFocus) pending = restored
+        } else if (checked && before != null) {
+            // Rows read again while the Viewer is on a card (Live's Games every couple of minutes):
+            // a Game that moved to another row keeps focus there, one that has gone leaves it to
+            // the card in its place, the row that takes its place, or the tab, as a removed Favourite does.
+            val focusedCard = state.focused
+            if (focusedCard != null && after[focusedCard.row]?.contains(focusedCard.key) != true && before.cards[focusedCard.row]?.contains(focusedCard.key) == true) {
+                val moved = after.entries.firstOrNull { focusedCard.key in it.value }?.let { RowCard(it.key, focusedCard.key) }
+                val next = moved ?: restoredCard(focusedCard, before.cards, after)
+                if (next == null) tab.requestFocus() else pending = next
+            }
         }
         checked = true
     }
@@ -182,8 +195,6 @@ fun RowsScreen(
         pending = null
         focused = true
     }
-    val tab = remember { FocusRequester() }
-    FocusTabOnArrival(focusTab, tab)
     val scope = rememberCoroutineScope()
     val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {

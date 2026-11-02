@@ -98,7 +98,6 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
     val game = entry.game
     val best = entry.best
     val playFocus = remember { FocusRequester() }
-    val firstFeed = remember { FocusRequester() }
     // Play takes first focus, once the list has laid it out; with no Feed to start it is disabled and still takes it, so the Viewer sees why.
     LaunchedEffect(entry.key) {
         withFrameNanos {}
@@ -149,7 +148,7 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                // The teams as on the card: visitors left, home right, whole logos or short names.
+                // The teams as on the card: away left, home right, whole logos or short names.
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xl), verticalAlignment = Alignment.CenterVertically) {
                     HeaderLogo(away, game.away.shortName)
                     HeaderLogo(home, game.home.shortName)
@@ -159,7 +158,7 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
         if (entry.feeds.isNotEmpty()) {
             item { Text(stringResource(R.string.feeds_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp)) }
             groups.entries.forEachIndexed { index, (language, feeds) ->
-                feedGroup(context, language, feeds, plans, first = index == 0, firstFeed, onChoose)
+                feedGroup(context, language, feeds, plans, first = index == 0, onChoose)
             }
         }
     }
@@ -183,7 +182,6 @@ private fun LazyListScope.feedGroup(
     feeds: List<Feed>,
     plans: Map<String, PlayPlan>?,
     first: Boolean,
-    firstFeed: FocusRequester,
     onChoose: (Feed, Version) -> Unit,
 ) {
     item(key = "language $language") {
@@ -211,7 +209,7 @@ private fun LazyListScope.feedGroup(
                 VersionRow(
                     context.versionLine(version),
                     onClick = { onChoose(feed, version) },
-                    modifier = (if (first && feedIndex == 0 && index == 0) Modifier.focusRequester(firstFeed) else Modifier).testTag("variant ${version.listingId}"),
+                    modifier = Modifier.testTag("variant ${version.listingId}"),
                 )
             }
         }

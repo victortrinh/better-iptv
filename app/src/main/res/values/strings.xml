@@ -48,7 +48,7 @@
     <!-- A Game in progress: on its card, its page and the info under its rail. Never a score. -->
     <string name="game_live">Live</string>
     <string name="game_no_stream">No stream found</string>
-    <!-- The two teams, the visiting team first: "Canadiens at Maple Leafs". -->
+    <!-- The two teams, the away team first: "Canadiens at Maple Leafs". -->
     <string name="game_matchup">%1$s at %2$s</string>
     <plurals name="game_feeds">
         <item quantity="one">%1$d Feed</item>

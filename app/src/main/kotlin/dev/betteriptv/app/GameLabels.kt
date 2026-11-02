@@ -58,21 +58,20 @@ fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId =
     return start.format(DateTimeFormatter.ofPattern(pattern, locale))
 }
 
-/** The two teams, visitors first, by their short names ("Canadiens at Maple Leafs") or their full names. */
+/** The two teams, the away team first, by their short names ("Canadiens at Maple Leafs") or their full names. */
 fun Context.matchup(game: Game, short: Boolean = true): String =
     getString(R.string.game_matchup, if (short) game.away.shortName else game.away.name, if (short) game.home.shortName else game.home.name)
 
 /**
  * What the info under a rail tells about a Game: its League and both teams on one line, then the
- * Broadcasters the schedule names and how many Feeds the catalog has, or that none was found.
+ * Broadcasters whose Channels were found among its Feeds (not the schedule's whole list: a Canadian
+ * Viewer has no Fox) and how many Feeds the catalog has, or that none was found.
  */
 fun Context.gameInfo(entry: GameFeeds): CardInfo.Game {
     val game = entry.game
     val feeds = if (entry.feeds.isEmpty()) getString(R.string.game_no_stream) else resources.getQuantityString(R.plurals.game_feeds, entry.feeds.size, entry.feeds.size)
-    return CardInfo.Game(
-        "${leagueName(game.league)} · ${matchup(game)}",
-        (game.broadcasters.take(3).joinToString(", ").ifEmpty { null }?.let { listOf(it) }.orEmpty() + feeds).joinToString(" · "),
-    )
+    val found = entry.feeds.mapNotNull { it.broadcaster }.distinct().take(3).joinToString(", ")
+    return CardInfo.Game("${leagueName(game.league)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
 }
 
 /** What a Feed is, under its name on the Game page: an Event channel, or the Broadcaster's Channel it is. */

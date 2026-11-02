@@ -58,11 +58,12 @@ class GameLabelsTest {
         assertEquals("Montreal Canadiens at Toronto Maple Leafs", context.matchup(game("2026-11-02T00:00:00Z"), short = false))
     }
 
-    @Test fun theRailInfoNamesTheLeagueTheTeamsTheBroadcastersAndTheFeedCount() {
+    @Test fun theRailInfoNamesTheLeagueTheTeamsTheBroadcastersFoundAndTheFeedCount() {
         val feeds = listOf(Feed(channel("Canadiens vs Maple Leafs"), FeedKind.EventChannel, "en"), Feed(channel("TSN", "CA"), FeedKind.Broadcaster, "en", "TSN"))
+        // The schedule also names Sportsnet, but no Sportsnet Channel was found: only TSN is named.
         assertEquals(
-            CardInfo.Game("NHL · Canadiens at Maple Leafs", "TSN, Sportsnet · 2 Feeds"),
-            context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("TSN", "Sportsnet")), feeds)),
+            CardInfo.Game("NHL · Canadiens at Maple Leafs", "TSN · 2 Feeds"),
+            context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("Sportsnet", "TSN")), feeds)),
         )
         assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "No stream found"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), emptyList())))
     }
