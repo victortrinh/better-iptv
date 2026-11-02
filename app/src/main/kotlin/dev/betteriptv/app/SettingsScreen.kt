@@ -247,16 +247,17 @@ fun SettingsScreen(
 @Composable
 private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
+    val matching by library.matchingStatus.collectAsStateWithLifecycle()
     val counts by produceState<Pair<Int, Int>?>(null, status.last) {
         value = withContext(Dispatchers.IO) { library.titleCount(TitleKind.Movie) to library.titleCount(TitleKind.Show) }
     }
     val context = LocalContext.current
     SettingRow(
         stringResource(R.string.sync_now),
-        context.describe(status),
+        context.describe(status, matching),
         onClick = onSyncNow,
         detail = counts?.let { (movies, shows) -> context.catalogCounts(movies, shows) },
-        enabled = status !is SyncStatus.Running && status !is SyncStatus.Matching,
+        enabled = status !is SyncStatus.Running,
         valueColor = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
         valueLines = 2,
     )

@@ -71,7 +71,7 @@ fun HomeScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Movies and Shows.
-    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
+    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Failed)
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()

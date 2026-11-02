@@ -37,6 +37,9 @@ class FakeCloud : Closeable {
     /** Called when a `/v1/match` request arrives, before it is answered. */
     @Volatile var onMatch: (() -> Unit)? = null
 
+    /** Answers `/v1/unknown-prefixes` with HTTP 503, as a cloud down for that call alone would. */
+    @Volatile var failingPrefixReports = false
+
     private val metadata = HashMap<String, Map<String, Any?>>()
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
@@ -247,7 +250,7 @@ class FakeCloud : Closeable {
                 val leagues = asked.mapNotNull { league -> synchronized(games) { games[league] }?.let { mapOf("league" to league, "games" to it) } }
                 respond(exchange, 200, mapOf("leagues" to leagues))
             }
-            "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
+            "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
             "/v1/upcoming" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))

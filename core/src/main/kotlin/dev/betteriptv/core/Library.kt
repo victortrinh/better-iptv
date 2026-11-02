@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -123,8 +124,33 @@ class Library private constructor(
 
     /** The Titles whose card's Version Background reading just Confirmed, so their badges update. */
     val confirmations: SharedFlow<TitleId> = _confirmations.asSharedFlow()
-    private val _syncStatus = MutableStateFlow(store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced)
+    private val _syncStatus = MutableStateFlow(openingStatus())
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+    private val _matchingStatus = MutableStateFlow<MatchingStatus?>(null)
+
+    /** The cloud being asked about the catalog's suspects after a Sync's catalog lands, or null while it isn't. */
+    val matchingStatus: StateFlow<MatchingStatus?> = _matchingStatus.asStateFlow()
+
+    /** Matching runs under this, apart from [syncLock]: Sync now needn't wait for the Titles to regroup. */
+    private val matchLock = Mutex()
+
+    /** Whether a held Sync's catalog waits to be swapped in by [applyPendingCatalog]. */
+    val hasPendingCatalog: Boolean get() = _syncStatus.value is SyncStatus.Ready
+
+    /**
+     * The status as the stored catalog says: a held Sync's catalog waits as [SyncStatus.Ready], unless
+     * none shows yet (the app closed between a first Sync's two swaps), when it lands here and now.
+     */
+    private fun openingStatus(): SyncStatus {
+        val last = store.lastSync()
+        val pendingAt = store.pendingAt()
+        return when {
+            pendingAt != null && last != null -> SyncStatus.Ready(last, pendingAt)
+            pendingAt != null -> SyncStatus.Synced(store.applyPending()!!)
+            last != null -> SyncStatus.Synced(last)
+            else -> SyncStatus.NeverSynced(store.channelsSyncedAt())
+        }
+    }
 
     val isLoggedIn: Boolean get() = credentials.load() != null
 
@@ -138,129 +164,193 @@ class Library private constructor(
     }
 
     /**
-     * Downloads the Provider's movie, show and live Categories and Listings and replaces the catalog
-     * atomically. Only `player_api` requests are made, never a stream, so a Sync never takes the
-     * Viewer's connection. Clutter and Sports replays are left out of the lists, and Prefixes the
-     * Prefix table doesn't know are reported in the finished Sync.
+     * Downloads the Provider's catalog and replaces the device's copy, in two stages. The Channels
+     * stage (live Categories and Listings) comes first; the Titles stage (movie and show Categories
+     * and Listings) after, with the suspects Matched by the answers kept. Only `player_api` requests
+     * are made, never a stream, so a Sync never takes the Viewer's connection. Clutter and Sports
+     * replays are left out of the lists, and Prefixes the Prefix table doesn't know are reported in
+     * the finished Sync.
      *
-     * Listings are Matched by their Provider's TMDB ID, except suspected Mismatches and Listings
-     * without one, which are Matched by what the cloud answered about them before. Once the new
-     * catalog shows, the cloud is asked about the rest, and the Titles are regrouped by its answers
-     * before this returns (meanwhile the status shows the Sync finished and that names are being
-     * Matched, then how many have been asked). While it runs, the status counts the Listings read.
+     * A first Sync swaps each stage in as it lands, so Live and Home open on the Channels within
+     * seconds while the Titles are still read. A later Sync computes both behind the catalog on
+     * screen, then either swaps them in together (the default), or with [hold] keeps them staged as
+     * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
+     * move under focus; a Sync started meanwhile discards what was held.
+     *
+     * Once a catalog lands, the cloud is asked about its suspects and the Titles regroup by its
+     * answers, under [matchingStatus], apart from this status: the Sync itself is finished, and another
+     * may start meanwhile. This returns once that is done too.
      */
-    suspend fun sync(): SyncStatus = syncLock.withLock {
-        withContext(Dispatchers.IO) {
-            val last = _syncStatus.value.last
-            _syncStatus.value = SyncStatus.Running(last)
-            val started = System.nanoTime()
-            val finished = try {
-                val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
-                client.account()
-                val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
-                var moviesRead = 0
-                var showsRead = 0
-                // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
+    suspend fun sync(hold: Boolean = false): SyncStatus {
+        val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold) } }
+        if (landed is SyncStatus.Synced) afterCatalogLanded()
+        return _syncStatus.value
+    }
+
+    private fun syncUnderLock(hold: Boolean): SyncStatus {
+        val last = _syncStatus.value.last
+        var channelsAt = _syncStatus.value.channelsAt
+        var step = SyncStep.Channels
+        var entriesRead = 0
+        val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead) }
+        running()
+        val started = System.nanoTime()
+        val finished = try {
+            val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
+            client.account()
+            store.discardPending()
+            val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
+            // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
+            syncWriting = true
+            try {
+                val channelCount = store.stageChannels { staging ->
+                    val liveCategories = LinkedHashMap<String, String>()
+                    client.liveCategories { id, name -> liveCategories[id] = name }
+                    val now = Instant.now()
+                    // Per Category, how many Listings it has and how many are Event channels or empty Event slots.
+                    val tallies = HashMap<String?, IntArray>()
+                    client.liveListings { id, name, categoryId, image, guideId ->
+                        val category = liveCategories[categoryId].orEmpty()
+                        val start = eventStart(name, now, prefixTable.eventTimeZone)
+                        val listing = prefixTable.describeLive(name, category)
+                        val tally = tallies.getOrPut(categoryId) { IntArray(2) }
+                        tally[0]++
+                        if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
+                        if (listing == PrefixTable.LiveListing.Channel) {
+                            val channel = prefixTable.channelName(name)
+                            staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
+                            entriesRead++
+                            running()
+                        }
+                    }
+                    liveCategories.forEach { (id, name) ->
+                        val tally = tallies[id]
+                        val kind = when {
+                            prefixTable.isClutterCategory(name) -> CategoryKind.Clutter
+                            tally != null && tally[1] * 2 > tally[0] -> CategoryKind.Event
+                            else -> CategoryKind.Regular
+                        }
+                        staging.liveCategory(id, name, normalisedCategoryName(name), categoryCountry(name), kind)
+                    }
+                }
+                if (last == null) {
+                    // The first stage shows at once: Live and Home have their Channels while the Titles are read.
+                    val at = Instant.now()
+                    store.swapChannels(at)
+                    channelsAt = at
+                    catalogChanged()
+                }
+                step = SyncStep.Movies
+                running()
+                val pending = store.stageTitles(
+                    fill = { staging ->
+                        val movieCategories = HashMap<String, String>()
+                        val showCategories = HashMap<String, String>()
+                        val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String? ->
+                            val description = prefixTable.describe(name, category)
+                            description.unknownPrefix?.let { prefix ->
+                                unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
+                            }
+                            val hidden = description.hidden != null
+                            staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                            // A Sports replay is kept apart, with what its name says: its TMDB ID and poster are wrong and ignored.
+                            if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
+                                staging.replay(id, name, category, added, container, ReplayNames.parse(name))
+                            }
+                            if (!hidden) {
+                                entriesRead++
+                                running()
+                            }
+                        }
+                        client.movieCategories { id, name ->
+                            movieCategories[id] = name
+                            staging.category(TitleKind.Movie, id, name)
+                        }
+                        client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
+                            listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container)
+                        }
+                        step = SyncStep.Shows
+                        running()
+                        client.showCategories { id, name ->
+                            showCategories[id] = name
+                            staging.category(TitleKind.Show, id, name)
+                        }
+                        client.showListings { id, name, categoryId, modified, tmdbId, image ->
+                            listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
+                        }
+                    },
+                    onFilled = {
+                        step = SyncStep.Saving
+                        running()
+                    },
+                    completed = { movieCount, showCount, rematched ->
+                        CompletedSync(
+                            Instant.now(),
+                            Duration.ofNanos(System.nanoTime() - started),
+                            movieCount,
+                            unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
+                            rematched,
+                            showCount,
+                            channelCount,
+                        )
+                    },
+                )
+                when {
+                    last == null -> SyncStatus.Synced(store.swapTitles())
+                    hold -> SyncStatus.Ready(last, pending.finishedAt)
+                    else -> SyncStatus.Synced(store.applyPending()!!)
+                }
+            } finally {
+                syncWriting = false
+            }
+        } catch (e: ProviderException) {
+            SyncStatus.Failed(e.problem, last, channelsAt, step)
+        } catch (e: CancellationException) {
+            // A first Sync stopped short keeps the Channels it landed, as a reopened app does.
+            _syncStatus.value = last?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(channelsAt)
+            throw e
+        } catch (e: Exception) {
+            // Anything else (a full disk, say) also leaves the previous catalog in place.
+            SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last, channelsAt, step)
+        }
+        if (finished is SyncStatus.Failed) runCatching { store.discardPending() }
+        // The new catalog shows from here: screens count its Titles again before the status changes (#271).
+        if (finished is SyncStatus.Synced) catalogChanged()
+        _syncStatus.value = finished
+        if (finished is SyncStatus.Synced) prepareSearchInBackground()
+        return finished
+    }
+
+    /**
+     * Swaps a held Sync's catalog in ([SyncStatus.Ready]), then Matches its suspects as a Sync does
+     * once its catalog lands. Returns false at once, without waiting, when none is held or a Sync is
+     * running: the next screen entry asks again.
+     */
+    suspend fun applyPendingCatalog(): Boolean {
+        if (!syncLock.tryLock()) return false
+        val applied = try {
+            withContext(Dispatchers.IO) {
+                if (_syncStatus.value !is SyncStatus.Ready) return@withContext false
                 syncWriting = true
-                try {
-                    store.replaceListings(
-                        fill = { staging ->
-                            val movieCategories = HashMap<String, String>()
-                            val showCategories = HashMap<String, String>()
-                            val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String? ->
-                                val description = prefixTable.describe(name, category)
-                                description.unknownPrefix?.let { prefix ->
-                                    unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
-                                }
-                                val hidden = description.hidden != null
-                                staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
-                                // A Sports replay is kept apart, with what its name says: its TMDB ID and poster are wrong and ignored.
-                                if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
-                                    staging.replay(id, name, category, added, container, ReplayNames.parse(name))
-                                }
-                                if (!hidden) {
-                                    if (kind == TitleKind.Movie) moviesRead++ else showsRead++
-                                    _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
-                                }
-                            }
-                            client.movieCategories { id, name ->
-                                movieCategories[id] = name
-                                staging.category(TitleKind.Movie, id, name)
-                            }
-                            client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
-                                listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container)
-                            }
-                            client.showCategories { id, name ->
-                                showCategories[id] = name
-                                staging.category(TitleKind.Show, id, name)
-                            }
-                            client.showListings { id, name, categoryId, modified, tmdbId, image ->
-                                listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
-                            }
-                            val liveCategories = LinkedHashMap<String, String>()
-                            client.liveCategories { id, name -> liveCategories[id] = name }
-                            val now = Instant.now()
-                            // Per Category, how many Listings it has and how many are Event channels or empty Event slots.
-                            val tallies = HashMap<String?, IntArray>()
-                            client.liveListings { id, name, categoryId, image, guideId ->
-                                val category = liveCategories[categoryId].orEmpty()
-                                val start = eventStart(name, now, prefixTable.eventTimeZone)
-                                val listing = prefixTable.describeLive(name, category)
-                                val tally = tallies.getOrPut(categoryId) { IntArray(2) }
-                                tally[0]++
-                                if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
-                                if (listing == PrefixTable.LiveListing.Channel) {
-                                    val channel = prefixTable.channelName(name)
-                                    staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
-                                }
-                            }
-                            liveCategories.forEach { (id, name) ->
-                                val tally = tallies[id]
-                                val kind = when {
-                                    prefixTable.isClutterCategory(name) -> CategoryKind.Clutter
-                                    tally != null && tally[1] * 2 > tally[0] -> CategoryKind.Event
-                                    else -> CategoryKind.Regular
-                                }
-                                staging.liveCategory(id, name, normalisedCategoryName(name), categoryCountry(name), kind)
-                            }
-                        },
-                        completed = { movieCount, showCount, rematched ->
-                            CompletedSync(
-                                Instant.now(),
-                                Duration.ofNanos(System.nanoTime() - started),
-                                movieCount,
-                                unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
-                                rematched,
-                                showCount,
-                            )
-                        },
-                    )
+                val sync = try {
+                    store.applyPending()
                 } finally {
                     syncWriting = false
                 }
-                SyncStatus.Synced(store.lastSync()!!)
-            } catch (e: ProviderException) {
-                SyncStatus.Failed(e.problem, last)
-            } catch (e: CancellationException) {
-                _syncStatus.value = last?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced
-                throw e
-            } catch (e: Exception) {
-                // Anything else (a full disk, say) also leaves the previous catalog in place.
-                SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
-            }
-            // The new catalog shows from here: screens count its Titles again before the status changes (#271).
-            if (finished is SyncStatus.Synced) catalogChanged()
-            // When the cloud is about to be asked about its suspects, the status says so at once, not only
-            // once they're found, so Sync now stays off until the Titles regroup.
-            _syncStatus.value = if (finished is SyncStatus.Synced && canAskCloud()) SyncStatus.Matching(finished.last, 0, null) else finished
-            if (finished is SyncStatus.Synced) {
-                reportUnknownPrefixes(finished.last)
-                matchByName(finished)
+                if (sync == null) {
+                    _syncStatus.value = store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(store.channelsSyncedAt())
+                    return@withContext false
+                }
                 catalogChanged()
+                _syncStatus.value = SyncStatus.Synced(sync)
                 prepareSearchInBackground()
+                true
             }
-            _syncStatus.value
+        } finally {
+            syncLock.unlock()
         }
+        if (applied) afterCatalogLanded()
+        return applied
     }
 
     private fun catalogChanged() {
@@ -271,6 +361,25 @@ class Library private constructor(
     /** Tells the screens to read again ([catalogChanges]), without a new catalog generation. */
     private fun changed() {
         _catalogChanges.value = catalogChangeCount.incrementAndGet()
+    }
+
+    /**
+     * Once a catalog lands: reports the Prefixes the Sync didn't know, then asks the cloud about the
+     * catalog's suspects and regroups the Titles by its answers, under [matchingStatus] from start to
+     * end whatever happens, so the status never stays at Matching (#271).
+     */
+    private suspend fun afterCatalogLanded() = matchLock.withLock {
+        withContext(Dispatchers.IO) {
+            try {
+                if (!canAskCloud()) return@withContext
+                _matchingStatus.value = MatchingStatus(0, null)
+                val sync = store.lastSync() ?: return@withContext
+                reportUnknownPrefixes(sync)
+                matchByName()
+            } finally {
+                _matchingStatus.value = null
+            }
+        }
     }
 
     /**
@@ -296,10 +405,11 @@ class Library private constructor(
     /**
      * Asks the cloud about the stored catalog's suspects it hasn't answered for lately, and regroups
      * the Titles by its answers. Without the cloud, the Provider's IDs stand until the next Sync.
-     * When no batch has been answered for [MATCH_STALL_AFTER], the rest wait for the next Sync too,
-     * so the status doesn't stay at Matching for good (#271).
+     * When no batch has been answered for [MATCH_STALL_AFTER], the rest wait for the next Sync too.
+     * A Sync may land a new catalog meanwhile: the answers are kept by question, so they regroup
+     * whichever catalog shows when they are applied.
      */
-    private fun matchByName(synced: SyncStatus.Synced) {
+    private fun matchByName() {
         if (cloud == null || !canAskCloud()) return
         try {
             val now = Instant.now()
@@ -312,7 +422,7 @@ class Library private constructor(
             var failedInARow = 0
             var asked = 0
             var answeredAt = matchClock.instant()
-            _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
+            _matchingStatus.value = MatchingStatus(asked, questions.size)
             for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
                 if (Duration.between(answeredAt, matchClock.instant()) >= MATCH_STALL_AFTER) break
                 try {
@@ -326,15 +436,18 @@ class Library private constructor(
                     }
                 }
                 asked += batch.size
-                _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
+                _matchingStatus.value = MatchingStatus(asked, questions.size)
             }
-            store.applyMatchAnswers()?.let { _syncStatus.value = SyncStatus.Synced(it) }
+            store.applyMatchAnswers()?.let { regrouped ->
+                // The regrouped Sync replaces the one showing, not a Sync running or held meanwhile.
+                _syncStatus.update { if (it is SyncStatus.Synced) SyncStatus.Synced(regrouped) else it }
+                catalogChanged()
+                prepareSearchInBackground()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // The Sync itself finished: its catalog shows, Matched by the Provider's IDs.
-        } finally {
-            if (_syncStatus.value is SyncStatus.Matching) _syncStatus.value = synced
         }
     }
 
