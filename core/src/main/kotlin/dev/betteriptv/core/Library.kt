@@ -81,6 +81,7 @@ class Library private constructor(
      */
     private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
     private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
+    private val unsavedGames = ConcurrentHashMap<String, StoredGames>()
     private val unsavedMetadata = ConcurrentHashMap<Pair<String, TitleId.Tmdb>, StoredMetadata>()
     /** Whether a Sync is replacing the catalog, holding its writer: saves then don't wait for it. */
     @Volatile private var syncWriting = false
@@ -1370,6 +1371,36 @@ class Library private constructor(
         return kept?.let { Charts(it.body) } ?: Charts.NONE
     }
 
+    /**
+     * The Games of [leagues] (CONTEXT.md: League; by the ids the cloud's schedule knows,
+     * cloud/src/schedule.ts) for today and the week ahead, by start: the copies kept on the device
+     * while every League's is under [GAMES_FRESH_FOR] old, else the cloud's, each League's kept for
+     * next time. When the cloud can't answer, or has no copy of a League yet, the kept copy stands
+     * however old; a League with none is left out. The Leagues on are the caller's to say: the
+     * Live tab asks for them when it opens and every couple of minutes while a Games row shows.
+     */
+    suspend fun games(leagues: List<String>, now: Instant = Instant.now()): List<Game> = withContext(Dispatchers.IO) {
+        val asked = leagues.distinct()
+        if (asked.isEmpty()) return@withContext emptyList()
+        val stored = store.games(asked)
+        val kept = asked.mapNotNull { league -> (unsavedGames[league] ?: stored[league])?.let { league to it } }.toMap()
+        var copies = kept
+        if (cloud != null && now.isAfter(cloudRetryAt) && asked.any { !(kept[it]?.fetchedAt?.isAfter(now - GAMES_FRESH_FOR) ?: false) }) {
+            try {
+                val answered = Games.leagues(cloud.games(asked)).mapValues { (_, body) -> StoredGames(body, now) }
+                answered.forEach { (league, copy) -> unsavedGames[league] = copy }
+                // Saved without waiting on a Sync.
+                saveLater(after = { answered.forEach { (league, copy) -> unsavedGames.remove(league, copy) } }) {
+                    answered.forEach { (league, copy) -> store.saveGames(league, copy.body, now) }
+                }
+                copies = kept + answered
+            } catch (e: CloudException) {
+                cloudRetryAt = now + CLOUD_RETRY_AFTER
+            }
+        }
+        copies.flatMap { (league, copy) -> Games.parse(league, copy.body) }.sortedWith(compareBy({ it.start }, { it.league }, { it.id }))
+    }
+
     /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
     private fun candidates(title: StoredTitle): List<Candidate> = candidates(listOf(title)).getValue(title.id)
 
@@ -1438,6 +1469,8 @@ class Library private constructor(
 
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
+        /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */
+        private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
         /** How long closing waits for the answers still to be saved. */
         private const val SAVES_ON_CLOSE_SECONDS = 5L
         /** How often a read waiting on a save checks that no Sync has taken the writer. */

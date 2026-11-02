@@ -1,6 +1,8 @@
 import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
+import { LEAGUES } from "../src/schedule";
+import { argos, bombers, broncos, bruins, event, FakeEspn, habs, leafs, sens, team, texans } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -8,7 +10,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -690,6 +692,217 @@ describe("Charts", () => {
     expect((await call("POST", "/v1/charts", { region: "Canada", language: "en" }, token)).status).toBe(400);
     expect((await call("POST", "/v1/charts", { region: "CA", language: "eng" }, token)).status).toBe(400);
     expect(await env.DB.prepare("SELECT * FROM chart_wanted").all()).toMatchObject({ results: [] });
+  });
+});
+
+describe("Games", () => {
+  let espn: FakeEspn;
+  const nhl = "hockey/nhl";
+  /** A Sunday evening in Toronto: the Leafs are playing, the Bruins play later, and the Senators played the night before. */
+  const now = new Date("2026-11-01T20:00:00Z");
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+    espn = new FakeEspn(tmdb);
+    espn.scoreboard(nhl, "2026-10-31", event("0", "2026-10-31T23:00:00Z", "post", sens, bruins, [{ name: "NHL Net" }, { name: "TSN5", market: "Home" }]));
+    espn.scoreboard(
+      nhl,
+      "2026-11-01",
+      event("1", "2026-11-01T19:00:00Z", "in", leafs, habs, [{ name: "ESPN+" }, { name: "MSG", market: "Away" }, { name: "ESPN+" }]),
+      event("2", "2026-11-02T00:00:00Z", "pre", bruins, sens),
+    );
+    espn.scoreboard(nhl, "2026-11-03", event("3", "2026-11-04T00:00:00Z", "pre", leafs, bruins, [{ name: "TNT" }]), event("4", "2026-11-04T00:00:00Z", "pre", habs, sens, [], "STATUS_POSTPONED"));
+    // The teams list knows a nickname the scoreboard doesn't, and the same location again.
+    espn.teams(nhl, team({ ...leafs, nickname: "Toronto" }), team({ ...habs, nickname: "Montréal" }), team(bruins), team(sens));
+    espn.scoreboard("football/nfl", "2026-11-01", event("100", "2026-11-01T21:25:00Z", "pre", broncos, texans, [{ name: "CBS" }]));
+    // Out of season, ESPN's CFL endpoint answers with an old game.
+    espn.scoreboard("football/cfl", "2026-10-31", event("200", "2022-11-20T23:00:00Z", "post", bombers, argos, [{ name: "ESPN2" }]), event("201", "2026-10-31T18:00:00Z", "post", argos, bombers));
+    espn.scoreboard("football/cfl", "2026-11-01", event("202", "2022-11-20T23:00:00Z", "post", bombers, argos, [{ name: "ESPN2" }]));
+  });
+
+  const gamesOf = async (token: string, leagues: string[]) => {
+    const response = await call("POST", "/v1/games", { leagues }, token);
+    expect(response.status).toBe(200);
+    return (await response.json()) as { leagues: { league: string; games: Record<string, unknown>[] }[] };
+  };
+  /** Every fetch the Worker sent out, to ESPN or anyone. */
+  const sentOut = () => vi.mocked(globalThis.fetch).mock.calls.length;
+  /** One run of the Cron Trigger, as Cloudflare starts it each minute. */
+  const run = () => worker.scheduled(createScheduledController({ cron: "* * * * *", scheduledTime: Date.now() }), env);
+  /** The Cron Trigger's next [runs] runs, a minute apart as Cloudflare starts them; the clock is left at the last. */
+  const fill = async (runs = 1) => {
+    for (let i = 0; i < runs; i++) {
+      if (i > 0) vi.setSystemTime(Date.now() + 60_000);
+      await run();
+    }
+  };
+  /** Asks for the Games, lets the Cron Trigger fill what that asked for, and asks again. */
+  const filled = async (token: string, leagues: string[], runs = 1) => {
+    await gamesOf(token, leagues);
+    await fill(runs);
+    return gamesOf(token, leagues);
+  };
+  const forget = () => espn.requests.splice(0);
+  const ids = (answer: { leagues: { league: string; games: Record<string, unknown>[] }[] }, league: string) => answer.leagues.find((l) => l.league === league)?.games.map((g) => g.id);
+
+  it("answers a League's Games for today and the week ahead, by start: state, both teams with aliases and logo, the national Broadcasters, never a score", async () => {
+    const { leagues } = await filled(await registerDevice(), ["nhl"]);
+
+    const logo = (abbreviation: string) => `https://a.espncdn.com/i/teamlogos/500/scoreboard/${abbreviation.toLowerCase()}.png`;
+    const torontoMapleLeafs = { id: "21", name: "Toronto Maple Leafs", shortName: "Maple Leafs", abbreviation: "TOR", aliases: ["Toronto Maple Leafs", "Maple Leafs", "TOR", "Toronto"], logo: logo("TOR") };
+    const montrealCanadiens = { id: "10", name: "Montreal Canadiens", shortName: "Canadiens", abbreviation: "MTL", aliases: ["Montreal Canadiens", "Canadiens", "MTL", "Montreal", "Montréal"], logo: logo("MTL") };
+    const bostonBruins = { id: "1", name: "Boston Bruins", shortName: "Bruins", abbreviation: "BOS", aliases: ["Boston Bruins", "Bruins", "BOS", "Boston"], logo: logo("BOS") };
+    const ottawaSenators = { id: "14", name: "Ottawa Senators", shortName: "Senators", abbreviation: "OTT", aliases: ["Ottawa Senators", "Senators", "OTT", "Ottawa"], logo: logo("OTT") };
+    expect(leagues).toEqual([
+      {
+        league: "nhl",
+        games: [
+          // Last night's game is still within a day; only the national network is a Broadcaster.
+          { id: "0", league: "nhl", start: "2026-10-31T23:00:00.000Z", state: "over", home: ottawaSenators, away: bostonBruins, broadcasters: ["NHL Net"] },
+          { id: "1", league: "nhl", start: "2026-11-01T19:00:00.000Z", state: "live", home: torontoMapleLeafs, away: montrealCanadiens, broadcasters: ["ESPN+"] },
+          { id: "2", league: "nhl", start: "2026-11-02T00:00:00.000Z", state: "upcoming", home: bostonBruins, away: ottawaSenators, broadcasters: [] },
+          // The postponed game is left out.
+          { id: "3", league: "nhl", start: "2026-11-04T00:00:00.000Z", state: "upcoming", home: torontoMapleLeafs, away: bostonBruins, broadcasters: ["TNT"] },
+        ],
+      },
+    ]);
+    // No field of ESPN's that tells how the game is going: not a score, a period, a clock or a record.
+    expect(JSON.stringify(leagues)).not.toMatch(/"(score|period|clock|records?|displayClock)"/i);
+  });
+
+  it("answers only the Leagues asked for, and reads only the Leagues some device has on", async () => {
+    const token = await registerDevice();
+    const first = await filled(token, ["nhl"]);
+
+    expect(first.leagues.map((l) => l.league)).toEqual(["nhl"]);
+    // Yesterday, today and the seven days after, and the teams: nothing of any other League.
+    expect(espn.asked.sort()).toEqual([...Array.from({ length: 9 }, (_, i) => `hockey/nhl/${i === 0 ? "2026-10-31" : `2026-11-0${i}`}`), "hockey/nhl/teams"].sort());
+    // A League asked for the first time is absent until the Cron Trigger's next run.
+    expect((await gamesOf(token, ["nfl", "nhl"])).leagues.map((l) => l.league)).toEqual(["nhl"]);
+    await fill();
+    const both = await gamesOf(token, ["nfl", "nhl"]);
+    expect(both.leagues.map((l) => l.league)).toEqual(["nfl", "nhl"]);
+    expect(ids(both, "nfl")).toEqual(["100"]);
+  });
+
+  it("never reaches ESPN while answering, only the Cron Trigger does", async () => {
+    const token = await registerDevice();
+    const before = sentOut();
+    expect(await gamesOf(token, ["nhl"])).toEqual({ leagues: [] });
+    expect(sentOut()).toBe(before);
+    await fill();
+    expect(sentOut()).toBeGreaterThan(before);
+    const after = sentOut();
+    expect(ids(await gamesOf(token, ["nhl"]), "nhl")).toHaveLength(4);
+    expect(sentOut()).toBe(after);
+  });
+
+  it("reads the current days again every 5 minutes, so Live flips, and the coming days hourly", async () => {
+    const token = await registerDevice();
+    await filled(token, ["nhl"]);
+    forget();
+    vi.setSystemTime(new Date("2026-11-01T20:04:00Z"));
+    await fill();
+    expect(espn.asked).toEqual([]);
+
+    // The Bruins' game starts.
+    espn.scoreboard(nhl, "2026-11-01", event("1", "2026-11-01T19:00:00Z", "post", leafs, habs, [{ name: "ESPN+" }]), event("2", "2026-11-02T00:00:00Z", "in", bruins, sens));
+    vi.setSystemTime(new Date("2026-11-01T20:05:30Z"));
+    await fill();
+    expect(espn.asked.sort()).toEqual(["hockey/nhl/2026-10-31", "hockey/nhl/2026-11-01"]);
+    const { leagues } = await gamesOf(token, ["nhl"]);
+    expect(leagues[0].games.map((g) => [g.id, g.state])).toEqual([["0", "over"], ["1", "over"], ["2", "live"], ["3", "upcoming"]]);
+
+    forget();
+    vi.setSystemTime(new Date("2026-11-01T21:01:00Z"));
+    await fill();
+    // The current days (stale again) and the seven coming days; the teams keep for a week.
+    expect(espn.asked.sort()).toEqual(Array.from({ length: 9 }, (_, i) => `hockey/nhl/${i === 0 ? "2026-10-31" : `2026-11-0${i}`}`).sort());
+  });
+
+  it("serves the kept copy while ESPN can't answer, and leaves out a League it never had", async () => {
+    const token = await registerDevice();
+    const before = await filled(token, ["nhl"]);
+    espn.failWith = 503;
+    vi.setSystemTime(new Date("2026-11-01T20:10:00Z"));
+    await fill();
+    expect(espn.asked).toContain("hockey/nhl/2026-11-01");
+
+    const during = await gamesOf(token, ["nhl", "nfl"]);
+    expect(during.leagues).toEqual(before.leagues);
+
+    // Up again: the NFL, tried while ESPN was down, is read once its parts' wait is over.
+    espn.failWith = null;
+    vi.setSystemTime(new Date("2026-11-01T20:13:00Z"));
+    await fill();
+    expect((await gamesOf(token, ["nhl", "nfl"])).leagues.map((l) => l.league)).toEqual(["nhl", "nfl"]);
+  });
+
+  it("drops Games that started over a day ago, as ESPN's CFL endpoint answers out of season with an old one", async () => {
+    const { leagues } = await filled(await registerDevice(), ["cfl"]);
+    // Read, with nothing to show: the League is there, with no Games, rather than absent.
+    expect(leagues).toEqual([{ league: "cfl", games: [] }]);
+  });
+
+  it("stops reading a League nobody asked for in 30 days, and drops its copy", async () => {
+    const token = await registerDevice();
+    await filled(token, ["nhl"]);
+    vi.setSystemTime(new Date("2026-12-02T20:00:00Z"));
+    forget();
+    await fill();
+
+    expect(espn.asked).toEqual([]);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM game").first<{ n: number }>())?.n).toBe(0);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM team").first<{ n: number }>())?.n).toBe(0);
+    // Asked again, it is read again.
+    expect((await gamesOf(token, ["nhl"])).leagues).toEqual([]);
+    await fill();
+    expect((await gamesOf(token, ["nhl"])).leagues.map((l) => l.league)).toEqual(["nhl"]);
+  });
+
+  it("reaches each League's schedule source at ESPN's path for it, with no user agent, a dozen requests a run at most", async () => {
+    const token = await registerDevice();
+    await gamesOf(token, [...LEAGUES]);
+    const perRun: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const before = espn.requests.length;
+      if (i > 0) vi.setSystemTime(Date.now() + 60_000);
+      await run();
+      perRun.push(espn.requests.length - before);
+    }
+
+    expect(Math.max(...perRun)).toBeLessThanOrEqual(12);
+    const paths = {
+      nhl: "hockey/nhl",
+      nfl: "football/nfl",
+      nba: "basketball/nba",
+      mlb: "baseball/mlb",
+      cfl: "football/cfl",
+      mls: "soccer/usa.1",
+      "premier-league": "soccer/eng.1",
+      "champions-league": "soccer/uefa.champions",
+      "la-liga": "soccer/esp.1",
+      bundesliga: "soccer/ger.1",
+      "serie-a": "soccer/ita.1",
+      "ligue-1": "soccer/fra.1",
+      "ncaa-football": "football/college-football",
+      "ncaa-basketball": "basketball/mens-college-basketball",
+      wnba: "basketball/wnba",
+    };
+    expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
+    for (const path of Object.values(paths)) {
+      expect(espn.asked).toContain(`${path}/2026-11-01`);
+      expect(espn.asked).toContain(`${path}/teams`);
+    }
+    expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
+  });
+
+  it("rejects a malformed request", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/games", { leagues: ["nhl", "f1"] }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/games", { leagues: "nhl" }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/games", {}, token)).status).toBe(400);
+    expect(await gamesOf(token, [])).toEqual({ leagues: [] });
   });
 });
 

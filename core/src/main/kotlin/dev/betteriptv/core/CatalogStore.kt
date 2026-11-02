@@ -74,6 +74,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
         // The cloud's Charts answer for a Region in an App language, as its JSON, so Home builds without it.
         execSQL("CREATE TABLE IF NOT EXISTS chart (region TEXT NOT NULL, language TEXT NOT NULL, body TEXT NOT NULL, fetched_at INTEGER NOT NULL, PRIMARY KEY (region, language))")
+        // The cloud's Games answer for a League, as its JSON, so the Live tab builds without the cloud (#252).
+        execSQL("CREATE TABLE IF NOT EXISTS game (league TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at INTEGER NOT NULL)")
         // A show Listing's show details as the Provider gave them while the Show was last changed at `modified`.
         execSQL("CREATE TABLE IF NOT EXISTS show_details (listing_id INTEGER PRIMARY KEY, modified INTEGER, fetched_at INTEGER NOT NULL)")
         // What a movie Listing's file holds, from a Header read, Playback or the cloud; a null body: its header can't be read.
@@ -646,6 +648,27 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** The Games the cloud last gave for each of [leagues], as JSON, and when; a League it never did is absent. */
+    fun games(leagues: List<String>): Map<String, StoredGames> = synchronized(reader) {
+        reader.prepare("SELECT body, fetched_at FROM game WHERE league = ?").use { statement ->
+            leagues.mapNotNull { league ->
+                statement.reset()
+                statement.bindText(1, league)
+                if (statement.step()) league to StoredGames(statement.getText(0), Instant.ofEpochMilli(statement.getLong(1))) else null
+            }.toMap()
+        }
+    }
+
+    fun saveGames(league: String, body: String, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO game VALUES (?, ?, ?)").use {
+            it.bindText(1, league)
+            it.bindText(2, body)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
     /** Any cached metadata of [id], in whichever language was fetched last; null when none is. */
     fun anyMetadata(id: TitleId.Tmdb): String? = synchronized(reader) {
         reader.prepare("SELECT body FROM title_metadata WHERE title_key = ? AND body IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").use {
@@ -970,6 +993,9 @@ internal class StoredMetadata(val body: String?, val fetchedAt: Instant)
 
 /** The cloud's Charts answer as JSON ([Charts]) and when it sent it. */
 internal class StoredCharts(val body: String, val fetchedAt: Instant)
+
+/** One League's Games in the cloud's answer, as JSON ([Games]), and when the cloud sent it. */
+internal class StoredGames(val body: String, val fetchedAt: Instant)
 
 /** [added] is when a movie Listing was added, or when the Provider last changed a show Listing. */
 internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)
