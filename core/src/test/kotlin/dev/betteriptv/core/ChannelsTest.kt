@@ -16,7 +16,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
@@ -56,8 +55,8 @@ class ChannelsTest {
     /** The Favourites row's Channels, by key (the country tag and name without the Provider's quality words). */
     private suspend fun favouritesRow() = library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
-    /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atOffset(ZoneOffset.UTC))
+    /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(PrefixTable.bundled().eventTimeZone))
 
     // Clutter
 

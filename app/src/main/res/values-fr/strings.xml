@@ -19,6 +19,7 @@
     <string name="live_empty">Vos favoris apparaîtront ici. Appuyez sur la touche menu sur une chaîne dans la recherche pour en ajouter une.</string>
     <string name="row_live_now">En ce moment</string>
     <string name="row_today">Aujourd\'hui</string>
+    <string name="row_more_live_events">Autres événements en direct</string>
     <string name="game_live">En direct</string>
     <string name="game_no_stream">Aucun flux trouvé</string>
     <string name="game_matchup">%1$s c. %2$s</string>

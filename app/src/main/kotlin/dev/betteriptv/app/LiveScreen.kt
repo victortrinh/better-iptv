@@ -25,12 +25,13 @@ import java.time.Duration
 
 /**
  * The Live tab, the sports hub's home (M3), in rows like Home's ([RowsScreen]): Live now, Today and
- * a row per League on ([leagues], in Settings' order) as Game cards, then the Viewer's Favourites as
- * Channel cards, then the Channel browser's countries (the Channels row, the Viewer's [region]
- * first, then their Content languages' countries) as country cards named in the [appLanguage],
- * until the hub's other rows (More live events, Replays) join them. The Games are asked for when the
- * tab opens and again every [GAMES_REFRESH] while a Games row is on screen, the kept copy standing
- * when the cloud fails. OK on a Game opens its page ([onOpenGame]); OK on a Channel watches it
+ * a row per League on ([leagues], in Settings' order) as Game cards, then More live events (the
+ * Event channels no Game matched, on now or soon) and the Viewer's Favourites as Channel cards, then
+ * the Channel browser's countries (the Channels row, the Viewer's [region] first, then their
+ * Content languages' countries) as country cards named in the [appLanguage], until Replays joins
+ * them. The Games are asked for when the tab opens and again every [GAMES_REFRESH] while a Games row
+ * or More live events is on screen (the Event channels it holds move with the clock and the Games),
+ * the kept copy standing when the cloud fails. OK on a Game opens its page ([onOpenGame]); OK on a Channel watches it
  * ([onWatch]), and the menu key adds or removes the Favourite, focus moving to its neighbour; OK on
  * a country opens its Channels screen ([onOpenCountry]). [restoreFocus] and [focusTab] are as on [RowsScreen].
  */
@@ -76,7 +77,7 @@ internal data class GamesReading(val leagues: List<League>, val region: String, 
 
 /**
  * How many times the Games have been due again since [state]'s rows first showed a Games row: bumped
- * every [GAMES_REFRESH] while one shows (Live's Game rows, Home's Live now), so a screen reading its
+ * every [GAMES_REFRESH] while one shows (Live's Game rows and More live events, Home's Live now), so a screen reading its
  * rows for it reads them (and asks the cloud) again; it stands still while no Games row shows.
  */
 @Composable
@@ -93,8 +94,8 @@ internal fun gamesRefreshes(state: RowsState): Int {
     return refreshes
 }
 
-/** Whether a row holds Games, whose schedule the screen keeps asking for while they show. */
-private val HomeRow.hasGames: Boolean get() = this is HomeRow.LiveNow || this is HomeRow.Today || this is HomeRow.LeagueGames
+/** Whether a row holds Games, or the Event channels no Game matched, which the screen keeps reading again while they show. */
+private val HomeRow.hasGames: Boolean get() = this is HomeRow.LiveNow || this is HomeRow.Today || this is HomeRow.LeagueGames || this is HomeRow.MoreLiveEvents
 
 /** How often the Games are asked for again while a Games row shows (docs/roadmap.md, M3): the cloud reads a League's day every 5 minutes. */
 internal val GAMES_REFRESH: Duration = Duration.ofMinutes(2)

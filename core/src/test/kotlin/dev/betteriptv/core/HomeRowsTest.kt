@@ -16,7 +16,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -247,7 +246,7 @@ class HomeRowsTest {
             is HomeRow.Favourites -> "favourites"
             is HomeRow.Channels -> "channels"
             is HomeRow.Genre -> "genre"
-            is HomeRow.Today, is HomeRow.LeagueGames -> "a Live row"
+            is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.MoreLiveEvents -> "a Live row"
         }
     }
 
@@ -257,7 +256,7 @@ class HomeRowsTest {
     // Live now (#256)
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atOffset(ZoneOffset.UTC))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(PrefixTable.bundled().eventTimeZone))
 
     /** The Event channel carrying tonight's Game, started two hours ago (named once, so the clock ticking over a second doesn't rename it). */
     private val eventChannel by lazy { "NHL: Canadiens vs Maple Leafs (${startedAgo(Duration.ofHours(2))})" }

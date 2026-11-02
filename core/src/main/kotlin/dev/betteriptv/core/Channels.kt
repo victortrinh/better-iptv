@@ -5,6 +5,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -120,15 +121,16 @@ internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)
 /**
  * When the Game an Event channel carries starts, from its [name], or null for a Channel that names
  * none. Names give it many ways (`(2026-10-29 18:00:30)`, `| 2026-10-28 | 15:00 (GMT)`,
- * `@ Oct 27 7:00 PM`, `Wed 28 Oct 16:20 CET`, `22/10 19:00`); the zone is seldom given and is taken
- * as UTC, which the 6 hours an Event shows for absorb. A date without a year is taken in the year
- * that puts it nearest [now]. A name marked `Live |` or `Next |` is on now or still to come
- * whatever its date says, so it gets none.
+ * `@ Oct 27 7:00 PM`, `Oct 27, 2026 7:00 PM`, `Wed 28 Oct 16:20 CET`, `22/10 19:00`). The time is
+ * read in the Provider's [zone] (the Prefix table's event time zone, [PrefixTable.eventTimeZone]),
+ * unless the name states one beside it ([ZONE_WORDS]: `(GMT)`, `EEST`, `UK Sun 9 Feb 3:00pm`),
+ * which wins. A date without a year is taken in the year that puts it nearest [now]'s day in that
+ * zone. A name marked `Live |` or `Next |` is on now or still to come whatever its date says, so it
+ * gets none.
  */
-internal fun eventStart(name: String, now: Instant): Instant? {
+internal fun eventStart(name: String, now: Instant, zone: ZoneId): Instant? {
     if (MARKED_ON.containsMatchIn(name)) return null
-    val today = now.atOffset(ZoneOffset.UTC).toLocalDate()
-    fun at(year: Int?, month: Int, day: Int, hour: Int, minute: Int, half: String? = null): Instant? {
+    fun at(match: MatchResult, year: Int?, month: Int, day: Int, hour: Int, minute: Int, half: String? = null): Instant? {
         val hour24 = when {
             half == null -> hour
             half.equals("PM", ignoreCase = true) && hour < 12 -> hour + 12
@@ -136,20 +138,39 @@ internal fun eventStart(name: String, now: Instant): Instant? {
             else -> hour
         }
         if (month !in 1..12 || day !in 1..31 || hour24 !in 0..23 || minute !in 0..59) return null
+        val statedZone = statedZone(name, match) ?: zone
+        val today = now.atZone(statedZone).toLocalDate()
         val date = if (year != null) runCatching { LocalDate.of(year, month, day) }.getOrNull()
         else (today.year - 1..today.year + 1).mapNotNull { runCatching { LocalDate.of(it, month, day) }.getOrNull() }
             .minByOrNull { kotlin.math.abs(ChronoUnit.DAYS.between(today, it)) }
-        return date?.let { LocalDateTime.of(it, java.time.LocalTime.of(hour24, minute)).toInstant(ZoneOffset.UTC) }
+        return date?.let { LocalDateTime.of(it, java.time.LocalTime.of(hour24, minute)).atZone(statedZone).toInstant() }
     }
-    YEAR_FIRST.find(name)?.destructured?.let { (y, m, d, h, min) -> return at(y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) }
-    DAY_FIRST.find(name)?.destructured?.let { (d, m, y, h, min) -> return at(y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) }
-    MONTH_NAME_FIRST.find(name)?.destructured?.let { (m, d, h, min, half) -> return at(null, month(m), d.toInt(), h.toInt(), min.toInt(), half.ifEmpty { null }) }
-    DAY_MONTH_NAME.find(name)?.destructured?.let { (d, m, h, min, half) -> return at(null, month(m), d.toInt(), h.toInt(), min.toInt(), half.ifEmpty { null }) }
-    SLASHED.find(name)?.destructured?.let { (d, m, y, h, min) ->
-        val year = y.toIntOrNull()?.let { if (it < 100) 2000 + it else it }
-        return at(year, m.toInt(), d.toInt(), h.toInt(), min.toInt())
+    YEAR_FIRST.find(name)?.let { match -> match.destructured.let { (y, m, d, h, min) -> return at(match, y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) } }
+    DAY_FIRST.find(name)?.let { match -> match.destructured.let { (d, m, y, h, min) -> return at(match, y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) } }
+    MONTH_NAME_FIRST.find(name)?.let { match ->
+        match.destructured.let { (m, d, y, h, min, half) -> return at(match, y.toIntOrNull(), month(m), d.toInt(), h.toInt(), min.toInt(), half.ifEmpty { null }) }
+    }
+    DAY_MONTH_NAME.find(name)?.let { match -> match.destructured.let { (d, m, h, min, half) -> return at(match, null, month(m), d.toInt(), h.toInt(), min.toInt(), half.ifEmpty { null }) } }
+    SLASHED.find(name)?.let { match ->
+        match.destructured.let { (d, m, y, h, min) ->
+            val year = y.toIntOrNull()?.let { if (it < 100) 2000 + it else it }
+            return at(match, year, m.toInt(), d.toInt(), h.toInt(), min.toInt())
+        }
     }
     return null
+}
+
+/**
+ * The zone an Event channel's [name] states for the time [match]ed in it, or null: a zone word
+ * ([ZONE_WORDS]) after the time in the same `|`- or `//`-separated piece of the name (`15:00
+ * (GMT)`, `12:30 EEST (FI)`), or right before the date, a weekday allowed between (`UK Sun 9 Feb
+ * 3:00pm`). Nowhere else: a country tag at the start (`UK: …`) is the Channel's, not the time's.
+ */
+private fun statedZone(name: String, match: MatchResult): ZoneId? {
+    val after = name.substring(match.range.last + 1).split("|", "//").first()
+    val before = name.substring(0, match.range.first)
+    val word = ZONE_WORDS.find(after)?.groupValues?.get(1) ?: ZONE_BEFORE.find(before)?.groupValues?.get(1)
+    return word?.let { ZONES[it.uppercase(Locale.ROOT)] }
 }
 
 /** Whether an Event that started at [start] is finished at [now]. */
@@ -171,9 +192,25 @@ private val SUPERSCRIPT_TAGS = Regex("""[\u00B9\u00B2\u00B3\u02B0-\u02B8\u02E0-\
 private val SPACES = Regex("""\s+""")
 private val YEAR_FIRST = Regex("""(20\d\d)-(\d\d)-(\d\d)\s*\|?\s*(\d{1,2}):(\d\d)""")
 private val DAY_FIRST = Regex("""(?<!\d)(\d\d)-(\d\d)-(20\d\d)\s*\|?\s*(\d{1,2}):(\d\d)""")
-private val MONTH_NAME_FIRST = Regex("""\b$MONTH\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)
+private val MONTH_NAME_FIRST = Regex("""\b$MONTH\s+(\d{1,2})(?:st|nd|rd|th)?,?(?:\s+(20\d\d))?,?\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)
 private val DAY_MONTH_NAME = Regex("""(?<![\d/])(\d{1,2})\s+$MONTH\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)
 private val SLASHED = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\s+(\d{1,2}):(\d\d)""")
+
+/** The zone words Providers write beside an Event channel's time, as whole words: `(GMT)`, `EEST`, `UK`, `ET`. */
+private const val ZONE_WORD = "(GMT|UTC|UK|BST|WET|WEST|CET|CEST|EET|EEST|ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT)"
+private val ZONE_WORDS = Regex("""(?<![A-Za-z])$ZONE_WORD(?![A-Za-z])""")
+/** A zone word right before the date, a weekday allowed between: `UK Sun 9 Feb`, `ET Sun 9 Feb`. */
+private val ZONE_BEFORE = Regex("""(?<![A-Za-z])$ZONE_WORD\s+(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\.?\s+)?$""", RegexOption.IGNORE_CASE)
+/** Each zone word's zone: a region's, so its summer time is applied by the date. */
+private val ZONES: Map<String, ZoneId> = mapOf(
+    "GMT" to ZoneOffset.UTC, "UTC" to ZoneOffset.UTC,
+    "UK" to ZoneId.of("Europe/London"), "BST" to ZoneId.of("Europe/London"), "WET" to ZoneId.of("Europe/Lisbon"), "WEST" to ZoneId.of("Europe/Lisbon"),
+    "CET" to ZoneId.of("Europe/Paris"), "CEST" to ZoneId.of("Europe/Paris"), "EET" to ZoneId.of("Europe/Helsinki"), "EEST" to ZoneId.of("Europe/Helsinki"),
+    "ET" to ZoneId.of("America/New_York"), "EST" to ZoneId.of("America/New_York"), "EDT" to ZoneId.of("America/New_York"),
+    "CT" to ZoneId.of("America/Chicago"), "CST" to ZoneId.of("America/Chicago"), "CDT" to ZoneId.of("America/Chicago"),
+    "MT" to ZoneId.of("America/Denver"), "MST" to ZoneId.of("America/Denver"), "MDT" to ZoneId.of("America/Denver"),
+    "PT" to ZoneId.of("America/Los_Angeles"), "PST" to ZoneId.of("America/Los_Angeles"), "PDT" to ZoneId.of("America/Los_Angeles"),
+)
 
 /**
  * A country the Channel browser lists (the Channels row on Live): its [code] and how many
