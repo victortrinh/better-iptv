@@ -838,15 +838,29 @@ describe("Games", () => {
     expect((await gamesOf(token, ["nhl", "nfl"])).leagues.map((l) => l.league)).toEqual(["nhl", "nfl"]);
   });
 
+  it("takes an answer with no events for no answer: the kept copy stands and the run goes on", async () => {
+    const token = await registerDevice();
+    const before = await filled(token, ["nhl"]);
+    espn.answerNull = true;
+    vi.setSystemTime(new Date("2026-11-01T20:10:00Z"));
+    await gamesOf(token, ["nhl", "nfl"]);
+    await expect(fill()).resolves.toBeUndefined();
+
+    expect(espn.asked).toContain("football/nfl/2026-11-01");
+    expect(espn.asked).toContain("football/nfl/teams");
+    expect((await gamesOf(token, ["nhl", "nfl"])).leagues).toEqual(before.leagues);
+  });
+
   it("drops Games that started over a day ago, as ESPN's CFL endpoint answers out of season with an old one", async () => {
     const { leagues } = await filled(await registerDevice(), ["cfl"]);
     // Read, with nothing to show: the League is there, with no Games, rather than absent.
     expect(leagues).toEqual([{ league: "cfl", games: [] }]);
   });
 
-  it("stops reading a League nobody asked for in 30 days, and drops its copy", async () => {
+  it("stops reading a League nobody asked for in 30 days, and drops its copy and its tries", async () => {
     const token = await registerDevice();
     await filled(token, ["nhl"]);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM game_try").first<{ n: number }>())?.n).toBe(10);
     vi.setSystemTime(new Date("2026-12-02T20:00:00Z"));
     forget();
     await fill();
@@ -854,6 +868,7 @@ describe("Games", () => {
     expect(espn.asked).toEqual([]);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM game").first<{ n: number }>())?.n).toBe(0);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM team").first<{ n: number }>())?.n).toBe(0);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM game_try").first<{ n: number }>())?.n).toBe(0);
     // Asked again, it is read again.
     expect((await gamesOf(token, ["nhl"])).leagues).toEqual([]);
     await fill();

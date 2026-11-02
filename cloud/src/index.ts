@@ -60,8 +60,8 @@ import { upcoming } from "./upcoming";
  *   "2026-11-04T00:00:00.000Z", "state": "upcoming", "home": {"id": "21", "name": "Toronto Maple
  *   Leafs", "shortName": "Maple Leafs", "abbreviation": "TOR", "aliases": ["Toronto Maple Leafs",
  *   "Maple Leafs", "TOR", "Toronto"], "logo": "https://…/tor.png"}, "away": {…}, "broadcasters":
- *   ["ESPN+"]}]}]}`, by start; state is upcoming, live or over, and the Broadcasters are the
- *   national networks the schedule names (US-market). Never a score or a period. Only what the
+ *   ["ESPN+"]}]}]}`, by start; state is upcoming, live or over, and broadcasters names the
+ *   national Broadcasters the schedule knows (US-market). Never a score or a period. Only what the
  *   cloud keeps is answered: the Cron Trigger reads each League's schedule source (ESPN) while a
  *   device wants it (#252). A League not read yet is absent; one read with no Games has `[]`.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,

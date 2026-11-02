@@ -12,6 +12,8 @@ export class FakeEspn {
   readonly requests: { url: URL; userAgent: string | null }[] = [];
   /** Answers every request with this HTTP status instead, as when ESPN is down. */
   failWith: number | null = null;
+  /** Answers every request with HTTP 200 and a JSON `null` body, as ESPN has been seen to. */
+  answerNull = false;
   private readonly days = new Map<string, object[]>();
   private readonly teamLists = new Map<string, object[]>();
 
@@ -21,6 +23,7 @@ export class FakeEspn {
       this.requests.push({ url, userAgent });
       if (userAgent !== null && /Mozilla|Chrome|Safari/.test(userAgent)) return new Response("Access Denied", { status: 403 });
       if (this.failWith !== null) return new Response("", { status: this.failWith });
+      if (this.answerNull) return Response.json(null);
       const match = /^\/apis\/site\/v2\/sports\/(.+)\/(scoreboard|teams)$/.exec(url.pathname);
       if (!match) return new Response("Not found", { status: 404 });
       const [, path, what] = match;

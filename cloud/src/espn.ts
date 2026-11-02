@@ -39,22 +39,27 @@ export class Espn implements ScheduleSource {
   constructor(private readonly env: Env) {}
 
   async games(league: League, day: string): Promise<Game[]> {
-    const scoreboard = (await this.get(`${PATHS[league]}/scoreboard?dates=${day.replaceAll("-", "")}`)) as Scoreboard;
-    return (scoreboard.events ?? []).flatMap((event) => {
+    const path = `${PATHS[league]}/scoreboard?dates=${day.replaceAll("-", "")}`;
+    const scoreboard = (await this.get(path)) as Scoreboard | null;
+    if (!Array.isArray(scoreboard?.events)) throw new ScheduleUnavailable(`ESPN answered no events for ${path}`);
+    return scoreboard.events.flatMap((event) => {
       const game = readGame(league, event);
       return game ? [game] : [];
     });
   }
 
   async teams(league: League): Promise<Team[]> {
-    const listed = (await this.get(`${PATHS[league]}/teams`)) as TeamList;
-    return (listed.sports ?? []).flatMap((sport) => sport.leagues ?? []).flatMap((l) => l.teams ?? []).flatMap(({ team }) => {
+    const path = `${PATHS[league]}/teams`;
+    const listed = (await this.get(path)) as TeamList | null;
+    if (!Array.isArray(listed?.sports)) throw new ScheduleUnavailable(`ESPN answered no teams for ${path}`);
+    return listed.sports.flatMap((sport) => sport.leagues ?? []).flatMap((l) => l.teams ?? []).flatMap(({ team }) => {
       if (!team?.id) return [];
       const logo = team.logos?.find((l) => l.rel?.includes("default"))?.href ?? team.logos?.[0]?.href ?? null;
       return [{ id: String(team.id), aliases: aliases(team), logo }];
     });
   }
 
+  /** ESPN's JSON answer for [path], or {@link ScheduleUnavailable} when it gave none: an answer it can't be read from is no answer. */
   private async get(path: string): Promise<unknown> {
     let response: Response;
     try {
@@ -72,7 +77,7 @@ export class Espn implements ScheduleSource {
 }
 
 /** [event] as a Game, or null when it is no Game the hub can show: no two teams, no start, not to be played. */
-function readGame(league: League, event: Event): Game | null {
+function readGame(league: League, event: EspnEvent): Game | null {
   const competition = event.competitions?.[0];
   const type = event.status?.type;
   const state = type?.state === undefined ? undefined : STATES[type.state];
@@ -108,10 +113,11 @@ const text = (value: unknown): string | null => (typeof value === "string" && va
 
 /** What the app reads of ESPN's answers; the rest, scores among it, is never looked at. */
 interface Scoreboard {
-  events?: Event[];
+  events?: EspnEvent[];
 }
 
-interface Event {
+/** One of ESPN's scoreboard events: a Game, not the glossary's Event channel. */
+interface EspnEvent {
   id?: string | number;
   date?: string;
   status?: { type?: { name?: string; state?: string } };

@@ -22,6 +22,8 @@ const RETRY_AFTER = 2 * 60_000;
 const WANTED_FOR = 30 * 24 * 3600_000;
 /** How long when a League was asked for is left as it is, so most answers write nothing. */
 const ASKED_EVERY = 3600_000;
+/** A try older than this is forgotten: tries are kept per League and day, so they would otherwise pile up. */
+const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
  * {@link SUBREQUESTS} that the Charts share: fifteen Leagues' current days every 5 minutes and
@@ -102,7 +104,7 @@ interface Part {
  * the coming days, missing ones before the oldest. Each day is saved as soon as it is read, so a
  * run stopped short keeps what it read. A run sends at most [GAMES_SUBREQUESTS] requests, and says
  * how many it sent. A part started in the last [RETRY_AFTER] is passed over. Leagues nobody asked
- * for in [WANTED_FOR], and days gone by, are dropped first.
+ * for in [WANTED_FOR], days gone by and tries older than [TRIES_FOR] are dropped first.
  */
 export async function fillGames(env: Env): Promise<number> {
   const now = Date.now();
@@ -119,17 +121,20 @@ export async function fillGames(env: Env): Promise<number> {
 
   const stale = kept.filter((r) => !window.includes(r.day) || !(leagues as string[]).includes(r.league));
   const staleTeams = teamsKept.filter((r) => !(leagues as string[]).includes(r.league));
-  if (stale.length > 0 || staleTeams.length > 0) {
+  const triesKept = tries.results as { part: string; tried_at: number }[];
+  const oldTries = triesKept.some((t) => t.tried_at < now - TRIES_FOR);
+  if (stale.length > 0 || staleTeams.length > 0 || oldTries) {
     await env.DB.batch([
       ...stale.map((r) => env.DB.prepare("DELETE FROM game WHERE league = ?1 AND day = ?2").bind(r.league, r.day)),
       ...staleTeams.map((r) => env.DB.prepare("DELETE FROM team WHERE league = ?1").bind(r.league)),
+      ...(oldTries ? [env.DB.prepare("DELETE FROM game_try WHERE tried_at < ?1").bind(now - TRIES_FOR)] : []),
     ]);
   }
   if (leagues.length === 0) return 0;
 
   const fetchedAt = new Map(kept.map((r) => [`${r.league}/${r.day}`, r.fetched_at]));
   const teamsFetchedAt = new Map(teamsKept.map((r) => [r.league, r.fetched_at]));
-  const tried = new Map((tries.results as { part: string; tried_at: number }[]).map((t) => [t.part, t.tried_at]));
+  const tried = new Map(triesKept.map((t) => [t.part, t.tried_at]));
   const parts: Part[] = [];
   for (const league of leagues) {
     window.forEach((day, i) => {
