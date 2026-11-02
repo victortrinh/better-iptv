@@ -56,10 +56,11 @@ internal fun normalisedCategoryName(name: String): String {
 internal fun categoryCountry(name: String): String? = COUNTRY_CODE.find(name)?.groupValues?.get(1)?.replace(SPACES, " ")
 
 /**
- * Whether a live Listing's name is an Event channel's: it carries a Game's start, or is marked
- * `Live |` or `Next |`. Numbered slots without a date (`UK: TNT SPORTS EVENT 12`) can't be told.
+ * Whether a live Listing is an Event channel: its [name] carries a Game's [start] (as [eventStart]
+ * read it), or is marked `Live |` or `Next |`. Numbered slots without a date (`UK: TNT SPORTS
+ * EVENT 12`) can't be told.
  */
-internal fun isEventChannel(name: String, now: Instant): Boolean = MARKED_ON.containsMatchIn(name) || eventStart(name, now) != null
+internal fun isEventChannel(name: String, start: Instant?): Boolean = start != null || MARKED_ON.containsMatchIn(name)
 
 /** An Event channel counts as finished this long after the start its name gives: long enough for a match, a race or a fight card. */
 internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)

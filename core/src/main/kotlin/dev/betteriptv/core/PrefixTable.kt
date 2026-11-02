@@ -56,15 +56,10 @@ internal class PrefixTable private constructor(
     }
 
     /**
-     * Whether a live Listing is Clutter: a separator row, an empty or finished-marked Event slot, or
-     * radio, by its [name] or its [category]. Event channels finished by the clock are told apart by
-     * [eventStart]. Sports replay hints mean nothing for live Listings.
-     */
-    fun isLiveClutter(name: String, category: String): Boolean = describeLive(name, category) != LiveListing.Channel
-
-    /**
-     * What a live Listing is: an empty Event slot (`- NO EVENT STREAMING -`, `RFEF EVENTO 3 | No event`),
-     * which is Clutter and tells an Event Category, other Clutter (as [isLiveClutter] tells), or a Channel.
+     * What a live Listing is, by its [name] and its [category]: an empty Event slot (`- NO EVENT
+     * STREAMING -`, `RFEF EVENTO 3 | No event`), which is Clutter and tells an Event Category; other
+     * Clutter (a separator row, a finished-marked Event, radio); or a Channel. Event channels finished
+     * by the clock are told apart by [eventStart]. Sports replay hints mean nothing for live Listings.
      */
     fun describeLive(name: String, category: String): LiveListing = when {
         emptyEventSlots.any { it.containsMatchIn(name) } -> LiveListing.EmptyEventSlot

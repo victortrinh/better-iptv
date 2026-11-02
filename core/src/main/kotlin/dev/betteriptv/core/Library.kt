@@ -169,7 +169,7 @@ class Library private constructor(
                                 val listing = prefixTable.describeLive(name, category)
                                 val tally = tallies.getOrPut(categoryId) { IntArray(2) }
                                 tally[0]++
-                                if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, now)) tally[1]++
+                                if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
                                 if (listing == PrefixTable.LiveListing.Channel) staging.channel(id, name, image, start, categoryId, guideId)
                             }
                             liveCategories.forEach { (id, name) ->

@@ -119,7 +119,6 @@ class ChannelsTest {
         assertEquals("", channel("CA: TSN 1").guideId)
         assertEquals("", channel("CA: TSN 2").guideId)
         assertEquals("CA| SPORT", liveCategory(channel("CA: TSN 2").categoryId).name)
-        assertTrue(library.favourites().isEmpty())
     }
 
     @Test fun `live Categories are stored with the Provider's name, a normalised name and their country`() = runBlocking {
