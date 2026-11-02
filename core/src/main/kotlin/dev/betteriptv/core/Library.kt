@@ -60,6 +60,13 @@ class Library private constructor(
     private val searchLock = Any()
     /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt in the background, the old one serving meanwhile. */
     private val catalogGeneration = AtomicInteger()
+    private val _catalogChanges = MutableStateFlow(0)
+
+    /**
+     * The catalog's generation, bumped once a Sync's new catalog is in place and again when Matches
+     * regroup its Titles: screens read their Title counts again when it changes (#271).
+     */
+    val catalogChanges: StateFlow<Int> = _catalogChanges.asStateFlow()
     /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
     private val metadataGeneration = AtomicInteger()
     private val rebuildingSearch = AtomicBoolean()
@@ -207,18 +214,23 @@ class Library private constructor(
                 // Anything else (a full disk, say) also leaves the previous catalog in place.
                 SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last)
             }
-            // The new catalog shows from here. When the cloud is about to be asked about its suspects, the
-            // status says so at once, not only once they're found, so Sync now stays off until the Titles regroup.
+            // The new catalog shows from here: screens count its Titles again before the status changes (#271).
+            if (finished is SyncStatus.Synced) catalogChanged()
+            // When the cloud is about to be asked about its suspects, the status says so at once, not only
+            // once they're found, so Sync now stays off until the Titles regroup.
             _syncStatus.value = if (finished is SyncStatus.Synced && canAskCloud()) SyncStatus.Matching(finished.last, 0, null) else finished
             if (finished is SyncStatus.Synced) {
-                catalogGeneration.incrementAndGet()
                 reportUnknownPrefixes(finished.last)
                 matchByName(finished)
-                catalogGeneration.incrementAndGet()
+                catalogChanged()
                 prepareSearchInBackground()
             }
             _syncStatus.value
         }
+    }
+
+    private fun catalogChanged() {
+        _catalogChanges.value = catalogGeneration.incrementAndGet()
     }
 
     /**
@@ -244,6 +256,8 @@ class Library private constructor(
     /**
      * Asks the cloud about the stored catalog's suspects it hasn't answered for lately, and regroups
      * the Titles by its answers. Without the cloud, the Provider's IDs stand until the next Sync.
+     * When no batch has been answered for [MATCH_STALL_AFTER], the rest wait for the next Sync too,
+     * so the status doesn't stay at Matching for good (#271).
      */
     private fun matchByName(synced: SyncStatus.Synced) {
         if (cloud == null || !canAskCloud()) return
@@ -257,11 +271,14 @@ class Library private constructor(
             // again next Sync. Several in a row mean the cloud is down.
             var failedInARow = 0
             var asked = 0
+            var answeredAt = matchClock.instant()
             _syncStatus.value = SyncStatus.Matching(synced.last, asked, questions.size)
             for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
+                if (Duration.between(answeredAt, matchClock.instant()) >= MATCH_STALL_AFTER) break
                 try {
                     store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
                     failedInARow = 0
+                    answeredAt = matchClock.instant()
                 } catch (e: CloudException) {
                     if (++failedInARow == MATCH_FAILURES_IN_A_ROW) {
                         cloudRetryAt = now + CLOUD_RETRY_AFTER
@@ -280,6 +297,9 @@ class Library private constructor(
             if (_syncStatus.value is SyncStatus.Matching) _syncStatus.value = synced
         }
     }
+
+    /** What Matching times its batches by: tests move it on to stall Matching without waiting. */
+    @Volatile internal var matchClock: Clock = Clock.systemUTC()
 
     private fun canAskCloud() = cloud != null && !Instant.now().isBefore(cloudRetryAt)
 
@@ -1462,6 +1482,12 @@ class Library private constructor(
         /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
         private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
         private const val MATCH_FAILURES_IN_A_ROW = 3
+        /**
+         * Matching stops when no batch has been answered for this long, its remaining suspects asked
+         * next Sync: a batch takes seconds, and one the cloud doesn't answer fails after the 60 s read
+         * timeout, so this is two of those in a row.
+         */
+        internal val MATCH_STALL_AFTER: Duration = Duration.ofMinutes(2)
 
         /** The kinds of Track the Viewer's last picks are kept by, and what turning subtitles off is kept as. */
         private const val AUDIO = "audio"
