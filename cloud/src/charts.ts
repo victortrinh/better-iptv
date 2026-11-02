@@ -17,9 +17,9 @@ const DISCOVER_PAGES = 15;
 /**
  * The requests one run of the Cron Trigger may send out. A Worker on the free plan may send 50 an
  * invocation, a Cron Trigger's too; 10 are left spare. Parts are read in order while what each may
- * send still fits.
+ * send still fits. The Games' part of the run (games.ts) sends its requests out of the same budget.
  */
-const SUBREQUESTS = 40;
+export const SUBREQUESTS = 40;
 /** The names a Region's Top 10 has at most: 10 films and 10 shows. */
 const REGION_NAMES = 20;
 /** The names the worldwide Top 10 has at most: English and non-English films and shows, 10 each. */
@@ -164,8 +164,9 @@ interface Part {
  * stopped short (out of CPU, say) keeps what it read. A run sends at most [SUBREQUESTS] requests
  * out, and reads the country file in a run of its own. A part started in the last [RETRY_AFTER] is
  * passed over: one that stopped a run, or whose source was down, waits while the rest are read.
+ * [budget] is what the run may still send, once the Games' part sent its own.
  */
-export async function fill(env: Env): Promise<void> {
+export async function fill(env: Env, budget = SUBREQUESTS): Promise<void> {
   const now = Date.now();
   const [wanted, rows, tries] = await env.DB.batch([
     env.DB.prepare("SELECT part, key FROM chart_wanted WHERE asked_at > ?1").bind(now - WANTED_FOR),
@@ -207,7 +208,7 @@ export async function fill(env: Env): Promise<void> {
     .sort(([a], [b]) => (fetchedAt(`discover/${a}`) ?? -1) - (fetchedAt(`discover/${b}`) ?? -1))
     .forEach(([key, { kind, genreId }]) => parts.push({ key: `discover/${key}`, requests: DISCOVER_PAGES, read: () => readDiscover(env, kind, genreId, now) }));
 
-  let left = SUBREQUESTS;
+  let left = budget;
   let read = 0;
   for (const part of parts) {
     if ((tried.get(part.key) ?? -Infinity) > now - RETRY_AFTER) continue;
