@@ -47,4 +47,19 @@ class SyncScaleTest {
         println("After a Sync of 150,000 movie Listings: catalog.db ${database.length()} bytes, catalog.db-wal ${wal.length()} bytes")
         assertTrue("catalog.db-wal is ${wal.length()} bytes", wal.length() <= 4L * 1024 * 1024)
     }
+
+    @Test fun `a held full-size Sync leaves no large write-ahead log either`() = runBlocking {
+        provider.generatedMovies = 150_000
+        library.logIn(provider.login)
+        library.sync()
+
+        val held = library.sync(hold = true)
+
+        assertTrue(held is SyncStatus.Ready)
+        val wal = folder.root.resolve("catalog.db-wal")
+        assertTrue("catalog.db-wal is ${wal.length()} bytes", wal.length() <= 4L * 1024 * 1024)
+        assertTrue(library.applyPendingCatalog())
+        assertEquals(150_000, library.movieListingCount())
+        assertTrue("catalog.db-wal is ${wal.length()} bytes", wal.length() <= 4L * 1024 * 1024)
+    }
 }

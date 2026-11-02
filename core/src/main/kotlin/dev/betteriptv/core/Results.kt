@@ -263,10 +263,14 @@ data class Unreachable(val detail: String) : ProviderProblem
 /** The catalog downloaded but couldn't be stored on the device. */
 data class CatalogNotSaved(val detail: String) : SyncProblem
 
+/** What a Sync is doing, as the first-run checklist names it. Matching isn't a step: it has its own status, [MatchingStatus]. */
+enum class SyncStep { Channels, Movies, Shows, Saving }
+
 /**
  * A finished Sync. [movieListingCount] and [showListingCount] count the movie and show lists, which
- * leave out Clutter and Sports replays; [unknownPrefixes] are the Prefixes to add to the Prefix
- * table, most common first.
+ * leave out Clutter and Sports replays, and [channelListingCount] the Channel variants; [unknownPrefixes]
+ * are the Prefixes to add to the Prefix table, most common first. [duration] runs from the Sync's start
+ * to the end of its swap; for a held catalog, the time it took to compute plus the time its swap took.
  * [rematchedListings] counts the Listings Matched by name instead of by their Provider ID:
  * Mismatches, and Listings without an ID that TMDB found. It grows after the Sync finishes, as
  * the cloud answers, and the Titles change with it.
@@ -278,27 +282,37 @@ data class CompletedSync(
     val unknownPrefixes: List<UnknownPrefix>,
     val rematchedListings: Int = 0,
     val showListingCount: Int = 0,
+    val channelListingCount: Int = 0,
 )
 
+/**
+ * How a Sync is going. A first Sync lands in two stages: its Channels first, so Live and Home open
+ * within seconds ([channelsAt] is set while [last] is still null), then its movies and shows. A later
+ * Sync computes both behind the catalog on screen and, when held, waits as [Ready] for the app to
+ * apply it between screens, so rows never move under focus.
+ */
 sealed interface SyncStatus {
-    /** The last Sync that finished, whose catalog the app shows. */
+    /** The last whole Sync that finished, whose catalog the app shows. */
     val last: CompletedSync?
 
-    data object NeverSynced : SyncStatus {
+    /** When the Channels on screen landed: before [last] on a first Sync, with it afterwards; null until any have. */
+    val channelsAt: Instant?
+
+    data class NeverSynced(override val channelsAt: Instant? = null) : SyncStatus {
         override val last: CompletedSync? = null
     }
 
     /**
-     * A Sync is reading the Provider's catalog: [moviesRead] movie and [showsRead] show Listings so
-     * far, Clutter and Sports replays left out. The Provider sends movies first, and never a total.
+     * A Sync is at [step], having read [entriesRead] Channel variants, movie and show Listings so far,
+     * Clutter and Sports replays left out. The Provider never sends a total.
      */
-    data class Running(override val last: CompletedSync?, val moviesRead: Int = 0, val showsRead: Int = 0) : SyncStatus {
-        /** How far through, judged by [last]'s Listing counts; below 1 until the Sync finishes, null without them. */
+    data class Running(override val last: CompletedSync?, override val channelsAt: Instant?, val step: SyncStep, val entriesRead: Int = 0) : SyncStatus {
+        /** How far through, judged by [last]'s counts; below 1 until the Sync finishes, null without them. */
         val fraction: Float?
             get() {
-                val expected = (last ?: return null).let { it.movieListingCount + it.showListingCount }
+                val expected = (last ?: return null).let { it.movieListingCount + it.showListingCount + it.channelListingCount }
                 if (expected == 0) return null
-                return ((moviesRead + showsRead).toFloat() / expected).coerceAtMost(MAX_RUNNING_FRACTION)
+                return (entriesRead.toFloat() / expected).coerceAtMost(MAX_RUNNING_FRACTION)
             }
 
         private companion object {
@@ -306,15 +320,23 @@ sealed interface SyncStatus {
         }
     }
 
-    data class Synced(override val last: CompletedSync) : SyncStatus
+    /** A later Sync finished computing its catalog at [computedAt]; [last]'s shows until the app applies it. */
+    data class Ready(override val last: CompletedSync, val computedAt: Instant) : SyncStatus {
+        override val channelsAt: Instant get() = last.finishedAt
+    }
 
-    /**
-     * The Sync finished and its catalog shows, and the cloud is being asked about [of] names to Match
-     * suspects, [asked] so far. Their Titles regroup once every name is asked. [of] is null while the
-     * suspects are still being found, which can take half a minute on a full catalog.
-     */
-    data class Matching(override val last: CompletedSync, val asked: Int, val of: Int?) : SyncStatus
+    data class Synced(override val last: CompletedSync) : SyncStatus {
+        override val channelsAt: Instant get() = last.finishedAt
+    }
 
-    /** The Sync failed; the catalog from [last] is still shown. */
-    data class Failed(val problem: SyncProblem, override val last: CompletedSync?) : SyncStatus
+    /** The Sync failed at [step]; the catalog from [last] is still shown, or on a first Sync whatever landed by [channelsAt]. */
+    data class Failed(val problem: SyncProblem, override val last: CompletedSync?, override val channelsAt: Instant?, val step: SyncStep) : SyncStatus
 }
+
+/**
+ * The cloud is being asked about [of] names to Match the catalog's suspects, [asked] so far; their
+ * Titles regroup once every name is asked. [of] is null while the suspects are still being found,
+ * which can take half a minute on a full catalog. Runs after a Sync's catalog lands, with the Sync
+ * itself finished.
+ */
+data class MatchingStatus(val asked: Int, val of: Int?)

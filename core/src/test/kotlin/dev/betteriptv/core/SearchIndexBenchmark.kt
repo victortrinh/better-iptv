@@ -65,7 +65,16 @@ class SearchIndexBenchmark {
         val titles = 58_000
         val cast = List(150_000) { name(2) }
         var listingId = 0L
-        store.replaceListings(
+        store.stageChannels { staging ->
+            repeat(45_000) {
+                val country = listOf("US", "CA", "FR", "UK", "AR").random(random)
+                val channel = name(random.nextInt(1, 4))
+                val quality = listOf("HD", "FHD", "SD", "4K").random(random)
+                staging.channel(it + 1L, "$country: $channel $quality", null, null, null, "", "$country: $channel".uppercase(), channel, country, Quality.HD, false)
+            }
+        }
+        store.swapChannels(Instant.now())
+        store.stageTitles(
             fill = { staging ->
                 staging.category(TitleKind.Movie, "1", "EN | MOVIES")
                 staging.category(TitleKind.Movie, "2", "FR | FILMS")
@@ -84,15 +93,11 @@ class SearchIndexBenchmark {
                         staging.listing(++listingId, listing, category, listingId, null, false, MatchQuestion(kind, name, year, null, tmdbId))
                     }
                 }
-                repeat(45_000) {
-                    val country = listOf("US", "CA", "FR", "UK", "AR").random(random)
-                    val channel = name(random.nextInt(1, 4))
-                    val quality = listOf("HD", "FHD", "SD", "4K").random(random)
-                    staging.channel(it + 1L, "$country: $channel $quality", null, null, null, "", "$country: $channel".uppercase(), channel, country, Quality.HD, false)
-                }
             },
+            onFilled = {},
             completed = { movies, shows, _ -> CompletedSync(Instant.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
         )
+        store.swapTitles()
         // Shaped like the cloud's answers: titles in each translation, a few other names, English and French descriptions, 12 cast.
         val json = Moshi.Builder().build().adapter(Any::class.java)
         for (batch in (1L..titles).chunked(2_000)) {

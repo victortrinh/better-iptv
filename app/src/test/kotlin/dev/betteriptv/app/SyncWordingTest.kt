@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import android.content.Context
 import dev.betteriptv.core.CompletedSync
+import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.SyncStatus
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -20,9 +21,9 @@ class SyncWordingTest {
 
     @Test
     fun saysTitlesAreStillRegroupingAndHowFarThenThatTheSyncIsDone() {
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: finding the names to check.", context.describe(SyncStatus.Matching(synced, 0, null)))
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 1,250 of 2,385 names checked.", context.describe(SyncStatus.Matching(synced, 1_250, 2_385)))
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 0 of 1 name checked.", context.describe(SyncStatus.Matching(synced, 0, 1)))
+        assertEquals("Synced just now in 239.7 s. Still regrouping titles: finding the names to check.", context.describe(SyncStatus.Synced(synced), MatchingStatus(0, null)))
+        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 1,250 of 2,385 names checked.", context.describe(SyncStatus.Synced(synced), MatchingStatus(1_250, 2_385)))
+        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 0 of 1 name checked.", context.describe(SyncStatus.Synced(synced), MatchingStatus(0, 1)))
         assertEquals("Synced just now in 239.7 s.", context.describe(SyncStatus.Synced(synced)))
     }
 
@@ -31,7 +32,7 @@ class SyncWordingTest {
     fun saysItInFrench() {
         assertEquals(
             "Synchronisé à l'instant en 239,7 s. Regroupement des titres en cours : 25 noms vérifiés sur 60.",
-            context.describe(SyncStatus.Matching(synced, 25, 60)),
+            context.describe(SyncStatus.Synced(synced), MatchingStatus(25, 60)),
         )
         assertEquals("Synchronisé à l'instant en 239,7 s.", context.describe(SyncStatus.Synced(synced)))
     }

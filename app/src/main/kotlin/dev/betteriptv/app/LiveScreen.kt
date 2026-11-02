@@ -55,7 +55,7 @@ fun LiveScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
-    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
+    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Failed)
     val refreshes = gamesRefreshes(state)
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,

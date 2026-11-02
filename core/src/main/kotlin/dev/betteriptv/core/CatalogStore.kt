@@ -59,6 +59,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             execSQL("DROP TABLE IF EXISTS channel")
             execSQL("DROP TABLE IF EXISTS live_category")
             execSQL("DROP TABLE IF EXISTS replay")
+            execSQL("DROP TABLE IF EXISTS staging_kept_listing")
+            execSQL("DROP TABLE IF EXISTS staging_title")
+            execSQL("DROP TABLE IF EXISTS staging_replay")
+            execSQL("DROP TABLE IF EXISTS staging_channel")
+            execSQL("DROP TABLE IF EXISTS staging_live_category")
+            execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
             execSQL("DELETE FROM meta")
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
@@ -68,6 +74,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
         execSQL(REPLAY_TABLE.format("replay"))
         INDEXES.forEach { execSQL(it) }
+        execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
         // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in. An older
         // app run again before that Sync makes a new table by stream id, which joins the ones waiting.
         if (prepare("SELECT count(*) FROM pragma_table_info('favourite') WHERE name = 'id'").use { it.step(); it.getLong(0) } > 0) {
@@ -82,7 +89,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL("CREATE TABLE IF NOT EXISTS favourite (key TEXT PRIMARY KEY, added_at INTEGER NOT NULL)")
         // The Feeds the Viewer marked "Not this game" on this device (#255), by Game (League and schedule id) and Channel key, so they outlive Syncs.
         execSQL("CREATE TABLE IF NOT EXISTS not_this_game (game_key TEXT NOT NULL, channel_key TEXT NOT NULL, dropped_at INTEGER NOT NULL, PRIMARY KEY (game_key, channel_key))")
-        execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
         // Keyed by Title, not by Listing, so it outlives Syncs and catalog shape changes.
@@ -125,46 +131,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
     private val reader: SQLiteConnection = driver.open(path)
 
-    class Staging internal constructor(connection: SQLiteConnection) {
-        private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+    init {
+        // A Sync the app was closed during left half a catalog staged: it goes, the next Sync stages it again.
+        if (!hasPending()) discardPending()
+    }
+
+    /** Where a Sync writes the Channels stage: the Channel variants and live Categories, before they are swapped in. */
+    class ChannelStaging internal constructor(connection: SQLiteConnection) {
         private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
         private val insertLiveCategory = connection.prepare("INSERT OR REPLACE INTO staging_live_category VALUES (?, ?, ?, ?, ?, ?)")
-        private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var channelPosition = 0L
         private var liveCategoryPosition = 0L
-        private var replayPosition = 0L
-
-        /** Stores a Category of [kind]'s Listings: movie and show Categories are numbered apart. */
-        fun category(kind: TitleKind, id: String, name: String) = insertCategory.run {
-            bindText(1, kindKey(kind))
-            bindText(2, id)
-            bindText(3, name)
-            stepAndReset()
-        }
-
-        /**
-         * Stores a Listing of [match]'s kind, Matched to its Title by the Provider's TMDB ID in
-         * [match], or standing alone without one, until the cloud answers [match] otherwise. A
-         * [hidden] one is kept out of the lists and gets no Title. [added] orders the list, newest
-         * first: for a Show, it is when the Provider last changed it. [container] is a movie file's
-         * extension (`mkv`), which its stream location ends with.
-         */
-        fun listing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String? = null) = insertListing.run {
-            bindText(1, kindKey(match.kind))
-            bindLong(2, id)
-            bindText(3, name)
-            if (categoryId == null) bindNull(4) else bindText(4, categoryId)
-            if (added == null) bindNull(5) else bindLong(5, added)
-            bindLong(6, if (hidden) 1 else 0)
-            if (image == null) bindNull(7) else bindText(7, image)
-            bindText(8, key(match.tmdbId?.let { TitleId.Tmdb(match.kind, it) } ?: TitleId.Unmatched(match.kind, id)))
-            if (match.tmdbId == null) bindNull(9) else bindLong(9, match.tmdbId)
-            bindText(10, matchName(match.name))
-            bindText(11, match.key)
-            if (container == null) bindNull(12) else bindText(12, container)
-            stepAndReset()
-        }
 
         /**
          * Stores a Channel variant (a live Listing that isn't Clutter), in the Provider's order, as a
@@ -204,6 +181,50 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             stepAndReset()
         }
 
+        internal fun close() {
+            insertChannel.close()
+            insertLiveCategory.close()
+        }
+    }
+
+    /** Where a Sync writes the Titles stage: the movie and show Categories and Listings, and the Sports replays. */
+    class TitleStaging internal constructor(connection: SQLiteConnection) {
+        private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+        private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        private var replayPosition = 0L
+
+        /** Stores a Category of [kind]'s Listings: movie and show Categories are numbered apart. */
+        fun category(kind: TitleKind, id: String, name: String) = insertCategory.run {
+            bindText(1, kindKey(kind))
+            bindText(2, id)
+            bindText(3, name)
+            stepAndReset()
+        }
+
+        /**
+         * Stores a Listing of [match]'s kind, Matched to its Title by the Provider's TMDB ID in
+         * [match], or standing alone without one, until the cloud answers [match] otherwise. A
+         * [hidden] one is kept out of the lists and gets no Title. [added] orders the list, newest
+         * first: for a Show, it is when the Provider last changed it. [container] is a movie file's
+         * extension (`mkv`), which its stream location ends with.
+         */
+        fun listing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String? = null) = insertListing.run {
+            bindText(1, kindKey(match.kind))
+            bindLong(2, id)
+            bindText(3, name)
+            if (categoryId == null) bindNull(4) else bindText(4, categoryId)
+            if (added == null) bindNull(5) else bindLong(5, added)
+            bindLong(6, if (hidden) 1 else 0)
+            if (image == null) bindNull(7) else bindText(7, image)
+            bindText(8, key(match.tmdbId?.let { TitleId.Tmdb(match.kind, it) } ?: TitleId.Unmatched(match.kind, id)))
+            if (match.tmdbId == null) bindNull(9) else bindLong(9, match.tmdbId)
+            bindText(10, matchName(match.name))
+            bindText(11, match.key)
+            if (container == null) bindNull(12) else bindText(12, container)
+            stepAndReset()
+        }
+
         /**
          * Stores a Sports replay (a movie Listing the Prefix table marks so, which [listing] keeps out
          * of the lists), in the Provider's order, with what its name says ([parsed]: the teams and the
@@ -226,144 +247,278 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         internal fun close() {
             insertCategory.close()
             insertListing.close()
-            insertChannel.close()
-            insertLiveCategory.close()
             insertReplay.close()
         }
     }
 
     /**
-     * Replaces the movie and show Listings and the Channels with what [fill] writes, Matching suspects by the answers
-     * kept. [completed] runs just before the swap, with the new Listing counts and how many Listings
-     * were Matched by name, and the Sync it returns is recorded in the same transaction.
+     * Writes the Channels stage of a Sync, what [fill] stores, beside the catalog on screen: swapped
+     * in by [swapChannels] or [applyPending]. Returns how many Channel variants it stored.
      */
-    fun replaceListings(fill: (Staging) -> Unit, completed: (movieCount: Int, showCount: Int, rematched: Int) -> CompletedSync) = synchronized(writer) {
-        writer.execSQL("DROP TABLE IF EXISTS staging_category")
-        writer.execSQL("DROP TABLE IF EXISTS staging_listing")
-        writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
-        writer.execSQL("DROP TABLE IF EXISTS staging_title")
+    fun stageChannels(fill: (ChannelStaging) -> Unit): Int = synchronized(writer) {
         writer.execSQL("DROP TABLE IF EXISTS staging_channel")
         writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
-        writer.execSQL("DROP TABLE IF EXISTS staging_replay")
         writer.execSQL(CHANNEL_TABLE.format("staging_channel"))
         writer.execSQL(LIVE_CATEGORY_TABLE.format("staging_live_category"))
-        writer.execSQL(REPLAY_TABLE.format("staging_replay"))
-        writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
-        writer.execSQL(
-            "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT)",
-        )
-        writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
-        writer.execSQL(TITLE_TABLE.format("staging_title"))
         try {
             writer.execSQL("BEGIN")
-            val staging = Staging(writer)
+            val staging = ChannelStaging(writer)
             try {
                 fill(staging)
             } finally {
                 staging.close()
             }
-            // A Listing whose name no sibling shares may be a Mismatch, and one without an ID needs looking up.
-            writer.execSQL("CREATE INDEX staging_listing_siblings ON staging_listing (kind, provider_tmdb, match_name)")
-            writer.execSQL(
-                """
-                UPDATE staging_listing SET suspect = 1 WHERE hidden = 0 AND (provider_tmdb IS NULL OR NOT EXISTS (
-                    SELECT 1 FROM staging_listing o
-                    WHERE o.kind = staging_listing.kind AND o.provider_tmdb = staging_listing.provider_tmdb AND o.match_name = staging_listing.match_name
-                        AND o.hidden = 0 AND o.rowid <> staging_listing.rowid
-                ))
-                """.trimIndent(),
-            )
-            writer.execSQL("UPDATE staging_listing SET title_key = $ANSWERED_KEY WHERE suspect = 1 AND match_key IN (SELECT key FROM match_answer)")
-            // Titles are listed by their newest Listing.
-            writer.execSQL("INSERT INTO staging_title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("staging_listing WHERE hidden = 0"))
-            writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
-            writer.execSQL(
-                """
-                INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container)
-                SELECT l.kind, row_number() OVER (PARTITION BY l.kind ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image,
-                    t.position, l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container
-                FROM staging_listing l
-                LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
-                JOIN staging_title t ON t.key = l.title_key
-                WHERE l.hidden = 0
-                """.trimIndent(),
-            )
-            writer.execSQL("DROP INDEX staging_title_key")
-            writer.execSQL("DROP TABLE staging_listing")
-            writer.execSQL("DROP TABLE staging_category")
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             if (writer.inTransaction()) writer.execSQL("ROLLBACK")
-            writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
-            writer.execSQL("DROP TABLE IF EXISTS staging_title")
             writer.execSQL("DROP TABLE IF EXISTS staging_channel")
             writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
-            writer.execSQL("DROP TABLE IF EXISTS staging_replay")
             throw e
         }
+        truncateLog()
+        writer.prepare("SELECT count(*) FROM staging_channel").use { it.step(); it.getLong(0).toInt() }
+    }
 
-        fun count(kind: TitleKind) = writer.prepare("SELECT count(*) FROM staging_kept_listing WHERE kind = ?").use {
-            it.bindText(1, kindKey(kind))
-            it.step()
-            it.getLong(0).toInt()
+    /**
+     * Writes the Titles stage of a Sync, what [fill] stores, Matching suspects by the answers kept, beside
+     * the catalog on screen. [onFilled] runs once [fill] returns, before the Titles are built. [completed]
+     * runs once they are, with the new Listing counts and how many Listings were Matched by name, and the
+     * Sync it returns is kept as pending until [swapTitles] or [applyPending] lands it, through a close
+     * and reopen if need be.
+     */
+    fun stageTitles(fill: (TitleStaging) -> Unit, onFilled: () -> Unit, completed: (movieCount: Int, showCount: Int, rematched: Int) -> CompletedSync): CompletedSync =
+        synchronized(writer) {
+            writer.execSQL("DROP TABLE IF EXISTS staging_category")
+            writer.execSQL("DROP TABLE IF EXISTS staging_listing")
+            writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
+            writer.execSQL("DROP TABLE IF EXISTS staging_title")
+            writer.execSQL("DROP TABLE IF EXISTS staging_replay")
+            writer.execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
+            writer.execSQL(REPLAY_TABLE.format("staging_replay"))
+            writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
+            writer.execSQL(
+                "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
+                    "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT)",
+            )
+            writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
+            writer.execSQL(TITLE_TABLE.format("staging_title"))
+            writer.execSQL(UNKNOWN_PREFIX_TABLE.format("staging_unknown_prefix"))
+            try {
+                writer.execSQL("BEGIN")
+                val staging = TitleStaging(writer)
+                try {
+                    fill(staging)
+                } finally {
+                    staging.close()
+                }
+                onFilled()
+                // A Listing whose name no sibling shares may be a Mismatch, and one without an ID needs looking up.
+                writer.execSQL("CREATE INDEX staging_listing_siblings ON staging_listing (kind, provider_tmdb, match_name)")
+                writer.execSQL(
+                    """
+                    UPDATE staging_listing SET suspect = 1 WHERE hidden = 0 AND (provider_tmdb IS NULL OR NOT EXISTS (
+                        SELECT 1 FROM staging_listing o
+                        WHERE o.kind = staging_listing.kind AND o.provider_tmdb = staging_listing.provider_tmdb AND o.match_name = staging_listing.match_name
+                            AND o.hidden = 0 AND o.rowid <> staging_listing.rowid
+                    ))
+                    """.trimIndent(),
+                )
+                writer.execSQL("UPDATE staging_listing SET title_key = $ANSWERED_KEY WHERE suspect = 1 AND match_key IN (SELECT key FROM match_answer)")
+                // Titles are listed by their newest Listing.
+                writer.execSQL("INSERT INTO staging_title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("staging_listing WHERE hidden = 0"))
+                writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
+                writer.execSQL(
+                    """
+                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container)
+                    SELECT l.kind, row_number() OVER (PARTITION BY l.kind ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image,
+                        t.position, l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container
+                    FROM staging_listing l
+                    LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
+                    JOIN staging_title t ON t.key = l.title_key
+                    WHERE l.hidden = 0
+                    """.trimIndent(),
+                )
+                writer.execSQL("DROP INDEX staging_title_key")
+                writer.execSQL("DROP TABLE staging_listing")
+                writer.execSQL("DROP TABLE staging_category")
+                writer.execSQL("COMMIT")
+
+                fun count(kind: TitleKind) = writer.prepare("SELECT count(*) FROM staging_kept_listing WHERE kind = ?").use {
+                    it.bindText(1, kindKey(kind))
+                    it.step()
+                    it.getLong(0).toInt()
+                }
+                val sync = completed(count(TitleKind.Movie), count(TitleKind.Show), rematchedCount("staging_kept_listing"))
+                writer.execSQL("BEGIN")
+                writer.prepare("INSERT INTO staging_unknown_prefix VALUES (?, ?, ?)").use { insert ->
+                    sync.unknownPrefixes.forEach {
+                        insert.bindText(1, it.prefix)
+                        insert.bindLong(2, it.listingCount.toLong())
+                        insert.bindText(3, it.example)
+                        insert.stepAndReset()
+                    }
+                }
+                writeMeta(
+                    mapOf(
+                        PENDING_SYNC_AT to sync.finishedAt.toString(),
+                        PENDING_SYNC_MILLIS to sync.duration.toMillis().toString(),
+                        PENDING_MOVIE_LISTINGS to sync.movieListingCount.toString(),
+                        PENDING_SHOW_LISTINGS to sync.showListingCount.toString(),
+                        PENDING_CHANNEL_LISTINGS to sync.channelListingCount.toString(),
+                        PENDING_REMATCHED to sync.rematchedListings.toString(),
+                    ),
+                )
+                writer.execSQL("COMMIT")
+                truncateLog()
+                sync
+            } catch (e: Throwable) {
+                if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+                dropTitleStaging()
+                throw e
+            }
         }
-        val sync = completed(count(TitleKind.Movie), count(TitleKind.Show), rematchedCount("staging_kept_listing"))
+
+    /** Whether a Sync's catalog is staged and waiting to be swapped in. */
+    fun hasPending(): Boolean = synchronized(writer) { pendingAt() != null }
+
+    /** When the pending catalog finished computing, if there is one. */
+    fun pendingAt(): Instant? = synchronized(writer) {
+        val at = meta(PENDING_SYNC_AT) ?: return null
+        val staged = listOf("staging_kept_listing", "staging_title", "staging_replay", "staging_channel", "staging_live_category")
+        if (staged.all { tableExists(it) }) Instant.parse(at) else null
+    }
+
+    /** Drops whatever a Sync staged and didn't land, so it takes no room beside the catalog. */
+    fun discardPending() = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            dropTitleStaging()
+            writer.execSQL("DROP TABLE IF EXISTS staging_channel")
+            writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
+            writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** When the Channels on screen landed, or null before any have. */
+    fun channelsSyncedAt(): Instant? = meta(CHANNELS_SYNCED_AT)?.let(Instant::parse)
+
+    /** Swaps the staged Channels in, as of [at], so Live and Home have them while the Titles are still read. */
+    fun swapChannels(at: Instant) = synchronized(writer) {
         writer.execSQL("BEGIN IMMEDIATE")
         try {
-            writer.execSQL("DROP TABLE listing")
-            writer.execSQL("DROP TABLE title")
-            writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
-            writer.execSQL("ALTER TABLE staging_title RENAME TO title")
-            writer.execSQL("DROP TABLE channel")
-            writer.execSQL("ALTER TABLE staging_channel RENAME TO channel")
-            writer.execSQL("DROP TABLE live_category")
-            writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
-            writer.execSQL("DROP TABLE replay")
-            writer.execSQL("ALTER TABLE staging_replay RENAME TO replay")
-            INDEXES.forEach { writer.execSQL(it) }
-            // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
-            writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
-            // Favourites an older app kept by stream id become Favourites of the Channels those ids are variants of now;
-            // an id the Provider no longer lists can't be told, and goes.
-            if (writer.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$LEGACY_FAVOURITES'").use { it.step(); it.getLong(0) } > 0) {
-                writer.execSQL(
-                    "INSERT OR IGNORE INTO favourite (key, added_at) SELECT c.channel_key, min(l.added_at) FROM $LEGACY_FAVOURITES l " +
-                        "JOIN channel c ON c.id = l.id GROUP BY c.channel_key ORDER BY 2",
-                )
-                writer.execSQL("DROP TABLE $LEGACY_FAVOURITES")
-            }
-            // Show details of Listings the Provider no longer has won't be asked for again.
-            writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
-            writer.execSQL("DELETE FROM episode WHERE listing_id NOT IN (SELECT listing_id FROM show_details)")
-            writer.execSQL("DELETE FROM unknown_prefix")
-            writer.prepare("INSERT INTO unknown_prefix VALUES (?, ?, ?)").use { insert ->
-                sync.unknownPrefixes.forEach {
-                    insert.bindText(1, it.prefix)
-                    insert.bindLong(2, it.listingCount.toLong())
-                    insert.bindText(3, it.example)
-                    insert.stepAndReset()
-                }
-            }
-            writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use { insert ->
-                mapOf(
-                    LAST_SYNC_AT to sync.finishedAt.toString(),
-                    LAST_SYNC_MILLIS to sync.duration.toMillis().toString(),
-                    LAST_SYNC_LISTINGS to sync.movieListingCount.toString(),
-                    LAST_SYNC_SHOW_LISTINGS to sync.showListingCount.toString(),
-                    LAST_SYNC_REMATCHED to sync.rematchedListings.toString(),
-                ).forEach { (key, value) ->
-                    insert.bindText(1, key)
-                    insert.bindText(2, value)
-                    insert.stepAndReset()
-                }
-            }
+            swapChannelsIn(at)
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             writer.execSQL("ROLLBACK")
             throw e
         }
         truncateLog()
+    }
+
+    /** Swaps the staged Titles in, recording the pending Sync as the last one, its duration now counting the swap. */
+    fun swapTitles(): CompletedSync = synchronized(writer) {
+        val started = System.nanoTime()
+        writer.execSQL("BEGIN IMMEDIATE")
+        try {
+            swapTitlesIn(started)
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            writer.execSQL("ROLLBACK")
+            throw e
+        }
+        truncateLog()
+        lastSync()!!
+    }
+
+    /** Swaps a pending catalog in, Channels and Titles together, or returns null without one. */
+    fun applyPending(): CompletedSync? = synchronized(writer) {
+        if (pendingAt() == null) return null
+        val started = System.nanoTime()
+        writer.execSQL("BEGIN IMMEDIATE")
+        try {
+            val at = Instant.now()
+            swapChannelsIn(at)
+            swapTitlesIn(started, at)
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            writer.execSQL("ROLLBACK")
+            throw e
+        }
+        truncateLog()
+        lastSync()
+    }
+
+    private fun swapChannelsIn(at: Instant) {
+        writer.execSQL("DROP TABLE channel")
+        writer.execSQL("ALTER TABLE staging_channel RENAME TO channel")
+        writer.execSQL("DROP TABLE live_category")
+        writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
+        CHANNEL_INDEXES.forEach { writer.execSQL(it) }
+        // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
+        writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
+        // Favourites an older app kept by stream id become Favourites of the Channels those ids are variants of now;
+        // an id the Provider no longer lists can't be told, and goes.
+        if (tableExists(LEGACY_FAVOURITES)) {
+            writer.execSQL(
+                "INSERT OR IGNORE INTO favourite (key, added_at) SELECT c.channel_key, min(l.added_at) FROM $LEGACY_FAVOURITES l " +
+                    "JOIN channel c ON c.id = l.id GROUP BY c.channel_key ORDER BY 2",
+            )
+            writer.execSQL("DROP TABLE $LEGACY_FAVOURITES")
+        }
+        writeMeta(mapOf(CHANNELS_SYNCED_AT to at.toString()))
+    }
+
+    private fun swapTitlesIn(swapStarted: Long, at: Instant = Instant.now()) {
+        writer.execSQL("DROP TABLE listing")
+        writer.execSQL("DROP TABLE title")
+        writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
+        writer.execSQL("ALTER TABLE staging_title RENAME TO title")
+        writer.execSQL("DROP TABLE replay")
+        writer.execSQL("ALTER TABLE staging_replay RENAME TO replay")
+        TITLE_INDEXES.forEach { writer.execSQL(it) }
+        // Show details of Listings the Provider no longer has won't be asked for again.
+        writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
+        writer.execSQL("DELETE FROM episode WHERE listing_id NOT IN (SELECT listing_id FROM show_details)")
+        writer.execSQL("DELETE FROM unknown_prefix")
+        writer.execSQL("INSERT INTO unknown_prefix SELECT * FROM staging_unknown_prefix")
+        writer.execSQL("DROP TABLE staging_unknown_prefix")
+        val computed = meta(PENDING_SYNC_MILLIS)!!.toLong()
+        val swapped = Duration.ofNanos(System.nanoTime() - swapStarted).toMillis()
+        writeMeta(
+            mapOf(
+                LAST_SYNC_AT to at.toString(),
+                LAST_SYNC_MILLIS to (computed + swapped).toString(),
+                LAST_SYNC_LISTINGS to meta(PENDING_MOVIE_LISTINGS)!!,
+                LAST_SYNC_SHOW_LISTINGS to meta(PENDING_SHOW_LISTINGS)!!,
+                LAST_SYNC_CHANNELS to meta(PENDING_CHANNEL_LISTINGS)!!,
+                LAST_SYNC_REMATCHED to meta(PENDING_REMATCHED)!!,
+            ),
+        )
+        writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
+    }
+
+    private fun dropTitleStaging() {
+        writer.execSQL("DROP TABLE IF EXISTS staging_listing")
+        writer.execSQL("DROP TABLE IF EXISTS staging_category")
+        writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
+        writer.execSQL("DROP TABLE IF EXISTS staging_title")
+        writer.execSQL("DROP TABLE IF EXISTS staging_replay")
+        writer.execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
+    }
+
+    private fun tableExists(name: String): Boolean =
+        writer.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?").use { it.bindText(1, name); it.step(); it.getLong(0) > 0 }
+
+    private fun writeMeta(values: Map<String, String>) = writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use { insert ->
+        values.forEach { (key, value) ->
+            insert.bindText(1, key)
+            insert.bindText(2, value)
+            insert.stepAndReset()
+        }
     }
 
     /**
@@ -385,6 +540,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             unknownPrefixes(),
             meta(LAST_SYNC_REMATCHED)?.toInt() ?: 0,
             meta(LAST_SYNC_SHOW_LISTINGS)?.toInt() ?: 0,
+            meta(LAST_SYNC_CHANNELS)?.toInt() ?: 0,
         )
     }
 
@@ -1326,9 +1482,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val MAX_BOUND = 900
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (kind, position))"
         /** Made after a swap: an index keeps its name when its table is renamed. */
-        val INDEXES = listOf(
+        val TITLE_INDEXES = listOf(
             "CREATE INDEX IF NOT EXISTS listing_title ON listing (kind, title)",
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
+            // The Replays in the Provider's order, and a finished Game's Replay by its date.
+            "CREATE INDEX IF NOT EXISTS replay_position ON replay (position)",
+            "CREATE INDEX IF NOT EXISTS replay_date ON replay (date)",
+        )
+        val CHANNEL_INDEXES = listOf(
             "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
             "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
             // The Channel browser's counts and Category lists, by Category: covered without touching the rows.
@@ -1337,10 +1498,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
             // The Event channels on, read for the Live tab's Games every couple of minutes.
             "CREATE INDEX IF NOT EXISTS channel_event_start ON channel (event_start)",
-            // The Replays in the Provider's order, and a finished Game's Replay by its date.
-            "CREATE INDEX IF NOT EXISTS replay_position ON replay (position)",
-            "CREATE INDEX IF NOT EXISTS replay_date ON replay (date)",
         )
+        val INDEXES = TITLE_INDEXES + CHANNEL_INDEXES
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */
         const val TITLES_BY_NEWEST_LISTING =
@@ -1357,6 +1516,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val LAST_SYNC_LISTINGS = "last_sync_movie_listings"
         const val LAST_SYNC_SHOW_LISTINGS = "last_sync_show_listings"
         const val LAST_SYNC_REMATCHED = "last_sync_rematched_listings"
+        const val LAST_SYNC_CHANNELS = "last_sync_channel_listings"
+        /** When the Channels on screen landed: before the Titles on a first Sync. */
+        const val CHANNELS_SYNCED_AT = "channels_synced_at"
+        /** A staged catalog waiting to be swapped in, as [stageTitles] records it; all dropped by `pending_sync_%`. */
+        const val PENDING_SYNC_AT = "pending_sync_at"
+        const val PENDING_SYNC_MILLIS = "pending_sync_millis"
+        const val PENDING_MOVIE_LISTINGS = "pending_sync_movie_listings"
+        const val PENDING_SHOW_LISTINGS = "pending_sync_show_listings"
+        const val PENDING_CHANNEL_LISTINGS = "pending_sync_channel_listings"
+        const val PENDING_REMATCHED = "pending_sync_rematched_listings"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val REMEMBERED_TRACK = "remembered_track_"
