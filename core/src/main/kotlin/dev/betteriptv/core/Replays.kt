@@ -23,8 +23,8 @@ data class Replay(
     val date: LocalDate?,
     val year: Int?,
 ) {
-    /** The name without its Prefix, for a card: "Boston Bruins at Toronto Maple Leafs 09.11.25". */
-    val title: String get() = ReplayNames.body(name)
+    /** The name without its Prefix, for a card: "Boston Bruins at Toronto Maple Leafs 09.11.25". Not a Title's name: a Replay is no Title. */
+    val heading: String get() = ReplayNames.body(name)
 
     /** When the game was, for sorting newest first: the date, else the first day of the year, else null. */
     internal val on: LocalDate? get() = date ?: year?.let { LocalDate.of(it, 1, 1) }
@@ -71,12 +71,8 @@ internal object ReplayNames {
         )
     }
 
-    /** [name] without its Prefix (`SOC - `, `SC - `, `Wresling: `), trimmed. */
-    fun body(name: String): String {
-        var rest = name
-        while (true) rest = PREFIX.find(rest)?.let { rest.substring(it.range.last + 1) } ?: break
-        return rest.trim()
-    }
+    /** [name] without its Prefix (`SOC - `, `SC - `, `Wresling: `), trimmed. One Prefix only: in `SOC - LAFC - LA Galaxy`, LAFC is a team. */
+    fun body(name: String): String = (PREFIX.find(name)?.let { name.substring(it.range.last + 1) } ?: name).trim()
 
     private fun date(year: Int, month: Int, day: Int): LocalDate? = runCatching { LocalDate.of(year, month, day) }.getOrNull()
 
@@ -109,8 +105,10 @@ internal object ReplayNames {
  * short name, abbreviation or nickname found as whole words in order in the Replay's team, folded as
  * Search folds names ("STL Blues" is the St. Louis Blues, "17 Washington Huskies" the Huskies). A
  * location alone names no team ("Toronto - Boston" could be two Leagues' games), as it names no
- * Event channel without the League. When several teams fit, the one whose longest alias fits wins.
- * A Replay naming one team twice, or teams of two Leagues, is left out.
+ * Event channel without the League; and a match resting on one word alone ("United", "City", "TOR")
+ * holds only when every word of the Replay's team is a word of that team's aliases, so "Leeds
+ * United" is not Manchester United when Leeds has no Game this week. When several teams fit, the
+ * one whose longest alias fits wins. A Replay naming one team twice, or teams of two Leagues, is left out.
  */
 internal fun matchReplays(replays: List<Replay>, teams: Map<League, List<GameTeam>>): List<LeagueReplay> {
     val finder = TeamFinder(teams)
@@ -132,22 +130,25 @@ internal fun replayOf(replay: Replay, game: Game): Boolean {
 
 /** Finds which of some Leagues' [teams] a Replay's team names, by their aliases' first words. */
 private class TeamFinder(teams: Map<League, List<GameTeam>>) {
-    private class Known(val league: League, val team: GameTeam, val words: List<String>)
+    /** One alias of a team: its [words], and [teamWords], every word of every alias of the team, for a one-word match to be checked against. */
+    private class Known(val league: League, val team: GameTeam, val words: List<String>, val teamWords: Set<String>)
 
     private val byFirstWord = HashMap<String, MutableList<Known>>()
 
     init {
         teams.forEach { (league, members) ->
             members.distinctBy { it.name }.forEach { team ->
-                TeamAliases(team).strong.forEach { add(league, team, it) }
+                val aliases = TeamAliases(team)
+                val teamWords = (aliases.strong + aliases.weak).flatMapTo(HashSet(), SearchIndex::words)
+                aliases.strong.forEach { add(league, team, it, teamWords) }
             }
         }
     }
 
-    private fun add(league: League, team: GameTeam, alias: String) {
+    private fun add(league: League, team: GameTeam, alias: String, teamWords: Set<String>) {
         val words = SearchIndex.words(alias)
         if (words.isEmpty()) return
-        byFirstWord.getOrPut(words.first()) { ArrayList(2) } += Known(league, team, words)
+        byFirstWord.getOrPut(words.first()) { ArrayList(2) } += Known(league, team, words, teamWords)
     }
 
     /** The teams [name] may be, each with its League, the surest first: by the longest alias found, then the longest name. */
@@ -156,7 +157,8 @@ private class TeamFinder(teams: Map<League, List<GameTeam>>) {
         val found = ArrayList<Known>()
         words.forEachIndexed { at, word ->
             byFirstWord[word]?.forEach { known ->
-                val fits = at + known.words.size <= words.size && containsPhrase(words.subList(at, words.size), known.words)
+                val fits = at + known.words.size <= words.size && containsPhrase(words.subList(at, words.size), known.words) &&
+                    (known.words.size > 1 || words.all { it in known.teamWords })
                 if (fits && found.none { it.team === known.team }) found += known
             }
         }

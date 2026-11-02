@@ -67,7 +67,7 @@ import kotlinx.coroutines.withContext
  * Feed from that variant. With no Feed, Play is disabled and says "No stream found". The Game's state is the
  * schedule's: the page never reads a clock off an Event channel's name, and never shows a score.
  * A finished Game's Replay ([replayFor]: [Library.gameReplay], the Sports replay naming both teams on
- * the Game's day), once the Provider has one, shows under the header as a "Replay" row: its name,
+ * the Game's day, for a Game that is over), once the Provider has one, shows under the header as a "Replay" row: its name,
  * its date and its Version ([replayPlanFor]: [Library.replayPlayPlan]), which pressing it plays.
  */
 @Composable
@@ -178,7 +178,7 @@ private fun GameContent(
             item(key = "replay") {
                 Text(stringResource(R.string.replay), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp).testTag("replay-title"))
                 Column(Modifier.padding(bottom = 2.dp)) {
-                    Text(listing.title, style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(listing.heading, style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(context.replayDate(listing, long = true) ?: stringResource(R.string.replay), style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 VersionRow(context.versionLine(plan.version), onClick = { onPlayReplay(plan) }, modifier = Modifier.padding(bottom = Spacing.m).testTag("replay"))

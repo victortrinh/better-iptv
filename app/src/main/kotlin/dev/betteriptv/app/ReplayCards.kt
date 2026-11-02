@@ -35,5 +35,5 @@ fun ReplayGameCard(entry: LeagueReplay, onPlay: (LeagueReplay) -> Unit, modifier
 fun ReplayCard(replay: Replay, onPlay: (Replay) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val caption = remember(replay) { context.replayCaption(replay) }
-    ReplayCard(replay.title, caption, onClick = { onPlay(replay) }, modifier = modifier)
+    ReplayCard(replay.heading, caption, onClick = { onPlay(replay) }, modifier = modifier)
 }

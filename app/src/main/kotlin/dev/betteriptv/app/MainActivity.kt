@@ -216,7 +216,7 @@ private fun Root(app: BetterIptvApp) {
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(it) },
                         onWatch = watch,
-                        onPlayReplay = { playReplay(it, it.title) },
+                        onPlayReplay = { playReplay(it, it.heading) },
                     )
                 }
                 Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab)

@@ -75,6 +75,9 @@ class ReplaysTest {
             "SOC - UFC 321 Aspinall vs. Gane (2025)" to "SOCCER UFC",
             "SOC - LaLiga Highlights Matchday 38" to "SOCCER FOOTBALL",
             "S0C - Western Bulldogs - Sydney Swans 23.05.2024" to "SOCCER RUGBY",
+            // A team written like a Prefix is a team.
+            "SOC - LAFC - LA Galaxy 05.10.2025" to "SOCCER FOOTBALL",
+            "SOC - PSG - Lyon 02.11.2025" to "SOCCER FOOTBALL",
             "EN - The Godfather (1972)" to "EN - MOVIES",
         )
         library.sync()
@@ -97,12 +100,17 @@ class ReplaysTest {
         check("SOC - UFC 321 Aspinall vs. Gane (2025)", "Gane", "UFC 321 Aspinall", null, 2025)
         check("SOC - LaLiga Highlights Matchday 38", null, null, null, null)
         check("S0C - Western Bulldogs - Sydney Swans 23.05.2024", "Sydney Swans", "Western Bulldogs", "2024-05-23")
-        assertEquals("Boston Bruins at Toronto Maple Leafs 09.11.25", replay("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25").title)
-        assertEquals("WWE NXT 2024.04.23", replay("Wresling: WWE NXT 2024.04.23").title)
+        check("SOC - LAFC - LA Galaxy 05.10.2025", "LA Galaxy", "LAFC", "2025-10-05")
+        check("SOC - PSG - Lyon 02.11.2025", "Lyon", "PSG", "2025-11-02")
+        assertEquals("Boston Bruins at Toronto Maple Leafs 09.11.25", replay("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25").heading)
+        assertEquals("WWE NXT 2024.04.23", replay("Wresling: WWE NXT 2024.04.23").heading)
+        assertEquals("LAFC - LA Galaxy 05.10.2025", replay("SOC - LAFC - LA Galaxy 05.10.2025").heading)
         // The Godfather alone is a Title; the Replays' shared TMDB ID makes none.
         assertEquals(1, library.movieListingCount())
         assertEquals(1, library.titleCount())
-        assertEquals(12, library.replays().size)
+        assertEquals(14, library.replays().size)
+        library.prepareSearch()
+        assertEquals(listOf("SOC - LAFC - LA Galaxy 05.10.2025"), library.search("lafc", listOf("en"), "en").last().replays.map { it.name })
     }
 
     /** This week's NHL and NFL Games, naming the teams the Replays are matched to. */
@@ -163,6 +171,26 @@ class ReplaysTest {
         assertFalse(rows(League.Mlb).any { it is HomeRow.Replays })
     }
 
+    @Test fun `a nickname word alone names a team only when the Replay's team is all that team's words`() = runBlocking {
+        cloud.games(
+            "premier-league",
+            game("10", "2026-11-02T15:00:00Z", league = "premier-league", home = "Manchester United", away = "Manchester City"),
+            game("11", "2026-11-03T15:00:00Z", league = "premier-league", home = "Arsenal", away = "Chelsea"),
+        )
+        provider.serveMovies(
+            // Leeds has no Game this week: "United" alone must not make this a Manchester derby.
+            "SOC - Leeds United - Manchester City 25.10.2025" to "SOCCER FOOTBALL",
+            "SOC - Manchester United - Manchester City 18.10.2025" to "SOCCER FOOTBALL",
+            "SOC - Man United v Man City 11.10.2025" to "SOCCER FOOTBALL",
+        )
+        library.sync()
+
+        assertEquals(
+            listOf("SOC - Manchester United - Manchester City 18.10.2025", "SOC - Man United v Man City 11.10.2025"),
+            rows(League.PremierLeague).replays()!!.map { it.replay.name },
+        )
+    }
+
     @Test fun `a finished Game's Replay is the one naming its teams on its day, or the day after when the Provider's clock is ahead`() = runBlocking {
         serveSchedule()
         provider.serveMovies(
@@ -171,6 +199,9 @@ class ReplaysTest {
             "SOC - Toronto Maple Leafs at Boston Bruins 07.11.25" to "SOCCER HOCKEY",
             // Named in a clock a day ahead of Calgary's evening.
             "SOC - Winnipeg Jets vs. Calgary Flames 21.10.25" to "SOCCER HOCKEY",
+            // Yesterday's meeting of tonight's teams: not tonight's Game's.
+            "SOC - Montreal Canadiens at Ottawa Senators 31.10.26" to "SOCCER HOCKEY",
+            "SOC - Montreal Canadiens at Ottawa Senators 01.11.26" to "SOCCER HOCKEY",
         )
         library.sync()
         val games = library.games(listOf("nhl"), now).associateBy { it.id }
@@ -178,7 +209,7 @@ class ReplaysTest {
         // Sunday 2025-11-09, 7 PM in Toronto: Monday in UTC.
         assertEquals("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25", library.gameReplay(games.getValue("1"), toronto)?.name)
         assertEquals("SOC - Winnipeg Jets vs. Calgary Flames 21.10.25", library.gameReplay(games.getValue("3"), toronto)?.name)
-        // Nothing yet for a Game still to come.
+        // Nothing for a Game not over, whatever the catalog has of its teams.
         assertNull(library.gameReplay(games.getValue("2"), toronto))
     }
 

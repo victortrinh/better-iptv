@@ -37,6 +37,6 @@ class ReplayLabelsTest {
         val entry = LeagueReplay(replay("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25", LocalDate.of(2025, 11, 9)), League.Nhl, away = team("Boston Bruins", "Bruins"), home = team("Toronto Maple Leafs", "Maple Leafs"))
         assertEquals(CardInfo.Game("NHL · Bruins at Maple Leafs", "November 9, 2025"), context.replayInfo(entry))
         assertEquals("Bruins at Maple Leafs", context.matchup(entry))
-        assertEquals("Boston Bruins at Toronto Maple Leafs 09.11.25", entry.replay.title)
+        assertEquals("Boston Bruins at Toronto Maple Leafs 09.11.25", entry.replay.heading)
     }
 }

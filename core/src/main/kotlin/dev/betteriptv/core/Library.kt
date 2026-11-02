@@ -1017,7 +1017,10 @@ class Library private constructor(
         val games = schedule.filter { it.state != GameState.Over }
         val replays = if (schedule.isEmpty()) emptyList() else {
             val teams = leagues.associateWith { league -> schedule.filter { it.league == league.key }.flatMap { listOf(it.home, it.away) } }.filterValues { it.isNotEmpty() }
-            matchReplays(store.replays(withTeams = true), teams).take(REPLAYS_ROW)
+            // Matched once per catalog and set of teams: the tab reads its rows every couple of minutes, and the catalog holds thousands of Replays.
+            val key = ReplaysKey(catalogGeneration.get(), teams.flatMapTo(HashSet()) { (league, members) -> members.map { league to it.name } })
+            matchedReplays?.takeIf { it.key == key }?.replays
+                ?: matchReplays(store.replays(withTeams = true), teams).take(REPLAYS_ROW).also { matchedReplays = MatchedReplays(key, it) }
         }
         val matched = if (games.isEmpty()) emptyList() else {
             val categories = store.liveCategories().associateBy { it.id }
@@ -1049,18 +1052,26 @@ class Library private constructor(
     /** Every Sports replay the catalog has (CONTEXT.md), as its name reads, in the Provider's order. */
     internal suspend fun replays(): List<Replay> = withContext(Dispatchers.IO) { store.replays() }
 
+    /** What the Replays row was last matched for, and what it holds. */
+    private class MatchedReplays(val key: ReplaysKey, val replays: List<LeagueReplay>)
+
+    /** The catalog ([generation]) and the Leagues' [teams] (by name) a Replays row was matched for. */
+    private data class ReplaysKey(val generation: Int, val teams: Set<Pair<League, String>>)
+
+    @Volatile private var matchedReplays: MatchedReplays? = null
+
     /**
-     * [game]'s Replay: the Sports replay naming both its teams ([replayOf]) and dated its day in the
-     * device's zone, or, failing one, the day after or the day before (the Provider's clock is not
-     * the Viewer's), the last added when several. Null until the Provider has one, which is once the
-     * Game is over.
+     * A finished [game]'s Replay: the Sports replay naming both its teams ([replayOf]) and dated its
+     * day in the device's zone, or, failing one, the day after (a Provider's clock ahead of the
+     * Viewer's), the last added when several. Null for a Game not over, and until the Provider has one.
      */
     suspend fun gameReplay(game: Game): Replay? = gameReplay(game, ZoneId.systemDefault())
 
     internal suspend fun gameReplay(game: Game, zone: ZoneId): Replay? = withContext(Dispatchers.IO) {
+        if (game.state != GameState.Over) return@withContext null
         val day = game.start.atZone(zone).toLocalDate()
-        val dated = store.replaysDated(day.minusDays(1), day.plusDays(1)).filter { replayOf(it, game) }
-        listOf(day, day.plusDays(1), day.minusDays(1)).firstNotNullOfOrNull { on ->
+        val dated = store.replaysDated(day, day.plusDays(1)).filter { replayOf(it, game) }
+        listOf(day, day.plusDays(1)).firstNotNullOfOrNull { on ->
             dated.filter { it.date == on }.maxWithOrNull(compareBy<Replay>({ it.added }, { it.listingId }))
         }
     }
