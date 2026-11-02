@@ -29,8 +29,9 @@ import java.time.Instant
  * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
  *
  * Channels (live Listings, Clutter left out) are swapped in with the movie and show Listings, in
- * the Provider's order. Favourites are kept by Provider stream id, so they outlive Syncs; one the
- * Provider drops comes back if it lists the Channel again.
+ * the Provider's order, each with the Category it was filed under and its guide id, and so are the
+ * live Categories with their normalised names and kinds. Favourites are kept by Provider stream id,
+ * so they outlive Syncs; one the Provider drops comes back if it lists the Channel again.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -48,12 +49,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             execSQL("DROP TABLE IF EXISTS show_details")
             execSQL("DROP TABLE IF EXISTS episode")
             execSQL("DROP TABLE IF EXISTS channel")
+            execSQL("DROP TABLE IF EXISTS live_category")
             execSQL("DELETE FROM meta")
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
         execSQL(LISTING_TABLE.format("listing"))
         execSQL(TITLE_TABLE.format("title"))
         execSQL(CHANNEL_TABLE.format("channel"))
+        execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
         INDEXES.forEach { execSQL(it) }
         // The Channels the Viewer saved, by Provider stream id, so they outlive Syncs.
         execSQL("CREATE TABLE IF NOT EXISTS favourite (id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL)")
@@ -101,8 +104,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
         private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?)")
+        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?)")
+        private val insertLiveCategory = connection.prepare("INSERT OR REPLACE INTO staging_live_category VALUES (?, ?, ?, ?, ?, ?)")
         private var channelPosition = 0L
+        private var liveCategoryPosition = 0L
 
         /** Stores a Category of [kind]'s Listings: movie and show Categories are numbered apart. */
         fun category(kind: TitleKind, id: String, name: String) = insertCategory.run {
@@ -138,13 +143,28 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         /**
          * Stores a Channel (a live Listing that isn't Clutter), in the Provider's order. [eventStart]
          * is when the Game an Event channel carries starts, so it drops out of the lists once finished.
+         * [categoryId] is the Provider's id of the Category it was filed under, and [guideId] what the
+         * Provider's guide knows it by, empty when the guide doesn't cover it.
          */
-        fun channel(id: Long, name: String, image: String?, eventStart: Instant?) = insertChannel.run {
+        fun channel(id: Long, name: String, image: String?, eventStart: Instant?, categoryId: String?, guideId: String) = insertChannel.run {
             bindLong(1, id)
             bindLong(2, ++channelPosition)
             bindText(3, name)
             if (image == null) bindNull(4) else bindText(4, image)
             if (eventStart == null) bindNull(5) else bindLong(5, eventStart.epochSecond)
+            if (categoryId == null) bindNull(6) else bindText(6, categoryId)
+            bindText(7, guideId)
+            stepAndReset()
+        }
+
+        /** Stores a live Category, in the Provider's order, with its normalised name, country code and kind. */
+        fun liveCategory(id: String, name: String, normalisedName: String, country: String?, kind: CategoryKind) = insertLiveCategory.run {
+            bindText(1, id)
+            bindLong(2, ++liveCategoryPosition)
+            bindText(3, name)
+            bindText(4, normalisedName)
+            if (country == null) bindNull(5) else bindText(5, country)
+            bindText(6, kindKey(kind))
             stepAndReset()
         }
 
@@ -152,6 +172,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             insertCategory.close()
             insertListing.close()
             insertChannel.close()
+            insertLiveCategory.close()
         }
     }
 
@@ -166,7 +187,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
         writer.execSQL("DROP TABLE IF EXISTS staging_title")
         writer.execSQL("DROP TABLE IF EXISTS staging_channel")
+        writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
         writer.execSQL(CHANNEL_TABLE.format("staging_channel"))
+        writer.execSQL(LIVE_CATEGORY_TABLE.format("staging_live_category"))
         writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
         writer.execSQL(
             "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
@@ -217,6 +240,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("DROP TABLE IF EXISTS staging_kept_listing")
             writer.execSQL("DROP TABLE IF EXISTS staging_title")
             writer.execSQL("DROP TABLE IF EXISTS staging_channel")
+            writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
             throw e
         }
 
@@ -234,6 +258,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("ALTER TABLE staging_title RENAME TO title")
             writer.execSQL("DROP TABLE channel")
             writer.execSQL("ALTER TABLE staging_channel RENAME TO channel")
+            writer.execSQL("DROP TABLE live_category")
+            writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
             INDEXES.forEach { writer.execSQL(it) }
             // Show details of Listings the Provider no longer has won't be asked for again.
             writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
@@ -439,7 +465,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
-    private fun SQLiteStatement.channel() = Channel(getLong(0), getText(1), if (isNull(2)) null else getText(2), !isNull(3))
+    private fun SQLiteStatement.channel() =
+        Channel(getLong(0), getText(1), if (isNull(2)) null else getText(2), !isNull(3), if (isNull(4)) null else getText(4), getText(5))
+
+    /** The live Categories as the last Sync stored them, in the Provider's order. */
+    fun liveCategories(): List<LiveCategory> = synchronized(reader) {
+        reader.prepare("SELECT id, name, normalised_name, country, kind FROM live_category ORDER BY position").use {
+            buildList {
+                while (it.step()) add(LiveCategory(it.getText(0), it.getText(1), it.getText(2), if (it.isNull(3)) null else it.getText(3), categoryKind(it.getText(4))))
+            }
+        }
+    }
 
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
@@ -916,7 +952,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
-        const val SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = 5
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
         /** What [forEachSearchMetadata] joins names with: the ASCII unit separator, which no name has. */
@@ -928,8 +964,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
                 "container TEXT, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
-            "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER)"
-        const val CHANNEL_COLUMNS = "c.id, c.name, c.image, f.id"
+            "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
+                "category_id TEXT, guide_id TEXT NOT NULL)"
+        const val LIVE_CATEGORY_TABLE =
+            "CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, normalised_name TEXT NOT NULL, country TEXT, kind TEXT NOT NULL)"
+        const val CHANNEL_COLUMNS = "c.id, c.name, c.image, f.id, c.category_id, c.guide_id"
         /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
         const val MAX_BOUND = 900
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (kind, position))"
@@ -990,6 +1029,10 @@ internal class StoredShowDetails(val modified: Long?, val fetchedAt: Instant, va
 private fun kindKey(kind: TitleKind): String = kind.name.lowercase()
 
 private fun kind(key: String): TitleKind = TitleKind.entries.single { kindKey(it) == key }
+
+private fun kindKey(kind: CategoryKind): String = kind.name.lowercase()
+
+private fun categoryKind(key: String): CategoryKind = CategoryKind.entries.single { kindKey(it) == key }
 
 private fun key(id: TitleId): String = when (id) {
     is TitleId.Tmdb -> "${kindKey(id.kind)}/${id.tmdbId}"
