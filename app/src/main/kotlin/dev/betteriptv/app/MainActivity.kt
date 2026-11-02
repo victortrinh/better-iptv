@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -26,11 +27,13 @@ import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.UpdateState
 import dev.betteriptv.core.offered
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -106,6 +109,7 @@ private fun Root(app: BetterIptvApp) {
         var byTab by remember { mutableStateOf(false) }
         var playing by remember { mutableStateOf<NowPlaying?>(null) }
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         val onTab = { selected: Browse ->
             tab = selected
             byTab = true
@@ -113,7 +117,12 @@ private fun Root(app: BetterIptvApp) {
         }
         val watch = { channel: Channel ->
             byTab = false
-            playing = NowPlaying(app.library.channelPlayPlan(channel, contentLanguages), channel.name)
+            // The best variant depends on what the stick and TV play, read off the main thread as a Title's Play does.
+            scope.launch {
+                val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
+                playing = NowPlaying(plan, channel.name)
+            }
+            Unit
         }
         val now = playing
         if (now != null) {

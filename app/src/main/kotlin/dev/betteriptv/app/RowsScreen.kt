@@ -184,7 +184,7 @@ fun RowsScreen(
     val scope = rememberCoroutineScope()
     val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {
-            library.setFavourite(channel.id, favourite)
+            library.setFavourite(channel.key, favourite)
             val before = state.rows.orEmpty()
             state.rows = reader()
             if (!favourite) {
@@ -364,7 +364,7 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
     val short = row is HomeRow.ContinueWatching || row is HomeRow.Favourites
     val channel = (row as? HomeRow.Favourites)?.channels?.firstOrNull { channelKey(it) == card?.key }
     if (channel != null) {
-        RailInfo(CardInfo.Channel(channel.name, channel.menuHint()), emptyList(), short, modifier)
+        RailInfo(CardInfo.Channel(channel.name, channel.caption()), emptyList(), short, modifier)
         return
     }
     val titles = row.titles
@@ -434,7 +434,7 @@ private val List<HomeRow>.cards: Map<String, List<String>>
 private val HomeRow.keys: List<String>
     get() = if (this is HomeRow.Favourites) channels.map(::channelKey) else titles.map { it.id.toString() }
 
-private fun channelKey(channel: Channel) = "channel/${channel.id}"
+private fun channelKey(channel: Channel) = "channel/${channel.key}"
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do

@@ -41,14 +41,16 @@ class LiveLabelsTest {
     }
 
     @Test
-    fun aChannelsVersionRowSaysHowItStreamsInsteadOfAQualityAndALanguage() {
+    fun aChannelVariantsVersionRowNamesItAsTheProviderDoesInsteadOfAQualityAndALanguage() {
         val line = context.versionLine(ts)
 
-        assertEquals("Live · MPEG-TS", line.live)
+        assertEquals("CA EN: CBC TORONTO HD", line.live)
         assertEquals(emptyList<Any>(), line.badges)
         assertNull(line.note)
-        // Once its HLS Backup plays, the row says so.
-        assertEquals("Live · HLS", context.versionLine(ts, playing = hls).live)
+        // Once it plays, the row says so, and how it streams; as its HLS Backup here.
+        val playing = context.versionLine(ts, playing = hls)
+        assertEquals("CA EN: CBC TORONTO HD", playing.live)
+        assertEquals("Playing · Live · HLS", playing.note)
     }
 
     @Test

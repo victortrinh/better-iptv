@@ -87,12 +87,14 @@ fun Context.playLabel(version: Version): String = when (version.liveFormat) {
 
 /**
  * What a [version]'s row in a Versions list shows; [playing] is the Version playing when it is this
- * one or one of its Backups. A Channel's row says how it streams instead of filling the columns.
+ * one or one of its Backups. A Channel variant's row names it as the Provider lists it ("VIP: TNT
+ * SPORT 1 ᴴᴰ") instead of filling the columns, with how it streams once it plays ("Playing · Live · HLS").
  */
 fun Context.versionLine(version: Version, playing: Version? = null): VersionLine {
     val playingNote = playing?.let { getString(R.string.player_playing) }
     if (version.liveFormat != null) {
-        return VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = playingNote, live = playLabel(playing ?: version))
+        val note = playing?.let { "$playingNote · ${playLabel(it)}" }
+        return VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = note, live = version.name)
     }
     val attributes = version.attributes
     val none = getString(R.string.version_none)

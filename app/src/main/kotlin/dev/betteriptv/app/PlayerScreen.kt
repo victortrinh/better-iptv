@@ -572,9 +572,10 @@ private fun BufferingSuggestion(lower: Version, onSwitch: () -> Unit, onDismiss:
 
 /**
  * What the Menu key opens over the bottom of the picture: the player playing and "Try other player",
- * then the Title's Versions; picking one switches to it. The one [playing], or the one whose Backup
- * is playing, is marked, and picking it just closes the list. With an [engine] playing, "Try other
- * player" takes first focus; without one, the first Version does.
+ * then the Title's Versions, or a Channel's variants, named as the Provider lists them; picking one
+ * switches to it. The one [playing], or the one whose Backup is playing, is marked, and picking it
+ * just closes the list. With an [engine] playing, "Try other player" takes first focus; without
+ * one, the first Version does.
  */
 @Composable
 private fun VersionsPanel(
@@ -614,7 +615,9 @@ private fun VersionsPanel(
                 contentPadding = PaddingValues(bottom = Spacing.screenY),
             ) {
                 items(versions, key = { it.listingId }) { version ->
-                    val isPlaying = playing != null && (version.listingId == playing.listingId || version.backups.any { it.listingId == playing.listingId })
+                    // A Channel variant's Backups go on to the next variants: only its own stream, as TS or HLS, is it playing.
+                    val isPlaying = playing != null &&
+                        (version.listingId == playing.listingId || (version.liveFormat == null && version.backups.any { it.listingId == playing.listingId }))
                     VersionRow(
                         context.versionLine(version, playing = playing.takeIf { isPlaying }),
                         onClick = { if (isPlaying) onClose() else onPick(version) },

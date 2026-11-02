@@ -28,10 +28,13 @@ import java.time.Instant
  * Provider's movie details, are kept forever.
  * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
  *
- * Channels (live Listings, Clutter left out) are swapped in with the movie and show Listings, in
- * the Provider's order, each with the Category it was filed under and its guide id, and so are the
- * live Categories with their normalised names and kinds. Favourites are kept by Provider stream id,
- * so they outlive Syncs; one the Provider drops comes back if it lists the Channel again.
+ * Channel variants (live Listings, Clutter left out) are swapped in with the movie and show
+ * Listings, in the Provider's order, each with its Channel's key, the Category it was filed under and
+ * its guide id, and so are the live Categories with their normalised names and kinds. A Channel is
+ * its variants read together by that key. Favourites are kept by Channel key, so they outlive Syncs
+ * and whichever variants the Provider lists next; one the Provider drops comes back if it lists the
+ * Channel again. Favourites kept by stream id by an older app are carried over once, by looking
+ * each id up in the catalog the next Sync stores.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -58,8 +61,18 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(CHANNEL_TABLE.format("channel"))
         execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
         INDEXES.forEach { execSQL(it) }
-        // The Channels the Viewer saved, by Provider stream id, so they outlive Syncs.
-        execSQL("CREATE TABLE IF NOT EXISTS favourite (id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL)")
+        // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in. An older
+        // app run again before that Sync makes a new table by stream id, which joins the ones waiting.
+        if (prepare("SELECT count(*) FROM pragma_table_info('favourite') WHERE name = 'id'").use { it.step(); it.getLong(0) } > 0) {
+            if (prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$LEGACY_FAVOURITES'").use { it.step(); it.getLong(0) } > 0) {
+                execSQL("INSERT OR IGNORE INTO $LEGACY_FAVOURITES SELECT id, added_at FROM favourite")
+                execSQL("DROP TABLE favourite")
+            } else {
+                execSQL("ALTER TABLE favourite RENAME TO $LEGACY_FAVOURITES")
+            }
+        }
+        // The Channels the Viewer saved, by Channel key, so they outlive Syncs.
+        execSQL("CREATE TABLE IF NOT EXISTS favourite (key TEXT PRIMARY KEY, added_at INTEGER NOT NULL)")
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
@@ -106,7 +119,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
         private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?)")
+        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
         private val insertLiveCategory = connection.prepare("INSERT OR REPLACE INTO staging_live_category VALUES (?, ?, ?, ?, ?, ?)")
         private var channelPosition = 0L
         private var liveCategoryPosition = 0L
@@ -143,12 +156,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
 
         /**
-         * Stores a Channel (a live Listing that isn't Clutter), in the Provider's order. [eventStart]
-         * is when the Game an Event channel carries starts, so it drops out of the lists once finished.
-         * [categoryId] is the Provider's id of the Category it was filed under, and [guideId] what the
-         * Provider's guide knows it by, empty when the guide doesn't cover it.
+         * Stores a Channel variant (a live Listing that isn't Clutter), in the Provider's order, as a
+         * variant of the Channel keyed [channelKey], named [channelName] with its [country] tag; what
+         * its name says of it is its [quality] and whether it is [hevc]. [eventStart] is when the Game
+         * an Event channel carries starts, so it drops out of the lists once finished. [categoryId] is
+         * the Provider's id of the Category it was filed under, and [guideId] what the Provider's guide
+         * knows it by, empty when the guide doesn't cover it.
          */
-        fun channel(id: Long, name: String, image: String?, eventStart: Instant?, categoryId: String?, guideId: String) = insertChannel.run {
+        fun channel(
+            id: Long, name: String, image: String?, eventStart: Instant?, categoryId: String?, guideId: String,
+            channelKey: String, channelName: String, country: String?, quality: Quality?, hevc: Boolean,
+        ) = insertChannel.run {
             bindLong(1, id)
             bindLong(2, ++channelPosition)
             bindText(3, name)
@@ -156,6 +174,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             if (eventStart == null) bindNull(5) else bindLong(5, eventStart.epochSecond)
             if (categoryId == null) bindNull(6) else bindText(6, categoryId)
             bindText(7, guideId)
+            bindText(8, channelKey)
+            bindText(9, channelName)
+            if (country == null) bindNull(10) else bindText(10, country)
+            if (quality == null) bindNull(11) else bindText(11, quality.name)
+            bindLong(12, if (hevc) 1 else 0)
             stepAndReset()
         }
 
@@ -263,6 +286,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("DROP TABLE live_category")
             writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
             INDEXES.forEach { writer.execSQL(it) }
+            // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
+            writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
+            // Favourites an older app kept by stream id become Favourites of the Channels those ids are variants of now;
+            // an id the Provider no longer lists can't be told, and goes.
+            if (writer.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$LEGACY_FAVOURITES'").use { it.step(); it.getLong(0) } > 0) {
+                writer.execSQL(
+                    "INSERT OR IGNORE INTO favourite (key, added_at) SELECT c.channel_key, min(l.added_at) FROM $LEGACY_FAVOURITES l " +
+                        "JOIN channel c ON c.id = l.id GROUP BY c.channel_key ORDER BY 2",
+                )
+                writer.execSQL("DROP TABLE $LEGACY_FAVOURITES")
+            }
             // Show details of Listings the Provider no longer has won't be asked for again.
             writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
             writer.execSQL("DELETE FROM episode WHERE listing_id NOT IN (SELECT listing_id FROM show_details)")
@@ -408,14 +442,20 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
-    /** Gives [each] every Channel's id and name, in the Provider's order, a page at a time like [forEachTitle]. */
-    fun forEachChannel(each: (id: Long, name: String) -> Unit) {
+    /**
+     * Gives [each] every Channel's lead id (its first variant's stream id) and the name it's found
+     * by (its country tag and name, `UK: BBC ONE NI`), in the Provider's order, a page at a time like
+     * [forEachTitle].
+     */
+    fun forEachChannel(each: (leadId: Long, name: String) -> Unit) {
         var after = 0L
         while (true) {
             val page = synchronized(reader) {
-                reader.prepare("SELECT position, id, name FROM channel WHERE position > ? ORDER BY position LIMIT $SCAN_PAGE").use {
+                reader.prepare("SELECT position, id, channel_name, country FROM channel WHERE lead = 1 AND position > ? ORDER BY position LIMIT $SCAN_PAGE").use {
                     it.bindLong(1, after)
-                    buildList { while (it.step()) add(Triple(it.getLong(0), it.getLong(1), it.getText(2))) }
+                    buildList {
+                        while (it.step()) add(Triple(it.getLong(0), it.getLong(1), listOfNotNull(if (it.isNull(3)) null else it.getText(3), it.getText(2)).joinToString(": ")))
+                    }
                 }
             }
             page.forEach { (_, id, name) -> each(id, name) }
@@ -424,51 +464,70 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
-    /** The Channels among [ids] that are on: every one but Event channels whose Game started before [startedBefore]. */
-    fun channels(ids: Collection<Long>, startedBefore: Instant): Map<Long, Channel> = synchronized(reader) {
-        if (ids.isEmpty()) return emptyMap()
-        ids.chunked(MAX_BOUND).flatMap { chunk ->
+    /**
+     * The Channels whose lead ids (as [forEachChannel] gives them) are among [leadIds], by lead id,
+     * with the variants that are on: every one but Event channels whose Game started before
+     * [startedBefore]. A Channel with none on is left out.
+     */
+    fun channels(leadIds: Collection<Long>, startedBefore: Instant): Map<Long, Channel> = synchronized(reader) {
+        if (leadIds.isEmpty()) return emptyMap()
+        leadIds.chunked(MAX_BOUND).flatMap { chunk ->
             reader.prepare(
-                "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.id = c.id " +
-                    "WHERE (c.event_start IS NULL OR c.event_start >= ?) AND c.id IN (${chunk.joinToString(",") { "?" }})",
+                "SELECT lead.id, $CHANNEL_COLUMNS FROM channel lead JOIN channel c ON c.channel_key = lead.channel_key LEFT JOIN favourite f ON f.key = c.channel_key " +
+                    "WHERE lead.id IN (${chunk.joinToString(",") { "?" }}) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY lead.id, c.position",
             ).use {
-                it.bindLong(1, startedBefore.epochSecond)
-                chunk.forEachIndexed { i, id -> it.bindLong(i + 2, id) }
-                buildList { while (it.step()) add(it.channel()) }
+                chunk.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
+                it.bindLong(chunk.size + 1, startedBefore.epochSecond)
+                buildList { while (it.step()) add(it.getLong(0) to it.variantRow(1)) }
             }
-        }.associateBy { it.id }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, rows) -> channel(rows) }
     }
 
     /** The Viewer's Favourites that are on (as [channels] tells), in the order they were added. */
     fun favourites(startedBefore: Instant): List<Channel> = synchronized(reader) {
         reader.prepare(
-            "SELECT $CHANNEL_COLUMNS FROM favourite f JOIN channel c ON c.id = f.id " +
-                "WHERE c.event_start IS NULL OR c.event_start >= ? ORDER BY f.added_at, f.id",
+            "SELECT $CHANNEL_COLUMNS FROM favourite f JOIN channel c ON c.channel_key = f.key " +
+                "WHERE c.event_start IS NULL OR c.event_start >= ? ORDER BY f.added_at, f.key, c.position",
         ).use {
             it.bindLong(1, startedBefore.epochSecond)
-            buildList { while (it.step()) add(it.channel()) }
-        }
+            buildList { while (it.step()) add(it.variantRow(0)) }
+        }.groupBy { it.key }.values.map(::channel)
     }
 
-    /** The ids of the Viewer's Favourites, whether or not the Provider still has them. */
-    fun favouriteIds(): Set<Long> = synchronized(reader) {
-        reader.prepare("SELECT id FROM favourite").use { buildSet { while (it.step()) add(it.getLong(0)) } }
+    /** The keys of the Viewer's Favourites, whether or not the Provider still has them. */
+    fun favouriteKeys(): Set<String> = synchronized(reader) {
+        reader.prepare("SELECT key FROM favourite").use { buildSet { while (it.step()) add(it.getText(0)) } }
     }
 
-    /** Saves Channel [id] as a Favourite at [at], or forgets it. */
-    fun setFavourite(id: Long, favourite: Boolean, at: Instant) = synchronized(writer) {
+    /** Saves the Channel keyed [key] as a Favourite at [at], or forgets it. */
+    fun setFavourite(key: String, favourite: Boolean, at: Instant) = synchronized(writer) {
         // Two added within a millisecond still keep their order.
         val insert = "INSERT OR IGNORE INTO favourite VALUES (?, max(?, (SELECT coalesce(max(added_at), 0) + 1 FROM favourite)))"
-        writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE id = ?").use {
-            it.bindLong(1, id)
+        writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE key = ?").use {
+            it.bindText(1, key)
             if (favourite) it.bindLong(2, at.toEpochMilli())
             it.step()
         }
         Unit
     }
 
-    private fun SQLiteStatement.channel() =
-        Channel(getLong(0), getText(1), if (isNull(2)) null else getText(2), !isNull(3), if (isNull(4)) null else getText(4), getText(5))
+    /** One variant's row, read from column [from] on: its Channel's key, name, country and whether it's a Favourite, then the variant. */
+    private class VariantRow(val key: String, val channelName: String, val country: String?, val favourite: Boolean, val image: String?, val variant: ChannelVariant)
+
+    private fun SQLiteStatement.variantRow(from: Int) = VariantRow(
+        getText(from), getText(from + 1), if (isNull(from + 2)) null else getText(from + 2), !isNull(from + 3),
+        if (isNull(from + 5)) null else getText(from + 5),
+        ChannelVariant(
+            getLong(from + 4), getText(from + 6), if (isNull(from + 7)) null else Quality.valueOf(getText(from + 7)), getLong(from + 8) != 0L,
+            if (isNull(from + 9)) null else getText(from + 9), getText(from + 10),
+        ),
+    )
+
+    /** A Channel from its variants' [rows], in the Provider's order: named and captioned by the first, with the first logo among them. */
+    private fun channel(rows: List<VariantRow>): Channel {
+        val first = rows.first()
+        return Channel(first.key, first.channelName, first.country, rows.firstNotNullOfOrNull { it.image }, first.favourite, rows.map { it.variant })
+    }
 
     /** The live Categories as the last Sync stored them, in the Provider's order. */
     fun liveCategories(): List<LiveCategory> = synchronized(reader) {
@@ -975,7 +1034,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
         /** What [forEachSearchMetadata] joins names with: the ASCII unit separator, which no name has. */
@@ -988,10 +1047,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 "container TEXT, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
-                "category_id TEXT, guide_id TEXT NOT NULL)"
+                "category_id TEXT, guide_id TEXT NOT NULL, channel_key TEXT NOT NULL, channel_name TEXT NOT NULL, country TEXT, quality TEXT, hevc INTEGER NOT NULL, " +
+                "lead INTEGER NOT NULL)"
         const val LIVE_CATEGORY_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, normalised_name TEXT NOT NULL, country TEXT, kind TEXT NOT NULL)"
-        const val CHANNEL_COLUMNS = "c.id, c.name, c.image, f.id, c.category_id, c.guide_id"
+        /** A variant's row as [variantRow] reads it: its Channel, whether it's a Favourite, then the variant. */
+        const val CHANNEL_COLUMNS = "c.channel_key, c.channel_name, c.country, f.key, c.id, c.image, c.name, c.quality, c.hevc, c.category_id, c.guide_id"
+        /** Where Favourites kept by stream id wait for the Sync that carries them over. */
+        const val LEGACY_FAVOURITES = "favourite_by_stream"
         /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
         const val MAX_BOUND = 900
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (kind, position))"
@@ -1000,6 +1063,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE INDEX IF NOT EXISTS listing_title ON listing (kind, title)",
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
             "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
+            "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
+            // The lead variant of each Channel, in the Provider's order, for the search index's scan.
+            "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */

@@ -9,19 +9,67 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 /**
- * A Channel's card: the Provider's [name] for it, its logo [image] URL, and whether the Viewer keeps
- * it as a [favourite]. [id] is the Provider's stream id. [categoryId] is the Provider's id of the
- * Category the Listing was filed under (null when the Provider gave none), and [guideId] is what
- * the Provider's guide knows the Channel by, empty when the guide doesn't cover it.
+ * A Channel: a live broadcast as one thing, however many Listings the Provider has for it (CONTEXT.md).
+ * [key] is its identity, the country tag and the normalised name (`UK: BBC ONE NI`, case folded),
+ * which a Favourite is kept by; [name] is the Provider's name for it without its Tier tag, country
+ * tag and quality words (`BBC ONE NI`), and [country] the country tag (`UK`, `CA FR`) for the
+ * caption, null when the name has none. [image] is the first variant's logo URL, [favourite]
+ * whether the Viewer keeps the Channel, and [variants] its Listings in the Provider's order.
  */
 data class Channel(
-    val id: Long,
+    val key: String,
     val name: String,
+    val country: String?,
     val image: String?,
     val favourite: Boolean,
+    val variants: List<ChannelVariant>,
+) {
+    /** What the Provider's guide knows the Channel by: the first variant's guide id, empty when the guide covers none. */
+    val guideId: String get() = variants.firstOrNull { it.guideId.isNotEmpty() }?.guideId.orEmpty()
+
+    /** The Provider's ids of every Category the Channel has a variant in, in the Provider's order. */
+    val categoryIds: List<String> get() = variants.mapNotNull { it.categoryId }.distinct()
+}
+
+/**
+ * One Listing of a Channel (CONTEXT.md's Channel variant): [id] is the Provider's stream id and
+ * [name] its name as the Provider lists it (`VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ`). [quality] is what the name
+ * says it is, Likely (UHD for 4K, HD for HD, FHD and RAW, SD), null when it says nothing, and
+ * [hevc] whether the name says HEVC. [categoryId] is the Provider's id of the Category the Listing
+ * was filed under (null when the Provider gave none), and [guideId] is what the Provider's guide
+ * knows it by, empty when the guide doesn't cover it.
+ */
+data class ChannelVariant(
+    val id: Long,
+    val name: String,
+    val quality: Quality?,
+    val hevc: Boolean,
     val categoryId: String? = null,
     val guideId: String = "",
 )
+
+/**
+ * [variants] best first, as watching the Channel tries them: by quality under the [qualityCap]
+ * (4K, then HD, then SD, then ones whose names say nothing), HEVC first within a quality when the
+ * [device] decodes it in hardware and last when it doesn't, then in the Provider's order. Variants
+ * above the cap, or taller than the TV displays, come after every other, the lowest first, so they
+ * play only when nothing else does.
+ */
+internal fun rankedVariants(variants: List<ChannelVariant>, device: DeviceProfile, qualityCap: QualityCap): List<ChannelVariant> {
+    val decodesHevc = HEVC in device.videoDecoders
+    fun over(variant: ChannelVariant): Boolean {
+        val quality = variant.quality ?: return false
+        return quality > qualityCap.quality || !device.canDisplay(VersionAttributes(quality = Known(quality, Provenance.Likely)))
+    }
+    return variants.sortedWith(
+        compareBy<ChannelVariant>(::over)
+            .thenBy { if (over(it)) it.quality!!.ordinal else -(it.quality?.ordinal ?: -1) }
+            .thenBy { if (decodesHevc) !it.hevc else it.hevc },
+    )
+}
+
+/** HEVC's MIME type, as [DeviceProfile.videoDecoders] names the formats the stick decodes. */
+internal const val HEVC = "video/hevc"
 
 /**
  * A live Category as a Sync stored it: the Provider's [name] (`US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), its

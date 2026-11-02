@@ -220,7 +220,7 @@ class HomeRowsTest {
         (1L..8L).forEach { tmdb(it, "Film $it", genres = listOf("Drama")) }
         cloud.charts("CA", movies = listOf(1001, 1002, 1003), shows = listOf(501, 502, 503))
         cloud.trending(movie(6), movie(7), movie(8))
-        library.setFavourite(library.search("ESPN", english, "en").last().channels.single().id, true)
+        library.setFavourite(library.search("ESPN", english, "en").last().channels.single().key, true)
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
 
         val rows = rows()

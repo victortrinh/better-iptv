@@ -158,7 +158,7 @@ One Listing of a Channel: a copy at one quality (4K, HD, SD, RAW), Likely from i
 _Avoid_: Duplicate channel
 
 **Tier tag**:
-The package word at the start of a live Listing's name (`VIP:`, `GOLD:`, `4K:`, `8K:`) that says which Provider package it comes from. It is not part of the Channel.
+The package word at the start of a live Listing's name (`VIP:`, `GOLD:`, `4K:`, `8K:`, `PRIME:`) that says which Provider package it comes from. It is not part of the Channel.
 _Avoid_: Prefix (which is the Movie and Show word)
 
 **Event channel**:

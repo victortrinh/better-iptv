@@ -178,7 +178,10 @@ class Library private constructor(
                                 val tally = tallies.getOrPut(categoryId) { IntArray(2) }
                                 tally[0]++
                                 if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
-                                if (listing == PrefixTable.LiveListing.Channel) staging.channel(id, name, image, start, categoryId, guideId)
+                                if (listing == PrefixTable.LiveListing.Channel) {
+                                    val channel = prefixTable.channelName(name)
+                                    staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
+                                }
                             }
                             liveCategories.forEach { (id, name) ->
                                 val tally = tallies[id]
@@ -351,9 +354,10 @@ class Library private constructor(
      * device's whole-word matches.
      * Without the cloud the first results are all there are.
      *
-     * Channels are found by their Provider names the same way, Favourites first among equally close
-     * matches, then in the Provider's order; finished Event channels aren't. TMDB's genres are found
-     * like people, with their Titles.
+     * Channels are found by their names (country tag and name, without the Provider's Tier tags and
+     * quality words) the same way, each Channel once whatever its variants, Favourites first among
+     * equally close matches, then in the Provider's order; finished Event channels aren't. TMDB's
+     * genres are found like people, with their Titles.
      *
      * The results offer completions: the names of the best Titles, people and genres found. Before
      * anything is typed, they are the genres with the most Titles in the Viewer's languages. Genres
@@ -394,32 +398,42 @@ class Library private constructor(
 
     /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
     private fun foundChannels(index: SearchIndex, query: String): List<Channel> {
-        val favourites = store.favouriteIds()
-        val ranked = index.findChannels(query)
-            .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { index.channels[it.index] !in favourites }, { it.index }))
-            .map { index.channels[it.index] }
+        val hits = index.findChannels(query).sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { it.index })).take(CHANNELS_FOUND * 4)
         // Finished Event channels drop out, so a few more are read than are shown.
-        val on = store.channels(ranked.take(CHANNELS_FOUND * 4), Instant.now() - EVENT_FINISHED_AFTER)
-        return ranked.mapNotNull(on::get).take(CHANNELS_FOUND)
+        val on = store.channels(hits.map { index.channels[it.index] }, Instant.now() - EVENT_FINISHED_AFTER)
+        return hits.mapNotNull { hit -> on[index.channels[hit.index]]?.let { hit to it } }
+            .sortedWith(compareBy({ it.first.distance }, { !it.second.favourite }, { it.first.index }))
+            .map { it.second }
+            .take(CHANNELS_FOUND)
     }
 
     /** The Viewer's Favourites that are on, in the order they were added. */
     suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(Instant.now() - EVENT_FINISHED_AFTER) }
 
-    /** Saves Channel [channel] as a Favourite, or removes it when [favourite] is false. */
-    suspend fun setFavourite(channel: Long, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(channel, favourite, Instant.now()) }
+    /** Saves the Channel keyed [channel] ([Channel.key]) as a Favourite, or removes it when [favourite] is false. */
+    suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(channel, favourite, Instant.now()) }
 
     /** The live Categories the last Sync stored, in the Provider's order, with their normalised names and kinds. */
     suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
 
     /**
-     * What watching [channel] starts: its live stream as MPEG-TS, with the same stream as HLS as its
-     * Backup, for a Provider or a player that does one and not the other.
+     * What watching [channel] starts: its best variant for the Viewer's [device] within the
+     * [qualityCap] ([rankedVariants]), as MPEG-TS, then the same stream as HLS, for a Provider or a
+     * player that does one and not the other, then the next variant the same way, as a chain of
+     * Backups the failure policy walks. The chain stops after [CHAIN_VARIANTS] variants: one that
+     * answers but never starts costs a start timeout each way, so a Channel dead at the Provider
+     * fails in under a minute rather than walking eight variants. The plan's Versions are every
+     * variant in rank order, named as the Provider lists them and each with the chain from it as
+     * its Backups, so picking one from the player's list goes on from it the same way.
      */
-    fun channelPlayPlan(channel: Channel, contentLanguages: List<String>): PlayPlan {
-        val hls = Version(channel.id, channel.name, VersionAttributes(), liveFormat = "m3u8")
-        val ts = Version(channel.id, channel.name, VersionAttributes(), backups = listOf(hls), liveFormat = "ts")
-        return PlayPlan(null, ts, contentLanguages, listOf(ts), remembered = rememberedTracks())
+    fun channelPlayPlan(channel: Channel, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan {
+        val ranked = rankedVariants(channel.variants, device, qualityCap)
+        fun chain(from: Int) = ranked.subList(from, minOf(ranked.size, from + CHAIN_VARIANTS)).flatMap { variant ->
+            val attributes = VersionAttributes(quality = variant.quality?.let { Known(it, Provenance.Likely) })
+            listOf("ts", "m3u8").map { Version(variant.id, variant.name, attributes, liveFormat = it) }
+        }
+        val versions = ranked.indices.map { chain(it).let { chain -> chain.first().copy(backups = chain.drop(1)) } }
+        return PlayPlan(null, versions.first(), contentLanguages, versions, remembered = rememberedTracks())
     }
 
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
@@ -1541,6 +1555,8 @@ class Library private constructor(
         private const val COMPLETIONS = 7
         /** At most this many Channels per search: a row of cards. */
         private const val CHANNELS_FOUND = 40
+        /** How many of a Channel's variants watching it tries (each as TS then HLS) before giving up. */
+        private const val CHAIN_VARIANTS = 3
         /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
         private const val TMDB_SEARCH_LETTERS = 3
         /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */
