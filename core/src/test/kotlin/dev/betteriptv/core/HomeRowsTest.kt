@@ -1,6 +1,8 @@
 package dev.betteriptv.core
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -260,7 +262,7 @@ class HomeRowsTest {
     /** The Event channel carrying tonight's Game, started two hours ago (named once, so the clock ticking over a second doesn't rename it). */
     private val eventChannel by lazy { "NHL: Canadiens vs Maple Leafs (${startedAgo(Duration.ofHours(2))})" }
 
-    /** Every other Home row, with a Game started two hours ago among the NHL's and, unless [withEvent] is off, its Event channel on the Provider. */
+    /** Every other Home row, with a Game started two hours ago among the NHL's (the NFL's slate empty) and, unless [withEvent] is off, its Event channel on the Provider. */
     private suspend fun serveHomeWithGames(gameState: String = "live", withEvent: Boolean = true) {
         provider.serveChannels(*listOfNotNull("US: ESPN HD" to "US| SPORT", (eventChannel to "US| ESPN+ PPV").takeIf { withEvent }).toTypedArray())
         serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
@@ -269,13 +271,27 @@ class HomeRowsTest {
         cloud.charts("CA", movies = listOf(1001, 1002, 1003), shows = listOf(501, 502, 503))
         cloud.trending(movie(6), movie(7), movie(8))
         cloud.games("nhl", game("1", (Instant.now() - Duration.ofHours(2)).toString(), state = gameState, home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
+        cloud.games("nfl")
         library.setFavourite(library.search("ESPN", english, "en").last().channels.single().key, true)
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
+    }
+
+    /**
+     * Runs [read], a Home read expected to ask the cloud for Games behind it, and waits until the
+     * fresh Games have landed ([Library.catalogChanges]), as Home then reads its rows again.
+     */
+    private suspend fun <T> withGamesLanded(read: suspend () -> T): T {
+        val before = library.catalogChanges.value
+        val result = read()
+        withTimeout(10_000) { library.catalogChanges.first { it != before } }
+        return result
     }
 
     @Test fun `while a Game with a Feed is on, Live now comes right after Continue watching, with the hub's Game cards`() = runBlocking {
         serveHomeWithGames()
 
+        // Home's first read answers with the Games kept (none yet) and asks the cloud behind it; the next read has them.
+        assertEquals(withoutLiveNow, withGamesLanded { rows(leagues = listOf(League.Nhl, League.Nfl)) }.names())
         val rows = rows(leagues = listOf(League.Nhl, League.Nfl))
         assertEquals(withLiveNow, rows.names())
         val live = rows.filterIsInstance<HomeRow.LiveNow>().single().games.single()
@@ -286,6 +302,7 @@ class HomeRowsTest {
 
     @Test fun `Home is unchanged with no League on, a live Game with no Feed, or a Game not yet started`() = runBlocking {
         serveHomeWithGames(withEvent = false)
+        withGamesLanded { rows(leagues = listOf(League.Nhl)) }
         assertEquals(withoutLiveNow, rows(leagues = listOf(League.Nhl)).names())
         // With no League on, the cloud isn't asked for Games at all.
         assertEquals(withoutLiveNow, rows().names())
@@ -295,7 +312,9 @@ class HomeRowsTest {
         cloud.games("nhl", game("2", (Instant.now() + Duration.ofHours(2)).toString(), home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
         provider.serveChannels("US: ESPN HD" to "US| SPORT", "NHL: Canadiens vs Maple Leafs (${startedAgo(Duration.ofHours(-2))})" to "US| ESPN+ PPV")
         library.sync()
-        assertEquals(withoutLiveNow, rows(now = Instant.now() + Duration.ofMinutes(2), leagues = listOf(League.Nhl)).names())
+        val later = Instant.now() + Duration.ofMinutes(2)
+        withGamesLanded { rows(now = later, leagues = listOf(League.Nhl)) }
+        assertEquals(withoutLiveNow, rows(now = later, leagues = listOf(League.Nhl)).names())
     }
 
     @Test fun `Home still builds when the cloud has no Games for the Leagues on, or is down`() = runBlocking {
@@ -307,6 +326,33 @@ class HomeRowsTest {
         val rows = rows(now = Instant.now() + Duration.ofMinutes(2), leagues = listOf(League.Nhl))
         assertEquals(withoutLiveNow, rows.names())
         assertEquals(listOf("Film 1"), rows.filterIsInstance<HomeRow.ContinueWatching>().single().titles.map { it.title.name })
+    }
+
+    @Test fun `Home's rows don't wait on a hanging cloud, the Games kept standing until the fresh ones come behind`() = runBlocking {
+        serveHomeWithGames()
+        val hang = CountDownLatch(1)
+        cloud.hangingGames = hang
+        try {
+            // Well under the Games request's 3 s call timeout, let alone a hanging socket's minutes.
+            val rows = withTimeout(1_500) { rows(leagues = listOf(League.Nhl)) }
+            assertEquals(withoutLiveNow, rows.names())
+            assertEquals(listOf(listOf("nhl")), cloud.gamesAsked)
+        } finally {
+            cloud.hangingGames = null
+            hang.countDown()
+        }
+    }
+
+    @Test fun `a cloud that fails after a copy was kept leaves Live now standing`() = runBlocking {
+        serveHomeWithGames()
+        withGamesLanded { rows(leagues = listOf(League.Nhl)) }
+        assertEquals(withLiveNow, rows(leagues = listOf(League.Nhl)).names())
+
+        cloud.down = true
+        // Two minutes on, the copy is due again: the cloud is asked behind the read and fails, and the copy stands.
+        assertEquals(withLiveNow, rows(now = Instant.now() + Duration.ofMinutes(2), leagues = listOf(League.Nhl)).names())
+        withTimeout(10_000) { while (cloud.gamesAsked.size < 2) delay(50) }
+        assertEquals(withLiveNow, rows(now = Instant.now() + Duration.ofMinutes(3), leagues = listOf(League.Nhl)).names())
     }
 
     @Test fun `a Top row keeps the Provider's Titles in a Content language, in rank order without gaps`() = runBlocking {

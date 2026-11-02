@@ -48,8 +48,9 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
  * Live now (the Games of the [leagues] on that are in progress with a Feed, as the Live tab's Game
  * cards; no row otherwise), the Top 10 movies and shows in the Viewer's [region], New on your
  * service, Trending this week, the Viewer's Favourites, then a row per genre. The Games are asked
- * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live.
- * [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
+ * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live, but
+ * never hold the other rows: the kept Games show first, and the rows are read again once fresh ones
+ * land ([Library.catalogChanges]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
  * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
@@ -72,9 +73,11 @@ fun HomeScreen(
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Movies and Shows.
     val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
     val refreshes = gamesRefreshes(state)
+    // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
-        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage),
+        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage, catalog),
         read = { library.homeRows(contentLanguages, appLanguage, region, leagues) },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
