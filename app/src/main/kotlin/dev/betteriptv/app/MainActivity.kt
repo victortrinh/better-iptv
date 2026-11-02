@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.LiveCountry
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
@@ -103,6 +104,9 @@ private fun Root(app: BetterIptvApp) {
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
+        // The country whose Channels screen is open, from Live's Channels row, and what that screen keeps while a Channel plays.
+        var browsing by remember { mutableStateOf<LiveCountry?>(null) }
+        val channels = remember { ChannelsState() }
         // The card Back from a Title or Channel returns to, on Home, a Titles tab or Live.
         var returnedTo by remember { mutableStateOf<RowCard?>(null) }
         // The screen was reached by picking its tab, which keeps focus there.
@@ -125,6 +129,7 @@ private fun Root(app: BetterIptvApp) {
             Unit
         }
         val now = playing
+        val country = browsing
         if (now != null) {
             BackHandler { playing = null }
             PlayerScreen(
@@ -135,6 +140,12 @@ private fun Root(app: BetterIptvApp) {
                 onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
                 onEnded = { playing = null },
             )
+        } else if (country != null) {
+            BackHandler {
+                byTab = false
+                browsing = null
+            }
+            ChannelsScreen(app.library, country, appLanguage, channels, onWatch = watch)
         } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
@@ -150,13 +161,19 @@ private fun Root(app: BetterIptvApp) {
                     },
                 )
                 Browse.Live -> LiveScreen(
-                    app.library, contentLanguages, live,
+                    app.library, contentLanguages, settings.region, live,
                     restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,
                     onWatch = { card, channel ->
                         returnedTo = card
                         watch(channel)
+                    },
+                    onOpenCountry = { card, picked ->
+                        // Back from the Channels screen comes back to the country's card.
+                        returnedTo = card
+                        channels.reset()
+                        browsing = picked
                     },
                 )
                 Browse.Search -> {

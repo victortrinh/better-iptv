@@ -538,6 +538,79 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /**
+     * The Channel browser's countries: each ISO code ([isoCountry]) of the regular Categories' country
+     * codes to how many Channels those Categories hold, a Channel once however many of them it's in,
+     * Event channels whose Game started before [startedBefore] left out. Categories with no country
+     * code, and Clutter and Event Categories, count for nothing.
+     */
+    fun liveCountries(startedBefore: Instant): Map<String, Int> = synchronized(reader) {
+        reader.prepare(
+            "SELECT substr(lc.country, 1, 2), c.channel_key FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
+                "WHERE lc.kind = ? AND lc.country IS NOT NULL AND (c.event_start IS NULL OR c.event_start >= ?)",
+        ).use {
+            it.bindText(1, kindKey(CategoryKind.Regular))
+            it.bindLong(2, startedBefore.epochSecond)
+            val keys = HashMap<String, HashSet<String>>()
+            while (it.step()) keys.getOrPut(isoCountry(it.getText(0))) { HashSet() }.add(it.getText(1))
+            keys.mapValues { (_, channels) -> channels.size }
+        }
+    }
+
+    /**
+     * The regular Categories of the country coded [code] ([isoCountry]), in the Provider's order,
+     * those sharing a normalised name merged into one with their ids, each with how many Channels
+     * they hold between them (once each, finished Event channels left out as in [liveCountries]);
+     * one holding none is left out.
+     */
+    fun browsedCategories(code: String, startedBefore: Instant): List<BrowsedCategory> = synchronized(reader) {
+        val ids = LinkedHashMap<String, MutableList<String>>()
+        reader.prepare("SELECT id, normalised_name FROM live_category WHERE kind = ? AND country IS NOT NULL AND substr(country, 1, 2) IN (?, ?) ORDER BY position").use {
+            it.bindText(1, kindKey(CategoryKind.Regular))
+            // The Provider's UK is GB; every other code is its own.
+            it.bindText(2, code)
+            it.bindText(3, if (code == "GB") "UK" else code)
+            while (it.step()) ids.getOrPut(it.getText(1)) { ArrayList() }.add(it.getText(0))
+        }
+        val counts = HashMap<String, Int>()
+        reader.prepare(
+            "SELECT lc.normalised_name, count(DISTINCT c.channel_key) FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
+                "WHERE lc.kind = ? AND lc.country IS NOT NULL AND substr(lc.country, 1, 2) IN (?, ?) AND (c.event_start IS NULL OR c.event_start >= ?) GROUP BY lc.normalised_name",
+        ).use {
+            it.bindText(1, kindKey(CategoryKind.Regular))
+            it.bindText(2, code)
+            it.bindText(3, if (code == "GB") "UK" else code)
+            it.bindLong(4, startedBefore.epochSecond)
+            while (it.step()) counts[it.getText(0)] = it.getLong(1).toInt()
+        }
+        ids.mapNotNull { (name, categoryIds) -> counts[name]?.takeIf { it > 0 }?.let { BrowsedCategory(name, categoryIds, it) } }
+    }
+
+    /**
+     * The Channels with a variant in any of the Categories [categoryIds], whole (every variant, in
+     * whichever Category), in the Provider's order of their first variant in those Categories,
+     * each once; as in [channels], Event channels whose Game started before [startedBefore] are
+     * left out, and a Channel with no variant on with them.
+     */
+    fun categoryChannels(categoryIds: Collection<String>, startedBefore: Instant): List<Channel> = synchronized(reader) {
+        if (categoryIds.isEmpty()) return emptyList()
+        val ids = categoryIds.toList()
+        val marks = ids.joinToString(",") { "?" }
+        reader.prepare(
+            "SELECT $CHANNEL_COLUMNS, c.position FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE category_id IN ($marks)) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY c.position",
+        ).use {
+            ids.forEachIndexed { i, id -> it.bindText(i + 1, id) }
+            it.bindLong(ids.size + 1, startedBefore.epochSecond)
+            val rows = buildList { while (it.step()) add(it.variantRow(0) to it.getLong(11)) }
+            val inCategory = ids.toSet()
+            rows.groupBy { (row, _) -> row.key }.values
+                .filter { group -> group.any { (row, _) -> row.variant.categoryId in inCategory } }
+                .sortedBy { group -> group.filter { (row, _) -> row.variant.categoryId in inCategory }.minOf { (_, position) -> position } }
+                .map { group -> channel(group.map { (row, _) -> row }) }
+        }
+    }
+
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
         reader.prepare("SELECT id, name, category FROM listing WHERE kind = 'movie' AND position > ? AND position <= ? ORDER BY position").use {

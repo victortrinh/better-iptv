@@ -417,6 +417,34 @@ class Library private constructor(
     suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
 
     /**
+     * The Channel browser's countries (the Channels row on Live), from the regular live Categories'
+     * country codes: the Viewer's [region] first, then their [contentLanguages]' countries, then the
+     * rest by Channel count ([orderedCountries]). Clutter and Event Categories, and Categories whose
+     * names carry no country code, add none.
+     */
+    suspend fun liveCountries(region: String, contentLanguages: List<String>): List<LiveCountry> = withContext(Dispatchers.IO) {
+        orderedCountries(store.liveCountries(Instant.now() - EVENT_FINISHED_AFTER), region, contentLanguages)
+    }
+
+    /**
+     * The Categories the Channels screen lists for the country coded [country] ([LiveCountry.code]),
+     * in the Provider's order: regular ones only (no Clutter or Event Categories), named without the
+     * country code and tags, those sharing a name merged, each with its Channel count.
+     */
+    suspend fun browsedCategories(country: String): List<BrowsedCategory> = withContext(Dispatchers.IO) {
+        store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER)
+    }
+
+    /**
+     * The Channels of a browsed [category], in the Provider's order, whole: a Channel with variants in
+     * two Categories is listed in both, and watching it tries every variant. Finished Event channels
+     * are left out, as everywhere.
+     */
+    suspend fun categoryChannels(category: BrowsedCategory): List<Channel> = withContext(Dispatchers.IO) {
+        store.categoryChannels(category.categoryIds, Instant.now() - EVENT_FINISHED_AFTER)
+    }
+
+    /**
      * What watching [channel] starts: its best variant for the Viewer's [device] within the
      * [qualityCap] ([rankedVariants]), as MPEG-TS, then the same stream as HLS, for a Provider or a
      * player that does one and not the other, then the next variant the same way, as a chain of
@@ -949,11 +977,15 @@ class Library private constructor(
 
     /**
      * The Live tab's rows (CONTEXT.md's Row): the Viewer's Favourites, in the order they were added,
-     * finished Event channels left out, or no rows while there are none. The sports hub's rows (Live
-     * now, Today, a row per League on, More live events, Replays, then the Channels' countries) take
-     * their places around it as M3's tickets land.
+     * finished Event channels left out, then the Channel browser's countries ([liveCountries], for
+     * the [region] and [contentLanguages]); a row with nothing in it is left out. The sports hub's
+     * rows (Live now, Today, a row per League on, More live events, Replays) take their places
+     * before them as M3's tickets land.
      */
-    suspend fun liveRows(): List<HomeRow> = favourites().let { if (it.isEmpty()) emptyList() else listOf(HomeRow.Favourites(it)) }
+    suspend fun liveRows(region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> = buildList {
+        favourites().takeIf { it.isNotEmpty() }?.let { add(HomeRow.Favourites(it)) }
+        liveCountries(region, contentLanguages).takeIf { it.isNotEmpty() }?.let { add(HomeRow.Channels(it)) }
+    }
 
     /**
      * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]

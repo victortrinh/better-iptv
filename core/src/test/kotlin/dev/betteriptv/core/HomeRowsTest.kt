@@ -237,6 +237,7 @@ class HomeRowsTest {
                     }
                     is HomeRow.NewOnYourService -> "new"
                     is HomeRow.Favourites -> "favourites"
+                    is HomeRow.Channels -> "channels"
                     is HomeRow.Genre -> "genre"
                 }
             },

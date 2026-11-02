@@ -17,6 +17,12 @@
     <string name="shows_title">Séries</string>
     <string name="live_title">En direct</string>
     <string name="live_empty">Vos favoris apparaîtront ici. Appuyez sur la touche menu sur une chaîne dans la recherche pour en ajouter une.</string>
+    <string name="row_channels">Chaînes</string>
+    <plurals name="channels_count">
+        <item quantity="one">%1$d chaîne</item>
+        <item quantity="many">%1$d chaînes</item>
+        <item quantity="other">%1$d chaînes</item>
+    </plurals>
     <string name="sync_now">Synchroniser</string>
     <string name="sync_never">Pas encore synchronisé.</string>
     <string name="sync_first">Première synchronisation de votre catalogue…</string>

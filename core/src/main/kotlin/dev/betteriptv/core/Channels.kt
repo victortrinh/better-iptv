@@ -170,3 +170,37 @@ private val DAY_FIRST = Regex("""(?<!\d)(\d\d)-(\d\d)-(20\d\d)\s*\|?\s*(\d{1,2})
 private val MONTH_NAME_FIRST = Regex("""\b$MONTH\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)
 private val DAY_MONTH_NAME = Regex("""(?<![\d/])(\d{1,2})\s+$MONTH\s+(\d{1,2}):(\d\d)\s*(AM|PM|am|pm)?""", RegexOption.IGNORE_CASE)
 private val SLASHED = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\s+(\d{1,2}):(\d\d)""")
+
+/**
+ * A country the Channel browser lists (the Channels row on Live): its ISO 3166 [code] (`GB` for the
+ * Provider's `UK`; `CA EN` and `CA FR` Categories are one Canada), as the App language names it,
+ * and how many [channels] its regular Categories hold, a Channel in two of them counted once.
+ */
+data class LiveCountry(val code: String, val channels: Int)
+
+/**
+ * A Category as the Channel browser lists it in a country's column: its [name] without the country
+ * code and the Provider's tags (`NBC`, not `US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), the Provider's [categoryIds]
+ * it merges (the `ⱽᴵᴾ` and `ᴳᴼᴸᴰ` Categories that share a name), and how many [channels] they hold
+ * between them, each Channel once.
+ */
+data class BrowsedCategory(val name: String, val categoryIds: List<String>, val channels: Int)
+
+/**
+ * The ISO 3166 code of a live Category's [country] code (`US| `, `CA FR| `, `UK| `): its first two
+ * letters, so a language after the country (`CA FR`) still files under the country, and the
+ * Provider's `UK` is `GB`, which is what names it in the App language.
+ */
+internal fun isoCountry(country: String): String = country.take(2).let { if (it == "UK") "GB" else it }
+
+/**
+ * The browser's countries in order: the Viewer's [region] first, then the countries of their
+ * [contentLanguages] in order ([languageCountries]), each only when the Provider has it, then the
+ * rest by Channel count, the fullest first (ties by code). [counts] is each country's Channel count
+ * by ISO code.
+ */
+internal fun orderedCountries(counts: Map<String, Int>, region: String, contentLanguages: List<String>): List<LiveCountry> {
+    val preferred = (listOf(region) + contentLanguages.flatMap(::languageCountries)).filter { it in counts }
+    val byCount = counts.keys.sortedWith(compareByDescending<String> { counts.getValue(it) }.thenBy { it })
+    return (preferred + byCount).distinct().map { LiveCountry(it, counts.getValue(it)) }
+}

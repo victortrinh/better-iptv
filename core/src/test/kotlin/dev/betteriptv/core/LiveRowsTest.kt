@@ -13,7 +13,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-/** The Live tab's rows, seen through the Library after a Sync: the Favourites row, until the sports hub's rows join it. */
+/** The Live tab's rows, seen through the Library after a Sync: the Favourites row and the Channels row, until the sports hub's rows join them. */
 class LiveRowsTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
@@ -44,8 +44,15 @@ class LiveRowsTest {
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
     private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atOffset(ZoneOffset.UTC))
 
-    @Test fun `without Favourites the Live tab has no rows`() = runBlocking {
+    @Test fun `without Favourites the Live tab has only the Channels row`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
+        library.sync()
+
+        assertEquals(listOf(HomeRow.Channels(listOf(LiveCountry("US", 1)))), library.liveRows())
+    }
+
+    @Test fun `without Channels the Live tab has no rows`() = runBlocking {
+        provider.serveChannels(*emptyArray<FakeProvider.LiveListing>())
         library.sync()
 
         assertEquals(emptyList<HomeRow>(), library.liveRows())
@@ -59,7 +66,7 @@ class LiveRowsTest {
 
         val rows = library.liveRows()
         assertEquals(listOf("UK: BBC ONE", "US: ESPN"), rows.favourites())
-        assertEquals(1, rows.size)
+        assertEquals(listOf(HomeRow.Favourites::class, HomeRow.Channels::class), rows.map { it::class })
         assertEquals(rows.favourites(), library.homeRows(listOf("en"), "en").favourites())
     }
 
@@ -73,7 +80,7 @@ class LiveRowsTest {
         assertEquals(listOf("CA: TSN 1"), library.liveRows().favourites())
 
         library.setFavourite(channel("CA: TSN 1").key, false)
-        assertEquals(emptyList<HomeRow>(), library.liveRows())
+        assertEquals(null, library.liveRows().favourites())
     }
 
     @Test fun `a finished Event channel among the Favourites is left out`() = runBlocking {
