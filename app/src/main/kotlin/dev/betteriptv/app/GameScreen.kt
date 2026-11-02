@@ -121,10 +121,8 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
                 Column(Modifier.width(HEADER_WIDTH)) {
                     TitleName(context.matchup(game), null)
                     Spacer(Modifier.height(Spacing.s))
-                    val feeds = if (entry.feeds.isEmpty()) stringResource(R.string.game_no_stream)
-                    else context.resources.getQuantityString(R.plurals.game_feeds, entry.feeds.size, entry.feeds.size)
                     Text(
-                        listOf(context.leagueName(game.league), context.gameCaption(game), feeds).joinToString(" · "),
+                        listOf(context.leagueName(game.league), context.gameCaption(game), context.feedCount(entry)).joinToString(" · "),
                         style = Type.body,
                         color = Colors.inkMuted,
                         maxLines = 1,

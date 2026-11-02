@@ -11,7 +11,7 @@ enum class FeedKind {
     /** The Channel of a Broadcaster the schedule names for the Game: a network that may show another game by market. */
     Broadcaster,
 
-    /** The League's own network ([League.network]: NHL Network, NBA TV), a Feed only when the Game has no other: it shows one game of the night. */
+    /** The League network ([League.network]: NHL Network, NBA TV), a Feed only when the Game has no other left: it shows one game of the night. */
     LeagueNetwork,
 }
 
@@ -58,11 +58,13 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * [broadcasters] (Channels by their lower-cased name), the Channels named exactly like one of the
  * Game's Broadcasters, or like one of its other spellings ([broadcasterNames]: "NHL Net" is NHL
  * Network); "ESPN 2" is not ESPN, and no Broadcaster is guessed from the Region. A Game with no
- * Feed that way gets the League's own network ([League.network], among [broadcasters] too) as a
+ * Feed that way gets the League network ([League.network], among [broadcasters] too) as a
  * last resort: it shows one game of the night, so it never outranks a named Feed. Names are
  * compared as Search compares them: lower case, accents dropped, an alias found only as whole
- * words in order, so "Jets" is not "Jetsons". A Feed in [dropped] (by [GameFeeds.droppedKey])
- * was marked "Not this game" on this device: it stays listed, last.
+ * words in order, so "Jets" is not "Jetsons". A Broadcaster's Channel from another country is a
+ * namesake, not the Broadcaster ([broadcasterCountryFits], for the [region]). A Feed in [dropped]
+ * (by [GameFeeds.droppedKey]) was marked "Not this game" on this device: it stays listed, last,
+ * and once every named Feed is dropped the League network is offered as it is when none exists.
  *
  * Two guards keep a city's other team's Game out: an Event channel naming another offered League
  * ("NBA: Toronto vs Boston" for the Leafs and the Bruins) is never this Game's, and a match resting
@@ -76,6 +78,7 @@ internal fun matchFeeds(
     contentLanguages: List<String>,
     now: Instant,
     dropped: Set<String> = emptySet(),
+    region: String = "CA",
 ): List<GameFeeds> {
     val names = events.map { SearchIndex.words(it.channel.variants.first().name) }
     // Each word to the Event channels whose names hold it, so an alias is looked for only where its first word is.
@@ -103,51 +106,77 @@ internal fun matchFeeds(
         val eventFeeds = named.sorted().map { events[it] }.filter { sameEvent(game, it.start, now) }.map { listing ->
             Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country))
         }
-        val broadcasterFeeds = game.broadcasters.flatMap { broadcaster ->
-            broadcasterNames(broadcaster).flatMap { name -> broadcasters[name].orEmpty() }.map { Feed(it, FeedKind.Broadcaster, languageOf(it.country), broadcaster) }
-        }
-        val namedFeeds = (eventFeeds + broadcasterFeeds).distinctBy { it.channel.key }
-        val feeds = namedFeeds.ifEmpty {
-            thisLeague?.network?.let { network -> broadcasters[network.lowercase()].orEmpty().map { Feed(it, FeedKind.LeagueNetwork, languageOf(it.country), network) } }.orEmpty()
-        }
         val gameKey = "${game.league}/${game.id}"
-        GameFeeds(game, rankedFeeds(feeds.map { it.copy(dropped = GameFeeds.droppedKey(gameKey, it.channel.key) in dropped) }, contentLanguages))
+        fun named(broadcaster: String, kind: FeedKind) = broadcasterNames(broadcaster).flatMap { name -> broadcasters[name].orEmpty() }
+            .filter { broadcasterCountryFits(it.country, region, contentLanguages) }
+            .map { Feed(it, kind, languageOf(it.country), broadcaster) }
+        val broadcasterFeeds = game.broadcasters.flatMap { named(it, FeedKind.Broadcaster) }
+        val namedFeeds = (eventFeeds + broadcasterFeeds).distinctBy { it.channel.key }.map { it.copy(dropped = GameFeeds.droppedKey(gameKey, it.channel.key) in dropped) }
+        val feeds = if (namedFeeds.any { !it.dropped }) namedFeeds else {
+            val network = thisLeague?.network?.let { named(it, FeedKind.LeagueNetwork) }.orEmpty().filter { feed -> namedFeeds.none { it.channel.key == feed.channel.key } }
+            namedFeeds + network.map { it.copy(dropped = GameFeeds.droppedKey(gameKey, it.channel.key) in dropped) }
+        }
+        GameFeeds(game, rankedFeeds(feeds, contentLanguages))
     }
 }
 
 /**
- * The names a Provider may list a Broadcaster's Channel under, lower-cased, the schedule's own
- * first: ESPN abbreviates some ("NHL Net" for NHL Network) and Providers spell a streaming
- * service's name out ("ESPN Plus", "Amazon Prime Video"). Only spellings of the same network:
- * nothing here turns "ESPN" into "ESPN 2" or TSN into a regional feed.
+ * The names a Provider may list a Broadcaster's Channel under, as [channelKey] folds them (lower
+ * case, no spaces, so "ESPN2" meets "ESPN 2"), the schedule's own first: ESPN abbreviates ("NHL
+ * Net" for NHL Network, "FS1" for Fox Sports 1) and Providers spell a streaming service's name out
+ * ("ESPN Plus", "Amazon Prime Video"). Only spellings of the same network: nothing here turns
+ * "ESPN" into "ESPN 2" or TSN into a regional feed.
  */
 internal fun broadcasterNames(broadcaster: String): List<String> {
-    val name = broadcaster.lowercase().trim()
+    val name = channelKey(broadcaster)
     return (listOf(name) + BROADCASTER_SPELLINGS[name].orEmpty()).distinct()
 }
 
+/** A Channel's or Broadcaster's name as the two are compared: lower case, spaces dropped ([CatalogStore.channelsNamed] keys its answer by it). */
+internal fun channelKey(name: String): String = name.lowercase().replace(" ", "")
+
 /** The Channel names of League networks and Broadcasters, every spelling, so one catalog read finds them all ([CatalogStore.channelsNamed]). */
 internal fun broadcasterChannelNames(games: List<Game>): List<String> =
-    (games.flatMap { game -> game.broadcasters.flatMap(::broadcasterNames) } + games.mapNotNull { League.byKey(it.league)?.network?.lowercase() }).distinct()
+    (games.flatMap { game -> game.broadcasters.flatMap(::broadcasterNames) } + games.flatMap { League.byKey(it.league)?.network?.let(::broadcasterNames).orEmpty() }).distinct()
 
-private val BROADCASTER_SPELLINGS: Map<String, List<String>> = mapOf(
-    "nhl net" to listOf("nhl network"),
-    "nhl network" to listOf("nhl net"),
-    "nba tv" to listOf("nbatv"),
-    "nfl net" to listOf("nfl network"),
-    "nfl network" to listOf("nfl net"),
-    "mlb net" to listOf("mlb network"),
-    "mlb network" to listOf("mlb net"),
-    "espn+" to listOf("espn plus"),
-    "espn plus" to listOf("espn+"),
-    "apple tv" to listOf("apple tv+", "apple tv plus"),
-    "apple tv+" to listOf("apple tv", "apple tv plus"),
-    "prime video" to listOf("amazon prime video", "amazon prime"),
-    "amazon prime video" to listOf("prime video", "amazon prime"),
-    "peacock" to listOf("peacock tv"),
-    "paramount+" to listOf("paramount plus"),
-    "paramount plus" to listOf("paramount+"),
-)
+/**
+ * Whether a Channel tagged [country] may be a Broadcaster's: the schedule's Broadcasters are the
+ * ones airing in the United States, so a US Channel always may, as may one of the Viewer's
+ * [region] or of a country broadcasting in one of their [contentLanguages] ([languageOf]), and
+ * one with no tag; `TR: FOX`, `AU: ABC` and `JP: TBS` are namesakes, not Fox, ABC and TBS. This
+ * keeps a Feed out; it never adds one the schedule didn't name.
+ */
+internal fun broadcasterCountryFits(country: String?, region: String, contentLanguages: List<String>): Boolean {
+    val code = country?.trim()?.uppercase()?.split(Regex("""\s+"""))?.firstOrNull() ?: return true
+    val home = region.uppercase().let { if (it == "GB") "UK" else it }
+    return code in US_CODES || code == home || (code == "GB" && home == "UK") || languageOf(country) in contentLanguages.map(::primaryLanguage)
+}
+
+private val US_CODES = setOf("US", "USA")
+
+/** Spellings of one network, each listed under each other, as [channelKey] folds them. */
+private val BROADCASTER_SPELLINGS: Map<String, List<String>> = listOf(
+    listOf("NHL Net", "NHL Network"),
+    listOf("NBA TV", "NBATV"),
+    listOf("NFL Net", "NFL Network"),
+    listOf("MLB Net", "MLB Network"),
+    listOf("ESPN+", "ESPN Plus"),
+    listOf("ESPN2", "ESPN 2"),
+    listOf("ESPNU", "ESPN U"),
+    listOf("ESPNEWS", "ESPN News"),
+    listOf("FS1", "Fox Sports 1"),
+    listOf("FS2", "Fox Sports 2"),
+    listOf("CBSSN", "CBS Sports Network", "CBS Sports"),
+    listOf("NBCSN", "NBC Sports Network", "NBC Sports"),
+    listOf("USA Net", "USA Network"),
+    listOf("BTN", "Big Ten Network"),
+    listOf("SECN", "SEC Network"),
+    listOf("ACCN", "ACC Network"),
+    listOf("Apple TV", "Apple TV+", "Apple TV Plus"),
+    listOf("Prime Video", "Amazon Prime Video", "Amazon Prime"),
+    listOf("Peacock", "Peacock TV"),
+    listOf("Paramount+", "Paramount Plus"),
+).flatMap { spellings -> spellings.map { channelKey(it) to spellings.map(::channelKey) } }.toMap()
 
 /**
  * A team's aliases sorted by how surely they name it: [strong] ones (its name, short name,

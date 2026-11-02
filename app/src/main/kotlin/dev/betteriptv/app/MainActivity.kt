@@ -141,7 +141,7 @@ private fun Root(app: BetterIptvApp) {
             val playFeed = { entry: GameFeeds, feed: Feed ->
                 scope.launch {
                     val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
-                    playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed))
+                    if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed))
                 }
                 Unit
             }
@@ -157,9 +157,11 @@ private fun Root(app: BetterIptvApp) {
                 onNotThisGame = {
                     now.game?.let { game ->
                         scope.launch {
-                            val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages)
+                            val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages, settings.region)
                             // The Game page under the player lists the Feed last and marked when Back returns to it.
                             if (openedGame?.entry?.key == updated.key) openedGame = openedGame?.copy(entry = updated)
+                            // Only while the player still plays what was dropped: Back meanwhile must not reopen it.
+                            if (playing != now) return@launch
                             val next = updated.best
                             if (next == null) playing = null else playFeed(updated, next)
                         }

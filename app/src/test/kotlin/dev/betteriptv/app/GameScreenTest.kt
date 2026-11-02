@@ -133,6 +133,8 @@ class GameScreenTest {
         )
 
         compose.onNodeWithTag("play-label").assertTextContains("TSN · English")
+        // The dropped Feed is not counted.
+        compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · 2 Feeds")
         compose.onNodeWithText("English · 1").assertExists()
         compose.onNodeWithText("Français · 1").assertExists()
         compose.onNodeWithText("Not this game · 1").assertExists()
@@ -153,6 +155,7 @@ class GameScreenTest {
         compose.waitForIdle()
         assertEquals(0, played)
         compose.onNodeWithTag("play-label").assertTextContains("No stream found")
+        compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · No stream found")
         compose.onNodeWithText("Not this game · 1").assertExists()
     }
 }

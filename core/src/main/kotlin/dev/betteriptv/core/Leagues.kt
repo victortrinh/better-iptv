@@ -6,7 +6,7 @@ package dev.betteriptv.core
  * Settings keeps the Leagues on by key, and the cloud's Games call asks for Leagues by it. [names]
  * are what an Event channel's name calls the League (`NHL: Leafs vs Habs`, `EPL | Arsenal v
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
- * is the League's own channel, as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
+ * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none.
  */
 enum class League(val key: String, val names: List<String>, val network: String? = null) {

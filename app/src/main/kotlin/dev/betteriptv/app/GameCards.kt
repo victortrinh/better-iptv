@@ -16,7 +16,7 @@ import java.time.Instant
 /**
  * [entry]'s card: both teams' logos, "Live" or the start time in the device's clock, and the short
  * names when a logo doesn't load. Pressing it opens the Game's page ([onOpen]); an upcoming Game
- * with no Feed is disabled, saying "No stream found", and opens nothing. The caption is read again
+ * with no Feed left (none, or every one marked "Not this game") is disabled, saying "No stream found", and opens nothing. The caption is read again
  * each minute, so a Game later today drops the weekday at midnight without the rows being read.
  */
 @Composable
@@ -38,7 +38,7 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
         caption = caption,
         onClick = { onOpen(entry) },
         modifier = modifier,
-        disabled = if (entry.feeds.isEmpty()) stringResource(R.string.game_no_stream) else null,
+        disabled = if (entry.best == null) stringResource(R.string.game_no_stream) else null,
         onFocus = onFocus,
     )
 }

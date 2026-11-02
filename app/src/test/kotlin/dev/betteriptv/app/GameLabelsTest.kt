@@ -66,6 +66,10 @@ class GameLabelsTest {
             context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("Sportsnet", "TSN")), feeds)),
         )
         assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "No stream found"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), emptyList())))
+        // A dropped Feed is neither counted nor named.
+        val dropped = listOf(feeds[0], feeds[1].copy(dropped = true))
+        assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "1 Feed"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("TSN")), dropped)))
+        assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "No stream found"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), dropped.map { it.copy(dropped = true) })))
     }
 
     @Test fun theLabelUnderPlayNamesTheFeedAndItsLanguage() {

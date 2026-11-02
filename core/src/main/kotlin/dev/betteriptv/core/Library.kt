@@ -986,8 +986,8 @@ class Library private constructor(
      * day); one row per League with its Games of the week ahead; then the Viewer's Favourites, in the
      * order they were added, finished Event channels left out; then the Channel browser's countries
      * ([liveCountries], for the [region] and [contentLanguages]). A Game shows once, in the highest row
-     * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
-     * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
+     * it fits, by start; a live Game with no Feed left (none, or every one marked "Not this game") is
+     * hidden, an upcoming one with none is shown (its card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
      * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
      * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
      * More live events and Replays join as M3's tickets land.
@@ -999,19 +999,13 @@ class Library private constructor(
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
         val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
-        val matched = if (games.isEmpty()) emptyList() else {
-            val categories = store.liveCategories().associateBy { it.id }
-            val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
-                EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
-            }
-            matchFeeds(games, events, store.channelsNamed(broadcasterChannelNames(games)), contentLanguages, now, store.droppedFeeds(games.map { "${it.league}/${it.id}" }))
-        }
+        val matched = matchedFeeds(games, contentLanguages, region, now)
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD
         val shown = HashSet<String>()
         // A Game shows in the highest row it fits.
         fun row(fits: (GameFeeds) -> Boolean): List<GameFeeds> = matched.filter { it.key !in shown && fits(it) }.also { taken -> taken.forEach { shown += it.key } }
-        val liveNow = row { it.game.state == GameState.Live && it.feeds.isNotEmpty() }
+        val liveNow = row { it.game.state == GameState.Live && it.best != null }
         val todayRow = row { it.game.state == GameState.Upcoming && it.game.start.atZone(zone).toLocalDate() == today }
         val perLeague = leagues.mapNotNull { league ->
             row { it.game.league == league.key && it.game.state == GameState.Upcoming && it.game.start < weekAhead }.takeIf { it.isNotEmpty() }?.let { HomeRow.LeagueGames(league, it) }
@@ -1032,10 +1026,26 @@ class Library private constructor(
      * mark is kept by Game and Channel, so it survives Syncs and holds for every variant of the
      * Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]).
      */
-    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>): GameFeeds = withContext(Dispatchers.IO) {
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION): GameFeeds = withContext(Dispatchers.IO) {
         val now = Instant.now()
         store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
-        entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
+        // Matched again, so the League network joins once every named Feed is dropped.
+        matchedFeeds(listOf(entry.game), contentLanguages, region, now).firstOrNull()
+            ?: entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
+    }
+
+    /**
+     * Each of [games] with its Feeds from the catalog ([matchFeeds]): the Event channels on around
+     * [now], the Channels of the Games' Broadcasters and League networks under every spelling, and
+     * the Feeds marked "Not this game" on this device, ranked for the [contentLanguages] and [region].
+     */
+    private fun matchedFeeds(games: List<Game>, contentLanguages: List<String>, region: String, now: Instant): List<GameFeeds> {
+        if (games.isEmpty()) return emptyList()
+        val categories = store.liveCategories().associateBy { it.id }
+        val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
+            EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
+        }
+        return matchFeeds(games, events, store.channelsNamed(broadcasterChannelNames(games)), contentLanguages, now, store.droppedFeeds(games.map { "${it.league}/${it.id}" }), region)
     }
 
     /**

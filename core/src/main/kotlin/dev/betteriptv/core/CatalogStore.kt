@@ -520,21 +520,21 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /**
-     * The Channels named exactly like one of [names] (case apart; the merged name, without tags or
-     * quality words), by that name lower-cased: a Broadcaster's Channels, in every country. Merged
-     * as [channels] merges them, in the Provider's order.
+     * The Channels named like one of [names] (the merged name, without tags or quality words), case
+     * and spaces apart ("ESPN2" is "ESPN 2"), by that name lower-cased with its spaces dropped: a
+     * Broadcaster's Channels, in every country. Merged as [channels] merges them, in the Provider's order.
      */
     fun channelsNamed(names: Collection<String>): Map<String, List<Channel>> = synchronized(reader) {
-        val asked = names.map { it.lowercase() }.distinct()
+        val asked = names.map(::channelKey).distinct()
         if (asked.isEmpty()) return emptyMap()
         reader.prepare(
             "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
-                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE lead = 1 AND lower(channel_name) IN (${asked.joinToString(",") { "?" }})) " +
+                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE lead = 1 AND replace(lower(channel_name), ' ', '') IN (${asked.joinToString(",") { "?" }})) " +
                 "ORDER BY c.position",
         ).use {
             asked.forEachIndexed { i, name -> it.bindText(i + 1, name) }
             buildList { while (it.step()) add(it.variantRow(0)) }
-        }.groupBy { it.key }.values.map(::channel).groupBy { it.name.lowercase() }
+        }.groupBy { it.key }.values.map(::channel).groupBy { channelKey(it.name) }
     }
 
     /**
