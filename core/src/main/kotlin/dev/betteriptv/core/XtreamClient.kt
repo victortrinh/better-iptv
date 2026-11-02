@@ -56,21 +56,27 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     /** Streams the live Categories as (Provider category id, name). */
     fun liveCategories(each: (id: String, name: String) -> Unit) = categories("get_live_categories", each)
 
-    /** Streams the live Listings in the Provider's order as (Provider stream id, name, category id, logo URL). */
-    fun liveListings(each: (id: Long, name: String, categoryId: String?, image: String?) -> Unit) = api("get_live_streams") { json ->
+    /**
+     * Streams the live Listings in the Provider's order as (Provider stream id, name, category id,
+     * logo URL, guide id). The guide id (`epg_channel_id`) is what the Provider's guide knows the
+     * Channel by, empty for the Channels its guide doesn't cover.
+     */
+    fun liveListings(each: (id: Long, name: String, categoryId: String?, image: String?, guideId: String) -> Unit) = api("get_live_streams") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
             var categoryId: String? = null
             var image: String? = null
+            var guideId = ""
             while (hasNext()) when (nextName()) {
                 "stream_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
                 "category_id" -> categoryId = nextScalar()
                 "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                "epg_channel_id" -> guideId = nextScalar()?.trim().orEmpty()
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, image)
+            if (id != null && name != null) each(id, name, categoryId, image, guideId)
         }
     }
 
