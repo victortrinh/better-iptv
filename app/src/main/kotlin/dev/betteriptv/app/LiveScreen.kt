@@ -17,6 +17,7 @@ import dev.betteriptv.core.Channel
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.League
+import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
 import dev.betteriptv.core.SyncStatus
@@ -27,8 +28,9 @@ import java.time.Duration
  * The Live tab, the sports hub's home (M3), in rows like Home's ([RowsScreen]): Live now, Today and
  * a row per League on ([leagues], in Settings' order) as Game cards, then the Viewer's Favourites as
  * Channel cards, then the Channel browser's countries (the Channels row, the Viewer's [region]
- * first, then their Content languages' countries) as country cards named in the [appLanguage],
- * until the hub's other rows (More live events, Replays) join them. The Games are asked for when the
+ * first, then their Content languages' countries) as country cards named in the [appLanguage];
+ * after the League rows, Replays, the Leagues' Sports replays as Game cards, which OK plays
+ * ([onPlayReplay]); More live events joins as its ticket lands. The Games are asked for when the
  * tab opens and again every [GAMES_REFRESH] while a Games row is on screen, the kept copy standing
  * when the cloud fails. OK on a Game opens its page ([onOpenGame]); OK on a Channel watches it
  * ([onWatch]), and the menu key adds or removes the Favourite, focus moving to its neighbour; OK on
@@ -48,6 +50,7 @@ fun LiveScreen(
     onWatch: (RowCard, Channel) -> Unit,
     onOpenGame: (RowCard, GameFeeds) -> Unit,
     onOpenCountry: (RowCard, LiveCountry) -> Unit,
+    onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
@@ -72,6 +75,7 @@ fun LiveScreen(
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         onOpenCountry = onOpenCountry,
+        onPlayReplay = onPlayReplay,
         placeholder = if (firstSync) {
             { FirstSync(status) }
         } else null,

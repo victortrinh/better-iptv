@@ -11,7 +11,10 @@ import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.League
+import dev.betteriptv.core.LeagueReplay
+import dev.betteriptv.core.Replay
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -72,6 +75,36 @@ fun Context.gameInfo(entry: GameFeeds): CardInfo.Game {
     val feeds = if (entry.feeds.isEmpty()) getString(R.string.game_no_stream) else resources.getQuantityString(R.plurals.game_feeds, entry.feeds.size, entry.feeds.size)
     val found = entry.feeds.mapNotNull { it.broadcaster }.distinct().take(3).joinToString(", ")
     return CardInfo.Game("${leagueName(game.league)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
+}
+
+/** The two teams of a Replay, the away team first, by their short names, as a Game's [matchup]. */
+fun Context.matchup(entry: LeagueReplay): String = getString(R.string.game_matchup, entry.away.shortName, entry.home.shortName)
+
+/**
+ * What a Replay's card says at its bottom left: the date in its name, short ("Nov 9", with the year
+ * when it isn't this year's, [today]'s), the year alone when that is all the name gives, or "Replay"
+ * without either.
+ */
+fun Context.replayCaption(replay: Replay, today: LocalDate = LocalDate.now()): String =
+    replayDate(replay, long = false, today) ?: getString(R.string.replay)
+
+/**
+ * What the info under a rail tells about a Replay: its League and both teams on one line, as a
+ * Game's, then the date in its name in full ("November 9, 2025"), or "Replay" without one.
+ */
+fun Context.replayInfo(entry: LeagueReplay): CardInfo.Game =
+    CardInfo.Game("${leagueName(entry.league.key)} · ${matchup(entry)}", replayDate(entry.replay, long = true) ?: getString(R.string.replay))
+
+/** The date in [replay]'s name, in the App language: the day and month, the year too when [long] or not [today]'s, or the year alone; null without one. */
+fun Context.replayDate(replay: Replay, long: Boolean, today: LocalDate = LocalDate.now()): String? {
+    val locale = resources.configuration.locales[0]
+    val date = replay.date ?: return replay.year?.toString()
+    val skeleton = when {
+        long -> "yMMMMd"
+        date.year == today.year -> "MMMd"
+        else -> "yMMMd"
+    }
+    return date.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, skeleton), locale))
 }
 
 /** What a Feed is, under its name on the Game page: an Event channel, or the Broadcaster's Channel it is. */

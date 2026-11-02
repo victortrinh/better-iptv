@@ -58,6 +58,10 @@
     <string name="feed_event_channel">Event channel</string>
     <string name="feed_broadcaster">Broadcaster · %1$s</string>
     <string name="row_channels">Channels</string>
+    <!-- Live's row of Sports replays, after the League rows. -->
+    <string name="row_replays">Replays</string>
+    <!-- A Sports replay whose name gives no date: on its card and under its rail. Also the headline over a finished Game's Replay on its page. -->
+    <string name="replay">Replay</string>
     <!-- Under a focused country card on Live, and beside a country's name on its Channels screen. -->
     <plurals name="channels_count">
         <item quantity="one">%1$d Channel</item>
@@ -71,6 +75,7 @@
     <string name="search_movies">Movies · %1$d</string>
     <string name="search_shows">Shows · %1$d</string>
     <string name="search_channels">Channels · %1$d</string>
+    <string name="search_replays">Replays · %1$d</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
     <string name="sync_first">Syncing your catalog for the first time…</string>

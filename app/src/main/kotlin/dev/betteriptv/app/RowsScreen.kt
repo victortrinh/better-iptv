@@ -68,6 +68,7 @@ import dev.betteriptv.core.ChartList
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
+import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.LiveCountry
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.Library
@@ -141,8 +142,9 @@ class RowsState {
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
- * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a country's
- * (Live's Channels row, named in the [appLanguage]) opens its Channels screen ([onOpenCountry]).
+ * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a Replay's
+ * (Live's Replays row) plays it ([onPlayReplay]); a country's (Live's Channels row, named in the
+ * [appLanguage]) opens its Channels screen ([onOpenCountry]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -160,6 +162,7 @@ fun RowsScreen(
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
+    onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
@@ -261,8 +264,8 @@ fun RowsScreen(
                             modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
                         )
                         val wide = row is HomeRow.ContinueWatching
-                        // Channels, countries and Games are wide cards alike.
-                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row.games != null
+                        // Channels, countries, Games and Replays are wide cards alike.
+                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row.games != null || row is HomeRow.Replays
                         val ranked = row.ranked
                         // Kept with the row: new lists would compose each of its cards again.
                         val keys = remember(row) { row.keys }
@@ -332,6 +335,10 @@ fun RowsScreen(
                                 val games = row.games
                                 if (games != null) {
                                     GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus)
+                                    return@items
+                                }
+                                if (row is HomeRow.Replays) {
+                                    ReplayGameCard(row.replays[index], onPlay = { onPlayReplay(card, it) }, modifier = ends, onFocus = onFocus)
                                     return@items
                                 }
                                 val title = titles[index]
@@ -405,6 +412,13 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
         RailInfo(game?.let { remember(it) { context.gameInfo(it) } }, emptyList(), short = true, modifier)
         return
     }
+    // A Replay: its League and teams, as a Game's, and the date in its name.
+    if (row is HomeRow.Replays) {
+        val replay = row.replays.firstOrNull { replayKey(it) == card?.key }
+        val context = LocalContext.current
+        RailInfo(replay?.let { remember(it) { context.replayInfo(it) } }, emptyList(), short = true, modifier)
+        return
+    }
     // A country: its name, since its card has nothing but it, and how many Channels it has.
     val country = (row as? HomeRow.Channels)?.countries?.firstOrNull { countryKey(it) == card?.key }
     if (country != null) {
@@ -450,7 +464,7 @@ private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo
 private val HomeRow.titles: List<TitleSummary>
     get() = when (this) {
         is HomeRow.ContinueWatching -> titles.map { it.title }
-        is HomeRow.Favourites, is HomeRow.Channels, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> emptyList()
+        is HomeRow.Favourites, is HomeRow.Channels, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.Replays -> emptyList()
         is HomeRow.Chart -> titles
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
@@ -481,6 +495,7 @@ private val HomeRow.key: String
         is HomeRow.LiveNow -> "live-now"
         is HomeRow.Today -> "today"
         is HomeRow.LeagueGames -> "league/${league.key}"
+        is HomeRow.Replays -> "replays"
     }
 
 /** Each row's key to its cards' keys, in screen order, for [restoredCard]. */
@@ -492,6 +507,7 @@ private val HomeRow.keys: List<String>
     get() = when {
         this is HomeRow.Favourites -> channels.map(::channelKey)
         this is HomeRow.Channels -> countries.map(::countryKey)
+        this is HomeRow.Replays -> replays.map(::replayKey)
         games != null -> games!!.map(::gameKey)
         else -> titles.map { it.id.toString() }
     }
@@ -501,7 +517,7 @@ private val HomeRow.contentType: String
     get() = when (this) {
         is HomeRow.Favourites -> "channel"
         is HomeRow.Channels -> "country"
-        is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> "game"
+        is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.Replays -> "game"
         else -> "title"
     }
 
@@ -510,6 +526,8 @@ private fun channelKey(channel: Channel) = "channel/${channel.key}"
 private fun countryKey(country: LiveCountry) = "country/${country.code}"
 
 private fun gameKey(game: GameFeeds) = "game/${game.key}"
+
+private fun replayKey(replay: LeagueReplay) = "replay/${replay.replay.listingId}"
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do
@@ -566,6 +584,7 @@ private fun HomeRow.heading(): String = when (this) {
     is HomeRow.LiveNow -> stringResource(R.string.row_live_now)
     is HomeRow.Today -> stringResource(R.string.row_today)
     is HomeRow.LeagueGames -> leagueName(league)
+    is HomeRow.Replays -> stringResource(R.string.row_replays)
 }
 
 /**

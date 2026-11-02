@@ -148,6 +148,10 @@ class Library private constructor(
                                 }
                                 val hidden = description.hidden != null
                                 staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                                // A Sports replay is kept apart, with what its name says: its TMDB ID and poster are wrong and ignored.
+                                if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
+                                    staging.replay(id, name, category, added, container, ReplayNames.parse(name))
+                                }
                                 if (!hidden) {
                                     if (kind == TitleKind.Movie) moviesRead++ else showsRead++
                                     _syncStatus.value = SyncStatus.Running(last, moviesRead, showsRead)
@@ -376,8 +380,9 @@ class Library private constructor(
         val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
         val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).toSet()) }
         val channels = foundChannels(index, query)
+        val replays = foundReplays(index, query)
         val ranks = topRanks(region, contentLanguages, appLanguage)
-        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks).copy(channels = channels))
+        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks).copy(channels = channels, replays = replays))
 
         if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
         // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
@@ -394,8 +399,15 @@ class Library private constructor(
         val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
             FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
         }
-        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks).copy(channels = channels))
+        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks).copy(channels = channels, replays = replays))
     }.flowOn(Dispatchers.IO)
+
+    /** The Sports replays whose names match [query], closest first, then the newest by the date in the name, then in the Provider's order: every one, a highlights show as well as a game. */
+    private fun foundReplays(index: SearchIndex, query: String): List<Replay> {
+        val hits = index.findReplays(query).take(REPLAYS_FOUND)
+        val replays = store.replays(hits.map { index.replays[it.index] })
+        return hits.mapNotNull { replays[index.replays[it.index]] }
+    }
 
     /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
     private fun foundChannels(index: SearchIndex, query: String): List<Channel> {
@@ -990,7 +1002,10 @@ class Library private constructor(
      * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
      * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
      * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
-     * More live events and Replays join as M3's tickets land.
+     * After the League rows, Replays: the Sports replays whose two teams are teams of the Leagues on
+     * (the teams the Leagues' Games name, finished ones included), newest first by the date in the
+     * name, then by when the Provider added them ([matchReplays]), at most [REPLAYS_ROW]; left out
+     * when none matches. More live events joins as its ticket lands.
      */
     suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
         liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
@@ -998,7 +1013,12 @@ class Library private constructor(
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
-        val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
+        val schedule = games(leagues.map { it.key }, now)
+        val games = schedule.filter { it.state != GameState.Over }
+        val replays = if (schedule.isEmpty()) emptyList() else {
+            val teams = leagues.associateWith { league -> schedule.filter { it.league == league.key }.flatMap { listOf(it.home, it.away) } }.filterValues { it.isNotEmpty() }
+            matchReplays(store.replays(withTeams = true), teams).take(REPLAYS_ROW)
+        }
         val matched = if (games.isEmpty()) emptyList() else {
             val categories = store.liveCategories().associateBy { it.id }
             val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
@@ -1020,9 +1040,41 @@ class Library private constructor(
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             if (todayRow.isNotEmpty()) add(HomeRow.Today(todayRow))
             addAll(perLeague)
+            if (replays.isNotEmpty()) add(HomeRow.Replays(replays))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
         }
+    }
+
+    /** Every Sports replay the catalog has (CONTEXT.md), as its name reads, in the Provider's order. */
+    internal suspend fun replays(): List<Replay> = withContext(Dispatchers.IO) { store.replays() }
+
+    /**
+     * [game]'s Replay: the Sports replay naming both its teams ([replayOf]) and dated its day in the
+     * device's zone, or, failing one, the day after or the day before (the Provider's clock is not
+     * the Viewer's), the last added when several. Null until the Provider has one, which is once the
+     * Game is over.
+     */
+    suspend fun gameReplay(game: Game): Replay? = gameReplay(game, ZoneId.systemDefault())
+
+    internal suspend fun gameReplay(game: Game, zone: ZoneId): Replay? = withContext(Dispatchers.IO) {
+        val day = game.start.atZone(zone).toLocalDate()
+        val dated = store.replaysDated(day.minusDays(1), day.plusDays(1)).filter { replayOf(it, game) }
+        listOf(day, day.plusDays(1), day.minusDays(1)).firstNotNullOfOrNull { on ->
+            dated.filter { it.date == on }.maxWithOrNull(compareBy<Replay>({ it.added }, { it.listingId }))
+        }
+    }
+
+    /**
+     * What playing [replay] starts: its Listing's Version, as the Prefix table describes it, on its
+     * own (a Replay has no Backups), from where the Viewer stopped in it. It is keyed as an Unmatched
+     * Movie, so where they stopped outlives Syncs; it never joins Continue watching, which shows Titles.
+     */
+    suspend fun replayPlayPlan(replay: Replay, contentLanguages: List<String>): PlayPlan = withContext(Dispatchers.IO) {
+        val id = TitleId.Unmatched(TitleKind.Movie, replay.listingId)
+        val version = Version(replay.listingId, replay.name, prefixTable.describe(replay.name, replay.category).attributes)
+        val stopped = stopped(id)
+        PlayPlan(id, version, contentLanguages, listOf(version), stopped?.position ?: 0, remembered = rememberedTracks(), length = stopped?.duration)
     }
 
     /**
@@ -1630,6 +1682,9 @@ class Library private constructor(
         private const val COMPLETIONS = 7
         /** At most this many Channels per search: a row of cards. */
         private const val CHANNELS_FOUND = 40
+        /** At most this many Sports replays per search, and in Live's Replays row: two rows of cards. */
+        private const val REPLAYS_FOUND = 40
+        private const val REPLAYS_ROW = 40
         /** How many of a Channel's variants watching it tries (each as TS then HLS) before giving up. */
         private const val CHAIN_VARIANTS = 3
         /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */

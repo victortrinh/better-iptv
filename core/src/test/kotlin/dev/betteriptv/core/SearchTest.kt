@@ -188,15 +188,17 @@ class SearchTest {
 
     private val dramaTv = Channel("Drama TV", "Drama TV", null, null, false, listOf(ChannelVariant(7, "Drama TV", null, false)))
 
-    @Test fun `results show Movies, Shows, genres, Channels, then people`() {
+    @Test fun `results show Movies, Shows, genres, Channels, Replays, then people`() {
         val movie = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
         val show = TitleSummary(TitleId.Tmdb(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
+        val replay = Replay(9, "SOC - Drama FC - Comedy United 01.11.2025", "SOCCER FOOTBALL", null, "Comedy United", "Drama FC", java.time.LocalDate.of(2025, 11, 1), 2025)
         val results = SearchResults(
             movies = listOf(movie),
             shows = listOf(show),
             people = listOf(Person("Dramane Diallo", listOf(movie))),
             channels = listOf(dramaTv),
             genres = listOf(Genre("Drama", listOf(show))),
+            replays = listOf(replay),
         )
 
         assertEquals(
@@ -205,10 +207,23 @@ class SearchTest {
                 SearchGroup.Shows(listOf(show)),
                 SearchGroup.OfGenre(Genre("Drama", listOf(show))),
                 SearchGroup.Channels(listOf(dramaTv)),
+                SearchGroup.Replays(listOf(replay)),
                 SearchGroup.OfPerson(Person("Dramane Diallo", listOf(movie))),
             ),
             results.groups("dra"),
         )
+    }
+
+    @Test fun `a Sports replay is found by its name, and its TMDB ID never makes it a Title (#258)`() = runBlocking {
+        // The Replay carries The Godfather's TMDB ID, as the surveyed Provider's do (wrongly).
+        syncMovies("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25" to 238, "EN - The Godfather (1972)" to 238)
+
+        val bruins = search("bruins")
+        assertEquals(listOf("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25"), bruins.replays.map { it.name })
+        assertTrue(bruins.movies.isEmpty())
+        assertEquals(listOf(SearchGroup.Replays(bruins.replays)), bruins.groups("bruins"))
+        assertEquals(listOf(godfather), search("godfather").movies.map { it.id })
+        assertTrue(search("godfather").replays.isEmpty())
     }
 
     @Test fun `a query that is a genre's whole name shows that genre first (#170)`() = runBlocking {

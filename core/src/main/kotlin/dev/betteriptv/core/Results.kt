@@ -87,6 +87,9 @@ sealed interface HomeRow {
 
     /** On Live: [league]'s Games of the week ahead not shown in a row above, by start. A League with none gets no row. */
     data class LeagueGames(val league: League, val games: List<GameFeeds>) : HomeRow
+
+    /** On Live, after the League rows: the Sports replays of the Leagues on (CONTEXT.md: Sports replay), newest first. Left out when there is none. */
+    data class Replays(val replays: List<LeagueReplay>) : HomeRow
 }
 
 /**

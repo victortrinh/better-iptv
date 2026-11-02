@@ -5,9 +5,10 @@ import java.util.Locale
 
 /**
  * What a search found, best first in each group: [movies] and [shows] whose names match, and
- * [people] (cast) and TMDB [genres] whose names match, each with their Titles the Provider has, and
- * the [channels] whose names match. [completions] are queries one press away: Title names, people
- * and genres the query starts, or genre shortcuts before anything is typed.
+ * [people] (cast) and TMDB [genres] whose names match, each with their Titles the Provider has, the
+ * [channels] whose names match, and the Sports [replays] whose names match (every one, highlights
+ * shows included, since the Replays row shows only the Leagues'). [completions] are queries one
+ * press away: Title names, people and genres the query starts, or genre shortcuts before anything is typed.
  */
 data class SearchResults(
     val movies: List<TitleSummary>,
@@ -16,14 +17,15 @@ data class SearchResults(
     val channels: List<Channel> = emptyList(),
     val genres: List<Genre> = emptyList(),
     val completions: List<String> = emptyList(),
+    val replays: List<Replay> = emptyList(),
 ) {
     /** Whether nothing was found; [completions] may still offer something. */
     val isEmpty: Boolean
-        get() = movies.isEmpty() && shows.isEmpty() && people.isEmpty() && channels.isEmpty() && genres.isEmpty()
+        get() = movies.isEmpty() && shows.isEmpty() && people.isEmpty() && channels.isEmpty() && genres.isEmpty() && replays.isEmpty()
 
     /**
-     * The rows these results show for [query]: Movies, Shows, genres, Channels, then people. A query
-     * that is a genre's whole name (a picked genre completion or shortcut, or the name typed in
+     * The rows these results show for [query]: Movies, Shows, genres, Channels, Replays, then people.
+     * A query that is a genre's whole name (a picked genre completion or shortcut, or the name typed in
      * full) shows that genre first, as Netflix does: the Viewer chose a genre, not a name (#170).
      */
     fun groups(query: String): List<SearchGroup> = buildList {
@@ -34,6 +36,7 @@ data class SearchResults(
         if (shows.isNotEmpty()) add(SearchGroup.Shows(shows))
         genres.filter { it !== picked }.mapTo(this, SearchGroup::OfGenre)
         if (channels.isNotEmpty()) add(SearchGroup.Channels(channels))
+        if (replays.isNotEmpty()) add(SearchGroup.Replays(replays))
         people.mapTo(this, SearchGroup::OfPerson)
     }
 
@@ -48,6 +51,7 @@ sealed interface SearchGroup {
     data class Shows(val titles: List<TitleSummary>) : SearchGroup
     data class OfGenre(val genre: Genre) : SearchGroup
     data class Channels(val channels: List<Channel>) : SearchGroup
+    data class Replays(val replays: List<Replay>) : SearchGroup
     data class OfPerson(val person: Person) : SearchGroup
 }
 
@@ -83,6 +87,11 @@ internal class SearchIndex private constructor(
     /** The Channels' Provider stream ids, in the Provider's order. */
     val channels: LongArray,
     private val channelWords: WordPostings,
+    /** The Sports replays' Listing ids, in the Provider's order. */
+    val replays: LongArray,
+    /** Each Replay's day (epoch days, [NO_DAY] without a date), so the newest rank first without reading them. */
+    private val replayDays: IntArray,
+    private val replayWords: WordPostings,
     /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
     private val titleNames: LongArray,
     /** TMDB's genres of the Titles with metadata, by their English names ([Genres]). */
@@ -135,6 +144,9 @@ internal class SearchIndex private constructor(
     /** Channels whose names match [query], as indexes into [channels]. */
     fun findChannels(query: String): List<Hit> = find(query, channelWords)
 
+    /** Sports replays whose names match [query], as indexes into [replays], closest first, then the newest by the date in the name, then in the Provider's order. */
+    fun findReplays(query: String): List<Hit> = find(query, replayWords).sortedWith(compareBy<Hit>({ it.distance }, { -replayDays[it.index] }, { it.index }))
+
     /** The entries that have a word matching every word of [query]; the worst word's distance counts. */
     private fun find(query: String, words: WordPostings): List<Hit> {
         val wanted = words(query).ifEmpty { return emptyList() }
@@ -173,6 +185,9 @@ internal class SearchIndex private constructor(
         private val personWords = WordPostings.Builder()
         private val channels = Postings64()
         private val channelWords = WordPostings.Builder()
+        private val replays = Postings64()
+        private var replayDays = IntArray(1 shl 8)
+        private val replayWords = WordPostings.Builder()
         private val titleNames = Postings64()
         private val genres = StringTable()
         private val genreTitles = PostingsBuilder()
@@ -231,6 +246,15 @@ internal class SearchIndex private constructor(
             words(name).forEach { channelWords.add(it, index) }
         }
 
+        /** Adds the Sports replay of Listing [id], found by its [name] (without its Prefix), dated [day] (epoch days, [NO_DAY] without a date). */
+        fun replay(id: Long, name: String, day: Int) {
+            val index = replays.size
+            if (index == replayDays.size) replayDays = replayDays.copyOf(index * 2)
+            replays.add(id)
+            replayDays[index] = day
+            words(name).forEach { replayWords.add(it, index) }
+        }
+
         fun build(): SearchIndex {
             val genreTitles = genreTitles.freeze(genres.size)
             return SearchIndex(
@@ -245,6 +269,9 @@ internal class SearchIndex private constructor(
                 personWords.build(),
                 channels.toArray(),
                 channelWords.build(),
+                replays.toArray(),
+                replayDays.copyOf(replays.size),
+                replayWords.build(),
                 titleNames.toArray().apply { sort() },
                 List(genres.size) { genres[it] },
                 List(genres.size) { genreTitles[it] },
@@ -279,6 +306,9 @@ internal class SearchIndex private constructor(
 
         /** A word the Viewer is still typing, or a Title found by TMDB's search alone. */
         const val STARTED_WORD = 1
+
+        /** A Replay whose name has no date ranks after every dated one. */
+        const val NO_DAY = Int.MIN_VALUE
 
         private const val UNMATCHED = 1L shl 62
         private const val KIND_SHIFT = 61
@@ -394,7 +424,8 @@ internal class SearchIndex private constructor(
 
 /**
  * Indexes every Title of [store] by its Versions' cleaned names and the metadata cached for it, in
- * any language, and every Channel by its name. [phase] hears how long each part took, in ms.
+ * any language, every Channel by its name, and every Sports replay by its name without its Prefix.
+ * [phase] hears how long each part took, in ms.
  */
 internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, phase: (name: String, ms: Long) -> Unit = { _, _ -> }): SearchIndex {
     var started = System.nanoTime()
@@ -402,6 +433,8 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
     val builder = SearchIndex.Builder()
     store.forEachChannel(builder::channel)
     lap("channels")
+    store.forEachReplay { id, name, day -> builder.replay(id, ReplayNames.body(name), day?.toEpochDay()?.toInt() ?: SearchIndex.NO_DAY) }
+    lap("replays")
     for (kind in TitleKind.entries) {
         store.forEachTitle(kind) { id, listings ->
             val names = listings.flatMapTo(HashSet()) { (name) ->

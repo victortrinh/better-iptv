@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -25,6 +26,9 @@ import dev.betteriptv.core.GameTeam
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.Quality
+import dev.betteriptv.core.Replay
+import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
 import org.junit.Assert.assertEquals
@@ -38,6 +42,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Instant
+import java.time.LocalDate
 
 /** The Game page: Play focused first and naming the best Feed, which it plays; the Feeds listed with their variants. [Library] is stood in for by [planFor]. */
 @RunWith(RobolectricTestRunner::class)
@@ -110,6 +115,26 @@ class GameScreenTest {
         assertEquals(11L, played!!.version.listingId)
     }
 
+    @Test fun aFinishedGamesReplayShowsAsARowNamedAndDatedWhichPlaysItsListingsVersion() {
+        val over = Game("nhl", "1", Instant.parse("2025-11-10T00:00:00Z"), GameState.Over, home = game.home, away = game.away, broadcasters = emptyList())
+        val replay = Replay(77, "SOC - Canadiens at Toronto Maple Leafs 09.11.25", "SOCCER HOCKEY", null, "Canadiens", "Toronto Maple Leafs", LocalDate.of(2025, 11, 9), 2025)
+        val version = Version(77, replay.name, VersionAttributes())
+        val plan = PlayPlan(TitleId.Unmatched(TitleKind.Movie, 77), version, listOf("en"), listOf(version))
+        var played: Pair<PlayPlan, String>? = null
+        compose.setContent {
+            GameScreen(GameFeeds(over, emptyList()), deviceProfile = { stick }, planFor = ::planFor, onPlay = { p, n -> played = p to n }, replayFor = { replay }, replayPlanFor = { plan })
+        }
+
+        compose.waitUntil { compose.onAllNodesWithTag("replay").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("replay-title").assertTextContains("Replay")
+        compose.onNodeWithText("Canadiens at Toronto Maple Leafs 09.11.25").assertExists()
+        compose.onNodeWithText("November 9, 2025").assertExists()
+        compose.onNodeWithTag("replay").performClick()
+        compose.waitUntil { played != null }
+        assertEquals(77L, played!!.first.version.listingId)
+        assertEquals("Canadiens at Maple Leafs", played!!.second)
+    }
+
     @Test fun withNoFeedPlayIsDisabledAndSaysNoStreamWasFound() {
         var played = 0
         open(GameFeeds(game, emptyList()), onPlay = { _, _ -> played++ })
@@ -121,5 +146,7 @@ class GameScreenTest {
         compose.onNodeWithTag("play-label").assertTextContains("No stream found")
         compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · No stream found")
         assertNull(compose.onAllNodesWithText("Feeds").fetchSemanticsNodes().firstOrNull())
+        // Without a Replay in the catalog, no Replay row either.
+        assertNull(compose.onAllNodesWithTag("replay-title").fetchSemanticsNodes().firstOrNull())
     }
 }

@@ -46,9 +46,11 @@ import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Feed
+import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
+import dev.betteriptv.core.Replay
 import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +66,9 @@ import kotlinx.coroutines.withContext
  * ([planFor]: [Library.channelPlayPlan], its variants as Backups); choosing a variant row starts the
  * Feed from that variant. With no Feed, Play is disabled and says "No stream found". The Game's state is the
  * schedule's: the page never reads a clock off an Event channel's name, and never shows a score.
+ * A finished Game's Replay ([replayFor]: [Library.gameReplay], the Sports replay naming both teams on
+ * the Game's day), once the Provider has one, shows under the header as a "Replay" row: its name,
+ * its date and its Version ([replayPlanFor]: [Library.replayPlayPlan]), which pressing it plays.
  */
 @Composable
 fun GameScreen(
@@ -71,12 +76,18 @@ fun GameScreen(
     deviceProfile: () -> DeviceProfile,
     planFor: (Channel, DeviceProfile) -> PlayPlan,
     onPlay: (PlayPlan, String) -> Unit,
+    replayFor: suspend (Game) -> Replay? = { null },
+    replayPlanFor: suspend (Replay) -> PlayPlan? = { null },
 ) {
     val context = LocalContext.current
     // Each Feed's plan, so its rows list its variants in the order watching tries them.
     val plans by produceState<Map<String, PlayPlan>?>(null, entry) {
         val device = withContext(Dispatchers.Default) { deviceProfile() }
         value = withContext(Dispatchers.Default) { entry.feeds.associate { it.channel.key to planFor(it.channel, device) } }
+    }
+    // The Game's Replay with what playing it starts, once the catalog has one.
+    val replay by produceState<Pair<Replay, PlayPlan>?>(null, entry) {
+        value = withContext(Dispatchers.Default) { replayFor(entry.game)?.let { replay -> replayPlanFor(replay)?.let { replay to it } } }
     }
     val scope = rememberCoroutineScope()
     val name = remember(entry) { context.matchup(entry.game) }
@@ -88,12 +99,19 @@ fun GameScreen(
         Unit
     }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        GameContent(entry, plans, onPlay = { play(it, null) }, onChoose = play)
+        GameContent(entry, plans, replay, onPlay = { play(it, null) }, onChoose = play, onPlayReplay = { plan -> onPlay(plan, name) })
     }
 }
 
 @Composable
-private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay: (Feed) -> Unit, onChoose: (Feed, Version) -> Unit) {
+private fun GameContent(
+    entry: GameFeeds,
+    plans: Map<String, PlayPlan>?,
+    replay: Pair<Replay, PlayPlan>?,
+    onPlay: (Feed) -> Unit,
+    onChoose: (Feed, Version) -> Unit,
+    onPlayReplay: (PlayPlan) -> Unit,
+) {
     val context = LocalContext.current
     val game = entry.game
     val best = entry.best
@@ -153,6 +171,17 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
                     HeaderLogo(away, game.away.shortName)
                     HeaderLogo(home, game.home.shortName)
                 }
+            }
+        }
+        if (replay != null) {
+            val (listing, plan) = replay
+            item(key = "replay") {
+                Text(stringResource(R.string.replay), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp).testTag("replay-title"))
+                Column(Modifier.padding(bottom = 2.dp)) {
+                    Text(listing.title, style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(context.replayDate(listing, long = true) ?: stringResource(R.string.replay), style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                VersionRow(context.versionLine(plan.version), onClick = { onPlayReplay(plan) }, modifier = Modifier.padding(bottom = Spacing.m).testTag("replay"))
             }
         }
         if (entry.feeds.isNotEmpty()) {

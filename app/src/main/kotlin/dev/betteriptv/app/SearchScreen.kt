@@ -49,6 +49,7 @@ import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.Replay
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.SearchGroup
 import dev.betteriptv.core.SearchResults
@@ -58,12 +59,12 @@ import kotlinx.coroutines.delay
 
 /**
  * Search: the [query] typed on a D-pad keyboard on the left, results on the right as each letter
- * lands, grouped as Movies, Shows, genres, Channels and people (each genre and person with their
- * Titles the Provider has). Each key [onEdit]s the query as it is when the key lands, so keys
+ * lands, grouped as Movies, Shows, genres, Channels, Replays and people (each genre and person with
+ * their Titles the Provider has). Each key [onEdit]s the query as it is when the key lands, so keys
  * pressed faster than the stick redraws aren't lost. Under the keyboard, completions replace the
  * query in one press and move focus to the first result; before anything is typed they are genre
  * shortcuts. A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu
- * key adds or removes the Favourite. The tabs switch to the other browsing screens ([onTab]). The
+ * key adds or removes the Favourite; a Sports replay's plays it ([onPlayReplay]). The tabs switch to the other browsing screens ([onTab]). The
  * keyboard takes focus on arrival, unless the screen was reached by picking its tab ([focusTab]).
  */
 @Composable
@@ -78,6 +79,7 @@ fun SearchScreen(
     onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
     onWatch: (Channel) -> Unit,
+    onPlayReplay: (Replay) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -150,7 +152,7 @@ fun SearchScreen(
                 )
             }
             Spacer(Modifier.width(40.dp))
-            Results(library, contentLanguages, query, results, searching = answered != query, tab, firstResult, onOpen, onWatch) { channel, favourite ->
+            Results(library, contentLanguages, query, results, searching = answered != query, tab, firstResult, onOpen, onWatch, onPlayReplay) { channel, favourite ->
                 scope.launch {
                     library.setFavourite(channel.key, favourite)
                     results = results.copy(channels = results.channels.map { if (it.key == channel.key) it.copy(favourite = favourite) else it })
@@ -171,6 +173,7 @@ private fun Results(
     firstResult: FocusRequester,
     onOpen: (TitleId) -> Unit,
     onWatch: (Channel) -> Unit,
+    onPlayReplay: (Replay) -> Unit,
     onFavourite: (Channel, Boolean) -> Unit,
 ) {
     if (results.isEmpty) {
@@ -210,6 +213,14 @@ private fun Results(
                     }
                     Spacer(Modifier.height(14.dp))
                 }
+                is SearchGroup.Replays -> Column {
+                    Text(stringResource(R.string.search_replays, group.replays.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Replays by name alone, highlights shows among them, on cards without a poster: the Provider's is a wrong Title's.
+                    ResultRow(group.replays, key = { "replay/${it.listingId}" }, first) { replay, modifier ->
+                        ReplayCard(replay, onPlayReplay, modifier)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                }
             }
         }
     }
@@ -221,6 +232,7 @@ private val SearchGroup.key: String
         is SearchGroup.Shows -> "shows"
         is SearchGroup.OfGenre -> "genre/${genre.name}"
         is SearchGroup.Channels -> "channels"
+        is SearchGroup.Replays -> "replays"
         is SearchGroup.OfPerson -> "person/${person.name}"
     }
 
