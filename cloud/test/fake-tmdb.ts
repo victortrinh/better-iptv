@@ -22,13 +22,13 @@ export class FakeTmdb {
   private readonly genreLists = new Map<string, { id: number; name: string }[]>();
   private readonly discovered = new Map<string, object[]>();
   /** Other services' fakes, by the URL prefix they answer for. */
-  private readonly others: { prefix: string; answer: (url: URL) => Response }[] = [];
+  private readonly others: { prefix: string; answer: (url: URL, init?: RequestInit) => Response }[] = [];
 
   constructor() {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       const other = this.others.find((o) => url.href.startsWith(o.prefix));
-      if (other) return other.answer(url);
+      if (other) return other.answer(url, init);
       if (!url.href.startsWith("https://api.themoviedb.org/3/")) throw new Error(`unexpected fetch: ${url}`);
       this.requests.push(url);
       this.tokens.push(new Headers(init?.headers).get("Authorization") ?? (url.searchParams.has("api_key") ? `api_key=${url.searchParams.get("api_key")}` : null));
@@ -120,8 +120,8 @@ export class FakeTmdb {
     this.people.set(id, { cast: credits.cast ?? [], crew: credits.crew ?? [] });
   }
 
-  /** Answers the Worker's fetches of URLs starting with [prefix] with [answer], for another service's fake. */
-  alsoServe(prefix: string, answer: (url: URL) => Response) {
+  /** Answers the Worker's fetches of URLs starting with [prefix] with [answer], for another service's fake; [init] is what the fetch was sent with. */
+  alsoServe(prefix: string, answer: (url: URL, init?: RequestInit) => Response) {
     this.others.push({ prefix, answer });
   }
 

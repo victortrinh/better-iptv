@@ -6,6 +6,8 @@ export interface Env {
   TMDB_TOKEN: string;
   /** Where Netflix publishes its Top 10 files, `https://www.netflix.com/tudum/top10/data`. */
   NETFLIX_TOP10: string;
+  /** ESPN's site API root, `https://site.api.espn.com/apis/site/v2/sports`, whose scoreboard needs no key. */
+  ESPN_API: string;
   /** OpenSubtitles' API root, `https://api.opensubtitles.com/api/v1`. */
   OPENSUBTITLES_API: string;
   /** The User-Agent OpenSubtitles asks every request to name the app by. */

@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
-  // Reads the Charts' sources (TMDB, Netflix) for /v1/charts, which only reads D1 (#214).
+  // Reads the Charts' sources (TMDB, Netflix) for /v1/charts and ESPN's scoreboard for /v1/games, which only read D1 (#214, #252).
   "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {
@@ -17,6 +17,7 @@
   "vars": {
     "TMDB_API": "https://api.themoviedb.org/3",
     "NETFLIX_TOP10": "https://www.netflix.com/tudum/top10/data",
+    "ESPN_API": "https://site.api.espn.com/apis/site/v2/sports",
     "OPENSUBTITLES_API": "https://api.opensubtitles.com/api/v1",
     "OPENSUBTITLES_USER_AGENT": "BetterIPTV v1",
     "SUBDL_API": "https://api.subdl.com/api/v1",

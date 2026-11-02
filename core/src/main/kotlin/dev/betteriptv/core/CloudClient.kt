@@ -161,6 +161,17 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         return json.serializeNulls().toJson(answer)
     }
 
+    /**
+     * The Games of [leagues] (by the ids the cloud's schedule knows, cloud/src/schedule.ts) for
+     * today and the week ahead, as the cloud's JSON, which [Games] reads; kept whole, so parts a
+     * later app reads are already there. A League the cloud has no copy of yet is absent from it.
+     */
+    fun games(leagues: List<String>): String {
+        val answer = authorized { token -> post("v1/games", json.toJson(mapOf("leagues" to leagues)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return json.serializeNulls().toJson(answer)
+    }
+
     /** The subtitle file a search offered as [id]; null when its service no longer has it. */
     fun downloadSubtitle(id: String): DownloadedSubtitle? {
         val answer = try {

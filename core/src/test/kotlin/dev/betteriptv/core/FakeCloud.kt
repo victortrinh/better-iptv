@@ -14,7 +14,7 @@ import java.util.concurrent.Executors
 
 /**
  * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
- * answers and Charts.
+ * answers, Charts and Games.
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -37,12 +37,17 @@ class FakeCloud : Closeable {
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
     private val charts = HashMap<String, Map<String, Any?>>()
+    private val games = HashMap<String, List<Map<String, Any?>>>()
     @Volatile private var trending: List<TitleId.Tmdb> = emptyList()
     private val genres = CopyOnWriteArrayList<Map<String, Any?>>()
 
     /** The Regions the device asked Charts for, as sent. */
     val chartsAsked: List<String>
         get() = received.filter { it.path == "/v1/charts" }.map { (read(it.body) as Map<*, *>)["region"] as String }
+
+    /** The League lists the device asked Games for, as sent. */
+    val gamesAsked: List<List<String>>
+        get() = received.filter { it.path == "/v1/games" }.map { ((read(it.body) as Map<*, *>)["leagues"] as List<*>).map { league -> league as String } }
 
     /** The queries the device sent to `/v1/search`, as sent. */
     val searchAsked: List<String>
@@ -140,6 +145,19 @@ class FakeCloud : Closeable {
         }
     }
 
+    /**
+     * Answers `/v1/games` for [league] with [games], each built with [game]. A League not given is
+     * absent from the answer, as one the cloud has no copy of is.
+     */
+    fun games(league: String, vararg games: Map<String, Any?>) {
+        synchronized(this.games) { this.games[league] = games.toList() }
+    }
+
+    /** Stops answering `/v1/games` for [league], as the cloud does once it dropped a League nobody asked for. */
+    fun forgetGames(league: String) {
+        synchronized(games) { games.remove(league) }
+    }
+
     /** Answers `/v1/charts` for every Region with TMDB's trending this week, movies and shows mixed: [titles], in order. */
     fun trending(vararg titles: TitleId.Tmdb) {
         trending = titles.toList()
@@ -216,6 +234,13 @@ class FakeCloud : Closeable {
                     "shows" to trending.filter { it.kind == TitleKind.Show }.map(key),
                 )
                 respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends) + ("genres" to genres.toList()))
+            }
+            "/v1/games" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val asked = (read(body) as Map<*, *>)["leagues"] as List<*>
+                val leagues = asked.mapNotNull { league -> synchronized(games) { games[league] }?.let { mapOf("league" to league, "games" to it) } }
+                respond(exchange, 200, mapOf("leagues" to leagues))
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(204, -1)
             "/v1/upcoming" -> {
@@ -310,3 +335,25 @@ fun tmdbTitle(
     "imdbId" to null,
     "trailers" to emptyList<String>(),
 )
+
+/**
+ * A Game shaped like the cloud's answer (cloud/src/schedule.ts): [home] against [away] (full
+ * names, each also known by its last word, its first word and a three-letter abbreviation) at
+ * [start] (UTC ISO 8601) in [state] (`upcoming`, `live`, `over`), carried by [broadcasters].
+ */
+fun game(
+    id: String,
+    start: String,
+    state: String = "upcoming",
+    home: String = "Toronto Maple Leafs",
+    away: String = "Montreal Canadiens",
+    broadcasters: List<String> = emptyList(),
+    league: String = "nhl",
+): Map<String, Any?> {
+    val team = { name: String ->
+        val shortName = name.substringAfterLast(' ')
+        val abbreviation = name.take(3).uppercase()
+        mapOf("id" to abbreviation, "name" to name, "shortName" to shortName, "abbreviation" to abbreviation, "aliases" to listOf(name, shortName, abbreviation, name.substringBefore(' ')), "logo" to "https://logos.example/$abbreviation.png")
+    }
+    return mapOf("id" to id, "league" to league, "start" to start, "state" to state, "home" to team(home), "away" to team(away), "broadcasters" to broadcasters)
+}
