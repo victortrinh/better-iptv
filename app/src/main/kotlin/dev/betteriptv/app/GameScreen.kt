@@ -58,19 +58,22 @@ import kotlinx.coroutines.withContext
 /**
  * A Game's page, built from the Title page's parts: a header naming the League, both teams and
  * "Live" or the start time, Play with the best Feed named under it, then every Feed grouped by
- * language, the Viewer's Content languages first, each Feed a heading naming its Event channel or
- * Broadcaster with its variants listed under it as a Channel's Versions are, best first for this
- * stick and TV ([deviceProfile], read when the screen opens). Play starts the best Feed's play plan
- * ([planFor]: [Library.channelPlayPlan], its variants as Backups); choosing a variant row starts the
- * Feed from that variant. With no Feed, Play is disabled and says "No stream found". The Game's state is the
- * schedule's: the page never reads a clock off an Event channel's name, and never shows a score.
+ * language, the Viewer's Content languages first, each Feed a heading naming its Event channel,
+ * Broadcaster or League network with its variants listed under it as a Channel's Versions are, best
+ * first for this stick and TV ([deviceProfile], read when the screen opens); the Feeds marked "Not
+ * this game" on this device come last, in a group of their own, each marked. Play starts the best
+ * Feed's play plan ([planFor]: [Library.channelPlayPlan], its variants as Backups); choosing a
+ * variant row starts the Feed from that variant; either way [onPlay] gets the plan, the Game's name
+ * and the Feed, so the player's menu key can list the others. With no Feed, or none left, Play is
+ * disabled and says "No stream found". The Game's state is the schedule's: the page never reads a
+ * clock off an Event channel's name, and never shows a score.
  */
 @Composable
 fun GameScreen(
     entry: GameFeeds,
     deviceProfile: () -> DeviceProfile,
     planFor: (Channel, DeviceProfile) -> PlayPlan,
-    onPlay: (PlayPlan, String) -> Unit,
+    onPlay: (PlayPlan, String, Feed) -> Unit,
 ) {
     val context = LocalContext.current
     // Each Feed's plan, so its rows list its variants in the order watching tries them.
@@ -83,7 +86,7 @@ fun GameScreen(
     val play = { feed: Feed, version: Version? ->
         scope.launch {
             val plan = plans?.get(feed.channel.key) ?: withContext(Dispatchers.Default) { planFor(feed.channel, deviceProfile()) }
-            onPlay(if (version == null) plan else plan.copy(version = plan.versions.firstOrNull { it.listingId == version.listingId } ?: version), name)
+            onPlay(if (version == null) plan else plan.copy(version = plan.versions.firstOrNull { it.listingId == version.listingId } ?: version), name, feed)
         }
         Unit
     }
@@ -105,7 +108,9 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
     }
     val away = rememberArtwork(game.away.logo)
     val home = rememberArtwork(game.home.logo)
-    val groups = remember(entry) { entry.feeds.groupBy { it.language } }
+    // The Feeds by language, as ranked; the dropped ones after every language, as one group.
+    val groups = remember(entry) { entry.feeds.filter { !it.dropped }.groupBy { it.language } }
+    val dropped = remember(entry) { entry.feeds.filter { it.dropped } }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = Spacing.screenY),
@@ -116,10 +121,8 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
                 Column(Modifier.width(HEADER_WIDTH)) {
                     TitleName(context.matchup(game), null)
                     Spacer(Modifier.height(Spacing.s))
-                    val feeds = if (entry.feeds.isEmpty()) stringResource(R.string.game_no_stream)
-                    else context.resources.getQuantityString(R.plurals.game_feeds, entry.feeds.size, entry.feeds.size)
                     Text(
-                        listOf(context.leagueName(game.league), context.gameCaption(game), feeds).joinToString(" · "),
+                        listOf(context.leagueName(game.league), context.gameCaption(game), context.feedCount(entry)).joinToString(" · "),
                         style = Type.body,
                         color = Colors.inkMuted,
                         maxLines = 1,
@@ -158,8 +161,9 @@ private fun GameContent(entry: GameFeeds, plans: Map<String, PlayPlan>?, onPlay:
         if (entry.feeds.isNotEmpty()) {
             item { Text(stringResource(R.string.feeds_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp)) }
             groups.entries.forEachIndexed { index, (language, feeds) ->
-                feedGroup(context, language, feeds, plans, first = index == 0, onChoose)
+                feedGroup(context, language?.let(::languageName) ?: context.getString(R.string.language_untagged), "language $language", feeds, plans, first = index == 0, onChoose)
             }
+            if (dropped.isNotEmpty()) feedGroup(context, context.getString(R.string.feed_not_this_game), "dropped", dropped, plans, first = groups.isEmpty(), onChoose)
         }
     }
 }
@@ -173,20 +177,22 @@ private fun HeaderLogo(logo: androidx.compose.ui.graphics.painter.Painter?, name
 }
 
 /**
- * The Feeds in one [language]: a heading as a Title's language group has ("English · 2"), then each
- * Feed's name with what it is under it, and its variants as Version rows, best first as [plans] rank them.
+ * One group of Feeds, a language's or the dropped ones: a [heading] as a Title's language group has
+ * ("English · 2", "Not this game · 1"), then each Feed's name with what it is under it ([feedKind],
+ * which marks a dropped one), and its variants as Version rows, best first as [plans] rank them.
  */
 private fun LazyListScope.feedGroup(
     context: Context,
-    language: String?,
+    heading: String,
+    key: String,
     feeds: List<Feed>,
     plans: Map<String, PlayPlan>?,
     first: Boolean,
     onChoose: (Feed, Version) -> Unit,
 ) {
-    item(key = "language $language") {
+    item(key = key) {
         Text(
-            "${language?.let(::languageName) ?: context.getString(R.string.language_untagged)} · ${feeds.size}",
+            "$heading · ${feeds.size}",
             style = Type.title,
             color = Colors.ink,
             maxLines = 1,

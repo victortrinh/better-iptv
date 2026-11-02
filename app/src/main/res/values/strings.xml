@@ -59,6 +59,12 @@
     <string name="feeds_title">Feeds</string>
     <string name="feed_event_channel">Event channel</string>
     <string name="feed_broadcaster">Broadcaster · %1$s</string>
+    <string name="feed_league_network">League network · %1$s</string>
+    <!-- The row that drops the playing Feed for this Game on this device, and the mark on a dropped Feed. -->
+    <string name="feed_not_this_game">Not this game</string>
+    <string name="feed_not_this_game_next">Drops this Feed for this Game and plays the next</string>
+    <string name="feed_not_this_game_last">Drops this Feed for this Game; none is left, so the Game page returns</string>
+    <string name="player_feeds_hint">≡ Feeds</string>
     <string name="row_channels">Channels</string>
     <!-- Under a focused country card on Live, and beside a country's name on its Channels screen. -->
     <plurals name="channels_count">

@@ -79,7 +79,7 @@ sealed interface HomeRow {
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 
-    /** On Live: the Games in progress that have a Feed, by start. A live Game with no Feed is left out of the tab. */
+    /** On Live, and on Home after Continue watching: the Games in progress that have a Feed, by start. A live Game with no Feed is left out. */
     data class LiveNow(val games: List<GameFeeds>) : HomeRow
 
     /** On Live: the Games still to start today (the device's day), by start, those with no Feed shown disabled. */
