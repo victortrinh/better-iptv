@@ -14,7 +14,7 @@ import java.time.format.DateTimeFormatter
 /**
  * The Channel browser through the Library after a Sync (#259): the countries the Channels row
  * lists and their order, each country's Categories with their counts and merged names, and each
- * Category's Channels. Now and next on the Channels is a later ticket (#261).
+ * Category's Channels. Now and next beside the Channels is [GuideTest] (#261).
  */
 class ChannelBrowserTest {
     @get:Rule val folder = TemporaryFolder()

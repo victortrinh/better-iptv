@@ -19,7 +19,8 @@ class BackgroundPace(val gap: Duration, val perDay: Int) {
 
 /**
  * Background reading's day, as kept on the device: how many [reads] it made on [date], and whether
- * the Provider [refused] one, which stops it until the next day.
+ * the Provider [refused] one, which stops it until the next day. The guide keeps its own day the
+ * same way ([Library.wantGuide]): its calls, and whether the Provider refused one.
  */
 internal data class ReadingDay(val date: LocalDate, val reads: Int = 0, val refused: Boolean = false) {
     fun kept(): String = "$date $reads ${if (refused) "refused" else "open"}"

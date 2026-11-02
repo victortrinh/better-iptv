@@ -881,9 +881,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     /** Background reading's day ([ReadingDay.kept]), or null before its first read. */
     fun readingDay(): String? = meta(READING_DAY)
 
-    fun saveReadingDay(day: String) = synchronized(writer) {
+    fun saveReadingDay(day: String) = saveDay(READING_DAY, day)
+
+    /** The guide's day ([ReadingDay.kept]: how many guide calls were made, and whether one was refused), or null before its first call. */
+    fun guideDay(): String? = meta(GUIDE_DAY)
+
+    fun saveGuideDay(day: String) = saveDay(GUIDE_DAY, day)
+
+    private fun saveDay(key: String, day: String) = synchronized(writer) {
         writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-            it.bindText(1, READING_DAY)
+            it.bindText(1, key)
             it.bindText(2, day)
             it.step()
         }
@@ -1354,6 +1361,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val DEVICE_TOKEN = "cloud_device_token"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
+        const val GUIDE_DAY = "guide_day"
     }
 }
 

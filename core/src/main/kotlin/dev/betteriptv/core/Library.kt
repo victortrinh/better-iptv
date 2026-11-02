@@ -93,6 +93,27 @@ class Library private constructor(
     /** The thread asking the cloud for Games behind a read that doesn't wait for them ([games]). */
     private val gamesFetches = Executors.newSingleThreadExecutor { Thread(it, "library-games").apply { isDaemon = true } }
     private val gamesFetching = AtomicBoolean()
+    /**
+     * The guide cache (#261): each Channel's programmes from the Provider's per-Channel guide call, by
+     * Channel key, kept until the last of them ends ([GuideEntry.until]). In memory only: programmes
+     * are over within hours, and the next launch asks again for what is on screen.
+     */
+    private val guideCache = ConcurrentHashMap<String, GuideEntry>()
+    /** The Channels the guide is wanted for: the Channel rows on screen, then the Favourites, in that order. */
+    @Volatile private var guideOnScreen: List<Channel> = emptyList()
+    @Volatile private var guideFavourites: List<Channel> = emptyList()
+    /** When a guide call last got no answer, by Channel key: asked again after [GUIDE_RETRY_AFTER], not at every focus. */
+    private val guideUnanswered = ConcurrentHashMap<String, Instant>()
+    /** The thread making guide calls, one at a time, behind the screens that want them. */
+    private val guideFetches = Executors.newSingleThreadExecutor { Thread(it, "library-guide").apply { isDaemon = true } }
+    /** Whether a guide round is queued and not yet started: another want then needs no second one. */
+    private val guideQueued = AtomicBoolean()
+    private val _guideChanges = MutableStateFlow(0)
+
+    /** Bumped each time a guide call lands: screens showing what is on read [guide] again. */
+    val guideChanges: StateFlow<Int> = _guideChanges.asStateFlow()
+    /** The guide's clock: today, for the day a refusal stops it, and now, for the programme on. Tests move it. */
+    @Volatile internal var guideClock: Clock = Clock.systemDefaultZone()
     private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
     private val unsavedGames = ConcurrentHashMap<String, StoredGames>()
     private val unsavedMetadata = ConcurrentHashMap<Pair<String, TitleId.Tmdb>, StoredMetadata>()
@@ -490,6 +511,82 @@ class Library private constructor(
         }
         val versions = ranked.indices.map { chain(it).let { chain -> chain.first().copy(backups = chain.drop(1)) } }
         return PlayPlan(null, versions.first(), contentLanguages, versions, remembered = rememberedTracks())
+    }
+
+    /**
+     * What the Provider's guide says [channel] is showing: the programme on now and the next one,
+     * from the guide cache, or null while the cache has nothing for it: the Channel has no guide id,
+     * its guide hasn't been asked for or answered yet (see [guideOnScreen]), the guide listed nothing
+     * from now on, or the Provider refused a call today. Cheap: read on the main thread by the
+     * Channels screen's rows, the info under a focused Favourite and the player's top scrim, again
+     * whenever [guideChanges] moves.
+     */
+    fun guide(channel: Channel): NowNext? {
+        val now = guideClock.instant()
+        return guideCache[channel.key]?.takeIf { it.until.isAfter(now) }?.at(now)?.takeUnless { it.isEmpty }
+    }
+
+    /**
+     * The Channels whose rows are on screen right now (the Channels screen's, or the one the player
+     * plays): their guides are asked for, one call at a time, behind the screen, those with a guide
+     * id and nothing cached first, in this order, then the Favourites' (asked for whenever Home's or
+     * Live's rows are read). A Channel the guide doesn't cover (no guide id) is never asked about;
+     * one whose programmes are cached isn't asked again until the last of them ends; one the guide
+     * listed nothing for isn't asked again for [GUIDE_EMPTY_KEPT_FOR]. At the first call the Provider
+     * refuses (any answer that isn't a guide, a 429 or a 503 alike, as a Header read counts them) no
+     * more are made until the next day, as Background reading stops after a refused Header read; a
+     * call that gets no answer at all is tried again after [GUIDE_RETRY_AFTER]. Each answer bumps
+     * [guideChanges].
+     */
+    fun guideOnScreen(channels: List<Channel>) = wantGuide(onScreen = channels)
+
+    private fun wantGuide(onScreen: List<Channel>? = null, favourites: List<Channel>? = null) {
+        if (onScreen != null) guideOnScreen = onScreen
+        if (favourites != null) guideFavourites = favourites
+        if (!guideQueued.compareAndSet(false, true)) return
+        try {
+            guideFetches.execute {
+                guideQueued.set(false)
+                fetchGuides()
+            }
+        } catch (e: RejectedExecutionException) {
+            // Closed: nothing wants the guide any more.
+        }
+    }
+
+    /** One round of guide calls, on the guide thread: every Channel wanted and not cached, in order, until none is left or the Provider refuses. */
+    private fun fetchGuides() {
+        while (true) {
+            val now = guideClock.instant()
+            val day = ReadingDay.of(store.guideDay(), LocalDate.now(guideClock))
+            if (day.refused) return
+            val login = credentials.load() ?: return
+            val wanted = (guideOnScreen + guideFavourites).distinctBy { it.key }
+            val next = wanted.firstOrNull { guideWanted(it, now) } ?: return
+            val variant = next.variants.first { it.guideId.isNotEmpty() }
+            try {
+                val programmes = XtreamClient(login, http).shortGuide(variant.id, GUIDE_PROGRAMMES)
+                val until = programmes.maxOfOrNull { it.end }?.takeIf { it.isAfter(now) } ?: now + GUIDE_EMPTY_KEPT_FOR
+                guideCache[next.key] = GuideEntry(programmes, until)
+                guideUnanswered.remove(next.key)
+                store.saveGuideDay(day.copy(reads = day.reads + 1).kept())
+                _guideChanges.value++
+            } catch (e: GuideRefused) {
+                // The Provider refused: no more guide calls today.
+                store.saveGuideDay(day.copy(refused = true).kept())
+                return
+            } catch (e: IOException) {
+                guideUnanswered[next.key] = now
+            }
+        }
+    }
+
+    /** Whether [channel]'s guide is to be asked for at [now]: the guide covers it, nothing cached stands, and no unanswered call is still fresh. */
+    private fun guideWanted(channel: Channel, now: Instant): Boolean {
+        if (channel.guideId.isEmpty()) return false
+        if (guideCache[channel.key]?.until?.isAfter(now) == true) return false
+        val unanswered = guideUnanswered[channel.key] ?: return true
+        return !now.isBefore(unanswered + GUIDE_RETRY_AFTER)
     }
 
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
@@ -1005,6 +1102,7 @@ class Library private constructor(
             if (trending.isNotEmpty()) add(HomeRow.Chart(ChartList.Trending, null, trending.map { card(it) }))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
+            wantGuide(favourites = favourites)
         }
     }
 
@@ -1069,6 +1167,7 @@ class Library private constructor(
             if (replays.isNotEmpty()) add(HomeRow.Replays(replays))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
+            wantGuide(favourites = favourites)
         }
     }
 
@@ -1716,6 +1815,7 @@ class Library private constructor(
 
     override fun close() {
         gamesFetches.shutdownNow()
+        guideFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.
         saves.shutdown()
         saves.awaitTermination(SAVES_ON_CLOSE_SECONDS, TimeUnit.SECONDS)
@@ -1783,6 +1883,12 @@ class Library private constructor(
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
         private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
+        /** How many programmes a guide call asks for: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
+        private const val GUIDE_PROGRAMMES = 4
+        /** How long a Channel the guide listed nothing for stays unasked: the guide covers 15% of Channels, and a listed one rarely goes blank for long. */
+        private val GUIDE_EMPTY_KEPT_FOR: Duration = Duration.ofHours(1)
+        /** How long a Channel whose guide call got no answer waits before being asked again: the Wi-Fi may be down, as Background reading assumes. */
+        private val GUIDE_RETRY_AFTER: Duration = Duration.ofMinutes(5)
         /** How long closing waits for the answers still to be saved. */
         private const val SAVES_ON_CLOSE_SECONDS = 5L
         /** How often a read waiting on a save checks that no Sync has taken the writer. */

@@ -40,6 +40,11 @@ fun LiveCountry.name(appLanguage: String): String = alias ?: countryName(code, a
 @Composable
 fun Channel.menuHint(): String = stringResource(if (favourite) R.string.channel_remove_favourite else R.string.channel_add_favourite)
 
-/** The caption under this Channel's name: its country tag, when it has one, then what the menu key does ("UK · ≡ Add to Favourites"). */
+/**
+ * The caption under this Channel's name: its country tag, when it has one, then what the menu key
+ * does ("UK · ≡ Add to Favourites"). Under a focused Favourite, what the Channel is showing
+ * ([programme], [nowNextLabel]) takes the country tag's place when the guide knows it: "The National
+ * · Next 10:00 PM · ≡ Remove from Favourites".
+ */
 @Composable
-fun Channel.caption(): String = listOfNotNull(country, menuHint()).joinToString(" · ")
+fun Channel.caption(programme: String? = null): String = listOfNotNull(programme ?: country, menuHint()).joinToString(" · ")

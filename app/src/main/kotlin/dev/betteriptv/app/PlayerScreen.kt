@@ -102,6 +102,7 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Engine
+import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.Library
@@ -124,6 +125,8 @@ import kotlin.time.Duration.Companion.seconds
  * Feeds instead, the one playing noted, where picking another plays it ([onFeed], a new plan the
  * way the next Episode is) and "Not this game" drops the playing one ([onNotThisGame]). The TV
  * switches to the film's refresh rate where it can.
+ * While a [channel] plays, the top scrim names the programme on now, from the Library's guide cache
+ * (#261), which is asked for the Channel as it plays.
  * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
  * has "Next Episode", and from its credits a card offers the next one, counting down to play it by
  * itself (see [UpNext]) when [settings] allow and it isn't the [inARow]th to start by itself with no
@@ -145,8 +148,13 @@ fun PlayerScreen(
     playingFeed: PlayingFeed? = null,
     onFeed: (Feed) -> Unit = {},
     onNotThisGame: () -> Unit = {},
+    channel: Channel? = null,
 ) {
     val context = LocalContext.current
+    // The programme on now on the Channel playing: the one Channel on screen, so its guide is asked for.
+    LaunchedEffect(channel) { if (channel != null) library.guideOnScreen(listOf(channel)) }
+    val guideChanges by library.guideChanges.collectAsState()
+    val programme = remember(channel, guideChanges) { channel?.let { library.guide(it)?.now?.title } }
     val style by rememberUpdatedState(settings.subtitleStyle)
     val session = remember(plan) { library.playback(plan, playerEngines(context, plan, library::rememberedTracks) { style }) }
     val state by session.state.collectAsState()
@@ -342,7 +350,7 @@ fun PlayerScreen(
         if (player != null) shownSubtitle?.let { DownloadedSubtitles(player, it, subtitleDelay, settings.subtitleStyle) }
 
         when (val shown = state) {
-            is PlaybackState.Starting -> if (!overlay) VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)), feeds = playingFeed != null)
+            is PlaybackState.Starting -> if (!overlay) VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)), feeds = playingFeed != null, programme = programme)
             is PlaybackState.Playing -> {
                 // Named for a few seconds each time a Version starts, so a fallback to a Backup is seen.
                 var named by remember(shown.version, shown.player) { mutableStateOf(true) }
@@ -350,7 +358,7 @@ fun PlayerScreen(
                     delay(NAMED_FOR)
                     named = false
                 }
-                if (named && !overlay) VersionLabel(context.playLabel(shown.version), feeds = playingFeed != null)
+                if (named && !overlay) VersionLabel(context.playLabel(shown.version), feeds = playingFeed != null, programme = programme)
                 suggested?.let { lower ->
                     BufferingSuggestion(lower, onSwitch = { session.switchTo(lower) }, onDismiss = session::dismissSuggestion)
                 }
@@ -368,6 +376,7 @@ fun PlayerScreen(
                 version = state.version,
                 player = player,
                 live = plan.live,
+                programme = programme,
                 target = { scrubTo },
                 onNext = next?.let { { onPlay(it, 0) } },
                 onVersions = { panel = Panel.Versions },
@@ -567,14 +576,24 @@ private val topScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0
 /** The player's scrim over the bottom of the picture, 85% ground at the edge. */
 internal val bottomScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f), 1f to Colors.ground.copy(alpha = 0.85f))
 
-/** Names a Version over the top of the picture, with the key that opens the others: the Versions, or a Game's [feeds]. */
+/**
+ * Names a Version over the top of the picture, with the key that opens the others: the Versions, or
+ * a Game's [feeds]. While a Channel plays and the guide knows its [programme], the programme on now
+ * takes the label's place and the Version's [text] follows it in muted caption.
+ */
 @Composable
-private fun VersionLabel(text: String, feeds: Boolean = false) {
+private fun VersionLabel(text: String, feeds: Boolean = false, programme: String? = null) {
     Row(
         Modifier.fillMaxSize().background(topScrim).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY),
         verticalAlignment = Alignment.Top,
     ) {
-        Text(text, style = Type.label, color = Colors.ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+        if (programme != null) {
+            Text(programme, style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(Spacing.m))
+            Text(text, style = Type.caption, color = Colors.inkMuted, maxLines = 1)
+        } else {
+            Text(text, style = Type.label, color = Colors.ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+        }
         Spacer(Modifier.width(Spacing.m))
         Text(stringResource(if (feeds) R.string.player_feeds_hint else R.string.player_versions_hint), style = Type.caption, color = Colors.inkMuted)
     }
@@ -778,10 +797,22 @@ private fun engineName(engine: Engine) = stringResource(
 /**
  * The player overlay: the Title, its Episode and the Version playing at the top; where playback is,
  * the transport (with "Next Episode" when there is one, [onNext]) and the panels' buttons at the
- * bottom. Play/Pause takes first focus. A [live] Channel has no scrubber and no jumps.
+ * bottom. Play/Pause takes first focus. A [live] Channel has no scrubber and no jumps, and its
+ * [programme] on now, when the guide knows it, is named before how it streams.
  */
 @Composable
-private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, player: ControlledEngine, live: Boolean, target: () -> Long?, onNext: (() -> Unit)?, onVersions: () -> Unit, onTracks: () -> Unit) {
+private fun Overlay(
+    name: String,
+    episode: EpisodeNumber?,
+    version: Version?,
+    player: ControlledEngine,
+    live: Boolean,
+    target: () -> Long?,
+    onNext: (() -> Unit)?,
+    onVersions: () -> Unit,
+    onTracks: () -> Unit,
+    programme: String? = null,
+) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
@@ -809,7 +840,7 @@ private fun Overlay(name: String, episode: EpisodeNumber?, version: Version?, pl
                         BadgeRow(version.attributes.cardBadges())
                         Spacer(Modifier.width(Spacing.s))
                     }
-                    Text(context.playLabel(version), style = Type.caption, color = Colors.ink, maxLines = 1)
+                    Text(listOfNotNull(programme, context.playLabel(version)).joinToString(" · "), style = Type.caption, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

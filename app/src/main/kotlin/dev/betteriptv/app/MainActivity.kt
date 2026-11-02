@@ -130,7 +130,7 @@ private fun Root(app: BetterIptvApp) {
             // The best variant depends on what the stick and TV play, read off the main thread as a Title's Play does.
             scope.launch {
                 val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
-                playing = NowPlaying(plan, channel.name)
+                playing = NowPlaying(plan, channel.name, channel = channel)
             }
             Unit
         }
@@ -148,7 +148,7 @@ private fun Root(app: BetterIptvApp) {
             val playFeed = { entry: GameFeeds, feed: Feed ->
                 scope.launch {
                     val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
-                    if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed))
+                    if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed), channel = feed.channel)
                 }
                 Unit
             }
@@ -161,6 +161,7 @@ private fun Root(app: BetterIptvApp) {
                 onEnded = { playing = null },
                 playingFeed = now.game,
                 onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
+                channel = now.channel,
                 onNotThisGame = {
                     now.game?.let { game ->
                         scope.launch {
@@ -186,7 +187,7 @@ private fun Root(app: BetterIptvApp) {
                 game.entry,
                 deviceProfile = { readDeviceProfile(context) },
                 planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
-                onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed)) },
+                onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed), channel = feed.channel) },
                 replayFor = { app.library.gameReplay(it) },
                 replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
                 onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
@@ -283,9 +284,10 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 /**
  * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
  * row to start by itself since a key was pressed; for a Game's Feed, which [game] and Feed, so the
- * player's menu key lists the others.
+ * player's menu key lists the others; for a Channel (a Favourite's, a Feed's or a browsed one), the
+ * [channel], so the player's top scrim names the programme on now.
  */
-private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null)
+private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null, val channel: Channel? = null)
 
 /** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
 private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)
