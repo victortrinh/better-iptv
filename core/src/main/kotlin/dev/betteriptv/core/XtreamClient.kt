@@ -9,6 +9,7 @@ import okhttp3.Request
 import java.io.IOException
 import java.net.URLEncoder
 import java.time.Instant
+import java.util.Base64
 
 /**
  * Speaks the Xtream Codes `player_api`. Responses are read as they arrive (OkHttp asks for gzip and
@@ -267,13 +268,64 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         base.newBuilder().addPathSegment("series").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
 
     /**
+     * The Provider's short guide for Channel variant [streamId] (`get_short_epg`): up to [limit]
+     * programmes from the one on now, in order, their titles decoded from the base64 the Provider
+     * sends (a title that isn't base64 is kept as it came). A programme whose times the Provider
+     * doesn't give as timestamps is left out. Throws [GuideRefused] when the Provider answers with
+     * anything but a guide (a 4xx, a 5xx), so the caller can stop asking for the day; the usual
+     * [ProviderException] when it doesn't answer at all.
+     */
+    fun shortGuide(streamId: Long, limit: Int): List<Programme> = api(
+        "get_short_epg", "stream_id" to streamId.toString(), "limit" to limit.toString(),
+        refused = { status -> GuideRefused(status) },
+    ) { json ->
+        val programmes = mutableListOf<Programme>()
+        fun readListings() = json.eachObject {
+            var title: String? = null
+            var start: Long? = null
+            var end: Long? = null
+            while (hasNext()) when (nextName()) {
+                "title" -> title = nextScalar()
+                "start_timestamp" -> start = nextScalar()?.toLongOrNull()
+                "stop_timestamp" -> end = nextScalar()?.toLongOrNull()
+                else -> skipValue()
+            }
+            if (title != null && start != null && end != null && end > start) {
+                programmes += Programme(decodeTitle(title), Instant.ofEpochSecond(start), Instant.ofEpochSecond(end))
+            }
+        }
+        when (json.peek()) {
+            // Some Providers answer the list bare.
+            JsonReader.Token.BEGIN_ARRAY -> readListings()
+            JsonReader.Token.BEGIN_OBJECT -> json.readObject { field -> if (field == "epg_listings" && peek() == JsonReader.Token.BEGIN_ARRAY) readListings() else skipValue() }
+            else -> json.skipValue()
+        }
+        programmes
+    }
+
+    /** A guide title as the Provider sends it, base64 (`TGl2ZTogTkhMIEhvY2tleQ==`), decoded; left as it is when it isn't base64. */
+    private fun decodeTitle(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return trimmed
+        return try {
+            String(Base64.getMimeDecoder().decode(trimmed), Charsets.UTF_8).trim().ifEmpty { trimmed }
+        } catch (e: IllegalArgumentException) {
+            trimmed
+        }
+    }
+
+    /**
      * Where Channel [id] streams from, as MPEG-TS (`ts`) or HLS (`m3u8`). It holds the login, so it
      * goes to the player engine only.
      */
     fun liveLocation(id: Long, format: String): String =
         base.newBuilder().addPathSegment("live").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$format").build().toString()
 
-    private fun <T> api(action: String?, vararg parameters: Pair<String, String>, read: (JsonReader) -> T): T {
+    /**
+     * One `player_api` call. A response that isn't a success becomes an [Unreachable]
+     * [ProviderException], unless [refused] makes something else of its status (a guide call refused).
+     */
+    private fun <T> api(action: String?, vararg parameters: Pair<String, String>, refused: ((Int) -> IOException)? = null, read: (JsonReader) -> T): T {
         val url = base.newBuilder()
             .addPathSegment("player_api.php")
             .addQueryParameter("username", login.username)
@@ -285,10 +337,13 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             http.newCall(Request.Builder().url(url).build()).execute().use { response ->
                 // The Viewer's Provider answers a wrong password with 513 and a missing login with 511.
                 if (action == null && response.code in setOf(401, 403, 511, 513)) throw ProviderException(WrongLogin)
+                if (!response.isSuccessful && refused != null) throw refused(response.code)
                 if (!response.isSuccessful) throw ProviderException(Unreachable("The Provider answered HTTP ${response.code}."))
                 return JsonReader.of(response.body!!.source()).use(read)
             }
         } catch (e: ProviderException) {
+            throw e
+        } catch (e: GuideRefused) {
             throw e
         } catch (e: IOException) {
             throw unreachable(e)

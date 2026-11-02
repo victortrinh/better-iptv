@@ -414,7 +414,11 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
     val short = row is HomeRow.ContinueWatching || row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents
     val channel = (row as? HomeRow.Favourites)?.channels?.firstOrNull { channelKey(it) == card?.key }
     if (channel != null) {
-        RailInfo(CardInfo.Channel(channel.name, channel.caption()), emptyList(), short, modifier)
+        // What the Favourite is showing, from the guide cache (#261), read again as guide calls land.
+        val context = LocalContext.current
+        val guideChanges by library.guideChanges.collectAsStateWithLifecycle()
+        val programme = remember(channel, guideChanges) { library.guide(channel)?.let { context.nowNextLabel(it) } }
+        RailInfo(CardInfo.Channel(channel.name, channel.caption(programme)), emptyList(), short, modifier)
         return
     }
     // An Event channel: its name (its card is only a logo, when it has one) and when its event starts, in the device's clock.

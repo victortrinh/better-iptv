@@ -257,6 +257,8 @@
     <string name="player_live">En direct · %1$s</string>
     <string name="channel_add_favourite">≡ Ajouter aux favoris</string>
     <string name="channel_remove_favourite">≡ Retirer des favoris</string>
+    <string name="guide_now_next">%1$s · Ensuite %2$s</string>
+    <string name="guide_next">Ensuite %1$s · %2$s</string>
     <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
     <string name="search_title">Recherche</string>
     <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>

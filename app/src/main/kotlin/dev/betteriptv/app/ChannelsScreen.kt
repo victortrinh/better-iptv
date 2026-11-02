@@ -24,9 +24,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +42,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,7 +58,10 @@ import dev.betteriptv.core.BrowsedCategory
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import java.time.Duration
 
 /**
  * What the Channels screen keeps while the player shows over it: the Category the Viewer picked and
@@ -79,20 +85,35 @@ class ChannelsState {
  * Provider's tags; no Event or Clutter Categories), and the focused Category's Channels on the right
  * as rows with logo and name. Left and Right move between the column and the list, Up and Down
  * scroll, OK on a Channel watches it ([onWatch]), the menu key adds or removes the Favourite, and
- * Back (handled by the caller) returns to the country's card on Live. What is on now and next
- * beside each Channel comes with #261 ([ChannelRow]'s programme). The Categories are read again
- * after a Sync.
+ * Back (handled by the caller) returns to the country's card on Live. Each row shows, muted on the
+ * right, what the Channel is showing now and when the next programme starts (#261), from the
+ * Library's guide cache, which is asked for the rows on screen ([Library.guideOnScreen]) and read
+ * again as its calls land ([Library.guideChanges]) and each minute, so the next programme becomes
+ * the one on; a Channel the guide doesn't know keeps to its logo and name. The Categories are read
+ * again after a Sync.
  */
 @Composable
 fun ChannelsScreen(library: Library, country: LiveCountry, appLanguage: String, state: ChannelsState, onWatch: (Channel) -> Unit) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     var categories by remember { mutableStateOf<List<BrowsedCategory>?>(null) }
     LaunchedEffect(country, status.last) { categories = library.browsedCategories(country.code) }
+    val context = LocalContext.current
+    val guideChanges by library.guideChanges.collectAsStateWithLifecycle()
+    val minute by produceState(0) {
+        while (true) {
+            delay(GUIDE_REFRESH.toMillis())
+            value++
+        }
+    }
+    // A new lambda each time a guide call lands or the minute turns, so the rows read the cache again.
+    val guideOf = remember(guideChanges, minute) { { channel: Channel -> library.guide(channel)?.let { context.nowNextLabel(it) } } }
     ChannelsLayout(
         country.name(appLanguage), country.channels, categories, state,
         channelsOf = { library.categoryChannels(it) },
         onWatch = onWatch,
         onFavourite = { channel, favourite -> library.setFavourite(channel.key, favourite) },
+        programmeOf = guideOf,
+        onScreen = library::guideOnScreen,
     )
 }
 
@@ -105,6 +126,8 @@ fun ChannelsScreen(library: Library, country: LiveCountry, appLanguage: String, 
  * any Channel returns to the picked Category, not the row beside it. On arrival, focus goes to
  * the Channel focused last ([ChannelsState.channel]) when the list still has it, else to the picked
  * Category. The menu key on a Channel calls [onFavourite] with the new state and marks the row at once.
+ * Each row shows what its Channel is showing ([programmeOf], null for none), and the Channels whose
+ * rows are on screen are told to [onScreen] as the list scrolls, so their guides are asked for.
  */
 @Composable
 internal fun ChannelsLayout(
@@ -115,6 +138,8 @@ internal fun ChannelsLayout(
     channelsOf: suspend (BrowsedCategory) -> List<Channel>,
     onWatch: (Channel) -> Unit,
     onFavourite: suspend (Channel, Boolean) -> Unit,
+    programmeOf: (Channel) -> String? = { null },
+    onScreen: (List<Channel>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val picked = categories?.firstOrNull { it.name == state.category } ?: categories?.firstOrNull()
@@ -127,6 +152,13 @@ internal fun ChannelsLayout(
         // Another Category's Channels show from their top.
         list.requestScrollToItem(0)
         lastFocused = null
+    }
+    // The Channels whose rows are on screen, as the list scrolls: their guides are asked for, in this order.
+    LaunchedEffect(channels) {
+        val shown = channels ?: return@LaunchedEffect
+        snapshotFlow { list.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
+            .collect { indices -> onScreen(indices.mapNotNull { shown.getOrNull(it) }) }
     }
     // One requester per Category row, so Left from a Channel lands on the picked one, and one on the
     // row Right from the column lands on: the Channel focused last, else the first. Both rows are
@@ -207,6 +239,7 @@ internal fun ChannelsLayout(
                     if (channel.key == entryKey) modifier = modifier.focusRequester(entry)
                     ChannelRow(
                         channel,
+                        programme = programmeOf(channel),
                         onWatch = { onWatch(channel) },
                         onFavourite = {
                             val favourite = !channel.favourite
@@ -245,10 +278,10 @@ private fun CategoryRow(category: BrowsedCategory, picked: Boolean, onClick: () 
 
 /**
  * A Channel in the Channels screen's list: its logo, whole, on a small glass tile, its name in label
- * type and, while focused, what the menu key does in muted caption at the right. [programme], what
- * is on now and when the next programme starts, goes muted on the right once #261 brings it; null
- * leaves the row to the logo and the name, as it must for the Channels the guide doesn't know.
- * Pressing the row watches the Channel ([onWatch]); the menu key calls [onFavourite].
+ * type, [programme] (what is on now and when the next programme starts, [nowNextLabel]) muted on the
+ * right, at most [PROGRAMME_WIDTH] wide, and, while focused, what the menu key does in muted caption
+ * after it. A null [programme] leaves the row to the logo and the name, as it must for the Channels
+ * the guide doesn't know. Pressing the row watches the Channel ([onWatch]); the menu key calls [onFavourite].
  */
 @Composable
 private fun ChannelRow(channel: Channel, onWatch: () -> Unit, onFavourite: () -> Unit, modifier: Modifier = Modifier, programme: String? = null) {
@@ -285,5 +318,7 @@ private fun ChannelRow(channel: Channel, onWatch: () -> Unit, onFavourite: () ->
 
 /** The column of Categories: Search's keyboard column's width. */
 private val COLUMN_WIDTH = 290.dp
+/** How often the rows read the guide again without a call landing, so the next programme becomes the one on. */
+private val GUIDE_REFRESH: Duration = Duration.ofMinutes(1)
 private val LOGO_WIDTH = 64.dp
 private val PROGRAMME_WIDTH = 260.dp

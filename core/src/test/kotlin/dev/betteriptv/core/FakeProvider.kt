@@ -11,6 +11,9 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.net.URLDecoder
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
@@ -99,6 +102,21 @@ class FakeProvider : Closeable {
     /** Movie Listings whose files open but send nothing for [slowStreamDelayMillis], as an overloaded Provider does. */
     val slowStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     @Volatile var slowStreamDelayMillis = 1_000L
+
+    /**
+     * The guide (`get_short_epg`) by Provider stream id: the JSON body answered, as [serveGuide]
+     * writes it. A stream id without one gets an empty guide, as the surveyed Provider answers for
+     * the 85% of Channels its guide doesn't cover.
+     */
+    val guide = ConcurrentHashMap<Long, String>()
+
+    /** Answers every guide call with this HTTP status, as a Provider refusing them would. Null answers them. */
+    @Volatile var refuseGuideWith: Int? = null
+
+    private val _guideRequests = CopyOnWriteArrayList<Long>()
+
+    /** The stream ids whose guide was asked for, in order. */
+    val guideRequests: List<Long> get() = _guideRequests.toList()
 
     /** Called with each `player_api` request's action (null for the account) before it is answered. */
     @Volatile var onRequest: ((action: String?) -> Unit)? = null
@@ -194,6 +212,24 @@ class FakeProvider : Closeable {
      */
     class LiveListing(val name: String, val category: String, val guideId: String? = "")
 
+    /**
+     * Serves these [programmes] as stream [streamId]'s short guide, in order, the way the surveyed
+     * Provider writes them: titles and descriptions base64-encoded, times both as `yyyy-MM-dd HH:mm:ss`
+     * in the Provider's zone and as epoch-second timestamps.
+     */
+    fun serveGuide(streamId: Long, vararg programmes: GuideProgramme) {
+        guide[streamId] = programmes.withIndex().joinToString(",", """{"epg_listings":[""", "]}") { (i, programme) ->
+            val title = Base64.getEncoder().encodeToString(programme.title.toByteArray())
+            fun stamp(at: Instant) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(at.atZone(ZoneOffset.UTC))
+            """{"id":"${streamId * 100 + i}","epg_id":"1","title":"$title","lang":"","start":"${stamp(programme.start)}","end":"${stamp(programme.end)}",""" +
+                """"description":"$title","channel_id":"guide.$streamId","start_timestamp":"${programme.start.epochSecond}","stop_timestamp":"${programme.end.epochSecond}",""" +
+                """"now_playing":${if (i == 0) 1 else 0},"has_archive":0}"""
+        }
+    }
+
+    /** A programme in a served guide: its plain [title] and when it runs. */
+    class GuideProgramme(val title: String, val start: Instant, val end: Instant)
+
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     override fun close() = server.stop(0)
@@ -220,6 +256,12 @@ class FakeProvider : Closeable {
             }
             "get_live_categories" -> respond(exchange) { it.write((liveCategoriesOverride ?: "[]").toByteArray()) }
             "get_live_streams" -> respond(exchange) { it.write((liveListOverride ?: "[]").toByteArray()) }
+            "get_short_epg" -> {
+                val id = query["stream_id"]?.toLongOrNull() ?: -1
+                _guideRequests += id
+                refuseGuideWith?.let { return exchange.sendResponseHeaders(it, -1) }
+                respond(exchange) { it.write((guide[id] ?: """{"epg_listings":[]}""").toByteArray()) }
+            }
             "get_vod_info" -> respond(exchange) { body ->
                 body.write((movieDetails[query["vod_id"]?.toLongOrNull()] ?: """{"info":[],"movie_data":{}}""").toByteArray())
             }

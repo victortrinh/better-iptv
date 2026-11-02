@@ -38,6 +38,9 @@
     <string name="player_live">Live · %1$s</string>
     <string name="channel_add_favourite">≡ Add to Favourites</string>
     <string name="channel_remove_favourite">≡ Remove from Favourites</string>
+    <!-- What a Channel is showing, from the Provider's guide: the programme on now and when the next starts ("The National · Next 10:00 PM"), or the next alone when nothing is on now. -->
+    <string name="guide_now_next">%1$s · Next %2$s</string>
+    <string name="guide_next">Next %1$s · %2$s</string>
     <string name="home_empty">Your rows show up once your catalog is synced.</string>
     <string name="movies_title">Movies</string>
     <string name="shows_title">Shows</string>
