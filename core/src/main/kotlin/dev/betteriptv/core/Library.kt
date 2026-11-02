@@ -893,6 +893,17 @@ class Library private constructor(
     }
 
     /**
+     * The Live tab's rows (CONTEXT.md's Row): the Viewer's Favourites, in the order they were added,
+     * finished Event channels left out, or no rows while there are none. The sports hub's rows (Live
+     * now, Today, a row per League on, More live events, Replays, then the Channels' countries) take
+     * their places around it as M3's tickets land.
+     */
+    suspend fun liveRows(): List<HomeRow> = withContext(Dispatchers.IO) {
+        val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
+        if (favourites.isEmpty()) emptyList() else listOf(HomeRow.Favourites(favourites))
+    }
+
+    /**
      * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
      * (or the world's), TMDB's trending of that kind this week, then New movies (or shows): the
      * newest Titles of that kind, most popular on TMDB first, then a row per genre: its most popular
