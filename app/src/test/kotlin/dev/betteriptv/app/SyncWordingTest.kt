@@ -2,7 +2,10 @@ package dev.betteriptv.app
 
 import android.content.Context
 import dev.betteriptv.core.CompletedSync
+import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.SyncStep
+import dev.betteriptv.core.Unreachable
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -12,27 +15,48 @@ import org.robolectric.annotation.Config
 import java.time.Duration
 import java.time.Instant
 
-/** Settings › Catalog's Sync status line while a Sync's Titles regroup, then once they have (#271). */
+/** Settings › Catalog's Sync row and Checking titles row, as worded for each status. */
 @RunWith(RobolectricTestRunner::class)
 class SyncWordingTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
-    private val synced = CompletedSync(Instant.now(), Duration.ofMillis(239_700), 150, emptyList())
+    private val synced = CompletedSync(Instant.now(), Duration.ofMillis(239_700), 150, emptyList(), showListingCount = 45, channelListingCount = 5)
 
     @Test
-    fun saysTitlesAreStillRegroupingAndHowFarThenThatTheSyncIsDone() {
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: finding the names to check.", context.describe(SyncStatus.Matching(synced, 0, null)))
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 1,250 of 2,385 names checked.", context.describe(SyncStatus.Matching(synced, 1_250, 2_385)))
-        assertEquals("Synced just now in 239.7 s. Still regrouping titles: 0 of 1 name checked.", context.describe(SyncStatus.Matching(synced, 0, 1)))
+    fun namesAFirstSyncsStepAndCountsItsEntries() {
+        assertEquals("Syncing… Channels", context.describe(SyncStatus.Running(null, null, SyncStep.Channels)))
+        assertEquals("Syncing… Movies · 12,345 entries", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))
+        assertEquals("Syncing… Saving · 1 entry", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Saving, 1)))
+    }
+
+    @Test
+    fun tellsALaterSyncHowFarItIsByTheLastOnesCounts() {
+        assertEquals("Syncing… 50% (showing the catalog from just now)", context.describe(SyncStatus.Running(synced, synced.finishedAt, SyncStep.Movies, 100)))
+    }
+
+    @Test
+    fun saysAHeldCatalogShowsOnComingBack() {
+        assertEquals("Synced just now. It shows when you come back.", context.describe(SyncStatus.Ready(synced, Instant.now())))
+    }
+
+    @Test
+    fun saysTheSyncIsDoneAndHowMatchingIsGoingApart() {
         assertEquals("Synced just now in 239.7 s.", context.describe(SyncStatus.Synced(synced)))
+        assertEquals("Finding the names to check…", context.describe(MatchingStatus(0, null)))
+        assertEquals("1,250 of 2,385 names checked", context.describe(MatchingStatus(1_250, 2_385)))
+        assertEquals("0 of 1 name checked", context.describe(MatchingStatus(0, 1)))
+    }
+
+    @Test
+    fun namesWhyASyncFailed() {
+        assertEquals("Sync failed: Couldn't reach your Provider. x Showing the catalog from just now.", context.describe(SyncStatus.Failed(Unreachable("x"), synced, synced.finishedAt, SyncStep.Movies)))
     }
 
     @Test
     @Config(qualifiers = "fr")
     fun saysItInFrench() {
-        assertEquals(
-            "Synchronisé à l'instant en 239,7 s. Regroupement des titres en cours : 25 noms vérifiés sur 60.",
-            context.describe(SyncStatus.Matching(synced, 25, 60)),
-        )
+        assertEquals("Synchronisation… Films · 12\u202f345 entrées", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))
+        assertEquals("25 noms vérifiés sur 60", context.describe(MatchingStatus(25, 60)))
         assertEquals("Synchronisé à l'instant en 239,7 s.", context.describe(SyncStatus.Synced(synced)))
+        assertEquals("Synchronisé à l'instant. Il s'affichera à votre retour.", context.describe(SyncStatus.Ready(synced, Instant.now())))
     }
 }

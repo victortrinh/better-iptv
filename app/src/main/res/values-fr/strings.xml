@@ -45,32 +45,35 @@
     </plurals>
     <string name="sync_now">Synchroniser</string>
     <string name="sync_never">Pas encore synchronisé.</string>
-    <string name="sync_first">Première synchronisation de votre catalogue…</string>
+    <string name="sync_checklist_title">Préparation de votre catalogue</string>
+    <string name="sync_step_channels">Chaînes</string>
+    <string name="sync_step_movies">Films</string>
+    <string name="sync_step_shows">Séries</string>
+    <string name="sync_step_saving">Enregistrement</string>
+    <string name="sync_retry">Réessayer</string>
+    <string name="sync_running_step">Synchronisation… %1$s</string>
+    <string name="sync_running_step_entries">Synchronisation… %1$s · %2$s</string>
+    <plurals name="sync_entries">
+        <item quantity="one">%1$s entrée</item>
+        <item quantity="many">%1$s entrées</item>
+        <item quantity="other">%1$s entrées</item>
+    </plurals>
     <string name="sync_running">Synchronisation… (affichage du catalogue synchronisé %1$s)</string>
-    <string name="sync_first_progress">Première synchronisation de votre catalogue… %1$s jusqu\'ici</string>
     <string name="sync_running_progress">Synchronisation… %1$s (affichage du catalogue synchronisé %2$s)</string>
-    <plurals name="sync_movies_read">
-        <item quantity="one">%1$s film</item>
-        <item quantity="many">%1$s films</item>
-        <item quantity="other">%1$s films</item>
-    </plurals>
-    <plurals name="sync_shows_read">
-        <item quantity="one">%1$s série</item>
-        <item quantity="many">%1$s séries</item>
-        <item quantity="other">%1$s séries</item>
-    </plurals>
-    <string name="sync_movies_and_shows">%1$s et %2$s</string>
-    <plurals name="sync_matching">
-        <item quantity="one">Regroupement des titres en cours : %1$s nom vérifié sur %2$s.</item>
-        <item quantity="many">Regroupement des titres en cours : %1$s noms vérifiés sur %2$s.</item>
-        <item quantity="other">Regroupement des titres en cours : %1$s noms vérifiés sur %2$s.</item>
-    </plurals>
-    <string name="sync_matching_start">Regroupement des titres en cours : recherche des noms à vérifier.</string>
+    <string name="sync_ready">Synchronisé %1$s. Il s\'affichera à votre retour.</string>
     <string name="sync_done">Synchronisé %1$s en %2$s s.</string>
     <string name="sync_failed">Échec de la synchronisation : %1$s Affichage du catalogue synchronisé %2$s.</string>
     <string name="catalog_not_saved">Impossible d\'enregistrer le catalogue sur cet appareil (%1$s).</string>
     <string name="sync_just_now">à l\'instant</string>
     <string name="sync_failed_empty">Échec de la synchronisation : %1$s</string>
+    <string name="matching_row">Vérification des titres</string>
+    <string name="matching_finding">Recherche des noms à vérifier…</string>
+    <plurals name="matching_checking">
+        <item quantity="one">%1$s nom vérifié sur %2$s</item>
+        <item quantity="many">%1$s noms vérifiés sur %2$s</item>
+        <item quantity="other">%1$s noms vérifiés sur %2$s</item>
+    </plurals>
+    <string name="home_titles_pending">Les films et séries arriveront à la fin de la synchronisation.</string>
 
     <string name="badge_confirmed">Confirmé</string>
     <string name="badge_confirmed_meaning">lu dans le fichier</string>
