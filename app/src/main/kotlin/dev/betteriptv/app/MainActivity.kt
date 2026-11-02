@@ -100,7 +100,7 @@ private fun Root(app: BetterIptvApp) {
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
-        // The card Back from a Title or Channel returns to, on Home or a Titles tab.
+        // The card Back from a Title or Channel returns to, on Home, a Titles tab or Live.
         var returnedTo by remember { mutableStateOf<RowCard?>(null) }
         // The screen was reached by picking its tab, which keeps focus there.
         var byTab by remember { mutableStateOf(false) }

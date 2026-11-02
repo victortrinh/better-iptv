@@ -28,12 +28,8 @@ enum class League(val key: String) {
 
         /**
          * The Leagues on until the Viewer chooses, by [region] (ISO 3166): Canada's seven from
-         * CONTEXT.md; the United States its big four with college football and basketball and MLS;
-         * Britain and Ireland the Premier League, the Champions League and the two American Leagues
-         * seen most there; France, Germany and Austria, Spain and Italy their own top flight with the
-         * Champions League, the Premier League where it isn't their own, and the NBA; Mexico the NFL,
-         * MLB, NBA and Champions League; anywhere else the four Leagues watched most widely: the
-         * Premier League, the Champions League, the NBA and the NFL.
+         * CONTEXT.md, and the other Regions' as settled in `docs/roadmap.md` (M3, "Default Leagues
+         * by Region").
          */
         fun defaults(region: String): Set<League> = when (region.uppercase()) {
             "CA" -> setOf(Nhl, Nfl, Nba, Mlb, Cfl, Mls, PremierLeague)

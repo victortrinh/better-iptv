@@ -898,10 +898,7 @@ class Library private constructor(
      * now, Today, a row per League on, More live events, Replays, then the Channels' countries) take
      * their places around it as M3's tickets land.
      */
-    suspend fun liveRows(): List<HomeRow> = withContext(Dispatchers.IO) {
-        val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
-        if (favourites.isEmpty()) emptyList() else listOf(HomeRow.Favourites(favourites))
-    }
+    suspend fun liveRows(): List<HomeRow> = favourites().let { if (it.isEmpty()) emptyList() else listOf(HomeRow.Favourites(it)) }
 
     /**
      * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
