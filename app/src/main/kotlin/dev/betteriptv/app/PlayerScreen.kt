@@ -22,6 +22,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +85,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -93,12 +95,15 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.VersionHeader
+import dev.betteriptv.app.ui.components.VersionLine
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Engine
+import dev.betteriptv.core.Feed
+import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.PlaybackState
@@ -115,7 +120,10 @@ import kotlin.time.Duration.Companion.seconds
  * right, like rewind and fast-forward, scrub: see [Scrub]), with Versions and Audio and subtitles,
  * where the Viewer picks Tracks, which are remembered for the next file, styles subtitles ([settings]' style, changed through
  * [onSubtitleStyle]) and delays the sound or subtitles. The remote's Menu key opens the Versions
- * directly, with "Try other player". The TV switches to the film's refresh rate where it can.
+ * directly, with "Try other player"; while a Game's Feed plays ([playingFeed]) it opens the Game's
+ * Feeds instead, the one playing noted, where picking another plays it ([onFeed], a new plan the
+ * way the next Episode is) and "Not this game" drops the playing one ([onNotThisGame]). The TV
+ * switches to the film's refresh rate where it can.
  * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
  * has "Next Episode", and from its credits a card offers the next one, counting down to play it by
  * itself (see [UpNext]) when [settings] allow and it isn't the [inARow]th to start by itself with no
@@ -134,6 +142,9 @@ fun PlayerScreen(
     inARow: Int,
     onPlay: (PlayPlan, inARow: Int) -> Unit,
     onEnded: () -> Unit,
+    playingFeed: PlayingFeed? = null,
+    onFeed: (Feed) -> Unit = {},
+    onNotThisGame: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val style by rememberUpdatedState(settings.subtitleStyle)
@@ -304,7 +315,11 @@ fun PlayerScreen(
             }
             pressed++
             when {
-                event.key == Key.Menu -> panel = if (state is PlaybackState.Ended) Panel.None else Panel.Versions
+                event.key == Key.Menu -> panel = when {
+                    state is PlaybackState.Ended -> Panel.None
+                    playingFeed != null -> Panel.Feeds
+                    else -> Panel.Versions
+                }
                 event.key == Key.MediaPlayPause -> player?.togglePause()
                 // A Channel is live: there is nowhere to seek to.
                 event.key == Key.MediaRewind -> if (!plan.live) moveScrub(forward = false, event)
@@ -327,7 +342,7 @@ fun PlayerScreen(
         if (player != null) shownSubtitle?.let { DownloadedSubtitles(player, it, subtitleDelay, settings.subtitleStyle) }
 
         when (val shown = state) {
-            is PlaybackState.Starting -> if (!overlay) VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)))
+            is PlaybackState.Starting -> if (!overlay) VersionLabel(stringResource(R.string.player_starting, context.playLabel(shown.version)), feeds = playingFeed != null)
             is PlaybackState.Playing -> {
                 // Named for a few seconds each time a Version starts, so a fallback to a Backup is seen.
                 var named by remember(shown.version, shown.player) { mutableStateOf(true) }
@@ -335,7 +350,7 @@ fun PlayerScreen(
                     delay(NAMED_FOR)
                     named = false
                 }
-                if (named && !overlay) VersionLabel(context.playLabel(shown.version))
+                if (named && !overlay) VersionLabel(context.playLabel(shown.version), feeds = playingFeed != null)
                 suggested?.let { lower ->
                     BufferingSuggestion(lower, onSwitch = { session.switchTo(lower) }, onDismiss = session::dismissSuggestion)
                 }
@@ -376,6 +391,24 @@ fun PlayerScreen(
                 },
                 onClose = { panel = Panel.None },
             )
+            Panel.Feeds -> FeedsPanel(
+                playingFeed!!.entry,
+                playingFeed.feed,
+                engine = player?.engine,
+                onTryOtherPlayer = {
+                    panel = Panel.None
+                    session.tryOtherPlayer()
+                },
+                onPick = { feed ->
+                    panel = Panel.None
+                    onFeed(feed)
+                },
+                onNotThisGame = {
+                    panel = Panel.None
+                    onNotThisGame()
+                },
+                onClose = { panel = Panel.None },
+            )
             Panel.Tracks -> TracksPanel(
                 player,
                 isOriginal = plan::isOriginal,
@@ -410,7 +443,10 @@ fun PlayerScreen(
 }
 
 /** What's open over the picture besides the overlay. */
-private enum class Panel { None, Versions, Tracks }
+private enum class Panel { None, Versions, Feeds, Tracks }
+
+/** The Game whose [feed] the player plays, among the [entry]'s Feeds, for the menu key's Feed list; absent while a Title or a Channel plays. */
+class PlayingFeed(val entry: GameFeeds, val feed: Feed)
 
 private const val SEEK_STEP = 10_000L
 
@@ -531,16 +567,16 @@ private val topScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0
 /** The player's scrim over the bottom of the picture, 85% ground at the edge. */
 internal val bottomScrim = Brush.verticalGradient(0f to Colors.ground.copy(alpha = 0f), 1f to Colors.ground.copy(alpha = 0.85f))
 
-/** Names a Version over the top of the picture, with the key that opens the others. */
+/** Names a Version over the top of the picture, with the key that opens the others: the Versions, or a Game's [feeds]. */
 @Composable
-private fun VersionLabel(text: String) {
+private fun VersionLabel(text: String, feeds: Boolean = false) {
     Row(
         Modifier.fillMaxSize().background(topScrim).padding(horizontal = Spacing.screenX, vertical = Spacing.screenY),
         verticalAlignment = Alignment.Top,
     ) {
         Text(text, style = Type.label, color = Colors.ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
         Spacer(Modifier.width(Spacing.m))
-        Text(stringResource(R.string.player_versions_hint), style = Type.caption, color = Colors.inkMuted)
+        Text(stringResource(if (feeds) R.string.player_feeds_hint else R.string.player_versions_hint), style = Type.caption, color = Colors.inkMuted)
     }
 }
 
@@ -652,6 +688,78 @@ private fun Failed(onTryOtherPlayer: () -> Unit) {
 }
 
 /** The "Try other player" button, which takes focus as it appears. */
+/**
+ * What the Menu key opens while a Game's Feed plays, laid out as the Versions are: the player and
+ * "Try other player", then the Game's Feeds as the Game page ranks them, each named with what it is
+ * and its language, the one [playing] noted "Playing" (picking it just closes the list), the ones
+ * marked "Not this game" last and marked; then a "Not this game" row that drops the playing Feed for
+ * this Game on this device and plays the next ([onNotThisGame]), or returns to the Game page when none
+ * is left. Picking another Feed plays it ([onPick]). With an [engine] playing, "Try other player"
+ * takes first focus; without one, the first row does.
+ */
+@Composable
+internal fun FeedsPanel(
+    entry: GameFeeds,
+    playing: Feed,
+    engine: Engine?,
+    onTryOtherPlayer: () -> Unit,
+    onPick: (Feed) -> Unit,
+    onNotThisGame: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val context = LocalContext.current
+    val first = remember { FocusRequester() }
+    // Once the list has laid the row out.
+    if (engine == null) LaunchedEffect(Unit) {
+        withFrameNanos {}
+        first.requestFocus()
+    }
+    BackHandler(onBack = onClose)
+    Box(Modifier.fillMaxSize().background(bottomScrim)) {
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(0.62f).wrapContentHeight(Alignment.Bottom)
+                .padding(horizontal = Spacing.screenX - Spacing.m)
+                .background(Colors.veil, RoundedCornerShape(topStart = Corners.card, topEnd = Corners.card))
+                .padding(start = Spacing.m, end = Spacing.m, top = Spacing.m),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(bottom = Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.feeds_title), style = Type.headline, color = Colors.ink, modifier = Modifier.weight(1f))
+                if (engine != null) {
+                    Text(stringResource(R.string.player_engine, engineName(engine)), style = Type.caption, color = Colors.inkMuted)
+                    Spacer(Modifier.width(Spacing.m))
+                    TryOtherPlayer(onTryOtherPlayer)
+                }
+            }
+            LazyColumn(
+                Modifier.weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s),
+                contentPadding = PaddingValues(bottom = Spacing.screenY),
+            ) {
+                items(entry.feeds, key = { it.channel.key }) { feed ->
+                    val isPlaying = feed.channel.key == playing.channel.key
+                    VersionRow(
+                        VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = context.feedNote(feed, isPlaying), live = feed.name),
+                        onClick = { if (isPlaying) onClose() else onPick(feed) },
+                        modifier = (if (feed == entry.feeds.first()) Modifier.focusRequester(first) else Modifier).testTag("feed ${feed.channel.key}"),
+                    )
+                }
+                item(key = "not this game") {
+                    val next = entry.next(playing)
+                    VersionRow(
+                        VersionLine(
+                            emptyList(), "", "", "", bitrate = null, backups = null,
+                            note = stringResource(if (next != null) R.string.feed_not_this_game_next else R.string.feed_not_this_game_last),
+                            live = stringResource(R.string.feed_not_this_game),
+                        ),
+                        onClick = onNotThisGame,
+                        modifier = Modifier.testTag("not-this-game"),
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TryOtherPlayer(onClick: () -> Unit) {
     val focus = remember { FocusRequester() }

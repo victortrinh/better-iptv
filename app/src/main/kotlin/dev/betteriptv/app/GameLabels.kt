@@ -65,19 +65,38 @@ fun Context.matchup(game: Game, short: Boolean = true): String =
 /**
  * What the info under a rail tells about a Game: its League and both teams on one line, then the
  * Broadcasters whose Channels were found among its Feeds (not the schedule's whole list: a Canadian
- * Viewer has no Fox) and how many Feeds the catalog has, or that none was found.
+ * Viewer has no Fox) and how many Feeds are left, the dropped ones not counted, or that none was found.
  */
 fun Context.gameInfo(entry: GameFeeds): CardInfo.Game {
     val game = entry.game
-    val feeds = if (entry.feeds.isEmpty()) getString(R.string.game_no_stream) else resources.getQuantityString(R.plurals.game_feeds, entry.feeds.size, entry.feeds.size)
-    val found = entry.feeds.mapNotNull { it.broadcaster }.distinct().take(3).joinToString(", ")
+    val feeds = feedCount(entry)
+    val found = entry.feeds.filter { !it.dropped }.mapNotNull { it.broadcaster }.distinct().take(3).joinToString(", ")
     return CardInfo.Game("${leagueName(game.league)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
 }
 
-/** What a Feed is, under its name on the Game page: an Event channel, or the Broadcaster's Channel it is. */
-fun Context.feedKind(feed: Feed): String = when (feed.kind) {
-    FeedKind.EventChannel -> getString(R.string.feed_event_channel)
-    FeedKind.Broadcaster -> getString(R.string.feed_broadcaster, feed.broadcaster.orEmpty())
+/** How many Feeds a Game has left, the ones marked "Not this game" not counted ("3 Feeds"), or "No stream found". */
+fun Context.feedCount(entry: GameFeeds): String {
+    val left = entry.feeds.count { !it.dropped }
+    return if (left == 0) getString(R.string.game_no_stream) else resources.getQuantityString(R.plurals.game_feeds, left, left)
+}
+
+/**
+ * What a Feed is, under its name on the Game page: an Event channel, the Broadcaster's Channel it
+ * is, or the League's network standing in; a Feed marked "Not this game" says so after it.
+ */
+fun Context.feedKind(feed: Feed): String {
+    val kind = when (feed.kind) {
+        FeedKind.EventChannel -> getString(R.string.feed_event_channel)
+        FeedKind.Broadcaster -> getString(R.string.feed_broadcaster, feed.broadcaster.orEmpty())
+        FeedKind.LeagueNetwork -> getString(R.string.feed_league_network, feed.broadcaster.orEmpty())
+    }
+    return if (feed.dropped) "$kind · ${getString(R.string.feed_not_this_game)}" else kind
+}
+
+/** A Feed's row in the player's Feed list: what it is and its language ("Event channel · English"), after "Playing" for the one on. */
+fun Context.feedNote(feed: Feed, playing: Boolean): String {
+    val note = "${feedKind(feed)} · ${feed.language?.let(::languageName) ?: getString(R.string.language_untagged)}"
+    return if (playing) "${getString(R.string.player_playing)} · $note" else note
 }
 
 /** The muted line under Play naming the Feed it starts: its name and its language ("Senators @ Bruins · English"). */
