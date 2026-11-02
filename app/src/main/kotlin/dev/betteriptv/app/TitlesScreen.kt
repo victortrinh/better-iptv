@@ -51,7 +51,12 @@ fun TitlesScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     val synced = status.last
-    LaunchedEffect(synced, kind) { state.count = withContext(Dispatchers.IO) { library.titleCount(kind) } }
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
+    // Counted again whenever the catalog changes, not only when a Sync's status does: a count read
+    // just before a first Sync's catalog was in place kept the tab on its placeholder through
+    // Matching (#271). While the tab still counts none, each Matching batch counts again too.
+    val recount = (status as? SyncStatus.Matching)?.asked?.takeIf { state.count == 0 }
+    LaunchedEffect(synced, catalog, recount, kind) { state.count = withContext(Dispatchers.IO) { library.titleCount(kind) } }
     val count = state.count
     // A first Sync leaves the tab empty for minutes: how far it is shows where the rows will be ([FirstSync]).
     val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)

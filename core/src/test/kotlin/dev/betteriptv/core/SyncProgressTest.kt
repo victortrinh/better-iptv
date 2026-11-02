@@ -11,6 +11,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** What the Sync status tells the Viewer while a Sync reads the catalog, and while its suspects are Matched by name. */
@@ -106,6 +110,81 @@ class SyncProgressTest {
         assertTrue(atMatch.isNotEmpty() && atMatch.all { it is SyncStatus.Matching })
         assertTrue(status is SyncStatus.Synced)
         assertEquals(status, library.syncStatus.value)
+    }
+
+    @Test fun `while a first Sync's names are Matched, both tabs count their Titles and read their rows`() = runBlocking {
+        val before = library.catalogChanges.value
+        // What each tab would read at the first Matching batch: its Title count and its rows.
+        val during = CopyOnWriteArrayList<Triple<SyncStatus, Int, List<Int>>>()
+        cloud.onMatch = {
+            if (during.isEmpty()) {
+                val counts = TitleKind.entries.map { library.titleCount(it) }
+                val rows = runBlocking { TitleKind.entries.map { library.tabRows(it, listOf("en"), "en").size } }
+                during += Triple(library.syncStatus.value, library.catalogChanges.value, counts + rows)
+            }
+        }
+
+        library.sync()
+
+        val (status, catalog, read) = during.single()
+        assertTrue(status is SyncStatus.Matching)
+        // The catalog has changed by then, so a tab that counted none before the swap counts again.
+        assertTrue(catalog > before)
+        assertTrue("$read", read.all { it > 0 })
+        // And again once the Titles regroup.
+        assertTrue(library.catalogChanges.value > catalog)
+    }
+
+    @Test fun `the catalog has changed by the time the status first says names are being Matched`() = runBlocking {
+        serveSuspects(60)
+        val before = library.catalogChanges.value
+        val atMatching = CopyOnWriteArrayList<Int>()
+        val watching = launch(Dispatchers.Unconfined) {
+            library.syncStatus.collect { if (it is SyncStatus.Matching) atMatching += library.catalogChanges.value }
+        }
+
+        library.sync()
+        watching.cancel()
+
+        assertTrue(atMatching.isNotEmpty() && atMatching.all { it > before })
+    }
+
+    @Test fun `when no batch is answered for a while, Matching ends as Synced and the rest are asked next Sync`() = runBlocking {
+        serveSuspects(60)
+        (1..60).forEach { cloud.match("Lost Film $it", 1_000L + it) }
+        val clock = MovingClock()
+        library.matchClock = clock
+        var batches = 0
+        cloud.onMatch = {
+            atMatch += library.syncStatus.value
+            // The second batch isn't answered, after as long as Matching waits for one.
+            if (++batches == 2) {
+                clock.now += Library.MATCH_STALL_AFTER
+                cloud.failingMatches = 1
+            }
+        }
+
+        val first = library.sync()
+
+        assertEquals(2, batches)
+        assertTrue(first is SyncStatus.Synced)
+        assertEquals(first, library.syncStatus.value)
+        assertEquals(25, (first as SyncStatus.Synced).last.rematchedListings)
+        val asked = cloud.matchAsked.size
+
+        val second = library.sync() as SyncStatus.Synced
+
+        // Only the 35 left unanswered are asked.
+        assertEquals(35, cloud.matchAsked.size - asked)
+        assertEquals(60, second.last.rematchedListings)
+    }
+
+    /** A clock that stands still until a test moves it on. */
+    private class MovingClock : Clock() {
+        @Volatile var now: Instant = Instant.parse("2026-11-01T12:00:00Z")
+        override fun instant(): Instant = now
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId): Clock = this
     }
 
     /** Serves [count] movie Listings without a TMDB ID, each needing its own Match, and no shows. */
