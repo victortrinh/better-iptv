@@ -45,6 +45,8 @@
     <string name="live_empty">Your Favourites show up here. Press the menu key on a Channel in Search to add one.</string>
     <string name="row_live_now">Live now</string>
     <string name="row_today">Today</string>
+    <!-- Live's row of Event channels no Game matched: tennis, snooker, college games. -->
+    <string name="row_more_live_events">More live events</string>
     <!-- A Game in progress: on its card, its page and the info under its rail. Never a score. -->
     <string name="game_live">Live</string>
     <string name="game_no_stream">No stream found</string>

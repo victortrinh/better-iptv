@@ -57,6 +57,7 @@ class GameRowsTest {
         is HomeRow.LiveNow -> "live now"
         is HomeRow.Today -> "today"
         is HomeRow.LeagueGames -> "league ${league.key}"
+        is HomeRow.MoreLiveEvents -> "more live events"
         is HomeRow.Favourites -> "favourites"
         is HomeRow.Channels -> "channels"
         else -> "a Home row"
@@ -95,8 +96,8 @@ class GameRowsTest {
         assertEquals(listOf("Texans vs Broncos (2026-11-04 20:15:00)"), rows.league(League.Nfl).feedNames("100"))
         // The League rows follow Settings' order, not the schedule's.
         assertEquals(listOf("league nfl", "league nhl"), rows(League.Nfl, League.Nhl).filterIsInstance<HomeRow.LeagueGames>().map { it.name() })
-        // With no League on, the Favourites and Channels rows are left.
-        assertEquals(listOf("favourites", "channels"), library.liveRows(emptyList(), "CA", listOf("en"), now, toronto).map { it.name() })
+        // With no League on, no Game takes an Event channel: tonight's two are More live events (#257), then the Favourites and Channels rows.
+        assertEquals(listOf("more live events", "favourites", "channels"), library.liveRows(emptyList(), "CA", listOf("en"), now, toronto).map { it.name() })
     }
 
     @Test fun `an Event channel is a Feed when it names both teams, or one team and the League, by any alias, whatever its case and accents`() = runBlocking {

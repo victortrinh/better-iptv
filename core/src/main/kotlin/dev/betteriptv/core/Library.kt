@@ -987,10 +987,14 @@ class Library private constructor(
      * order they were added, finished Event channels left out; then the Channel browser's countries
      * ([liveCountries], for the [region] and [contentLanguages]). A Game shows once, in the highest row
      * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
-     * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
-     * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
-     * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
-     * More live events and Replays join as M3's tickets land.
+     * card disabled); a finished Game isn't shown. After the League rows, More live events: the Event
+     * channels whose name gives a start within [MORE_LIVE_EVENTS_WITHIN] of now, either way, that no
+     * Game's Feeds took (a finished Game's included, since the schedule's state is trusted over the
+     * name's time), by start then the Provider's order, as Channels. Rows with nothing are left out:
+     * a League with no Game in seven days gets none. The Games come from [games] (the cloud's, or
+     * the kept copy when it fails) and their Feeds from the catalog ([matchFeeds], run once for both
+     * the Game rows and More live events), ranked for the [contentLanguages]. Replays join as M3's
+     * tickets land.
      */
     suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
         liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
@@ -998,14 +1002,20 @@ class Library private constructor(
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
-        val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
-        val matched = if (games.isEmpty()) emptyList() else {
+        val games = games(leagues.map { it.key }, now)
+        val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD)
+        val matchedAll = if (games.isEmpty()) emptyList() else {
             val categories = store.liveCategories().associateBy { it.id }
-            val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
-                EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
-            }
-            matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
+            val listings = events.map { (channel, start) -> EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] }) }
+            matchFeeds(games, listings, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
         }
+        val matched = matchedAll.filter { it.game.state != GameState.Over }
+        // An Event channel a Game took, finished or not, is that Game's Feed, not a stray event.
+        val taken = matchedAll.flatMapTo(HashSet()) { entry -> entry.feeds.filter { it.kind == FeedKind.EventChannel }.map { it.channel.key } }
+        val moreLiveEvents = events
+            .mapNotNull { (channel, start) -> start?.let { LiveEvent(channel, it) } }
+            .filter { it.channel.key !in taken && Duration.between(now, it.start).abs() <= MORE_LIVE_EVENTS_WITHIN }
+            .sortedBy { it.start }
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD
         val shown = HashSet<String>()
@@ -1020,6 +1030,7 @@ class Library private constructor(
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             if (todayRow.isNotEmpty()) add(HomeRow.Today(todayRow))
             addAll(perLeague)
+            if (moreLiveEvents.isNotEmpty()) add(HomeRow.MoreLiveEvents(moreLiveEvents))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
         }
@@ -1609,6 +1620,9 @@ class Library private constructor(
         private val WEEK_AHEAD: Duration = Duration.ofDays(7)
         /** The Event channels read for matching: a day behind now (a live Game named for yesterday evening, in a zone ahead) and past the week ahead. */
         private val EVENT_WINDOW_BEHIND: Duration = Duration.ofDays(1)
+
+        /** How far from now an unmatched Event channel's start may be for More live events (docs/roadmap.md, M3): an evening's events, not a wall of stale or far-off ones. */
+        internal val MORE_LIVE_EVENTS_WITHIN: Duration = Duration.ofHours(6)
         private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)

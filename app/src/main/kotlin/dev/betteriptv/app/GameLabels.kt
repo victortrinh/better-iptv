@@ -50,12 +50,22 @@ fun Context.leagueName(key: String): String = League.byKey(key)?.let { leagueNam
  */
 fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     if (game.state == GameState.Live) return getString(R.string.game_live)
+    return startCaption(game.start, now, zone)
+}
+
+/**
+ * When something starts, in the device's [zone] and clock, as a Game's card says it: the time alone
+ * for a start today ("7:00 PM"), the weekday before it otherwise ("Tue 7:00 PM"). Under a focused
+ * Event channel on More live events, where the start is read from the Provider's name as UTC, so
+ * it is what the name said, moved to the device's zone.
+ */
+fun Context.startCaption(start: Instant, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     val locale = resources.configuration.locales[0]
-    val start = game.start.atZone(zone)
-    val sameDay = start.toLocalDate() == now.atZone(zone).toLocalDate()
+    val at = start.atZone(zone)
+    val sameDay = at.toLocalDate() == now.atZone(zone).toLocalDate()
     val time = if (DateFormat.is24HourFormat(this)) "Hm" else "hm"
     val pattern = DateFormat.getBestDateTimePattern(locale, if (sameDay) time else "EEE$time")
-    return start.format(DateTimeFormatter.ofPattern(pattern, locale))
+    return at.format(DateTimeFormatter.ofPattern(pattern, locale))
 }
 
 /** The two teams, the away team first, by their short names ("Canadiens at Maple Leafs") or their full names. */

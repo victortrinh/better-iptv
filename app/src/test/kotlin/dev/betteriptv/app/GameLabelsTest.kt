@@ -35,6 +35,11 @@ class GameLabelsTest {
         Game("nhl", "1", Instant.parse(start), state, home = leafs, away = habs, broadcasters = broadcasters)
     private fun channel(name: String, country: String? = "US") = Channel("$country: $name", name, country, null, false, listOf(ChannelVariant(1, name, Quality.HD, false)))
 
+    @Test fun anEventChannelsStartReadsAsAGamesDoesTheTimeAloneTodayAndTheWeekdayLater() {
+        assertEquals("7:00 PM", context.startCaption(Instant.parse("2026-11-02T00:00:00Z"), now, toronto))
+        assertEquals("Mon 7:00 PM", context.startCaption(Instant.parse("2026-11-03T00:00:00Z"), now, toronto))
+    }
+
     @Test fun aGameOnNowSaysLiveAndOneTonightSaysWhenItStartsInTheDevicesClock() {
         assertEquals("Live", context.gameCaption(game("2026-11-01T18:00:00Z", GameState.Live), now, toronto))
         // 7 PM in Toronto, midnight UTC: still Sunday for the Viewer.
