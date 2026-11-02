@@ -174,7 +174,7 @@ class Library private constructor(
                             val tallies = HashMap<String?, IntArray>()
                             client.liveListings { id, name, categoryId, image, guideId ->
                                 val category = liveCategories[categoryId].orEmpty()
-                                val start = eventStart(name, now)
+                                val start = eventStart(name, now, prefixTable.eventTimeZone)
                                 val listing = prefixTable.describeLive(name, category)
                                 val tally = tallies.getOrPut(categoryId) { IntArray(2) }
                                 tally[0]++
@@ -989,8 +989,11 @@ class Library private constructor(
      * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
      * card disabled); a finished Game isn't shown. After the League rows, More live events: the Event
      * channels whose name gives a start within [MORE_LIVE_EVENTS_WITHIN] of now, either way, that no
-     * Game's Feeds took (a finished Game's included, since the schedule's state is trusted over the
-     * name's time), by start then the Provider's order, as Channels. Rows with nothing are left out:
+     * Game matched (a finished Game's included, since the schedule's state is trusted over the
+     * name's time; an Event channel of a League that is off is unmatched, so it shows here, the row
+     * being the catch-all for what no schedule covers; one marked `Live |` or `Next |` without a
+     * start isn't shown, its time being unknown), by start then the Provider's order, as Channels.
+     * Rows with nothing are left out:
      * a League with no Game in seven days gets none. The Games come from [games] (the cloud's, or
      * the kept copy when it fails) and their Feeds from the catalog ([matchFeeds], run once for both
      * the Game rows and More live events), ranked for the [contentLanguages]. Replays join as M3's
@@ -1010,11 +1013,11 @@ class Library private constructor(
             matchFeeds(games, listings, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
         }
         val matched = matchedAll.filter { it.game.state != GameState.Over }
-        // An Event channel a Game took, finished or not, is that Game's Feed, not a stray event.
-        val taken = matchedAll.flatMapTo(HashSet()) { entry -> entry.feeds.filter { it.kind == FeedKind.EventChannel }.map { it.channel.key } }
+        // An Event channel a Game matched, finished or not, is that Game's Feed, not one no Game matched.
+        val matchedEventChannels = matchedAll.flatMapTo(HashSet()) { entry -> entry.feeds.filter { it.kind == FeedKind.EventChannel }.map { it.channel.key } }
         val moreLiveEvents = events
-            .mapNotNull { (channel, start) -> start?.let { LiveEvent(channel, it) } }
-            .filter { it.channel.key !in taken && Duration.between(now, it.start).abs() <= MORE_LIVE_EVENTS_WITHIN }
+            .mapNotNull { (channel, start) -> start?.let { UnmatchedEventChannel(channel, it) } }
+            .filter { it.channel.key !in matchedEventChannels && Duration.between(now, it.start).abs() <= MORE_LIVE_EVENTS_WITHIN }
             .sortedBy { it.start }
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD

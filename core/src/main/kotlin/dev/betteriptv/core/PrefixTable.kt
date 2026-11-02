@@ -2,6 +2,8 @@ package dev.betteriptv.core
 
 import java.text.Normalizer
 import java.time.Year
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,6 +23,8 @@ internal class PrefixTable private constructor(
     private val qualityWords: Map<String, Rule>,
     /** The live Category country codes that aren't countries (`AR`, `EX YU`), uppercase, to the name the browser shows for them. */
     private val countryAliases: Map<String, String>,
+    /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
+    val eventTimeZone: ZoneId,
 ) {
     /** What the Channel browser calls a live Category's country [code] that isn't a country ("Arabic" for `AR`), or null for one not listed. */
     fun countryAlias(code: String): String? = countryAliases[code.uppercase(Locale.ROOT)]
@@ -261,6 +265,7 @@ internal class PrefixTable private constructor(
             val tierTags = LinkedHashSet<String>()
             val qualityWords = LinkedHashMap<String, Rule>()
             val countryAliases = LinkedHashMap<String, String>()
+            var eventTimeZone: ZoneId? = null
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -281,6 +286,11 @@ internal class PrefixTable private constructor(
                 }
                 val line = raw.replace(Regex("""\s+#.*$"""), "")
                 val key = line.substringBefore('|').trim()
+                if (section == "event time zone") {
+                    if (eventTimeZone != null) fail("a second event time zone")
+                    eventTimeZone = runCatching { ZoneId.of(key) }.getOrElse { fail("$key is not a zone") }
+                    return@forEachIndexed
+                }
                 if (section == "country aliases") {
                     val alias = line.substringAfter('|', "").trim().ifEmpty { fail("$key has no name") }
                     if (countryAliases.put(key.uppercase(Locale.ROOT), alias) != null) fail("$key is listed twice")
@@ -296,7 +306,7 @@ internal class PrefixTable private constructor(
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases, eventTimeZone ?: ZoneOffset.UTC)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =

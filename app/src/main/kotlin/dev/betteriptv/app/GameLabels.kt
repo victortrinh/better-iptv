@@ -56,8 +56,8 @@ fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId =
 /**
  * When something starts, in the device's [zone] and clock, as a Game's card says it: the time alone
  * for a start today ("7:00 PM"), the weekday before it otherwise ("Tue 7:00 PM"). Under a focused
- * Event channel on More live events, where the start is read from the Provider's name as UTC, so
- * it is what the name said, moved to the device's zone.
+ * Event channel on More live events, where the start is read from the Provider's name in the
+ * Provider's zone, so it is what the name said, moved to the device's zone.
  */
 fun Context.startCaption(start: Instant, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     val locale = resources.configuration.locales[0]

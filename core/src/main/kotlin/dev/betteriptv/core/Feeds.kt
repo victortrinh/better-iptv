@@ -123,13 +123,13 @@ private fun containsPhrase(words: List<String>, phrase: List<String>): Boolean {
 }
 
 /**
- * Whether an Event channel whose name says its Game starts at [start] carries [game]. Names seldom
- * give a zone and [eventStart] reads them as UTC, so the Game's own day in its own zone can't be
- * told from the name: instead the start counts as the Game's when it is within [SAME_EVENT_WITHIN]
- * of the schedule's, which holds for the same wall-clock day read in any zone on Earth (a 7 PM
- * Toronto start named "19:00", "00:00" or "16:00" all pass) and fails for the same teams' Game the
- * day before or after. One marked `Live |` or `Next |` gives no start: it carries a Game that is on,
- * or starts within [EVENT_FINISHED_AFTER].
+ * Whether an Event channel whose name says its Game starts at [start] carries [game]. [eventStart]
+ * reads the name in the Provider's zone, or the one it states, but a Provider's zone is a guess
+ * and names are sometimes stale, so the start counts as the Game's when it is within
+ * [SAME_EVENT_WITHIN] of the schedule's, which holds for the same wall-clock day read in any zone
+ * on Earth (a 7 PM Toronto start named "19:00", "00:00" or "16:00" all pass) and fails for the same
+ * teams' Game the day before or after. One marked `Live |` or `Next |` gives no start: it carries a
+ * Game that is on, or starts within [EVENT_FINISHED_AFTER].
  */
 internal fun sameEvent(game: Game, start: Instant?, now: Instant): Boolean {
     if (start == null) return game.state == GameState.Live || Duration.between(now, game.start).abs() <= EVENT_FINISHED_AFTER
@@ -168,7 +168,7 @@ internal fun languageOf(tag: String?): String? {
     return COUNTRY_LANGUAGES[parts.first()]
 }
 
-/** How far a start read as UTC can be from the true one when the name's zone is unknown: zones run from UTC−12 to UTC+14. */
+/** How far a start read in the wrong zone can be from the true one: zones run from UTC−12 to UTC+14. */
 private val SAME_EVENT_WITHIN: Duration = Duration.ofHours(14)
 
 private val LANGUAGE_WORDS = mapOf("EN" to "en", "FR" to "fr", "ES" to "es", "PT" to "pt", "DE" to "de", "IT" to "it", "NL" to "nl", "AR" to "ar")
