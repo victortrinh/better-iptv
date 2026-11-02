@@ -61,10 +61,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(CHANNEL_TABLE.format("channel"))
         execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
         INDEXES.forEach { execSQL(it) }
-        // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in.
+        // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in. An older
+        // app run again before that Sync makes a new table by stream id, which joins the ones waiting.
         if (prepare("SELECT count(*) FROM pragma_table_info('favourite') WHERE name = 'id'").use { it.step(); it.getLong(0) } > 0) {
-            execSQL("DROP TABLE IF EXISTS $LEGACY_FAVOURITES")
-            execSQL("ALTER TABLE favourite RENAME TO $LEGACY_FAVOURITES")
+            if (prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$LEGACY_FAVOURITES'").use { it.step(); it.getLong(0) } > 0) {
+                execSQL("INSERT OR IGNORE INTO $LEGACY_FAVOURITES SELECT id, added_at FROM favourite")
+                execSQL("DROP TABLE favourite")
+            } else {
+                execSQL("ALTER TABLE favourite RENAME TO $LEGACY_FAVOURITES")
+            }
         }
         // The Channels the Viewer saved, by Channel key, so they outlive Syncs.
         execSQL("CREATE TABLE IF NOT EXISTS favourite (key TEXT PRIMARY KEY, added_at INTEGER NOT NULL)")
@@ -114,7 +119,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     class Staging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
         private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
-        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
         private val insertLiveCategory = connection.prepare("INSERT OR REPLACE INTO staging_live_category VALUES (?, ?, ?, ?, ?, ?)")
         private var channelPosition = 0L
         private var liveCategoryPosition = 0L
@@ -281,6 +286,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("DROP TABLE live_category")
             writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
             INDEXES.forEach { writer.execSQL(it) }
+            // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
+            writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
             // Favourites an older app kept by stream id become Favourites of the Channels those ids are variants of now;
             // an id the Provider no longer lists can't be told, and goes.
             if (writer.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$LEGACY_FAVOURITES'").use { it.step(); it.getLong(0) } > 0) {
@@ -444,10 +451,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         var after = 0L
         while (true) {
             val page = synchronized(reader) {
-                // The bare columns come from the row holding the least position, as SQLite promises for min().
-                reader.prepare(
-                    "SELECT min(position) AS lead, id, channel_name, country FROM channel GROUP BY channel_key HAVING lead > ? ORDER BY lead LIMIT $SCAN_PAGE",
-                ).use {
+                reader.prepare("SELECT position, id, channel_name, country FROM channel WHERE lead = 1 AND position > ? ORDER BY position LIMIT $SCAN_PAGE").use {
                     it.bindLong(1, after)
                     buildList {
                         while (it.step()) add(Triple(it.getLong(0), it.getLong(1), listOfNotNull(if (it.isNull(3)) null else it.getText(3), it.getText(2)).joinToString(": ")))
@@ -1043,7 +1047,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 "container TEXT, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
-                "category_id TEXT, guide_id TEXT NOT NULL, channel_key TEXT NOT NULL, channel_name TEXT NOT NULL, country TEXT, quality TEXT, hevc INTEGER NOT NULL)"
+                "category_id TEXT, guide_id TEXT NOT NULL, channel_key TEXT NOT NULL, channel_name TEXT NOT NULL, country TEXT, quality TEXT, hevc INTEGER NOT NULL, " +
+                "lead INTEGER NOT NULL)"
         const val LIVE_CATEGORY_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, normalised_name TEXT NOT NULL, country TEXT, kind TEXT NOT NULL)"
         /** A variant's row as [variantRow] reads it: its Channel, whether it's a Favourite, then the variant. */
@@ -1059,6 +1064,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
             "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
             "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
+            // The lead variant of each Channel, in the Provider's order, for the search index's scan.
+            "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */

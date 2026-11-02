@@ -33,11 +33,13 @@
 # Tier tags are the package words before a colon at the start of a live Listing's name (`VIP: TNT
 # SPORT 1 ᴴᴰ`, `TR VIP: BEIN SPORTS 1`), which say which Provider package a Channel variant comes
 # from and nothing about the Channel. Channel quality words are the words a live Listing's name
-# carries after it (`HD`, `ᴴᴰ`, `(SAT)`), matched as whole words anywhere in the name once Unicode
-# superscripts are normalised, with the quality they say of the variant: 4K (UHD), HD (HD, FHD, RAW,
-# whose names don't tell 720 from 1080 lines) or SD, and `hevc`. Two live Listings are one Channel
-# when their names match once the Tier tag and the quality words are gone; the country tag (`UK:`,
-# `CA FR:`, two capitals before the colon) stays part of the Channel's identity.
+# ends with (`HD`, `ᴴᴰ ʰᵉᵛᶜ`, `HD (SAT)`, `ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), taken off the end one after another, each
+# read with its Unicode superscripts normalised and whatever its case; one marked `superscript`
+# counts only as the Provider's superscript tag, so a show named with the word keeps it. They say the
+# variant's quality: 4K (UHD), HD (HD, FHD, RAW, whose names don't tell 720 from 1080 lines) or SD,
+# and `hevc`. Two live Listings are one Channel when their names match once the Tier tag and the
+# quality words are gone; the country tag (`UK:`, `CA FR:`, two capitals before the colon) stays
+# part of the Channel's identity.
 
 [prefixes]
 
@@ -264,7 +266,7 @@ UHD         | quality=4K
 HD          | quality=HD
 HD+         | quality=HD                # TR VIP: BEIN SPORTS 1 HD+
 FHD         | quality=HD
-RAW         | quality=HD                # "ᴿᴬᵂ", a raw feed, usually with "⁶⁰ᶠᵖˢ"
+RAW         | quality=HD; superscript   # "ᴿᴬᵂ", a raw feed, usually with "⁶⁰ᶠᵖˢ"; "WWE RAW" is a show
 1080P       | quality=HD
 (720P)      | quality=HD
 SD          | quality=SD

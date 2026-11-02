@@ -400,16 +400,19 @@ class Library private constructor(
      * What watching [channel] starts: its best variant for the Viewer's [device] within the
      * [qualityCap] ([rankedVariants]), as MPEG-TS, then the same stream as HLS, for a Provider or a
      * player that does one and not the other, then the next variant the same way, as a chain of
-     * Backups the failure policy walks. The plan's Versions are the variants in that order, named as
-     * the Provider lists them and each with the rest of the chain as its Backups, so picking one
-     * from the player's list goes on from it.
+     * Backups the failure policy walks. The chain stops after [CHAIN_VARIANTS] variants: one that
+     * answers but never starts costs a start timeout each way, so a Channel dead at the Provider
+     * fails in under a minute rather than walking eight variants. The plan's Versions are every
+     * variant in rank order, named as the Provider lists them and each with the chain from it as
+     * its Backups, so picking one from the player's list goes on from it the same way.
      */
     fun channelPlayPlan(channel: Channel, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan {
-        val chain = rankedVariants(channel.variants, device, qualityCap).flatMap { variant ->
+        val ranked = rankedVariants(channel.variants, device, qualityCap)
+        fun chain(from: Int) = ranked.subList(from, minOf(ranked.size, from + CHAIN_VARIANTS)).flatMap { variant ->
             val attributes = VersionAttributes(quality = variant.quality?.let { Known(it, Provenance.Likely) })
             listOf("ts", "m3u8").map { Version(variant.id, variant.name, attributes, liveFormat = it) }
         }
-        val versions = chain.indices.step(2).map { chain[it].copy(backups = chain.drop(it + 1)) }
+        val versions = ranked.indices.map { chain(it).let { chain -> chain.first().copy(backups = chain.drop(1)) } }
         return PlayPlan(null, versions.first(), contentLanguages, versions, remembered = rememberedTracks())
     }
 
@@ -1526,6 +1529,8 @@ class Library private constructor(
         private const val COMPLETIONS = 7
         /** At most this many Channels per search: a row of cards. */
         private const val CHANNELS_FOUND = 40
+        /** How many of a Channel's variants watching it tries (each as TS then HLS) before giving up. */
+        private const val CHAIN_VARIANTS = 3
         /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
         private const val TMDB_SEARCH_LETTERS = 3
         /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */

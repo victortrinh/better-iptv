@@ -21,7 +21,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Channel variants through the Library (#251): the Provider's copies of one Channel merge into it,
+ * Channel variants through the Library (#251): the Provider's Listings of one Channel merge into it,
  * play best first, and are favourited as one.
  */
 class ChannelVariantsTest {
@@ -156,9 +156,29 @@ class ChannelVariantsTest {
         assertEquals(listOf(false, true, false, false, false, false, false), variants.map { it.hevc })
     }
 
+    @Test fun `quality words are read off the end of the name only, and RAW only as the Provider's superscript tag`() = runBlocking {
+        provider.serveChannels(
+            "US: WWE RAW" to "US| SPORTS",
+            "US: WWE RAW HD" to "US| SPORTS",
+            "US: HD NET" to "US| GENERAL",
+            "US: HD NET ᴿᴬᵂ" to "US| GENERAL",
+            "GOLD: beIN SP⚽RTS 1 RAW" to "GOLD| SPORTS",
+        )
+        library.sync()
+
+        val wwe = channel("wwe")
+        assertEquals("WWE RAW", wwe.name)
+        assertEquals(listOf(null, Quality.HD), wwe.variants.map { it.quality })
+        val net = channel("net")
+        assertEquals("HD NET", net.name)
+        assertEquals(listOf(null, Quality.HD), net.variants.map { it.quality })
+        // Plain RAW at the end stays, so this Listing is its own Channel.
+        assertEquals("beIN SP⚽RTS 1 RAW", channel("bein").name)
+    }
+
     // Ranking and the play plan
 
-    /** A Channel with a variant in each quality, HEVC copies of two, and one whose name says nothing. */
+    /** A Channel with a variant in each quality, HEVC variants at two of them, and one whose name says nothing. */
     private suspend fun syncEveryQuality() {
         provider.serveChannels(
             "VIP: TNT SPORT 1 SD" to "UK| SPORTS",
@@ -186,7 +206,7 @@ class ChannelVariantsTest {
             listOf("VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ", "VIP: TNT SPORT 1 ᴴᴰ", "GOLD: TNT SPORT 1 ᴴᴰ", "VIP: TNT SPORT 1 SD", "VIP: TNT SPORT 1", "4K: TNT SPORT 1 ᵁᴴᴰ ʰᵉᵛᶜ", "4K: TNT SPORT 1 ᵁᴴᴰ"),
             plan(hevcStick, QualityCap.FullHD).versions.map { it.name },
         )
-        // A stick without an HEVC decoder (on a 1080p TV) puts the HEVC copies after the others of their quality.
+        // A stick without an HEVC decoder (on a 1080p TV) puts the HEVC variants after the others of their quality.
         assertEquals(
             listOf("VIP: TNT SPORT 1 ᴴᴰ", "GOLD: TNT SPORT 1 ᴴᴰ", "VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ", "VIP: TNT SPORT 1 SD", "VIP: TNT SPORT 1", "4K: TNT SPORT 1 ᵁᴴᴰ", "4K: TNT SPORT 1 ᵁᴴᴰ ʰᵉᵛᶜ"),
             plan(oldStick).versions.map { it.name },
@@ -207,6 +227,25 @@ class ChannelVariantsTest {
         assertEquals(listOf(2L to "m3u8", 1L to "ts", 1L to "m3u8"), plan.versions[1].backups.map { it.listingId to it.liveFormat })
         assertEquals(Known(Quality.UHD, Provenance.Likely), plan.version.attributes.quality)
         assertEquals(Known(Quality.SD, Provenance.Likely), plan.versions.last().attributes.quality)
+    }
+
+    @Test fun `watching tries three variants at most, though the list shows them all`() = runBlocking {
+        provider.serveChannels(
+            "VIP: TNT SPORT 1 ᴴᴰ" to "UK| SPORTS",
+            "VIP: TNT SPORT 1 ᴴᴰ ◉" to "UK| SPORTS",
+            "GOLD: TNT SPORT 1 ᴴᴰ" to "UK| GOLD",
+            "VIP: TNT SPORT 1 SD" to "UK| SPORTS",
+            "GOLD: TNT SPORT 1 SD" to "UK| GOLD",
+        )
+        library.sync()
+
+        val plan = plan(hevcStick)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), plan.versions.map { it.listingId })
+        // Six attempts: each of the first three variants as TS then HLS; a Channel dead at the Provider fails there.
+        assertEquals(listOf(1L to "ts", 1L to "m3u8", 2L to "ts", 2L to "m3u8", 3L to "ts", 3L to "m3u8"), (listOf(plan.version) + plan.version.backups).map { it.listingId to it.liveFormat })
+        // Picking a variant from the list goes on the same way from it.
+        assertEquals(listOf(3L to "m3u8", 4L to "ts", 4L to "m3u8", 5L to "ts", 5L to "m3u8"), plan.versions[2].backups.map { it.listingId to it.liveFormat })
+        assertEquals(listOf(5L to "m3u8"), plan.versions[4].backups.map { it.listingId to it.liveFormat })
     }
 
     private val player by lazy { ScriptedPlayer(provider) }
@@ -252,7 +291,7 @@ class ChannelVariantsTest {
         library.sync()
         library.setFavourite(channel("tnt").key, true)
 
-        // The HD copy goes and the SD one gets a new stream id, under a new package.
+        // The HD variant goes and the SD one gets a new stream id, under a new package.
         provider.serveChannels("UK: NEWS" to "UK| GENERAL", "8K: TNT SPORT 1 SD" to "8K| SPORTS")
         library.sync()
 
@@ -291,5 +330,36 @@ class ChannelVariantsTest {
         provider.serveChannels("UK: BBC ONE HD" to "UK| GENERAL", "VIP: TNT SPORT 1 ᴴᴰ" to "UK| SPORTS")
         library.sync()
         assertEquals(listOf("TNT SPORT 1"), favouritesRow()?.map { it.name })
+    }
+
+    @Test fun `Favourites by stream id survive the older app running again before the Sync that carries them over`() = runBlocking {
+        library.close()
+        val driver = BundledSQLiteDriver()
+        driver.open(catalog).apply {
+            execSQL("DROP TABLE IF EXISTS favourite")
+            execSQL("CREATE TABLE favourite (id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL)")
+            execSQL("INSERT INTO favourite VALUES (3, 1000), (1, 2000)")
+            close()
+        }
+        // The upgraded app opens the catalog (and sets them aside), but the Viewer goes back to the older app before a Sync.
+        Library.open(catalog, InMemoryCredentials()).close()
+        driver.open(catalog).apply {
+            execSQL("DROP TABLE IF EXISTS favourite")
+            execSQL("CREATE TABLE favourite (id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL)")
+            execSQL("INSERT INTO favourite VALUES (4, 3000)")
+            close()
+        }
+        library = Library.open(catalog, InMemoryCredentials())
+        library.logIn(provider.login)
+        provider.serveChannels(
+            "VIP: TNT SPORT 1 ᴴᴰ" to "UK| SPORTS",
+            "GOLD: TNT SPORT 1 SD" to "UK| GOLD",
+            "UK: BBC ONE HD" to "UK| GENERAL",
+            "UK: BBC TWO HD" to "UK| GENERAL",
+        )
+        library.sync()
+
+        // Both rounds' Favourites, in the order they were added.
+        assertEquals(listOf("BBC ONE", "TNT SPORT 1", "BBC TWO"), favouritesRow()?.map { it.name })
     }
 }

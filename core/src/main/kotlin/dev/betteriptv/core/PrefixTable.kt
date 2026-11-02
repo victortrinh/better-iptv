@@ -17,8 +17,8 @@ internal class PrefixTable private constructor(
     private val emptyEventSlots: List<Regex>,
     /** The Tier tags, as uppercase words without their colon. */
     private val tierTags: Set<String>,
-    /** Each Channel quality word as a whole-word pattern, with what it says of the variant. */
-    private val qualityWords: List<Pair<Regex, Rule>>,
+    /** Each Channel quality word, uppercase, with what it says of the variant. */
+    private val qualityWords: Map<String, Rule>,
 ) {
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -87,15 +87,32 @@ internal class PrefixTable private constructor(
 
     /**
      * The Channel a live Listing named [name] is a variant of, and what the variant is ([ChannelName]).
-     * Unicode superscripts are normalised (`ᴴᴰ` reads HD), then the tags before the colons at the
-     * start are read: Tier tags are dropped (`VIP: `, `TR VIP: `, `8K: `) and a two-letter country tag
-     * is kept apart (`UK: `, `CA FR: `); then the quality words are taken out wherever they stand
-     * (`HD`, `ʰᵉᵛᶜ`, `HD/RAW`, `(SAT)`), and spaces are collapsed. `VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ` is the
-     * Channel "TNT SPORT 1" with no country, an HD HEVC variant; `8K: beIN SP⚽RTS 1 SD` keeps its
-     * emoji. Two Listings under the identical name are variants of one Channel too.
+     * The quality words are taken off the end of the name, one after another (`ᴴᴰ ʰᵉᵛᶜ`, `HD (SAT)`,
+     * `ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`, `HD ◉`), each read with its Unicode superscripts normalised (`ᴴᴰ` reads HD); a
+     * word the table marks `superscript` counts only as the Provider's superscript tag (`ᴿᴬᵂ`), so
+     * "WWE RAW" keeps its name. The rest is normalised the same way, and the tags before the colons
+     * at its start are read: Tier tags are dropped (`VIP: `, `TR VIP: `, `8K: `) and a two-letter
+     * country tag is kept apart (`UK: `, `CA FR: `); spaces are collapsed. `VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ`
+     * is the Channel "TNT SPORT 1" with no country, an HD HEVC variant; `8K: beIN SP⚽RTS 1 SD` keeps
+     * its emoji. Two Listings under the identical name are variants of one Channel too.
      */
     fun channelName(name: String): ChannelName {
-        var rest = Normalizer.normalize(name, Normalizer.Form.NFKC)
+        var tail = name
+        var quality: Quality? = null
+        var hevc = false
+        while (true) {
+            val token = TAIL_TOKEN.find(tail) ?: break
+            val raw = token.groupValues[1]
+            val plain = Normalizer.normalize(raw, Normalizer.Form.NFKC).uppercase(Locale.ROOT)
+            // `(HD)` is HD; `(SAT)` is only ever in its parentheses.
+            val rule = qualityWords[plain] ?: qualityWords[plain.removeSurrounding("(", ")")]?.takeIf { !it.superscript || raw != plain }
+            if (rule == null || (rule.superscript && raw == plain)) break
+            tail = tail.substring(0, token.range.first)
+            // A name saying SD is SD whatever else it says (`SD ᴿᴬᵂ`).
+            quality = listOfNotNull(quality, rule.quality).minOrNull()
+            hevc = hevc || rule.hevc
+        }
+        var rest = Normalizer.normalize(tail, Normalizer.Form.NFKC)
         var country: String? = null
         // The tags before the colons at the start: Tier tags, and a country tag, in either order.
         while (true) {
@@ -108,17 +125,7 @@ internal class PrefixTable private constructor(
             if (codes.isNotEmpty()) country = codes.joinToString(" ")
             rest = rest.substring(head.range.last + 1)
         }
-        var quality: Quality? = null
-        var hevc = false
-        for ((word, rule) in qualityWords) {
-            if (!word.containsMatchIn(rest)) continue
-            rest = rest.replace(word, " ")
-            // A name saying SD is SD whatever else it says (`SD ᴿᴬᵂ`).
-            quality = listOfNotNull(quality, rule.quality).minOrNull()
-            hevc = hevc || rule.hevc
-        }
-        // `ᴴᴰ/ᴿᴬᵂ` leaves its slash behind.
-        val cleaned = rest.replace(LONE_SLASH, " ").replace(SPACES, " ").trim().ifEmpty { name.trim() }
+        val cleaned = rest.replace(SPACES, " ").trim().ifEmpty { name.trim() }
         val key = listOfNotNull(country, cleaned).joinToString(": ").uppercase(Locale.ROOT)
         return ChannelName(key, cleaned, country, quality, hevc)
     }
@@ -162,6 +169,8 @@ internal class PrefixTable private constructor(
         val sportsReplay: Boolean = false,
         val clutter: Boolean = false,
         val hevc: Boolean = false,
+        /** A Channel quality word that counts only in the Provider's superscript form. */
+        val superscript: Boolean = false,
     )
 
     private data class Draft(
@@ -230,8 +239,8 @@ internal class PrefixTable private constructor(
         /** A country tag's word: two capitals. */
         private val COUNTRY_CODE = Regex("""[A-Z]{2}""")
 
-        /** A `/` standing alone, once the quality words around it are gone. */
-        private val LONE_SLASH = Regex("""(?<!\S)/(?!\S)""")
+        /** The last word of a live Listing's name, with the spaces or `/` before it: `ᴴᴰ`, `(SAT)`, `◉`, `HD+`, the `ᴿᴬᵂ` of `ᴴᴰ/ᴿᴬᵂ`. */
+        private val TAIL_TOKEN = Regex("""[\s/]*(\(?[^\s/()]+\)?)\s*$""")
 
         /** The surveyed Provider's table, bundled with the app. */
         fun bundled(): PrefixTable = parse(
@@ -245,7 +254,7 @@ internal class PrefixTable private constructor(
             val liveClutterNames = mutableListOf<Regex>()
             val emptyEventSlots = mutableListOf<Regex>()
             val tierTags = LinkedHashSet<String>()
-            val qualityWords = mutableListOf<Pair<Regex, Rule>>()
+            val qualityWords = LinkedHashMap<String, Rule>()
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -272,8 +281,7 @@ internal class PrefixTable private constructor(
                     "category hints" -> hints += Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(key))}(?![\p{L}\p{N}-])""") to rule
                     // The colon is where the tag ends, not part of it.
                     "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
-                    // A whole word, however it's cased; `+` counts as part of a word (`LIGUE1+`), and parentheses may enclose it.
-                    "channel quality words" -> qualityWords += Regex("""(?<![\p{L}\p{N}+])\(?${Regex.escape(key)}\)?(?![\p{L}\p{N}+])""", RegexOption.IGNORE_CASE) to rule
+                    "channel quality words" -> if (qualityWords.put(key.uppercase(Locale.ROOT), rule) != null) fail("$key is listed twice")
                     else -> fail("outside a [section]")
                 }
             }
@@ -297,6 +305,7 @@ internal class PrefixTable private constructor(
                     "sports-replay" -> rule.copy(sportsReplay = true)
                     "clutter" -> rule.copy(clutter = true)
                     "hevc" -> rule.copy(hevc = true)
+                    "superscript" -> rule.copy(superscript = true)
                     else -> fail("unknown attribute $attribute")
                 }
             }
