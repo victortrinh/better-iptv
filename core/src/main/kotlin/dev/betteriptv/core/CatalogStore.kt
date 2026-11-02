@@ -538,6 +538,89 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /**
+     * The Channel browser's countries, unordered: the regular Categories' country codes as [country]
+     * reads them (null keeps a code out), each with how many Channels its Categories hold, a Channel
+     * once however many of them it's in, Event channels whose Game started before [startedBefore]
+     * left out. Categories with no country code, and Clutter and Event Categories, count for nothing.
+     */
+    fun liveCountries(startedBefore: Instant, country: (String) -> BrowserCountry?): List<LiveCountry> = synchronized(reader) {
+        val resolved = HashMap<String, BrowserCountry?>()
+        val keys = LinkedHashMap<String, HashSet<String>>()
+        val aliases = HashMap<String, String?>()
+        reader.prepare(
+            "SELECT DISTINCT lc.country, c.channel_key FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
+                "WHERE lc.kind = ? AND lc.country IS NOT NULL AND (c.event_start IS NULL OR c.event_start >= ?)",
+        ).use {
+            it.bindText(1, kindKey(CategoryKind.Regular))
+            it.bindLong(2, startedBefore.epochSecond)
+            while (it.step()) {
+                val where = resolved.getOrPut(it.getText(0)) { country(it.getText(0)) } ?: continue
+                keys.getOrPut(where.code) { HashSet() }.add(it.getText(1))
+                aliases[where.code] = where.alias
+            }
+        }
+        keys.map { (code, channels) -> LiveCountry(code, channels.size, aliases[code]) }
+    }
+
+    /**
+     * The regular Categories the browser lists for the country coded [code] (as [country] reads
+     * their codes), in the Provider's order, those sharing a name merged into one with their ids,
+     * each with how many Channels they hold between them (once each, finished Event channels left
+     * out as in [liveCountries]); one holding none is left out. The name is the normalised one with
+     * the code's language after it (`SPORTS · FR`), so a country's Categories of two languages stay apart.
+     */
+    fun browsedCategories(code: String, startedBefore: Instant, country: (String) -> BrowserCountry?): List<BrowsedCategory> = synchronized(reader) {
+        val names = LinkedHashMap<String, MutableList<String>>()
+        reader.prepare("SELECT id, normalised_name, country FROM live_category WHERE kind = ? AND country IS NOT NULL ORDER BY position").use {
+            it.bindText(1, kindKey(CategoryKind.Regular))
+            while (it.step()) {
+                val where = country(it.getText(2))?.takeIf { where -> where.code == code } ?: continue
+                val name = listOfNotNull(it.getText(1), where.language).joinToString(" · ")
+                names.getOrPut(name) { ArrayList() }.add(it.getText(0))
+            }
+        }
+        val keys = HashMap<String, HashSet<String>>()
+        names.values.flatten().chunked(MAX_BOUND).forEach { chunk ->
+            reader.prepare(
+                "SELECT category_id, channel_key FROM channel WHERE category_id IN (${chunk.joinToString(",") { "?" }}) AND (event_start IS NULL OR event_start >= ?)",
+            ).use {
+                chunk.forEachIndexed { i, id -> it.bindText(i + 1, id) }
+                it.bindLong(chunk.size + 1, startedBefore.epochSecond)
+                while (it.step()) keys.getOrPut(it.getText(0)) { HashSet() }.add(it.getText(1))
+            }
+        }
+        names.mapNotNull { (name, ids) ->
+            val channels = ids.flatMap { keys[it].orEmpty() }.toSet().size
+            if (channels == 0) null else BrowsedCategory(name, ids, channels)
+        }
+    }
+
+    /**
+     * The Channels with a variant in any of the Categories [categoryIds], whole (every variant, in
+     * whichever Category), in the Provider's order of their first variant in those Categories,
+     * each once; as in [channels], Event channels whose Game started before [startedBefore] are
+     * left out, and a Channel with no variant on with them.
+     */
+    fun categoryChannels(categoryIds: Collection<String>, startedBefore: Instant): List<Channel> = synchronized(reader) {
+        if (categoryIds.isEmpty()) return emptyList()
+        val ids = categoryIds.toList()
+        val marks = ids.joinToString(",") { "?" }
+        reader.prepare(
+            "SELECT $CHANNEL_COLUMNS, c.position FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE category_id IN ($marks)) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY c.position",
+        ).use {
+            ids.forEachIndexed { i, id -> it.bindText(i + 1, id) }
+            it.bindLong(ids.size + 1, startedBefore.epochSecond)
+            val rows = buildList { while (it.step()) add(it.variantRow(0) to it.getLong(11)) }
+            val inCategory = ids.toSet()
+            rows.groupBy { (row, _) -> row.key }.values
+                .filter { group -> group.any { (row, _) -> row.variant.categoryId in inCategory } }
+                .sortedBy { group -> group.filter { (row, _) -> row.variant.categoryId in inCategory }.minOf { (_, position) -> position } }
+                .map { group -> channel(group.map { (row, _) -> row }) }
+        }
+    }
+
     /** Movie Listings from [offset], with [attributes] working out each one's Version attributes from its name and Category. */
     fun movieListings(offset: Int, limit: Int, attributes: (name: String, category: String) -> VersionAttributes): List<MovieListing> = synchronized(reader) {
         reader.prepare("SELECT id, name, category FROM listing WHERE kind = 'movie' AND position > ? AND position <= ? ORDER BY position").use {
@@ -1064,6 +1147,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
             "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
             "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
+            // The Channel browser's counts and Category lists, by Category: covered without touching the rows.
+            "CREATE INDEX IF NOT EXISTS channel_category ON channel (category_id, channel_key)",
             // The lead variant of each Channel, in the Provider's order, for the search index's scan.
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
         )
