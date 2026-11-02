@@ -202,7 +202,7 @@ internal class TeamAliases(team: GameTeam) {
 }
 
 /** Whether [words] hold [phrase]'s words in order, one after another. */
-private fun containsPhrase(words: List<String>, phrase: List<String>): Boolean {
+internal fun containsPhrase(words: List<String>, phrase: List<String>): Boolean {
     if (phrase.size > words.size) return false
     outer@ for (from in 0..words.size - phrase.size) {
         for (i in phrase.indices) if (words[from + i] != phrase[i]) continue@outer

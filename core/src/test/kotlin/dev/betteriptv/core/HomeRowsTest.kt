@@ -246,7 +246,7 @@ class HomeRowsTest {
             is HomeRow.Favourites -> "favourites"
             is HomeRow.Channels -> "channels"
             is HomeRow.Genre -> "genre"
-            is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.MoreLiveEvents -> "a Live row"
+            is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.MoreLiveEvents, is HomeRow.Replays -> "a Live row"
         }
     }
 

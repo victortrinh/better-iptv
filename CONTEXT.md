@@ -89,7 +89,7 @@ A Version whose Prefix names a Source but no language.
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.
 
 **Sports replay**:
-A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its TMDB ID, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own.
+A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its TMDB ID, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own. It plays as its Listing's Version alone, kept apart from the Titles as an Unmatched Movie's would be, so where the Viewer stopped is remembered.
 _Avoid_: Highlight (a highlights show is not a Replay)
 
 ### Tracks and quality

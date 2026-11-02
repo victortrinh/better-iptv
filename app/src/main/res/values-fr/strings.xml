@@ -36,6 +36,8 @@
     <string name="feed_not_this_game_last">Écarte ce flux pour ce match; il n\'en reste aucun autre, la page du match revient</string>
     <string name="player_feeds_hint">≡ Flux</string>
     <string name="row_channels">Chaînes</string>
+    <string name="row_replays">Reprises</string>
+    <string name="replay">Reprise</string>
     <plurals name="channels_count">
         <item quantity="one">%1$d chaîne</item>
         <item quantity="many">%1$d chaînes</item>
@@ -264,6 +266,7 @@
     <string name="search_movies">Films · %1$d</string>
     <string name="search_shows">Séries · %1$d</string>
     <string name="search_channels">Chaînes · %1$d</string>
+    <string name="search_replays">Reprises · %1$d</string>
     <string name="player_starting">Démarrage de %1$s</string>
     <string name="player_versions_hint">≡ Versions</string>
     <string name="player_playing">En lecture</string>

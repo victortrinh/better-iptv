@@ -17,6 +17,7 @@ import dev.betteriptv.core.Channel
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.League
+import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
 import dev.betteriptv.core.SyncStatus
@@ -28,8 +29,9 @@ import java.time.Duration
  * a row per League on ([leagues], in Settings' order) as Game cards, then More live events (the
  * Event channels no Game matched, on now or soon) and the Viewer's Favourites as Channel cards, then
  * the Channel browser's countries (the Channels row, the Viewer's [region] first, then their
- * Content languages' countries) as country cards named in the [appLanguage], until Replays joins
- * them. The Games are asked for when the tab opens and again every [GAMES_REFRESH] while a Games row
+ * Content languages' countries) as country cards named in the [appLanguage]; between More live
+ * events and Favourites, Replays, the Leagues' Sports replays as Game cards, which OK plays
+ * ([onPlayReplay]). The Games are asked for when the tab opens and again every [GAMES_REFRESH] while a Games row
  * or More live events is on screen (the Event channels it holds move with the clock and the Games),
  * the kept copy standing when the cloud fails. OK on a Game opens its page ([onOpenGame]); OK on a Channel watches it
  * ([onWatch]), and the menu key adds or removes the Favourite, focus moving to its neighbour; OK on
@@ -49,6 +51,7 @@ fun LiveScreen(
     onWatch: (RowCard, Channel) -> Unit,
     onOpenGame: (RowCard, GameFeeds) -> Unit,
     onOpenCountry: (RowCard, LiveCountry) -> Unit,
+    onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
@@ -64,6 +67,7 @@ fun LiveScreen(
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         onOpenCountry = onOpenCountry,
+        onPlayReplay = onPlayReplay,
         placeholder = if (firstSync) {
             { FirstSync(status) }
         } else null,

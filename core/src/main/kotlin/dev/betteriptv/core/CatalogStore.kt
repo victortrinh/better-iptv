@@ -7,6 +7,7 @@ import androidx.sqlite.execSQL
 import java.io.Closeable
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * The device's copy of the Provider catalog, in SQLite.
@@ -35,6 +36,10 @@ import java.time.Instant
  * and whichever variants the Provider lists next; one the Provider drops comes back if it lists the
  * Channel again. Favourites kept by stream id by an older app are carried over once, by looking
  * each id up in the catalog the next Sync stores.
+ *
+ * Sports replays (the movie Listings the Prefix table marks so) are swapped in beside the Listings,
+ * in the Provider's order, each with the two teams and the date read off its name, so the Replays
+ * row and a Game's page find them without reading the names again.
  */
 internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     private val driver = BundledSQLiteDriver()
@@ -53,6 +58,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             execSQL("DROP TABLE IF EXISTS episode")
             execSQL("DROP TABLE IF EXISTS channel")
             execSQL("DROP TABLE IF EXISTS live_category")
+            execSQL("DROP TABLE IF EXISTS replay")
             execSQL("DELETE FROM meta")
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
@@ -60,6 +66,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         execSQL(TITLE_TABLE.format("title"))
         execSQL(CHANNEL_TABLE.format("channel"))
         execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
+        execSQL(REPLAY_TABLE.format("replay"))
         INDEXES.forEach { execSQL(it) }
         // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in. An older
         // app run again before that Sync makes a new table by stream id, which joins the ones waiting.
@@ -123,8 +130,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
         private val insertChannel = connection.prepare("INSERT OR REPLACE INTO staging_channel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
         private val insertLiveCategory = connection.prepare("INSERT OR REPLACE INTO staging_live_category VALUES (?, ?, ?, ?, ?, ?)")
+        private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var channelPosition = 0L
         private var liveCategoryPosition = 0L
+        private var replayPosition = 0L
 
         /** Stores a Category of [kind]'s Listings: movie and show Categories are numbered apart. */
         fun category(kind: TitleKind, id: String, name: String) = insertCategory.run {
@@ -195,11 +204,31 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             stepAndReset()
         }
 
+        /**
+         * Stores a Sports replay (a movie Listing the Prefix table marks so, which [listing] keeps out
+         * of the lists), in the Provider's order, with what its name says ([parsed]: the teams and the
+         * date), the [category] it is filed under and its file's [container] extension.
+         */
+        fun replay(id: Long, name: String, category: String, added: Long?, container: String?, parsed: ParsedReplay) = insertReplay.run {
+            bindLong(1, id)
+            bindLong(2, ++replayPosition)
+            bindText(3, name)
+            bindText(4, category)
+            if (added == null) bindNull(5) else bindLong(5, added)
+            if (container == null) bindNull(6) else bindText(6, container)
+            if (parsed.away == null) bindNull(7) else bindText(7, parsed.away)
+            if (parsed.home == null) bindNull(8) else bindText(8, parsed.home)
+            if (parsed.date == null) bindNull(9) else bindText(9, parsed.date.toString())
+            if (parsed.year == null) bindNull(10) else bindLong(10, parsed.year.toLong())
+            stepAndReset()
+        }
+
         internal fun close() {
             insertCategory.close()
             insertListing.close()
             insertChannel.close()
             insertLiveCategory.close()
+            insertReplay.close()
         }
     }
 
@@ -215,8 +244,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         writer.execSQL("DROP TABLE IF EXISTS staging_title")
         writer.execSQL("DROP TABLE IF EXISTS staging_channel")
         writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
+        writer.execSQL("DROP TABLE IF EXISTS staging_replay")
         writer.execSQL(CHANNEL_TABLE.format("staging_channel"))
         writer.execSQL(LIVE_CATEGORY_TABLE.format("staging_live_category"))
+        writer.execSQL(REPLAY_TABLE.format("staging_replay"))
         writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
         writer.execSQL(
             "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
@@ -268,6 +299,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("DROP TABLE IF EXISTS staging_title")
             writer.execSQL("DROP TABLE IF EXISTS staging_channel")
             writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
+            writer.execSQL("DROP TABLE IF EXISTS staging_replay")
             throw e
         }
 
@@ -287,6 +319,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             writer.execSQL("ALTER TABLE staging_channel RENAME TO channel")
             writer.execSQL("DROP TABLE live_category")
             writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
+            writer.execSQL("DROP TABLE replay")
+            writer.execSQL("ALTER TABLE staging_replay RENAME TO replay")
             INDEXES.forEach { writer.execSQL(it) }
             // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
             writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
@@ -868,13 +902,73 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
-    /** The file extension of movie Listing [id] (`mkv`), or null when the Provider didn't say or the catalog doesn't have it. */
+    /** The file extension of movie Listing [id] (`mkv`), a Sports replay's included, or null when the Provider didn't say or the catalog doesn't have it. */
     fun container(id: Long): String? = synchronized(reader) {
-        reader.prepare("SELECT container FROM listing WHERE kind = 'movie' AND id = ?").use {
+        reader.prepare("SELECT container FROM listing WHERE kind = 'movie' AND id = ? UNION ALL SELECT container FROM replay WHERE id = ?").use {
             it.bindLong(1, id)
+            it.bindLong(2, id)
             if (it.step() && !it.isNull(0)) it.getText(0) else null
         }
     }
+
+    /** Every Sports replay, in the Provider's order; with [withTeams], only those whose names give two teams. */
+    fun replays(withTeams: Boolean = false): List<Replay> = synchronized(reader) {
+        reader.prepare("SELECT $REPLAY_COLUMNS FROM replay" + (if (withTeams) " WHERE away IS NOT NULL" else "") + " ORDER BY position").use {
+            buildList { while (it.step()) add(it.replay()) }
+        }
+    }
+
+    /** The Sports replays whose Listing ids are among [ids], by id. */
+    fun replays(ids: Collection<Long>): Map<Long, Replay> = synchronized(reader) {
+        if (ids.isEmpty()) return emptyMap()
+        ids.distinct().chunked(MAX_BOUND).flatMap { chunk ->
+            reader.prepare("SELECT $REPLAY_COLUMNS FROM replay WHERE id IN (${chunk.joinToString(",") { "?" }})").use {
+                chunk.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
+                buildList { while (it.step()) add(it.replay()) }
+            }
+        }.associateBy { it.listingId }
+    }
+
+    /** The Sports replays with two teams dated from [from] to [to], both included, in the Provider's order. */
+    fun replaysDated(from: LocalDate, to: LocalDate): List<Replay> = synchronized(reader) {
+        reader.prepare("SELECT $REPLAY_COLUMNS FROM replay WHERE away IS NOT NULL AND date >= ? AND date <= ? ORDER BY position").use {
+            it.bindText(1, from.toString())
+            it.bindText(2, to.toString())
+            buildList { while (it.step()) add(it.replay()) }
+        }
+    }
+
+    /** Gives [each] every Sports replay's Listing id, name and day (the date in its name, or the first day of its year, or null), in the Provider's order, a page at a time like [forEachChannel]. */
+    fun forEachReplay(each: (id: Long, name: String, day: LocalDate?) -> Unit) {
+        var after = 0L
+        while (true) {
+            val page = synchronized(reader) {
+                reader.prepare("SELECT position, id, name, date, year FROM replay WHERE position > ? ORDER BY position LIMIT $SCAN_PAGE").use {
+                    it.bindLong(1, after)
+                    buildList {
+                        while (it.step()) {
+                            val day = if (!it.isNull(3)) LocalDate.parse(it.getText(3)) else if (!it.isNull(4)) LocalDate.of(it.getLong(4).toInt(), 1, 1) else null
+                            add(Pair(it.getLong(0), Triple(it.getLong(1), it.getText(2), day)))
+                        }
+                    }
+                }
+            }
+            page.forEach { (_, replay) -> each(replay.first, replay.second, replay.third) }
+            if (page.size < SCAN_PAGE) return
+            after = page.last().first
+        }
+    }
+
+    private fun SQLiteStatement.replay() = Replay(
+        listingId = getLong(0),
+        name = getText(1),
+        category = getText(2),
+        added = if (isNull(3)) null else Instant.ofEpochSecond(getLong(3)),
+        away = if (isNull(4)) null else getText(4),
+        home = if (isNull(5)) null else getText(5),
+        date = if (isNull(6)) null else LocalDate.parse(getText(6)),
+        year = if (isNull(7)) null else getLong(7).toInt(),
+    )
 
     private fun SQLiteStatement.listing(from: Int) = StoredListing(
         id = getLong(from),
@@ -1195,7 +1289,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
         /** What [forEachSearchMetadata] joins names with: the ASCII unit separator, which no name has. */
@@ -1212,6 +1306,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 "lead INTEGER NOT NULL)"
         const val LIVE_CATEGORY_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, normalised_name TEXT NOT NULL, country TEXT, kind TEXT NOT NULL)"
+        /** A Sports replay: its Listing, and the teams and date read off its name (the date as `yyyy-mm-dd`, so it sorts and compares as text). */
+        const val REPLAY_TABLE =
+            "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, added INTEGER, " +
+                "container TEXT, away TEXT, home TEXT, date TEXT, year INTEGER)"
+        const val REPLAY_COLUMNS = "id, name, category, added, away, home, date, year"
         /** A variant's row as [variantRow] reads it: its Channel, whether it's a Favourite, then the variant. */
         const val CHANNEL_COLUMNS = "c.channel_key, c.channel_name, c.country, f.key, c.id, c.image, c.name, c.quality, c.hevc, c.category_id, c.guide_id"
         /** Where Favourites kept by stream id wait for the Sync that carries them over. */
@@ -1231,6 +1330,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
             // The Event channels on, read for the Live tab's Games every couple of minutes.
             "CREATE INDEX IF NOT EXISTS channel_event_start ON channel (event_start)",
+            // The Replays in the Provider's order, and a finished Game's Replay by its date.
+            "CREATE INDEX IF NOT EXISTS replay_position ON replay (position)",
+            "CREATE INDEX IF NOT EXISTS replay_date ON replay (date)",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */

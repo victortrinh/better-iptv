@@ -58,6 +58,7 @@ class GameRowsTest {
         is HomeRow.Today -> "today"
         is HomeRow.LeagueGames -> "league ${league.key}"
         is HomeRow.MoreLiveEvents -> "more live events"
+        is HomeRow.Replays -> "replays"
         is HomeRow.Favourites -> "favourites"
         is HomeRow.Channels -> "channels"
         else -> "a Home row"

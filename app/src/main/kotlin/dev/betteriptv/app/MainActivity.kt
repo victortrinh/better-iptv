@@ -27,6 +27,7 @@ import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LiveCountry
 import dev.betteriptv.core.PlayPlan
+import dev.betteriptv.core.Replay
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.UpdateState
@@ -133,6 +134,12 @@ private fun Root(app: BetterIptvApp) {
             }
             Unit
         }
+        // A Sports replay plays as its Listing's Version, named [name] in the player.
+        val playReplay = { replay: Replay, name: String ->
+            byTab = false
+            scope.launch { playing = NowPlaying(app.library.replayPlayPlan(replay, contentLanguages), name) }
+            Unit
+        }
         val now = playing
         val country = browsing
         if (now != null) {
@@ -180,6 +187,9 @@ private fun Root(app: BetterIptvApp) {
                 deviceProfile = { readDeviceProfile(context) },
                 planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
                 onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed)) },
+                replayFor = { app.library.gameReplay(it) },
+                replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
+                onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
             )
         } else if (country != null) {
             BackHandler {
@@ -220,6 +230,10 @@ private fun Root(app: BetterIptvApp) {
                         channels.reset()
                         browsing = picked
                     },
+                    onPlayReplay = { card, entry ->
+                        returnedTo = card
+                        playReplay(entry.replay, context.matchup(entry))
+                    },
                 )
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
@@ -229,6 +243,7 @@ private fun Root(app: BetterIptvApp) {
                         onTab = onTab,
                         onOpen = { opened = OpenedTitle(it) },
                         onWatch = watch,
+                        onPlayReplay = { playReplay(it, it.heading) },
                     )
                 }
                 Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab)

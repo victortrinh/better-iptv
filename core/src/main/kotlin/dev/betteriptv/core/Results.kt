@@ -93,6 +93,9 @@ sealed interface HomeRow {
      * (tennis, snooker, handball, college games no schedule knows), by start. Left out when empty.
      */
     data class MoreLiveEvents(val events: List<UnmatchedEventChannel>) : HomeRow
+
+    /** On Live, after the League rows: the Sports replays of the Leagues on (CONTEXT.md: Sports replay), newest first. Left out when there is none. */
+    data class Replays(val replays: List<LeagueReplay>) : HomeRow
 }
 
 /**
