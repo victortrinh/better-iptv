@@ -15,6 +15,8 @@
 
     <string name="movies_title">Films</string>
     <string name="shows_title">Séries</string>
+    <string name="live_title">En direct</string>
+    <string name="live_empty">Vos favoris apparaîtront ici. Appuyez sur la touche menu sur une chaîne dans la recherche pour en ajouter une.</string>
     <string name="sync_now">Synchroniser</string>
     <string name="sync_never">Pas encore synchronisé.</string>
     <string name="sync_first">Première synchronisation de votre catalogue…</string>
@@ -172,6 +174,24 @@
     <string name="settings_region_detail">Détermine le Top 10 et les ligues par défaut</string>
     <string name="settings_region_suggested">Suggestions</string>
     <string name="settings_region_all">Tous les pays</string>
+    <string name="settings_leagues">Ligues</string>
+    <string name="settings_leagues_detail">Dont les matchs s\'affichent dans En direct</string>
+    <string name="settings_leagues_none">Aucune</string>
+    <string name="league_nhl">LNH</string>
+    <string name="league_nfl">NFL</string>
+    <string name="league_nba">NBA</string>
+    <string name="league_mlb">MLB</string>
+    <string name="league_cfl">LCF</string>
+    <string name="league_mls">MLS</string>
+    <string name="league_premier_league">Premier League</string>
+    <string name="league_champions_league">Ligue des champions</string>
+    <string name="league_la_liga">La Liga</string>
+    <string name="league_bundesliga">Bundesliga</string>
+    <string name="league_serie_a">Serie A</string>
+    <string name="league_ligue_1">Ligue 1</string>
+    <string name="league_ncaa_football">Football NCAA</string>
+    <string name="league_ncaa_mens_basketball">Basketball masculin NCAA</string>
+    <string name="league_wnba">WNBA</string>
     <string name="settings_display">Affichage</string>
     <string name="settings_text_size">Taille du texte</string>
     <string name="settings_text_size_detail">Selon votre téléviseur et votre distance de l\'écran</string>

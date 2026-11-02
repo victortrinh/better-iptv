@@ -96,6 +96,7 @@ private fun Root(app: BetterIptvApp) {
         val home = remember { RowsState() }
         val movies = remember { TitlesState() }
         val shows = remember { TitlesState() }
+        val live = remember { RowsState() }
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
@@ -135,6 +136,16 @@ private fun Root(app: BetterIptvApp) {
                     onOpen = { card, id -> opened = OpenedTitle(id, card) },
                     onWatch = { card, channel ->
                         // Back from the Channel comes back to its card.
+                        returnedTo = card
+                        watch(channel)
+                    },
+                )
+                Browse.Live -> LiveScreen(
+                    app.library, contentLanguages, live,
+                    restoreFocus = returnedTo,
+                    focusTab = byTab,
+                    onTab = onTab,
+                    onWatch = { card, channel ->
                         returnedTo = card
                         watch(channel)
                     },

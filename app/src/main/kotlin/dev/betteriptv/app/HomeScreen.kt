@@ -20,7 +20,7 @@ import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 
 /** The browsing screens, in tab order. */
-enum class Browse { Home, Movies, Shows, Search, Settings }
+enum class Browse { Home, Movies, Shows, Live, Search, Settings }
 
 /** The tabs across the top of the browsing screens; [selectedFocus] focuses the [selected] one. */
 @Composable
@@ -30,6 +30,7 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
             TopTab(stringResource(R.string.home_title)),
             TopTab(stringResource(R.string.movies_title)),
             TopTab(stringResource(R.string.shows_title)),
+            TopTab(stringResource(R.string.live_title)),
             TopTab(stringResource(R.string.search_title), Icons.Filled.Search),
             TopTab(stringResource(R.string.settings_title), Icons.Filled.Settings),
         ),

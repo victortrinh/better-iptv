@@ -52,6 +52,7 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.SyncStatus
@@ -65,11 +66,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The Viewer's settings, in a single column: App language, Content languages and Region under
+ * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
  * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
- * App, which offers the [update] when there is one ([onUpdate]). Content languages
- * and Region each open a list in place of the column; Back returns to the row that opened it.
+ * App, which offers the [update] when there is one ([onUpdate]). Content languages, Region
+ * and Leagues each open a list in place of the column; Back returns to the row that opened it.
  * [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
@@ -87,6 +88,7 @@ fun SettingsScreen(
     val appLanguageRow = remember { FocusRequester() }
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
+    val leaguesRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
@@ -104,6 +106,10 @@ fun SettingsScreen(
                     onChange { it.copy(region = region) }
                     picking = null
                 })
+            }
+            Picker.Leagues -> {
+                BackHandler { picking = null }
+                LeaguesList(settings.leaguesOn, onChange = { leagues -> onChange { it.copy(leagues = leagues) } })
             }
             null -> LazyColumn(
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
@@ -143,6 +149,19 @@ fun SettingsScreen(
                         },
                         Modifier.focusRequester(regionRow),
                         detail = stringResource(R.string.settings_region_detail),
+                    )
+                }
+                item {
+                    val on = League.entries.filter { it in settings.leaguesOn }
+                    SettingRow(
+                        stringResource(R.string.settings_leagues),
+                        if (on.isEmpty()) stringResource(R.string.settings_leagues_none) else on.map { leagueName(it) }.joinToString(", "),
+                        onClick = {
+                            returnTo = Picker.Leagues
+                            picking = Picker.Leagues
+                        },
+                        Modifier.focusRequester(leaguesRow),
+                        detail = stringResource(R.string.settings_leagues_detail),
                     )
                 }
                 item { Heading(stringResource(R.string.settings_display)) }
@@ -216,6 +235,7 @@ fun SettingsScreen(
             when (returnTo) {
                 Picker.ContentLanguages -> contentLanguagesRow
                 Picker.Region -> regionRow
+                Picker.Leagues -> leaguesRow
                 // Reached by its tab, which keeps focus.
                 null -> appLanguageRow.takeUnless { focusTab }
             }?.requestFocus()
@@ -242,7 +262,7 @@ private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
     )
 }
 
-private enum class Picker { ContentLanguages, Region }
+private enum class Picker { ContentLanguages, Region, Leagues }
 
 /**
  * The catalog's languages to turn on and off as Content languages, the chosen ones first in the
@@ -276,6 +296,54 @@ private fun ContentLanguagesList(library: Library, chosen: List<String>, onChang
         }
     }
 }
+
+/**
+ * The fifteen Leagues offered, in [League]'s order, the ones [on] marked: OK turns a League on or
+ * off. Every one can be off; the Live tab then shows no Games.
+ */
+@Composable
+private fun LeaguesList(on: Set<League>, onChange: (Set<League>) -> Unit) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { first.requestFocus() }
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.width(COLUMN_WIDTH),
+    ) {
+        item { Heading(stringResource(R.string.settings_leagues)) }
+        items(League.entries, key = { it.key }) { league ->
+            val isOn = league in on
+            SettingRow(
+                leagueName(league),
+                if (isOn) CHOSEN else "",
+                onClick = { onChange(if (isOn) on - league else on + league) },
+                if (league == League.entries.first()) Modifier.focusRequester(first) else Modifier,
+            )
+        }
+    }
+}
+
+/** A League's name in the App language: the acronym the Region knows it by, or its name where it has none. */
+@Composable
+private fun leagueName(league: League): String = stringResource(
+    when (league) {
+        League.Nhl -> R.string.league_nhl
+        League.Nfl -> R.string.league_nfl
+        League.Nba -> R.string.league_nba
+        League.Mlb -> R.string.league_mlb
+        League.Cfl -> R.string.league_cfl
+        League.Mls -> R.string.league_mls
+        League.PremierLeague -> R.string.league_premier_league
+        League.ChampionsLeague -> R.string.league_champions_league
+        League.LaLiga -> R.string.league_la_liga
+        League.Bundesliga -> R.string.league_bundesliga
+        League.SerieA -> R.string.league_serie_a
+        League.Ligue1 -> R.string.league_ligue_1
+        League.NcaaFootball -> R.string.league_ncaa_football
+        League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
+        League.Wnba -> R.string.league_wnba
+    },
+)
 
 /**
  * Every country, by its name in the [appLanguage]: the [suggestedRegions] under Suggested, the
