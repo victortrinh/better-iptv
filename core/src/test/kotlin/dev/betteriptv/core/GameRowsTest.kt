@@ -44,7 +44,7 @@ class GameRowsTest {
     }
 
     private suspend fun rows(vararg leagues: League = arrayOf(League.Nhl, League.Nfl), languages: List<String> = listOf("en"), at: Instant = now) =
-        library.liveRows(leagues.toList(), languages, at, toronto)
+        library.liveRows(leagues.toList(), "CA", languages, at, toronto)
 
     private fun List<HomeRow>.liveNow() = filterIsInstance<HomeRow.LiveNow>().singleOrNull()?.games
     private fun List<HomeRow>.today() = filterIsInstance<HomeRow.Today>().singleOrNull()?.games
@@ -58,6 +58,7 @@ class GameRowsTest {
         is HomeRow.Today -> "today"
         is HomeRow.LeagueGames -> "league ${league.key}"
         is HomeRow.Favourites -> "favourites"
+        is HomeRow.Channels -> "channels"
         else -> "a Home row"
     }
 
@@ -84,7 +85,7 @@ class GameRowsTest {
         library.setFavourite(library.search("TSN", listOf("en"), "en").last().channels.single().key, true)
 
         val rows = rows(League.Nhl, League.Nfl, League.Mlb)
-        assertEquals(listOf("live now", "today", "league nhl", "league nfl", "favourites"), rows.map { it.name() })
+        assertEquals(listOf("live now", "today", "league nhl", "league nfl", "favourites", "channels"), rows.map { it.name() })
         assertEquals(listOf("1"), rows.liveNow().ids())
         // Tonight's Game is the NHL's too, but Today is the highest row it fits.
         assertEquals(listOf("2"), rows.today().ids())
@@ -94,8 +95,8 @@ class GameRowsTest {
         assertEquals(listOf("Texans vs Broncos (2026-11-04 20:15:00)"), rows.league(League.Nfl).feedNames("100"))
         // The League rows follow Settings' order, not the schedule's.
         assertEquals(listOf("league nfl", "league nhl"), rows(League.Nfl, League.Nhl).filterIsInstance<HomeRow.LeagueGames>().map { it.name() })
-        // With no League on, only the Favourites row is left.
-        assertEquals(listOf("favourites"), rows().let { library.liveRows(emptyList(), listOf("en"), now, toronto) }.map { it.name() })
+        // With no League on, the Favourites and Channels rows are left.
+        assertEquals(listOf("favourites", "channels"), library.liveRows(emptyList(), "CA", listOf("en"), now, toronto).map { it.name() })
     }
 
     @Test fun `an Event channel is a Feed when it names both teams, or one team and the League, by any alias, whatever its case and accents`() = runBlocking {

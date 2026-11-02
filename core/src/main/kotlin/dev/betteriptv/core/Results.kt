@@ -59,6 +59,9 @@ sealed interface HomeRow {
     /** The Channels the Viewer saved, in the order they were added. */
     data class Favourites(val channels: List<Channel>) : HomeRow
 
+    /** The Channel browser's countries (Live's last row), the Viewer's Region first; OK on one opens its Channels screen. */
+    data class Channels(val countries: List<LiveCountry>) : HomeRow
+
     /**
      * A Chart (CONTEXT.md), kept to the Titles the Viewer can watch: Netflix's Top 10 [list] for the
      * Viewer's [region] (ISO 3166), or the world's when Netflix doesn't list it (null), its [titles]

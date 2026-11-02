@@ -418,6 +418,38 @@ class Library private constructor(
     suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
 
     /**
+     * The Channel browser's countries (the Channels row on Live), from the regular live Categories'
+     * country codes: the Viewer's [region] first, then their [contentLanguages]' countries, then the
+     * rest by Channel count, then the Prefix table's aliased codes (`AR` for Arabic) by Channel count
+     * ([orderedCountries]). Clutter and Event Categories, and Categories whose names carry no
+     * country code or one that is neither a country nor aliased, add none ([browserCountry]).
+     */
+    suspend fun liveCountries(region: String, contentLanguages: List<String>): List<LiveCountry> = withContext(Dispatchers.IO) {
+        orderedCountries(store.liveCountries(Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry), region, contentLanguages)
+    }
+
+    private fun browserCountry(country: String) = browserCountry(country, prefixTable::countryAlias)
+
+    /**
+     * The Categories the Channels screen lists for the country coded [country] ([LiveCountry.code]),
+     * in the Provider's order: regular ones only (no Clutter or Event Categories), named without the
+     * country code and tags (the code's language kept: `SPORTS · FR`), those sharing a name merged,
+     * each with its Channel count.
+     */
+    suspend fun browsedCategories(country: String): List<BrowsedCategory> = withContext(Dispatchers.IO) {
+        store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry)
+    }
+
+    /**
+     * The Channels of a browsed [category], in the Provider's order, whole: a Channel with variants in
+     * two Categories is listed in both, and watching it tries every variant. Finished Event channels
+     * are left out, as everywhere.
+     */
+    suspend fun categoryChannels(category: BrowsedCategory): List<Channel> = withContext(Dispatchers.IO) {
+        store.categoryChannels(category.categoryIds, Instant.now() - EVENT_FINISHED_AFTER)
+    }
+
+    /**
      * What watching [channel] starts: its best variant for the Viewer's [device] within the
      * [qualityCap] ([rankedVariants]), as MPEG-TS, then the same stream as HLS, for a Provider or a
      * player that does one and not the other, then the next variant the same way, as a chain of
@@ -952,18 +984,20 @@ class Library private constructor(
      * The Live tab's rows (CONTEXT.md's Row), for the [leagues] on, in Settings' order: Live now, the
      * Games in progress with at least one Feed; Today, the Games still to start today (the device's
      * day); one row per League with its Games of the week ahead; then the Viewer's Favourites, in the
-     * order they were added, finished Event channels left out. A Game shows once, in the highest row
+     * order they were added, finished Event channels left out; then the Channel browser's countries
+     * ([liveCountries], for the [region] and [contentLanguages]). A Game shows once, in the highest row
      * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
      * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
      * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
      * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
-     * More live events, Replays and the Channels' countries join as M3's tickets land.
+     * More live events and Replays join as M3's tickets land.
      */
-    suspend fun liveRows(leagues: List<League> = emptyList(), contentLanguages: List<String> = emptyList()): List<HomeRow> =
-        liveRows(leagues, contentLanguages, Instant.now(), ZoneId.systemDefault())
+    suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
+        liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
 
-    internal suspend fun liveRows(leagues: List<League>, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
+        val countries = liveCountries(region, contentLanguages)
         val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
         val matched = if (games.isEmpty()) emptyList() else {
             val categories = store.liveCategories().associateBy { it.id }
@@ -987,6 +1021,7 @@ class Library private constructor(
             if (todayRow.isNotEmpty()) add(HomeRow.Today(todayRow))
             addAll(perLeague)
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
+            if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
         }
     }
 

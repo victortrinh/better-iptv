@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import dev.betteriptv.app.ui.components.ChannelCard
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.LiveCountry
 
 /**
  * [channel]'s card: pressing it watches it ([onWatch]), the menu key adds or removes the Favourite
@@ -31,6 +32,9 @@ fun ChannelCard(
         onFocus = onFocus,
     )
 }
+
+/** What a country card and the Channels screen call this country: its alias when the Provider's code isn't a country, else its name in the [appLanguage]. */
+fun LiveCountry.name(appLanguage: String): String = alias ?: countryName(code, appLanguage)
 
 /** What the menu key does on this Channel's card: add or remove the Favourite. */
 @Composable

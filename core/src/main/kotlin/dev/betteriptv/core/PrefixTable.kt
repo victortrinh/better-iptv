@@ -19,7 +19,12 @@ internal class PrefixTable private constructor(
     private val tierTags: Set<String>,
     /** Each Channel quality word, uppercase, with what it says of the variant. */
     private val qualityWords: Map<String, Rule>,
+    /** The live Category country codes that aren't countries (`AR`, `EX YU`), uppercase, to the name the browser shows for them. */
+    private val countryAliases: Map<String, String>,
 ) {
+    /** What the Channel browser calls a live Category's country [code] that isn't a country ("Arabic" for `AR`), or null for one not listed. */
+    fun countryAlias(code: String): String? = countryAliases[code.uppercase(Locale.ROOT)]
+
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
 
@@ -255,6 +260,7 @@ internal class PrefixTable private constructor(
             val emptyEventSlots = mutableListOf<Regex>()
             val tierTags = LinkedHashSet<String>()
             val qualityWords = LinkedHashMap<String, Rule>()
+            val countryAliases = LinkedHashMap<String, String>()
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -275,6 +281,11 @@ internal class PrefixTable private constructor(
                 }
                 val line = raw.replace(Regex("""\s+#.*$"""), "")
                 val key = line.substringBefore('|').trim()
+                if (section == "country aliases") {
+                    val alias = line.substringAfter('|', "").trim().ifEmpty { fail("$key has no name") }
+                    if (countryAliases.put(key.uppercase(Locale.ROOT), alias) != null) fail("$key is listed twice")
+                    return@forEachIndexed
+                }
                 val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
                 when (section) {
                     "prefixes" -> if (prefixes.put(key, rule) != null) fail("$key is listed twice")
@@ -285,7 +296,7 @@ internal class PrefixTable private constructor(
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =

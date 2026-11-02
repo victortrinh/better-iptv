@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
+import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
 import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
@@ -66,6 +68,7 @@ import dev.betteriptv.core.ChartList
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
+import dev.betteriptv.core.LiveCountry
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -138,13 +141,15 @@ class RowsState {
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
- * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed.
+ * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a country's
+ * (Live's Channels row, named in the [appLanguage]) opens its Channels screen ([onOpenCountry]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RowsScreen(
     library: Library,
     contentLanguages: List<String>,
+    appLanguage: String,
     state: RowsState,
     restoreFocus: RowCard?,
     focusTab: Boolean,
@@ -154,6 +159,7 @@ fun RowsScreen(
     onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
+    onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
@@ -255,8 +261,8 @@ fun RowsScreen(
                             modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
                         )
                         val wide = row is HomeRow.ContinueWatching
-                        // Channels and Games share the wide 16:9 card.
-                        val channels = row is HomeRow.Favourites || row.games != null
+                        // Channels, countries and Games are wide cards alike.
+                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row.games != null
                         val ranked = row.ranked
                         // Kept with the row: new lists would compose each of its cards again.
                         val keys = remember(row) { row.keys }
@@ -289,7 +295,7 @@ fun RowsScreen(
                             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
                             modifier = Modifier.rowFocus(entry),
                         ) {
-                            items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { if (row is HomeRow.Favourites) "channel" else if (row.games != null) "game" else "title" }) { place ->
+                            items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { row.contentType }) { place ->
                                 val index = loop.card(place)
                                 val focus = remember { FocusRequester() }
                                 val card = RowCard(row.key, keys[index])
@@ -316,6 +322,11 @@ fun RowsScreen(
                                         named = false,
                                         onFocus = onFocus,
                                     )
+                                    return@items
+                                }
+                                if (row is HomeRow.Channels) {
+                                    val country = row.countries[index]
+                                    CountryCard(country.name(appLanguage), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
                                     return@items
                                 }
                                 val games = row.games
@@ -355,7 +366,7 @@ fun RowsScreen(
                                 if (ranked) RankedCard(index + 1) { poster() } else poster()
                             }
                         }
-                        SettledInfo(library, row, state, contentLanguages)
+                        SettledInfo(library, row, state, contentLanguages, appLanguage)
                         Spacer(Modifier.height(14.dp))
                     }
                 }
@@ -373,15 +384,15 @@ fun RowsScreen(
  * of their cards again at every press (#63).
  */
 @Composable
-private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>) {
+private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>, appLanguage: String) {
     if (state.settled != row.key) return
-    RailInfo(library, row, state.focused, contentLanguages, Modifier.padding(start = Spacing.screenX, top = 12.dp))
+    RailInfo(library, row, state.focused, contentLanguages, appLanguage, Modifier.padding(start = Spacing.screenX, top = 12.dp))
 }
 
 /** The info under [row], telling about [card], the card focused last, when it is one of the row's. */
 @Composable
-private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLanguages: List<String>, modifier: Modifier) {
-    val short = row is HomeRow.ContinueWatching || row is HomeRow.Favourites
+private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLanguages: List<String>, appLanguage: String, modifier: Modifier) {
+    val short = row is HomeRow.ContinueWatching || row is HomeRow.Favourites || row is HomeRow.Channels
     val channel = (row as? HomeRow.Favourites)?.channels?.firstOrNull { channelKey(it) == card?.key }
     if (channel != null) {
         RailInfo(CardInfo.Channel(channel.name, channel.caption()), emptyList(), short, modifier)
@@ -392,6 +403,12 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
         val game = games.firstOrNull { gameKey(it) == card?.key }
         val context = LocalContext.current
         RailInfo(game?.let { remember(it) { context.gameInfo(it) } }, emptyList(), short = true, modifier)
+        return
+    }
+    // A country: its name, since its card has nothing but it, and how many Channels it has.
+    val country = (row as? HomeRow.Channels)?.countries?.firstOrNull { countryKey(it) == card?.key }
+    if (country != null) {
+        RailInfo(CardInfo.Channel(country.name(appLanguage), pluralStringResource(R.plurals.channels_count, country.channels, country.channels)), emptyList(), short, modifier)
         return
     }
     val titles = row.titles
@@ -433,7 +450,7 @@ private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo
 private val HomeRow.titles: List<TitleSummary>
     get() = when (this) {
         is HomeRow.ContinueWatching -> titles.map { it.title }
-        is HomeRow.Favourites, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> emptyList()
+        is HomeRow.Favourites, is HomeRow.Channels, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> emptyList()
         is HomeRow.Chart -> titles
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
@@ -457,6 +474,7 @@ private val HomeRow.key: String
     get() = when (this) {
         is HomeRow.ContinueWatching -> "continue"
         is HomeRow.Favourites -> "favourites"
+        is HomeRow.Channels -> "channels"
         is HomeRow.Chart -> "chart/$list"
         is HomeRow.NewOnYourService -> "new"
         is HomeRow.Genre -> "genre/$name"
@@ -473,11 +491,23 @@ private val List<HomeRow>.cards: Map<String, List<String>>
 private val HomeRow.keys: List<String>
     get() = when {
         this is HomeRow.Favourites -> channels.map(::channelKey)
+        this is HomeRow.Channels -> countries.map(::countryKey)
         games != null -> games!!.map(::gameKey)
         else -> titles.map { it.id.toString() }
     }
 
+/** What a row's cards are, so a `LazyRow` reuses a card's composition only for one of the same kind. */
+private val HomeRow.contentType: String
+    get() = when (this) {
+        is HomeRow.Favourites -> "channel"
+        is HomeRow.Channels -> "country"
+        is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> "game"
+        else -> "title"
+    }
+
 private fun channelKey(channel: Channel) = "channel/${channel.key}"
+
+private fun countryKey(country: LiveCountry) = "country/${country.code}"
 
 private fun gameKey(game: GameFeeds) = "game/${game.key}"
 
@@ -515,6 +545,7 @@ private class Seen(val posters: Int, val stills: Int, val channels: Int)
 private fun HomeRow.heading(): String = when (this) {
     is HomeRow.ContinueWatching -> stringResource(R.string.row_continue_watching)
     is HomeRow.Favourites -> stringResource(R.string.row_favourites)
+    is HomeRow.Channels -> stringResource(R.string.row_channels)
     is HomeRow.Chart -> when (list) {
         ChartList.Trending -> stringResource(R.string.row_trending)
         ChartList.TrendingMovies -> stringResource(R.string.row_trending_movies)

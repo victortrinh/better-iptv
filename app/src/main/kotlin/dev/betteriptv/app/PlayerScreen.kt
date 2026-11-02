@@ -76,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -280,7 +281,7 @@ fun PlayerScreen(
     if (scrub != null) BackHandler { endScrub(commit = false) }
 
     Box(
-        Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { event ->
+        Modifier.fillMaxSize().background(Colors.picture).onPreviewKeyEvent { event ->
             if (event.type == KeyEventType.KeyDown) touched = true
             if (event.type == KeyEventType.KeyUp && event.key in SCRUB_KEYS) scrub?.let {
                 // When the app gets to it, not when it was stamped: a Back just after letting go
@@ -490,13 +491,18 @@ private fun MatchRefreshRate(player: ControlledEngine?) {
 
 private val FRAME_RATE_WAIT = 20.seconds
 
-/** The engine's picture. The player overlay is the app's own, so Media3's controls stay hidden. */
+/**
+ * The engine's picture. The player overlay is the app's own, so Media3's controls stay hidden. Both
+ * engines' views are [Colors.picture] behind it, so letterbox bands are pure black (#273).
+ */
 @Composable
 private fun EngineSurface(player: ControlledEngine) {
     when (player) {
         is Media3Engine -> Media3Surface(player)
         is VlcEngine -> AndroidView(
-            factory = { context -> VLCVideoLayout(context).also(player::attach) },
+            factory = { context ->
+                VLCVideoLayout(context).apply { setBackgroundColor(Colors.picture.toArgb()) }.also(player::attach)
+            },
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -510,6 +516,8 @@ private fun Media3Surface(player: Media3Engine) {
             PlayerView(context).apply {
                 useController = false
                 isFocusable = false
+                setShutterBackgroundColor(Colors.picture.toArgb())
+                setBackgroundColor(Colors.picture.toArgb())
                 player.showIn(this)
             }
         },

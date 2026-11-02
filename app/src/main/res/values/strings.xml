@@ -57,6 +57,12 @@
     <string name="feeds_title">Feeds</string>
     <string name="feed_event_channel">Event channel</string>
     <string name="feed_broadcaster">Broadcaster · %1$s</string>
+    <string name="row_channels">Channels</string>
+    <!-- Under a focused country card on Live, and beside a country's name on its Channels screen. -->
+    <plurals name="channels_count">
+        <item quantity="one">%1$d Channel</item>
+        <item quantity="other">%1$d Channels</item>
+    </plurals>
     <string name="search_title">Search</string>
     <string name="search_hint">Any language works, and accents and small typos are fine: \"pokemon\" finds Pokémon.</string>
     <string name="search_start">Type two letters to find Movies, Shows, Channels and people.</string>
