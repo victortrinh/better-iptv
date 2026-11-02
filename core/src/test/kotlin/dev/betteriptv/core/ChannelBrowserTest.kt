@@ -191,7 +191,7 @@ class ChannelBrowserTest {
         library.sync()
         library.setFavourite("CA: TSN 1", true)
 
-        val rows = library.liveRows("CA", listOf("en"))
+        val rows = library.liveRows(region = "CA", contentLanguages = listOf("en"))
         assertEquals(listOf(HomeRow.Favourites::class, HomeRow.Channels::class), rows.map { it::class })
         assertEquals(listOf("CA", "US"), (rows.last() as HomeRow.Channels).countries.map { it.code })
     }

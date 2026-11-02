@@ -109,7 +109,10 @@ internal fun categoryCountry(name: String): String? = COUNTRY_CODE.find(name)?.g
  * read it), or is marked `Live |` or `Next |`. Numbered slots without a date (`UK: TNT SPORTS
  * EVENT 12`) can't be told.
  */
-internal fun isEventChannel(name: String, start: Instant?): Boolean = start != null || MARKED_ON.containsMatchIn(name)
+internal fun isEventChannel(name: String, start: Instant?): Boolean = start != null || isMarkedOn(name)
+
+/** Whether a live Listing's [name] is marked `Live |` or `Next |`: an Event channel on now or next, whose name gives no start. */
+internal fun isMarkedOn(name: String): Boolean = MARKED_ON.containsMatchIn(name)
 
 /** An Event channel counts as finished this long after the start its name gives: long enough for a match, a race or a fight card. */
 internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)

@@ -1,30 +1,42 @@
 package dev.betteriptv.core
 
 /**
- * A League the sports hub offers (CONTEXT.md), in the order Settings lists them. Its [key] is
- * ESPN's slug for it, stable across releases: Settings keeps the Leagues on by key, and the cloud's
- * Games call asks for Leagues by it.
+ * A League the sports hub offers (CONTEXT.md), in the order Settings lists them. Its [key] is the id
+ * the device and the cloud share (cloud/src/schedule.ts's `LEAGUES`), stable across releases:
+ * Settings keeps the Leagues on by key, and the cloud's Games call asks for Leagues by it. [names]
+ * are what an Event channel's name calls the League (`NHL: Leafs vs Habs`, `EPL | Arsenal v
+ * Chelsea`): a Game matches an Event channel naming one of its teams and one of these.
  */
-enum class League(val key: String) {
-    Nhl("nhl"),
-    Nfl("nfl"),
-    Nba("nba"),
-    Mlb("mlb"),
-    Cfl("cfl"),
-    Mls("usa.1"),
-    PremierLeague("eng.1"),
-    ChampionsLeague("uefa.champions"),
-    LaLiga("esp.1"),
-    Bundesliga("ger.1"),
-    SerieA("ita.1"),
-    Ligue1("fra.1"),
-    NcaaFootball("college-football"),
-    NcaaMensBasketball("mens-college-basketball"),
-    Wnba("wnba");
+enum class League(val key: String, val names: List<String>) {
+    Nhl("nhl", listOf("NHL", "Hockey")),
+    Nfl("nfl", listOf("NFL")),
+    Nba("nba", listOf("NBA")),
+    Mlb("mlb", listOf("MLB", "Baseball")),
+    Cfl("cfl", listOf("CFL")),
+    Mls("mls", listOf("MLS")),
+    PremierLeague("premier-league", listOf("Premier League", "EPL", "PL")),
+    ChampionsLeague("champions-league", listOf("Champions League", "UCL", "UEFA CL")),
+    LaLiga("la-liga", listOf("La Liga", "LaLiga")),
+    Bundesliga("bundesliga", listOf("Bundesliga")),
+    SerieA("serie-a", listOf("Serie A")),
+    Ligue1("ligue-1", listOf("Ligue 1")),
+    NcaaFootball("ncaa-football", listOf("NCAA Football", "NCAAF", "College Football", "CFB")),
+    NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
+    Wnba("wnba", listOf("WNBA"));
 
     companion object {
-        /** The League with this [key], or null for one this release doesn't offer. */
-        fun byKey(key: String): League? = entries.firstOrNull { it.key == key }
+        /**
+         * The League with this [key], or null for one this release doesn't offer. A key an earlier
+         * release kept a Leagues choice by ([LEGACY_KEYS]: #253's ESPN slugs, before the keys became
+         * the cloud's ids) still finds its League, so the choice survives the update.
+         */
+        fun byKey(key: String): League? = entries.firstOrNull { it.key == key } ?: LEGACY_KEYS[key]
+
+        /** The keys the first Live tab release (#253) saved Leagues by, to the Leagues they meant. */
+        private val LEGACY_KEYS = mapOf(
+            "usa.1" to Mls, "eng.1" to PremierLeague, "uefa.champions" to ChampionsLeague, "esp.1" to LaLiga, "ger.1" to Bundesliga,
+            "ita.1" to SerieA, "fra.1" to Ligue1, "college-football" to NcaaFootball, "mens-college-basketball" to NcaaMensBasketball,
+        )
 
         /**
          * The Leagues on until the Viewer chooses, by [region] (ISO 3166): Canada's seven from

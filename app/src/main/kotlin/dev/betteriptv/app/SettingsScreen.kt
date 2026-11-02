@@ -323,28 +323,6 @@ private fun LeaguesList(on: Set<League>, onChange: (Set<League>) -> Unit) {
     }
 }
 
-/** A League's name in the App language: the acronym the Region knows it by, or its name where it has none. */
-@Composable
-private fun leagueName(league: League): String = stringResource(
-    when (league) {
-        League.Nhl -> R.string.league_nhl
-        League.Nfl -> R.string.league_nfl
-        League.Nba -> R.string.league_nba
-        League.Mlb -> R.string.league_mlb
-        League.Cfl -> R.string.league_cfl
-        League.Mls -> R.string.league_mls
-        League.PremierLeague -> R.string.league_premier_league
-        League.ChampionsLeague -> R.string.league_champions_league
-        League.LaLiga -> R.string.league_la_liga
-        League.Bundesliga -> R.string.league_bundesliga
-        League.SerieA -> R.string.league_serie_a
-        League.Ligue1 -> R.string.league_ligue_1
-        League.NcaaFootball -> R.string.league_ncaa_football
-        League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
-        League.Wnba -> R.string.league_wnba
-    },
-)
-
 /**
  * Every country, by its name in the [appLanguage]: the [suggestedRegions] under Suggested, the
  * Viewer's [region] first, then All countries beside an A–Z rail. Left from a country moves to its

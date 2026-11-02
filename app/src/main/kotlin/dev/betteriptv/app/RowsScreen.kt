@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
+import dev.betteriptv.app.ui.components.GameCard
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
 import dev.betteriptv.app.ui.components.RankedCard
@@ -64,6 +65,7 @@ import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.ChartList
+import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
 import dev.betteriptv.core.LiveCountry
@@ -139,8 +141,8 @@ class RowsState {
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
- * removes the Favourite; a country's (Live's Channels row, named in the [appLanguage]) opens its
- * Channels screen ([onOpenCountry]).
+ * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a country's
+ * (Live's Channels row, named in the [appLanguage]) opens its Channels screen ([onOpenCountry]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -156,6 +158,7 @@ fun RowsScreen(
     empty: String,
     onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
+    onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     header: @Composable (tab: FocusRequester) -> Unit,
@@ -170,12 +173,25 @@ fun RowsScreen(
     var pending by remember(restoreFocus) { mutableStateOf(restoreFocus) }
     var focused by remember(restoreFocus) { mutableStateOf(false) }
     var checked by remember(restoreFocus) { mutableStateOf(false) }
+    val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
     LaunchedEffect(synced, reading) {
         val before = state.rows
         state.rows = reader()
+        val after = state.rows.orEmpty().cards
         if (!checked && restoreFocus != null && before != null) {
-            val restored = restoredCard(restoreFocus, before.cards, state.rows.orEmpty().cards)
+            val restored = restoredCard(restoreFocus, before.cards, after)
             if (restored != restoreFocus) pending = restored
+        } else if (checked && before != null) {
+            // Rows read again while the Viewer is on a card (Live's Games every couple of minutes):
+            // a Game that moved to another row keeps focus there, one that has gone leaves it to
+            // the card in its place, the row that takes its place, or the tab, as a removed Favourite does.
+            val focusedCard = state.focused
+            if (focusedCard != null && after[focusedCard.row]?.contains(focusedCard.key) != true && before.cards[focusedCard.row]?.contains(focusedCard.key) == true) {
+                val moved = after.entries.firstOrNull { focusedCard.key in it.value }?.let { RowCard(it.key, focusedCard.key) }
+                val next = moved ?: restoredCard(focusedCard, before.cards, after)
+                if (next == null) tab.requestFocus() else pending = next
+            }
         }
         checked = true
     }
@@ -185,8 +201,6 @@ fun RowsScreen(
         pending = null
         focused = true
     }
-    val tab = remember { FocusRequester() }
-    FocusTabOnArrival(focusTab, tab)
     val scope = rememberCoroutineScope()
     val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {
@@ -247,8 +261,8 @@ fun RowsScreen(
                             modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
                         )
                         val wide = row is HomeRow.ContinueWatching
-                        // Channels and countries are wide cards alike.
-                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels
+                        // Channels, countries and Games are wide cards alike.
+                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row.games != null
                         val ranked = row.ranked
                         // Kept with the row: new lists would compose each of its cards again.
                         val keys = remember(row) { row.keys }
@@ -315,6 +329,11 @@ fun RowsScreen(
                                     CountryCard(country.name(appLanguage), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
                                     return@items
                                 }
+                                val games = row.games
+                                if (games != null) {
+                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus)
+                                    return@items
+                                }
                                 val title = titles[index]
                                 val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                                 // The info under the rail shows the badges, so the card only counts as on screen.
@@ -379,6 +398,13 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
         RailInfo(CardInfo.Channel(channel.name, channel.caption()), emptyList(), short, modifier)
         return
     }
+    val games = row.games
+    if (games != null) {
+        val game = games.firstOrNull { gameKey(it) == card?.key }
+        val context = LocalContext.current
+        RailInfo(game?.let { remember(it) { context.gameInfo(it) } }, emptyList(), short = true, modifier)
+        return
+    }
     // A country: its name, since its card has nothing but it, and how many Channels it has.
     val country = (row as? HomeRow.Channels)?.countries?.firstOrNull { countryKey(it) == card?.key }
     if (country != null) {
@@ -424,11 +450,19 @@ private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo
 private val HomeRow.titles: List<TitleSummary>
     get() = when (this) {
         is HomeRow.ContinueWatching -> titles.map { it.title }
-        is HomeRow.Favourites -> emptyList()
-        is HomeRow.Channels -> emptyList()
+        is HomeRow.Favourites, is HomeRow.Channels, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> emptyList()
         is HomeRow.Chart -> titles
         is HomeRow.NewOnYourService -> titles
         is HomeRow.Genre -> titles
+    }
+
+/** A Game row's Games, or null for a row of anything else. */
+private val HomeRow.games: List<GameFeeds>?
+    get() = when (this) {
+        is HomeRow.LiveNow -> games
+        is HomeRow.Today -> games
+        is HomeRow.LeagueGames -> games
+        else -> null
     }
 
 /** Whether a row is a Top 10, drawn with its ranks and never looping. */
@@ -444,6 +478,9 @@ private val HomeRow.key: String
         is HomeRow.Chart -> "chart/$list"
         is HomeRow.NewOnYourService -> "new"
         is HomeRow.Genre -> "genre/$name"
+        is HomeRow.LiveNow -> "live-now"
+        is HomeRow.Today -> "today"
+        is HomeRow.LeagueGames -> "league/${league.key}"
     }
 
 /** Each row's key to its cards' keys, in screen order, for [restoredCard]. */
@@ -452,9 +489,10 @@ private val List<HomeRow>.cards: Map<String, List<String>>
 
 /** The keys of a row's cards, as [RowCard]s hold them. */
 private val HomeRow.keys: List<String>
-    get() = when (this) {
-        is HomeRow.Favourites -> channels.map(::channelKey)
-        is HomeRow.Channels -> countries.map(::countryKey)
+    get() = when {
+        this is HomeRow.Favourites -> channels.map(::channelKey)
+        this is HomeRow.Channels -> countries.map(::countryKey)
+        games != null -> games!!.map(::gameKey)
         else -> titles.map { it.id.toString() }
     }
 
@@ -463,12 +501,15 @@ private val HomeRow.contentType: String
     get() = when (this) {
         is HomeRow.Favourites -> "channel"
         is HomeRow.Channels -> "country"
+        is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> "game"
         else -> "title"
     }
 
 private fun channelKey(channel: Channel) = "channel/${channel.key}"
 
 private fun countryKey(country: LiveCountry) = "country/${country.code}"
+
+private fun gameKey(game: GameFeeds) = "game/${game.key}"
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do
@@ -522,6 +563,9 @@ private fun HomeRow.heading(): String = when (this) {
         },
     )
     is HomeRow.Genre -> name
+    is HomeRow.LiveNow -> stringResource(R.string.row_live_now)
+    is HomeRow.Today -> stringResource(R.string.row_today)
+    is HomeRow.LeagueGames -> leagueName(league)
 }
 
 /**

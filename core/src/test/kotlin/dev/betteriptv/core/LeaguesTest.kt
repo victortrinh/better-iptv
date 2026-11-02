@@ -6,16 +6,25 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `fifteen Leagues are offered, in Settings' order, by stable ESPN keys`() {
+    @Test fun `fifteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+        // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
-                "nhl", "nfl", "nba", "mlb", "cfl", "usa.1", "eng.1", "uefa.champions", "esp.1", "ger.1", "ita.1", "fra.1",
-                "college-football", "mens-college-basketball", "wnba",
+                "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
+                "ncaa-football", "ncaa-basketball", "wnba",
             ),
             League.entries.map { it.key },
         )
         assertEquals(League.entries.toList(), League.entries.map { League.byKey(it.key) })
         assertNull(League.byKey("f1"))
+    }
+
+    @Test fun `a Leagues choice saved under the first release's ESPN slugs still finds its Leagues`() {
+        assertEquals(
+            listOf(League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1, League.NcaaFootball, League.NcaaMensBasketball),
+            listOf("usa.1", "eng.1", "uefa.champions", "esp.1", "ger.1", "ita.1", "fra.1", "college-football", "mens-college-basketball").map(League::byKey),
+        )
+        assertEquals(League.Nhl, League.byKey("nhl"))
     }
 
     @Test fun `Canada's defaults are the seven from CONTEXT`() {

@@ -494,6 +494,47 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }.groupBy { it.key }.values.map(::channel)
     }
 
+    /**
+     * The Event channels on: the Channels with a variant whose name says its Game starts from [from]
+     * (included) to [to] (excluded), or marked `Live |` or `Next |` ([isMarkedOn]), merged as
+     * [channels] merges them, in the Provider's order, each with the start its name gives (null when
+     * only marked). A Sync keeps a finished Event channel's rows until the next, so the caller bounds the window.
+     */
+    fun eventChannels(from: Instant, to: Instant): List<Pair<Channel, Instant?>> = synchronized(reader) {
+        reader.prepare(
+            "SELECT $CHANNEL_COLUMNS, c.event_start FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE (event_start >= ? AND event_start < ?) OR name LIKE 'Live%|%' OR name LIKE 'Next%|%') " +
+                "ORDER BY c.position",
+        ).use {
+            it.bindLong(1, from.epochSecond)
+            it.bindLong(2, to.epochSecond)
+            buildList { while (it.step()) add(it.variantRow(0) to (if (it.isNull(11)) null else Instant.ofEpochSecond(it.getLong(11)))) }
+        }.groupBy { it.first.key }.values.mapNotNull { rows ->
+            val start = rows.firstNotNullOfOrNull { it.second }
+            val name = rows.first().first.variant.name
+            // The LIKE over-matches ("Liverpool | …"): only names marked on, or with a start in the window, are Event channels here.
+            if (start == null && !isMarkedOn(name)) null else channel(rows.map { it.first }) to start
+        }
+    }
+
+    /**
+     * The Channels named exactly like one of [names] (case apart; the merged name, without tags or
+     * quality words), by that name lower-cased: a Broadcaster's Channels, in every country. Merged
+     * as [channels] merges them, in the Provider's order.
+     */
+    fun channelsNamed(names: Collection<String>): Map<String, List<Channel>> = synchronized(reader) {
+        val asked = names.map { it.lowercase() }.distinct()
+        if (asked.isEmpty()) return emptyMap()
+        reader.prepare(
+            "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+                "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE lead = 1 AND lower(channel_name) IN (${asked.joinToString(",") { "?" }})) " +
+                "ORDER BY c.position",
+        ).use {
+            asked.forEachIndexed { i, name -> it.bindText(i + 1, name) }
+            buildList { while (it.step()) add(it.variantRow(0)) }
+        }.groupBy { it.key }.values.map(::channel).groupBy { it.name.lowercase() }
+    }
+
     /** The keys of the Viewer's Favourites, whether or not the Provider still has them. */
     fun favouriteKeys(): Set<String> = synchronized(reader) {
         reader.prepare("SELECT key FROM favourite").use { buildSet { while (it.step()) add(it.getText(0)) } }
@@ -1151,6 +1192,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE INDEX IF NOT EXISTS channel_category ON channel (category_id, channel_key)",
             // The lead variant of each Channel, in the Provider's order, for the search index's scan.
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
+            // The Event channels on, read for the Live tab's Games every couple of minutes.
+            "CREATE INDEX IF NOT EXISTS channel_event_start ON channel (event_start)",
         )
         const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */
