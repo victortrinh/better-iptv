@@ -29,6 +29,15 @@
 # too, and they also count towards a Category being an Event Category (most of its Listings are
 # Event channels or empty slots), which the browser leaves out. Finished Event channels are also
 # hidden by the start time in their name, in code (Channels.kt), since that depends on the hour.
+#
+# Tier tags are the package words before a colon at the start of a live Listing's name (`VIP: TNT
+# SPORT 1 ᴴᴰ`, `TR VIP: BEIN SPORTS 1`), which say which Provider package a Channel variant comes
+# from and nothing about the Channel. Channel quality words are the words a live Listing's name
+# carries after it (`HD`, `ᴴᴰ`, `(SAT)`), matched as whole words anywhere in the name once Unicode
+# superscripts are normalised, with the quality they say of the variant: 4K (UHD), HD (HD, FHD, RAW,
+# whose names don't tell 720 from 1080 lines) or SD, and `hevc`. Two live Listings are one Channel
+# when their names match once the Tier tag and the quality words are gone; the country tag (`UK:`,
+# `CA FR:`, two capitals before the colon) stays part of the Channel's identity.
 
 [prefixes]
 
@@ -237,3 +246,29 @@ NO EVENT STREAMING
 # "MOTOGP EVENTO 1 | No event", "FN EVENTO 2 | No event", "LIVE EVENT 21 - NO EVENT",
 # "Matchroom Event 4 | No Event Scheduled"
 (?i)[|-]\s*NO EVENT(\s+SCHEDULED)?\s*$
+
+[tier tags]
+
+VIP
+GOLD
+4K
+8K
+PRIME
+
+[channel quality words]
+
+4K          | quality=4K
+UHD         | quality=4K
+3840P       | quality=4K                # "ᵁᴴᴰ ³⁸⁴⁰ᴾ"
+2160P       | quality=4K
+HD          | quality=HD
+HD+         | quality=HD                # TR VIP: BEIN SPORTS 1 HD+
+FHD         | quality=HD
+RAW         | quality=HD                # "ᴿᴬᵂ", a raw feed, usually with "⁶⁰ᶠᵖˢ"
+1080P       | quality=HD
+(720P)      | quality=HD
+SD          | quality=SD
+HEVC        | hevc                      # "ʰᵉᵛᶜ"
+60FPS
+(SAT)
+◉

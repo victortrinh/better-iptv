@@ -152,8 +152,8 @@ fun SearchScreen(
             Spacer(Modifier.width(40.dp))
             Results(library, contentLanguages, query, results, searching = answered != query, tab, firstResult, onOpen, onWatch) { channel, favourite ->
                 scope.launch {
-                    library.setFavourite(channel.id, favourite)
-                    results = results.copy(channels = results.channels.map { if (it.id == channel.id) it.copy(favourite = favourite) else it })
+                    library.setFavourite(channel.key, favourite)
+                    results = results.copy(channels = results.channels.map { if (it.key == channel.key) it.copy(favourite = favourite) else it })
                 }
             }
         }
@@ -205,7 +205,7 @@ private fun Results(
                     Text(stringResource(R.string.search_channels, group.channels.size), style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     // A wide card grows past the column's edge when focused: the row starts that much
                     // further left, so the card isn't clipped, and its cards still line up with the heading.
-                    ResultRow(group.channels, key = { "channel/${it.id}" }, first) { channel, modifier ->
+                    ResultRow(group.channels, key = { "channel/${it.key}" }, first) { channel, modifier ->
                         ChannelCard(channel, onWatch, onFavourite, modifier)
                     }
                     Spacer(Modifier.height(14.dp))

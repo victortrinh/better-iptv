@@ -15,6 +15,10 @@ internal class PrefixTable private constructor(
     private val clutterNames: List<Regex>,
     private val liveClutterNames: List<Regex>,
     private val emptyEventSlots: List<Regex>,
+    /** The Tier tags, as uppercase words without their colon. */
+    private val tierTags: Set<String>,
+    /** Each Channel quality word as a whole-word pattern, with what it says of the variant. */
+    private val qualityWords: List<Pair<Regex, Rule>>,
 ) {
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -27,6 +31,17 @@ internal class PrefixTable private constructor(
 
     /** What the table makes of one live Listing: a Channel, an empty Event slot (Clutter), or other Clutter. */
     enum class LiveListing { Channel, EmptyEventSlot, Clutter }
+
+    /**
+     * What a live Listing's name says: which Channel it is a variant of, and what the variant is. The
+     * Channel's [key] is its identity, the country tag and the normalised [name] (`UK: BBC ONE NI`),
+     * with case folded so a Provider's spelling can't split a Channel; [name] keeps the Provider's
+     * casing, without the Tier tag, the country tag or the quality words. [country] is the country
+     * tag (`UK`, `CA FR`), null when the name has none. [quality] is the variant's Likely quality
+     * (UHD for 4K, HD for HD, FHD and RAW, or SD), null when the name says none; [hevc] whether the
+     * name says HEVC.
+     */
+    class ChannelName(val key: String, val name: String, val country: String?, val quality: Quality?, val hevc: Boolean)
 
     private val categoryRules = ConcurrentHashMap<String, List<Rule>>()
     /** [language]'s answers by Prefix and Category, with "" for none. */
@@ -70,6 +85,44 @@ internal class PrefixTable private constructor(
     /** Whether [category]'s name says its Listings are Clutter (radio, karaoke, audiobooks). */
     fun isClutterCategory(category: String): Boolean = categoryRules(category).any { it.clutter }
 
+    /**
+     * The Channel a live Listing named [name] is a variant of, and what the variant is ([ChannelName]).
+     * Unicode superscripts are normalised (`ᴴᴰ` reads HD), then the tags before the colons at the
+     * start are read: Tier tags are dropped (`VIP: `, `TR VIP: `, `8K: `) and a two-letter country tag
+     * is kept apart (`UK: `, `CA FR: `); then the quality words are taken out wherever they stand
+     * (`HD`, `ʰᵉᵛᶜ`, `HD/RAW`, `(SAT)`), and spaces are collapsed. `VIP: TNT SPORT 1 ᴴᴰ ʰᵉᵛᶜ` is the
+     * Channel "TNT SPORT 1" with no country, an HD HEVC variant; `8K: beIN SP⚽RTS 1 SD` keeps its
+     * emoji. Two Listings under the identical name are variants of one Channel too.
+     */
+    fun channelName(name: String): ChannelName {
+        var rest = Normalizer.normalize(name, Normalizer.Form.NFKC)
+        var country: String? = null
+        // The tags before the colons at the start: Tier tags, and a country tag, in either order.
+        while (true) {
+            val head = HEAD.find(rest) ?: break
+            val words = head.groupValues[1].split(' ')
+            val tiers = words.filter { it.uppercase(Locale.ROOT) in tierTags }
+            val codes = words - tiers.toSet()
+            // Anything else before the colon is the name's own (`Arena: Jets vs Oilers`, `NHL: ...`).
+            if (codes.any { !COUNTRY_CODE.matches(it) } || codes.size > 2 || (codes.isNotEmpty() && country != null)) break
+            if (codes.isNotEmpty()) country = codes.joinToString(" ")
+            rest = rest.substring(head.range.last + 1)
+        }
+        var quality: Quality? = null
+        var hevc = false
+        for ((word, rule) in qualityWords) {
+            if (!word.containsMatchIn(rest)) continue
+            rest = rest.replace(word, " ")
+            // A name saying SD is SD whatever else it says (`SD ᴿᴬᵂ`).
+            quality = listOfNotNull(quality, rule.quality).minOrNull()
+            hevc = hevc || rule.hevc
+        }
+        // `ᴴᴰ/ᴿᴬᵂ` leaves its slash behind.
+        val cleaned = rest.replace(LONE_SLASH, " ").replace(SPACES, " ").trim().ifEmpty { name.trim() }
+        val key = listOfNotNull(country, cleaned).joinToString(": ").uppercase(Locale.ROOT)
+        return ChannelName(key, cleaned, country, quality, hevc)
+    }
+
     private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) {
         val folded = fold(category)
         categoryHints.filter { (hint, _) -> hint.containsMatchIn(folded) }.map { it.second }
@@ -108,6 +161,7 @@ internal class PrefixTable private constructor(
         val audioDescription: Boolean = false,
         val sportsReplay: Boolean = false,
         val clutter: Boolean = false,
+        val hevc: Boolean = false,
     )
 
     private data class Draft(
@@ -170,6 +224,15 @@ internal class PrefixTable private constructor(
 
         private val MARKS = Regex("""\p{Mn}+""")
 
+        /** The words before a colon at the start of a live Listing's name: `VIP:`, `CA FR:`, `TR VIP:`, up to three short codes. */
+        private val HEAD = Regex("""^\s*([A-Za-z0-9+]{1,5}(?: [A-Za-z0-9+]{1,5}){0,2}):\s*""")
+
+        /** A country tag's word: two capitals. */
+        private val COUNTRY_CODE = Regex("""[A-Z]{2}""")
+
+        /** A `/` standing alone, once the quality words around it are gone. */
+        private val LONE_SLASH = Regex("""(?<!\S)/(?!\S)""")
+
         /** The surveyed Provider's table, bundled with the app. */
         fun bundled(): PrefixTable = parse(
             PrefixTable::class.java.getResourceAsStream("prefix-table.txt")!!.bufferedReader().use { it.readText() },
@@ -181,6 +244,8 @@ internal class PrefixTable private constructor(
             val clutterNames = mutableListOf<Regex>()
             val liveClutterNames = mutableListOf<Regex>()
             val emptyEventSlots = mutableListOf<Regex>()
+            val tierTags = LinkedHashSet<String>()
+            val qualityWords = mutableListOf<Pair<Regex, Rule>>()
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -205,10 +270,14 @@ internal class PrefixTable private constructor(
                 when (section) {
                     "prefixes" -> if (prefixes.put(key, rule) != null) fail("$key is listed twice")
                     "category hints" -> hints += Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(key))}(?![\p{L}\p{N}-])""") to rule
+                    // The colon is where the tag ends, not part of it.
+                    "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
+                    // A whole word, however it's cased; `+` counts as part of a word (`LIGUE1+`), and parentheses may enclose it.
+                    "channel quality words" -> qualityWords += Regex("""(?<![\p{L}\p{N}+])\(?${Regex.escape(key)}\)?(?![\p{L}\p{N}+])""", RegexOption.IGNORE_CASE) to rule
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =
@@ -219,7 +288,7 @@ internal class PrefixTable private constructor(
                     "language" -> rule.copy(language = value)
                     "subtitles" -> rule.copy(subtitles = rule.subtitles + value.split(',').map { it.trim() })
                     "subtitled" -> rule.copy(subtitled = true)
-                    "quality" -> rule.copy(quality = if (value == "4K") Quality.UHD else fail("unknown quality $value"))
+                    "quality" -> rule.copy(quality = when (value) { "4K" -> Quality.UHD; "HD" -> Quality.HD; "SD" -> Quality.SD; else -> fail("unknown quality $value") })
                     "hdr" -> rule.copy(hdr = when (value) { "HDR10" -> Hdr.HDR10; "DV" -> Hdr.DolbyVision; else -> fail("unknown hdr $value") })
                     "source" -> rule.copy(source = value)
                     "dolby-audio" -> rule.copy(dolbyAudio = true)
@@ -227,6 +296,7 @@ internal class PrefixTable private constructor(
                     "audio-description" -> rule.copy(audioDescription = true)
                     "sports-replay" -> rule.copy(sportsReplay = true)
                     "clutter" -> rule.copy(clutter = true)
+                    "hevc" -> rule.copy(hevc = true)
                     else -> fail("unknown attribute $attribute")
                 }
             }

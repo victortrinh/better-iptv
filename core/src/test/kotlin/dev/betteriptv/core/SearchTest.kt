@@ -186,6 +186,8 @@ class SearchTest {
         assertTrue(search("romance").movies.isEmpty())
     }
 
+    private val dramaTv = Channel("Drama TV", "Drama TV", null, null, false, listOf(ChannelVariant(7, "Drama TV", null, false)))
+
     @Test fun `results show Movies, Shows, genres, Channels, then people`() {
         val movie = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
         val show = TitleSummary(TitleId.Tmdb(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
@@ -193,7 +195,7 @@ class SearchTest {
             movies = listOf(movie),
             shows = listOf(show),
             people = listOf(Person("Dramane Diallo", listOf(movie))),
-            channels = listOf(Channel(7, "Drama TV", null, false)),
+            channels = listOf(dramaTv),
             genres = listOf(Genre("Drama", listOf(show))),
         )
 
@@ -202,7 +204,7 @@ class SearchTest {
                 SearchGroup.Movies(listOf(movie)),
                 SearchGroup.Shows(listOf(show)),
                 SearchGroup.OfGenre(Genre("Drama", listOf(show))),
-                SearchGroup.Channels(listOf(Channel(7, "Drama TV", null, false))),
+                SearchGroup.Channels(listOf(dramaTv)),
                 SearchGroup.OfPerson(Person("Dramane Diallo", listOf(movie))),
             ),
             results.groups("dra"),

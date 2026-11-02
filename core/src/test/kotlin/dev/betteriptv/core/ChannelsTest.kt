@@ -19,7 +19,11 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-/** Live Channels through the Library: Clutter hidden at Sync, search, Favourites on the home screen, and watching. */
+/**
+ * Live Channels through the Library: Clutter hidden at Sync, search, Favourites on the home screen,
+ * and watching. The Listings served here are each their Channel's one variant, so a Channel is
+ * found and named by its Listing's name; [ChannelVariantsTest] covers Channels with several.
+ */
 class ChannelsTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
@@ -38,11 +42,19 @@ class ChannelsTest {
 
     private val english = listOf("en")
 
-    private suspend fun channels(query: String) = library.search(query, english, "en").last().channels.map { it.name }
+    /** The Channels found by [query], as their variants' Listing names, in the order found. */
+    private suspend fun channels(query: String) = library.search(query, english, "en").last().channels.flatMap { it.variants.map { variant -> variant.name } }
 
-    private suspend fun channel(name: String) = library.search(name, english, "en").last().channels.first { it.name == name }
+    private val table = PrefixTable.bundled()
 
-    private suspend fun favouritesRow() = library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.name }
+    /** The Channel whose variant is the Listing named [name], searched for by the Channel's name (a Listing's quality words aren't indexed). */
+    private suspend fun channel(name: String): Channel {
+        val query = table.channelName(name).let { listOfNotNull(it.country, it.name).joinToString(" ") }
+        return library.search(query, english, "en").last().channels.first { it.variants.any { variant -> variant.name == name } }
+    }
+
+    /** The Favourites row's Channels, by key (the country tag and name without the Provider's quality words). */
+    private suspend fun favouritesRow() = library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
     private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atOffset(ZoneOffset.UTC))
@@ -115,10 +127,10 @@ class ChannelsTest {
         library.sync()
 
         assertEquals("ESPN.us", channel("US: ESPN HD").guideId)
-        assertEquals("US| SPORT", liveCategory(channel("US: ESPN HD").categoryId).name)
+        assertEquals("US| SPORT", liveCategory(channel("US: ESPN HD").categoryIds.single()).name)
         assertEquals("", channel("CA: TSN 1").guideId)
         assertEquals("", channel("CA: TSN 2").guideId)
-        assertEquals("CA| SPORT", liveCategory(channel("CA: TSN 2").categoryId).name)
+        assertEquals("CA| SPORT", liveCategory(channel("CA: TSN 2").categoryIds.single()).name)
     }
 
     @Test fun `live Categories are stored with the Provider's name, a normalised name and their country`() = runBlocking {
@@ -202,13 +214,13 @@ class ChannelsTest {
 
         val results = library.search("sportsnet", english, "en").last()
         assertEquals(listOf("Sportsnet Story"), results.movies.map { it.name })
-        assertEquals(listOf("CA: SPORTSNET ONE HD"), results.channels.map { it.name })
+        assertEquals(listOf("CA: SPORTSNET ONE HD"), results.channels.flatMap { it.variants.map { variant -> variant.name } })
     }
 
     @Test fun `Favourites lead equally close matches, the rest keep the Provider's order`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT", "US: ESPN 2 HD" to "US| SPORT", "US: ESPN NEWS" to "US| SPORT")
         library.sync()
-        library.setFavourite(channel("US: ESPN NEWS").id, true)
+        library.setFavourite(channel("US: ESPN NEWS").key, true)
 
         assertEquals(listOf("US: ESPN NEWS", "US: ESPN HD", "US: ESPN 2 HD"), channels("espn"))
         assertTrue(channel("US: ESPN NEWS").favourite)
@@ -222,17 +234,17 @@ class ChannelsTest {
         library.sync()
         assertEquals(null, favouritesRow())
 
-        library.setFavourite(channel("UK: BBC ONE").id, true)
-        library.setFavourite(channel("US: ESPN HD").id, true)
+        library.setFavourite(channel("UK: BBC ONE").key, true)
+        library.setFavourite(channel("US: ESPN HD").key, true)
 
-        assertEquals(listOf("UK: BBC ONE", "US: ESPN HD"), favouritesRow())
+        assertEquals(listOf("UK: BBC ONE", "US: ESPN"), favouritesRow())
     }
 
     @Test fun `Favourites follow Continue watching and New on your service`() = runBlocking {
         provider.serveMovies("EN - Started (2020)" to "EN - MOVIES")
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
         library.sync()
-        library.setFavourite(channel("US: ESPN HD").id, true)
+        library.setFavourite(channel("US: ESPN HD").key, true)
         library.saveProgress(TitleId.Tmdb(TitleKind.Movie, 1), position = 10 * 60_000L, duration = 100 * 60_000L)
 
         val rows = library.homeRows(english, "en")
@@ -244,10 +256,10 @@ class ChannelsTest {
     @Test fun `a Favourite removed leaves the home row`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT", "CA: TSN 1" to "CA| SPORT")
         library.sync()
-        library.setFavourite(channel("US: ESPN HD").id, true)
-        library.setFavourite(channel("CA: TSN 1").id, true)
+        library.setFavourite(channel("US: ESPN HD").key, true)
+        library.setFavourite(channel("CA: TSN 1").key, true)
 
-        library.setFavourite(channel("US: ESPN HD").id, false)
+        library.setFavourite(channel("US: ESPN HD").key, false)
 
         assertEquals(listOf("CA: TSN 1"), favouritesRow())
         assertFalse(channel("US: ESPN HD").favourite)
@@ -256,7 +268,7 @@ class ChannelsTest {
     @Test fun `Favourites outlive Syncs, and are away only while the Provider drops the Channel`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT", "CA: TSN 1" to "CA| SPORT")
         library.sync()
-        library.setFavourite(channel("CA: TSN 1").id, true)
+        library.setFavourite(channel("CA: TSN 1").key, true)
 
         library.sync()
         assertEquals(listOf("CA: TSN 1"), favouritesRow())
@@ -275,7 +287,7 @@ class ChannelsTest {
     private val player by lazy { ScriptedPlayer(provider) }
 
     private suspend fun watch(name: String): Pair<PlaybackSession, kotlinx.coroutines.Job> = kotlinx.coroutines.coroutineScope {
-        val session = library.playback(library.channelPlayPlan(channel(name), english), player.engines)
+        val session = library.playback(library.channelPlayPlan(channel(name), english, DeviceProfile(maxHeight = 2160, hdr = emptySet())), player.engines)
         session to kotlinx.coroutines.GlobalScope.launch { session.play() }
     }
 
