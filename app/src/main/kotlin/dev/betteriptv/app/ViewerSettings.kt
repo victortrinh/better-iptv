@@ -49,7 +49,7 @@ data class SubtitleStyle(
 )
 
 /** A subtitle size, as a share of Media3's default. */
-enum class SubtitleSize(val scale: Float) { Small(0.8f), Medium(1f), Large(1.3f), Largest(1.6f) }
+enum class SubtitleSize(val scale: Float) { Small(0.65f), Medium(0.8f), Large(1f), Largest(1.3f) }
 
 enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xFFFFE14D.toInt()) }
 
@@ -57,7 +57,7 @@ enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xF
 enum class SubtitleBackground { Outline, Shadow, Box }
 
 /** How high subtitles sit, as a share of the picture's height from its bottom. */
-enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.08f), Raised(0.2f) }
+enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.05f), Raised(0.15f) }
 
 /** The app's interface languages: the App language is one of these. */
 val APP_LANGUAGES = listOf("en", "fr")
