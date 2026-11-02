@@ -179,20 +179,23 @@ fun RowsScreen(
         pending = null
         focused = true
     }
+    val tab = remember { FocusRequester() }
+    FocusTabOnArrival(focusTab, tab)
     val scope = rememberCoroutineScope()
     val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {
             library.setFavourite(channel.id, favourite)
             val before = state.rows.orEmpty()
             state.rows = reader()
-            // Focus goes to its neighbour, or to the row that takes its place.
-            if (!favourite) pending = restoredCard(RowCard(row.key, channelKey(channel)), before.cards, state.rows.orEmpty().cards)
+            if (!favourite) {
+                // Focus goes to its neighbour, or to the row that takes its place; with no row left
+                // (the last Favourite on Live), to the tab, as Back would, so focus is never nowhere.
+                val next = restoredCard(RowCard(row.key, channelKey(channel)), before.cards, state.rows.orEmpty().cards)
+                if (next == null) tab.requestFocus() else pending = next
+            }
         }
         Unit
     }
-
-    val tab = remember { FocusRequester() }
-    FocusTabOnArrival(focusTab, tab)
     // Like Netflix's: the focused card sits at the left margin and its row's heading at the top of
     // the rows, so focus stays in one place and the rows move under it. A Top row's card starts
     // with its numeral, so the numeral sits there and the poster right of it.

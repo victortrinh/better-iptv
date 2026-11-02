@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.core.BackgroundPace
+import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,12 @@ data class ViewerSettings(
     val backgroundReading: BackgroundReading = BackgroundReading.Gentle,
     /** How big the interface text is, for the TV and how far the Viewer sits from it. */
     val textSize: TextSize = TextSize.Medium,
-)
+    /** The Leagues the Viewer chose in Settings (none when they turned every one off), or null while they haven't: the [region]'s defaults are on. */
+    val leagues: Set<League>? = null,
+) {
+    /** The Leagues on, whose Games the Live tab shows and the cloud is asked for: the Viewer's choice, or the Region's defaults. */
+    val leaguesOn: Set<League> get() = League.on(leagues, region)
+}
 
 /** How fast Background reading goes; [pace] is null when it is off. */
 enum class BackgroundReading(val pace: BackgroundPace?) { Off(null), Gentle(BackgroundPace.Gentle), Normal(BackgroundPace.Normal) }
@@ -79,6 +85,11 @@ class ViewerSettingsStore(context: Context) {
             .putBoolean(PLAY_NEXT_AUTOMATICALLY, new.playNextAutomatically)
             .putString(BACKGROUND_READING, new.backgroundReading.name)
             .putString(TEXT_SIZE, new.textSize.name)
+            .apply {
+                // Chosen none is kept apart from not chosen: it stays none when the Region changes.
+                val leagues = new.leagues
+                if (leagues == null) remove(LEAGUES) else putString(LEAGUES, leagues.joinToString(",") { it.key })
+            }
             .apply()
         _settings.value = new
     }
@@ -101,6 +112,8 @@ class ViewerSettingsStore(context: Context) {
             playNextAutomatically = prefs.getBoolean(PLAY_NEXT_AUTOMATICALLY, true),
             backgroundReading = read(BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
             textSize = read(TEXT_SIZE, TextSize.entries) ?: TextSize.Medium,
+            // A key this release doesn't offer (a League dropped since) is left out, the rest kept.
+            leagues = prefs.getString(LEAGUES, null)?.split(',')?.mapNotNull(League::byKey)?.toSet(),
         )
     }
 
@@ -118,6 +131,7 @@ class ViewerSettingsStore(context: Context) {
         const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
         const val BACKGROUND_READING = "background_reading"
         const val TEXT_SIZE = "text_size"
+        const val LEAGUES = "leagues"
     }
 }
 

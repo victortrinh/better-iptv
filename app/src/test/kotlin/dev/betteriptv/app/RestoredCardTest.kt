@@ -63,4 +63,12 @@ class RestoredCardTest {
     fun noCardsLeaveNothingToFocus() {
         assertNull(restoredCard(RowCard("continue", "moana"), home, emptyMap()))
     }
+
+    /** The Live tab's last Favourite removed: null, which `RowsScreen` turns into focus on the tab. */
+    @Test
+    fun theLastFavouriteOnLiveLeavesNothingToFocus() {
+        val live = mapOf("favourites" to listOf("channel/7"))
+
+        assertNull(restoredCard(RowCard("favourites", "channel/7"), live, emptyMap()))
+    }
 }
