@@ -2,22 +2,17 @@ package dev.betteriptv.app
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.Library
-import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * What a Titles tab keeps while another screen shows: its [rows] (scroll positions and the rows
@@ -26,13 +21,12 @@ import kotlinx.coroutines.withContext
 @Stable
 class TitlesState {
     val rows = RowsState()
-    var count by mutableStateOf(0)
 }
 
 /**
  * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Top 10 in the
  * Viewer's [region], its Trending this week, then New movies (or shows). Sync now and how the Sync
- * is going are in Settings; only a first Sync's progress, or why it failed, shows here, while
+ * is going are in Settings; only a first Sync's checklist, or why it failed, shows here, while
  * there are no Titles yet. [restoreFocus] is the card to focus on coming back, the one the
  * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
  */
@@ -48,25 +42,22 @@ fun TitlesScreen(
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (RowCard, TitleId) -> Unit,
+    onRetry: () -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    val synced = status.last
+    // Read again when a Sync lands, a held catalog is applied or Matches regroup the Titles.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
-    // Counted again whenever the catalog changes, not only when a Sync's status does: a count read
-    // just before a first Sync's catalog was in place kept the tab on its placeholder through
-    // Matching (#271).
-    LaunchedEffect(synced, catalog, kind) { state.count = withContext(Dispatchers.IO) { library.titleCount(kind) } }
-    val count = state.count
-    // A first Sync leaves the tab empty for minutes: how far it is shows where the rows will be ([FirstSync]).
-    val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Failed)
+    // A first Sync leaves the tab empty for minutes: its checklist, from Movies on, shows where the rows
+    // will be until the Titles land, and a failure after the Channels landed shows here with Retry.
+    val noTitles = status.last == null
     RowsScreen(
         library, contentLanguages, appLanguage, state.rows, restoreFocus, focusTab,
-        reading = listOf(kind, contentLanguages, appLanguage, region),
+        reading = listOf(kind, contentLanguages, appLanguage, region, catalog),
         read = { library.tabRows(kind, contentLanguages, appLanguage, region) },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
-        placeholder = if (firstSync) {
-            { FirstSync(status) }
+        placeholder = if (noTitles) {
+            { SyncChecklist(status, SyncStep.Movies, onRetry) }
         } else null,
     ) { tab ->
         BrowseTabs(

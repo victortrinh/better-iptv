@@ -82,13 +82,14 @@ fun SearchScreen(
     onPlayReplay: (Replay) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    val status by library.syncStatus.collectAsStateWithLifecycle()
+    // Bumped when a Sync lands (its Channels first), a held catalog is applied or Matches regroup the Titles.
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     var results by remember { mutableStateOf(SearchResults.NONE) }
     // The query [results] answer: the one being typed until the index, if still being built, has them.
     var answered by remember { mutableStateOf("") }
     // Finishes the index at the Viewer's priority, if its build in the background hasn't, while they reach for the first letters.
-    LaunchedEffect(status.last) { library.prepareSearch() }
-    LaunchedEffect(query, status.last, contentLanguages, appLanguage, region) {
+    LaunchedEffect(catalog) { library.prepareSearch() }
+    LaunchedEffect(query, catalog, contentLanguages, appLanguage, region) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
         // The device's own matches, then again with what TMDB's search adds.

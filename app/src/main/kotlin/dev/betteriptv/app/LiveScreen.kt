@@ -20,7 +20,7 @@ import dev.betteriptv.core.League
 import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
-import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.SyncStep
 import kotlinx.coroutines.delay
 import java.time.Duration
 
@@ -52,24 +52,27 @@ fun LiveScreen(
     onOpenGame: (RowCard, GameFeeds) -> Unit,
     onOpenCountry: (RowCard, LiveCountry) -> Unit,
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
+    onRetry: () -> Unit = {},
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
-    val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Failed)
+    // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Home.
+    val noChannels = status.channelsAt == null
     val refreshes = gamesRefreshes(state)
+    // Read again when a Sync lands Channels or a held catalog is applied, not only when Games land.
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
-        reading = GamesReading(leagues, region, contentLanguages, refreshes),
+        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), catalog),
         read = { library.liveRows(leagues, region, contentLanguages) },
         // Before a Sync there are no Channels to save; after one, the Viewer saves them from Search.
-        empty = stringResource(if (status.last == null) R.string.home_empty else R.string.live_empty),
+        empty = stringResource(if (noChannels) R.string.home_empty else R.string.live_empty),
         onOpen = { _, _ -> },
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         onOpenCountry = onOpenCountry,
         onPlayReplay = onPlayReplay,
-        placeholder = if (firstSync) {
-            { FirstSync(status) }
+        placeholder = if (noChannels) {
+            { SyncChecklist(status, SyncStep.Channels, onRetry) }
         } else null,
     ) { tab ->
         BrowseTabs(Browse.Live, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab)

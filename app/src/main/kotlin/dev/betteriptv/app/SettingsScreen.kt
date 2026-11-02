@@ -62,8 +62,10 @@ import dev.betteriptv.core.offered
 import java.text.Collator
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Duration
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
@@ -212,6 +214,7 @@ fun SettingsScreen(
                 }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 item { SyncRow(library, onSyncNow) }
+                item { MatchingRow(library) }
                 item { Heading(stringResource(R.string.settings_app)) }
                 item {
                     val offered = update.offered
@@ -243,25 +246,48 @@ fun SettingsScreen(
     }
 }
 
-/** Sync now, with how the Sync is going as its value (in the error colour when it failed) and the Title counts under it. */
+/**
+ * Sync now, with how the Sync is going as its value (in the error colour when it failed, its "ago"
+ * ticking each minute), a later Sync's fraction as its bar, and the Title counts under it. Off only
+ * while a Sync runs: Matching after it has its own row.
+ */
 @Composable
 private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    val matching by library.matchingStatus.collectAsStateWithLifecycle()
-    val counts by produceState<Pair<Int, Int>?>(null, status.last) {
+    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
+    val counts by produceState<Pair<Int, Int>?>(null, catalog) {
         value = withContext(Dispatchers.IO) { library.titleCount(TitleKind.Movie) to library.titleCount(TitleKind.Show) }
     }
+    val minute by produceState(0, status) {
+        while (true) {
+            delay(AGO_REFRESH.toMillis())
+            value++
+        }
+    }
     val context = LocalContext.current
+    val value = remember(status, minute) { context.describe(status) }
     SettingRow(
         stringResource(R.string.sync_now),
-        context.describe(status, matching),
+        value,
         onClick = onSyncNow,
         detail = counts?.let { (movies, shows) -> context.catalogCounts(movies, shows) },
+        progress = (status as? SyncStatus.Running)?.fraction,
         enabled = status !is SyncStatus.Running,
         valueColor = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
         valueLines = 2,
     )
 }
+
+/** Checking titles: shown under Sync now only while the cloud is asked about the catalog's suspects, with how far it is. */
+@Composable
+private fun MatchingRow(library: Library) {
+    val matching by library.matchingStatus.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    matching?.let { SettingRow(stringResource(R.string.matching_row), context.describe(it), onClick = {}, valueLines = 2) }
+}
+
+/** How often the Sync row's "ago" is worded again while Settings is open. */
+private val AGO_REFRESH: Duration = Duration.ofMinutes(1)
 
 private enum class Picker { ContentLanguages, Region, Leagues }
 

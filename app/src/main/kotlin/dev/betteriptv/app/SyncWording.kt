@@ -11,31 +11,44 @@ import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.ProviderProblem
 import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.SyncStep
 import java.text.NumberFormat
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 
-/** The Sync status line: how the Sync is going, or how long ago the last one finished, and how [matching] is going after it. */
-internal fun Context.describe(status: SyncStatus, matching: MatchingStatus? = null): String = when (status) {
+/** The Sync status line in Settings: how the Sync is going, or how long ago the last one finished. */
+internal fun Context.describe(status: SyncStatus): String = when (status) {
     is SyncStatus.NeverSynced -> getString(R.string.sync_never)
     is SyncStatus.Running -> running(status)
-    is SyncStatus.Ready -> synced(status.last)
-    is SyncStatus.Synced -> synced(status.last) + (matching?.let { " " + describe(it) }.orEmpty())
+    is SyncStatus.Ready -> getString(R.string.sync_ready, ago(status.computedAt, Instant.now()))
+    is SyncStatus.Synced -> synced(status.last)
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
 }
 
-/** How Matching is going: finding the names to check, or how many are checked. */
+/** The Checking titles row's value: finding the names to check, or how many are checked. */
 internal fun Context.describe(matching: MatchingStatus): String =
-    matching.of?.let { resources.getQuantityString(R.plurals.sync_matching, it, count(matching.asked), count(it)) }
-        ?: getString(R.string.sync_matching_start)
+    matching.of?.let { resources.getQuantityString(R.plurals.matching_checking, it, count(matching.asked), count(it)) }
+        ?: getString(R.string.matching_finding)
 
-/** A first Sync says so; a later one tells how far it is by the last one's counts. */
+/** A first Sync names its step and counts the entries read; a later one tells how far it is by the last one's counts. */
 private fun Context.running(status: SyncStatus.Running): String {
-    val last = status.last ?: return getString(R.string.sync_first)
+    val last = status.last
+    if (last == null) {
+        val step = getString(status.step.label())
+        if (status.entriesRead == 0) return getString(R.string.sync_running_step, step)
+        return getString(R.string.sync_running_step_entries, step, resources.getQuantityString(R.plurals.sync_entries, status.entriesRead, count(status.entriesRead)))
+    }
     val fraction = status.fraction ?: return getString(R.string.sync_running, ago(last))
     return getString(R.string.sync_running_progress, NumberFormat.getPercentInstance().format(fraction), ago(last))
+}
+
+private fun SyncStep.label() = when (this) {
+    SyncStep.Channels -> R.string.sync_step_channels
+    SyncStep.Movies -> R.string.sync_step_movies
+    SyncStep.Shows -> R.string.sync_step_shows
+    SyncStep.Saving -> R.string.sync_step_saving
 }
 
 private fun Context.synced(last: CompletedSync): String =
@@ -43,7 +56,7 @@ private fun Context.synced(last: CompletedSync): String =
 
 private fun Context.count(n: Int): String = NumberFormat.getIntegerInstance(resources.configuration.locales[0]).format(n)
 
-private fun Context.describe(problem: SyncProblem): String = when (problem) {
+internal fun Context.describe(problem: SyncProblem): String = when (problem) {
     is ProviderProblem -> describe(problem)
     is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
 }

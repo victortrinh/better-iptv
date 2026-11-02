@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +61,10 @@ class MainActivity : ComponentActivity() {
         }
         // Only Titles, never a location: it holds the login.
         lifecycleScope.launch { app.library.confirmations.collect { Log.i("BackgroundReading", "Confirmed $it") } }
+        // Each time the app comes to the front: a held catalog lands, or a stale one is Synced. Never on a timer.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) { app.onResumed() }
+        }
         // Only while the app shows: the Viewer may be watching in another app.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -94,7 +99,6 @@ private fun Root(app: BetterIptvApp) {
             app.sync()
         })
     } else {
-        LaunchedEffect(Unit) { app.syncIfStale() }
         val settings by app.settings.settings.collectAsStateWithLifecycle()
         val contentLanguages = settings.contentLanguages
         val appLanguage = settings.appLanguage
@@ -142,6 +146,11 @@ private fun Root(app: BetterIptvApp) {
         }
         val now = playing
         val country = browsing
+        SideEffect { app.playerOpen = now != null }
+        // Entering a top-level screen (a tab, or back from the player, a Title, a Game or a country) lands a held
+        // Sync's catalog, so rows change between screens, never under focus; leaving Settings after Sync now too.
+        val topLevel = now == null && opened == null && openedGame == null && country == null
+        LaunchedEffect(tab, topLevel) { if (topLevel) app.applyPendingCatalog() }
         if (now != null) {
             BackHandler { playing = null }
             // Plays another of the Game's Feeds, a new plan for its Channel, as the Game page's Play does.
@@ -213,6 +222,7 @@ private fun Root(app: BetterIptvApp) {
                     },
                     // Back from the Game's page comes back to its card, or to what took its place once it ended.
                     onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
+                    onRetry = app::sync,
                 )
                 Browse.Live -> LiveScreen(
                     // In Settings' order, which the League rows follow.
@@ -235,6 +245,7 @@ private fun Root(app: BetterIptvApp) {
                         returnedTo = card
                         playReplay(entry.replay, context.matchup(entry))
                     },
+                    onRetry = app::sync,
                 )
                 Browse.Search -> {
                     BackHandler { onTab(Browse.Movies) }
@@ -258,6 +269,7 @@ private fun Root(app: BetterIptvApp) {
                             focusTab = byTab,
                             onTab = onTab,
                             onOpen = { card, id -> opened = OpenedTitle(id, card) },
+                            onRetry = app::sync,
                         )
                     }
                 }

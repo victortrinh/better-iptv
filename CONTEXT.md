@@ -31,8 +31,20 @@ A Provider's mapping from Prefixes and Category hints to Version attributes.
 _Avoid_: Dictionary, naming rules
 
 **Sync**:
-Refreshing the device's copy of the Provider's catalog.
+Refreshing the device's copy of the Provider's catalog, in two Stages. Once its catalog lands, the cloud is asked about its Suspects under a status of its own.
 _Avoid_: Refresh, import, scan
+
+**Stage**:
+One of a Sync's two halves: the Channels (live Categories and Listings), then the Titles (movie and show Categories and Listings, and Sports replays). A first Sync lands each Stage as soon as it is ready, so Live and Home open on the Channels while the Titles are still read.
+_Avoid_: Phase, half, pass
+
+**Step**:
+What a Sync is doing now, as the first-Sync checklist names it: Channels, Movies, Shows, Saving. Matching after a Sync isn't a Step.
+_Avoid_: Stage, phase
+
+**Pending catalog**:
+A later Sync's finished catalog, staged beside the one on screen until the app lands it between screens (coming to the front, or entering a top-level screen), never while the player is open, so rows never move under focus. A Sync started meanwhile discards it.
+_Avoid_: Staged, queued, held catalog
 
 **Clutter**:
 Listings that aren't watchable content: separator rows, finished Event channels and empty Event slots ("NO EVENT STREAMING", "No event"), radio, music videos and audiobooks.
