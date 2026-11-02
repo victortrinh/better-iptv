@@ -84,6 +84,107 @@ class ChannelsTest {
         assertEquals(listOf("UK: TNT SPORTS EVENT 12"), channels("tnt"))
     }
 
+    @Test fun `empty Event slots are Clutter in every spelling the survey shows`() = runBlocking {
+        val onNow = "Matchroom Event 1 | Taylor vs Catterall (${startedAgo(Duration.ofHours(1))})"
+        provider.serveChannels(
+            "RFEF EVENTO 3 | No event" to "ES| RFEF PPV",
+            "MOTOGP EVENTO 1 | No event" to "ES| MOTOGP PPV",
+            "FN EVENTO 2 | No event" to "ES| FN PPV",
+            "LIVE EVENT 21 - NO EVENT" to "UK| LIVE EVENTS",
+            "Matchroom Event 4 | No Event Scheduled" to "UK| MATCHROOM PPV",
+            "RFEF EVENTO 4 | Real Madrid vs Barcelona" to "ES| RFEF PPV",
+            "LIVE EVENT 22 - Snooker: Masters Final" to "UK| LIVE EVENTS",
+            onNow to "UK| MATCHROOM PPV",
+        )
+        library.sync()
+
+        // Search reads "evento" as "event" too (ranked after the exact word), so one query covers every slot and every kept Event.
+        assertEquals(setOf("RFEF EVENTO 4 | Real Madrid vs Barcelona", "LIVE EVENT 22 - Snooker: Masters Final", onNow), channels("event").toSet())
+    }
+
+    // Category and guide id
+
+    private suspend fun liveCategory(id: String?) = library.liveCategories().single { it.id == id }
+
+    @Test fun `a Channel keeps the Category it was filed under and its guide id, empty when the Provider gives none`() = runBlocking {
+        provider.serveChannels(
+            FakeProvider.LiveListing("US: ESPN HD", "US| SPORT", guideId = "ESPN.us"),
+            FakeProvider.LiveListing("CA: TSN 1", "CA| SPORT", guideId = ""),
+            FakeProvider.LiveListing("CA: TSN 2", "CA| SPORT", guideId = null),
+        )
+        library.sync()
+
+        assertEquals("ESPN.us", channel("US: ESPN HD").guideId)
+        assertEquals("US| SPORT", liveCategory(channel("US: ESPN HD").categoryId).name)
+        assertEquals("", channel("CA: TSN 1").guideId)
+        assertEquals("", channel("CA: TSN 2").guideId)
+        assertEquals("CA| SPORT", liveCategory(channel("CA: TSN 2").categoryId).name)
+        assertTrue(library.favourites().isEmpty())
+    }
+
+    @Test fun `live Categories are stored with the Provider's name, a normalised name and their country`() = runBlocking {
+        provider.serveChannels(
+            "US: NBC HD" to "US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "VIP: TNT SPORT 1 ᴴᴰ" to "UK| SPORTS ⱽᴵᴾ",
+            "GOLD: TNT SPORT 1 SD" to "UK| SPORTS ᴳᴼᴸᴰ",
+            "CA FR: TVA" to "CA FR| GÉNÉRAL",
+            "ARENA 1" to "ᴬᴿᴱᴺᴬ",
+            "ESPN NEWS" to "SPORTS NEWS",
+        )
+        library.sync()
+
+        val categories = library.liveCategories()
+        assertEquals(
+            listOf("US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ", "UK| SPORTS ⱽᴵᴾ", "UK| SPORTS ᴳᴼᴸᴰ", "CA FR| GÉNÉRAL", "ᴬᴿᴱᴺᴬ", "SPORTS NEWS"),
+            categories.map { it.name },
+        )
+        assertEquals(listOf("NBC", "SPORTS", "SPORTS", "GÉNÉRAL", "ARENA", "SPORTS NEWS"), categories.map { it.normalisedName })
+        assertEquals(listOf("US", "UK", "UK", "CA FR", null, null), categories.map { it.country })
+        assertTrue(categories.all { it.kind == CategoryKind.Regular })
+    }
+
+    @Test fun `a live Category is regular, Clutter, or an Event Category when most of its Listings are Events or empty slots`() = runBlocking {
+        val onNow = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(1))})"
+        provider.serveChannels(
+            // Regular: Channels, with the odd radio station among them.
+            "UK: BBC ONE" to "UK| GENERAL",
+            "UK: BBC TWO" to "UK| GENERAL",
+            "UK: BBC RADIO 2" to "UK| GENERAL",
+            // Clutter by its name, whatever it holds.
+            "Arena Hits" to "NL| RADIO LIVE",
+            "NPO 1" to "NL| RADIO LIVE",
+            // An Event Category: two empty slots, a dated Event, a marked one, against two plain slots.
+            "- NO EVENT STREAMING - | 8K EXCLUSIVE | US: ARENA PPV 25" to "US| ARENA PPV",
+            "US (Arena 526) |  (2098-12-31 08:00:34)" to "US| ARENA PPV",
+            onNow to "US| ARENA PPV",
+            "Next | Arena: Leafs vs Habs | 2026-01-02 | 01:00 (GMT)" to "US| ARENA PPV",
+            "US: ARENA PPV 26" to "US| ARENA PPV",
+            "US: ARENA PPV 27" to "US| ARENA PPV",
+            // Numbered slots the rules can't read stay a regular Category.
+            "UK: TNT SPORTS EVENT 12" to "UK| TNT SPORT EVENT",
+            "UK: TNT SPORTS EVENT 13" to "UK| TNT SPORT EVENT",
+            "LIVE EVENT 21 - NO EVENT" to "UK| TNT SPORT EVENT",
+            // Half isn't most.
+            "ES: DAZN 1" to "ES| DAZN",
+            "DAZN EVENTO 1 | No event" to "ES| DAZN",
+        )
+        library.sync()
+
+        val kinds = library.liveCategories().associate { it.name to it.kind }
+        assertEquals(
+            mapOf(
+                "UK| GENERAL" to CategoryKind.Regular,
+                "NL| RADIO LIVE" to CategoryKind.Clutter,
+                "US| ARENA PPV" to CategoryKind.Event,
+                "UK| TNT SPORT EVENT" to CategoryKind.Regular,
+                "ES| DAZN" to CategoryKind.Regular,
+            ),
+            kinds,
+        )
+        // The empty slots are Clutter whatever their Category's kind; the plain slots and the Events stay Channels.
+        assertEquals(listOf(onNow, "Next | Arena: Leafs vs Habs | 2026-01-02 | 01:00 (GMT)", "US: ARENA PPV 26", "US: ARENA PPV 27"), channels("arena"))
+    }
+
     // Search
 
     @Test fun `Channels are found by name, ignoring accents, case and small typos`() = runBlocking {

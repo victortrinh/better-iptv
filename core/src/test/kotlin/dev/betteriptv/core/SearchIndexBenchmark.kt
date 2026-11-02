@@ -84,7 +84,7 @@ class SearchIndexBenchmark {
                         staging.listing(++listingId, listing, category, listingId, null, false, MatchQuestion(kind, name, year, null, tmdbId))
                     }
                 }
-                repeat(45_000) { staging.channel(it + 1L, "${listOf("US", "CA", "FR", "UK", "AR").random(random)}: ${name(random.nextInt(1, 4))} ${listOf("HD", "FHD", "SD", "4K").random(random)}", null, null) }
+                repeat(45_000) { staging.channel(it + 1L, "${listOf("US", "CA", "FR", "UK", "AR").random(random)}: ${name(random.nextInt(1, 4))} ${listOf("HD", "FHD", "SD", "4K").random(random)}", null, null, null, "") }
             },
             completed = { movies, shows, _ -> CompletedSync(Instant.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
         )

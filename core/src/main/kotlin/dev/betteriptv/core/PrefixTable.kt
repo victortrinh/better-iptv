@@ -14,6 +14,7 @@ internal class PrefixTable private constructor(
     private val categoryHints: List<Pair<Regex, Rule>>,
     private val clutterNames: List<Regex>,
     private val liveClutterNames: List<Regex>,
+    private val emptyEventSlots: List<Regex>,
 ) {
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -23,6 +24,9 @@ internal class PrefixTable private constructor(
      * doesn't know it; what that Prefix would say is then left unknown.
      */
     class Description(val unknownPrefix: String?, val attributes: VersionAttributes, val hidden: Hidden?)
+
+    /** What the table makes of one live Listing: a Channel, an empty Event slot (Clutter), or other Clutter. */
+    enum class LiveListing { Channel, EmptyEventSlot, Clutter }
 
     private val categoryRules = ConcurrentHashMap<String, List<Rule>>()
     /** [language]'s answers by Prefix and Category, with "" for none. */
@@ -41,10 +45,7 @@ internal class PrefixTable private constructor(
     fun describe(name: String, category: String): Description {
         val prefix = PREFIX.find(name)?.groupValues?.get(1)?.replace('=', '-')
         val prefixRule = prefix?.let(prefixes::get)
-        val rules = listOfNotNull(prefixRule) + categoryRules.getOrPut(category) {
-            val folded = fold(category)
-            categoryHints.filter { (hint, _) -> hint.containsMatchIn(folded) }.map { it.second }
-        }
+        val rules = listOfNotNull(prefixRule) + categoryRules(category)
         val draft = rules.fold(Draft()) { draft, rule -> draft.apply(rule) }
         val hidden = when {
             draft.clutter || clutterNames.any { it.containsMatchIn(name) } -> Hidden.Clutter
@@ -59,8 +60,25 @@ internal class PrefixTable private constructor(
      * radio, by its [name] or its [category]. Event channels finished by the clock are told apart by
      * [eventStart]. Sports replay hints mean nothing for live Listings.
      */
-    fun isLiveClutter(name: String, category: String): Boolean =
-        describe(name, category).hidden == Hidden.Clutter || liveClutterNames.any { it.containsMatchIn(name) }
+    fun isLiveClutter(name: String, category: String): Boolean = describeLive(name, category) != LiveListing.Channel
+
+    /**
+     * What a live Listing is: an empty Event slot (`- NO EVENT STREAMING -`, `RFEF EVENTO 3 | No event`),
+     * which is Clutter and tells an Event Category, other Clutter (as [isLiveClutter] tells), or a Channel.
+     */
+    fun describeLive(name: String, category: String): LiveListing = when {
+        emptyEventSlots.any { it.containsMatchIn(name) } -> LiveListing.EmptyEventSlot
+        describe(name, category).hidden == Hidden.Clutter || liveClutterNames.any { it.containsMatchIn(name) } -> LiveListing.Clutter
+        else -> LiveListing.Channel
+    }
+
+    /** Whether [category]'s name says its Listings are Clutter (radio, karaoke, audiobooks). */
+    fun isClutterCategory(category: String): Boolean = categoryRules(category).any { it.clutter }
+
+    private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) {
+        val folded = fold(category)
+        categoryHints.filter { (hint, _) -> hint.containsMatchIn(folded) }.map { it.second }
+    }
 
     /**
      * A Listing's name without its Prefix and year, for showing until cloud metadata arrives:
@@ -167,6 +185,7 @@ internal class PrefixTable private constructor(
             val hints = mutableListOf<Pair<Regex, Rule>>()
             val clutterNames = mutableListOf<Regex>()
             val liveClutterNames = mutableListOf<Regex>()
+            val emptyEventSlots = mutableListOf<Regex>()
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
                 fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
@@ -175,8 +194,14 @@ internal class PrefixTable private constructor(
                     section = raw.trim().removeSurrounding("[", "]")
                     return@forEachIndexed
                 }
-                if (section == "clutter names" || section == "live clutter names") {
-                    (if (section == "clutter names") clutterNames else liveClutterNames) += Regex(raw.trim())
+                val names = when (section) {
+                    "clutter names" -> clutterNames
+                    "live clutter names" -> liveClutterNames
+                    "empty event slots" -> emptyEventSlots
+                    else -> null
+                }
+                if (names != null) {
+                    names += Regex(raw.trim())
                     return@forEachIndexed
                 }
                 val line = raw.replace(Regex("""\s+#.*$"""), "")
@@ -188,7 +213,7 @@ internal class PrefixTable private constructor(
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =

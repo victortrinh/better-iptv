@@ -25,7 +25,9 @@
 # A hint's language replaces the Prefix's.
 #
 # Clutter names are regular expressions matched anywhere in a Listing's name. Live clutter names
-# apply to live Listings only, so a film named "Radio" stays. Finished Event channels are also
+# apply to live Listings only, so a film named "Radio" stays. Empty event slots are live Clutter
+# too, and they also count towards a Category being an Event Category (most of its Listings are
+# Event channels or empty slots), which the browser leaves out. Finished Event channels are also
 # hidden by the start time in their name, in code (Channels.kt), since that depends on the hour.
 
 [prefixes]
@@ -220,11 +222,18 @@ AUDIOBOOKS          | clutter
 
 [live clutter names]
 
-# Empty Event slots: "- NO EVENT STREAMING - | 8K EXCLUSIVE | NL: DISNEY+ PPV 25"
-NO EVENT STREAMING
-# A slot dated with the Provider's placeholder: "US (ESPN+ 526) |  (2098-12-31 08:00:34)"
-\(2098-
 # Radio stations filed with TV ("UK: BBC RADIO CUMBRIA", "T2: GRUNN FM"), but not TV named after
 # a radio ("ICI RADIO-CANADA TÉLÉ", "RADIO BREMEN TV", "T2: REGIO FM TV"). Android's regex engine
 # has no (?U) flag, so word edges are spelled out to count É as a letter.
 (?i)^(?!.*(?<![\p{L}\p{N}])(TV|T[EÉé]L[EÉé])(?![\p{L}\p{N}])).*(?<![\p{L}\p{N}])(RADIO|FM)(?![\p{L}\p{N}])
+
+[empty event slots]
+
+# "- NO EVENT STREAMING - | 8K EXCLUSIVE | NL: DISNEY+ PPV 25"
+NO EVENT STREAMING
+# A slot dated with the Provider's placeholder: "US (ESPN+ 526) |  (2098-12-31 08:00:34)"
+\(2098-
+# Numbered slots with nothing on, in every spelling the survey shows: "RFEF EVENTO 3 | No event",
+# "MOTOGP EVENTO 1 | No event", "FN EVENTO 2 | No event", "LIVE EVENT 21 - NO EVENT",
+# "Matchroom Event 4 | No Event Scheduled"
+(?i)[|-]\s*NO EVENT(\s+SCHEDULED)?\s*$
