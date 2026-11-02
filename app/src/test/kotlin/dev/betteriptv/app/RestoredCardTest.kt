@@ -53,6 +53,23 @@ class RestoredCardTest {
     }
 
     @Test
+    fun aGameEndedWhileItsPageWasOpenGivesFocusToTheGameNowInItsPlace() {
+        // Home's Live now row, between Continue watching and the rows below (#256).
+        val before = mapOf("continue" to listOf("moana"), "live-now" to listOf("game/nhl/1", "game/nhl/2")) + (home - "continue")
+        val after = before + ("live-now" to listOf("game/nhl/2"))
+
+        assertEquals(RowCard("live-now", "game/nhl/2"), restoredCard(RowCard("live-now", "game/nhl/1"), before, after))
+    }
+
+    @Test
+    fun theLastGameEndedTakesLiveNowWithItAndFocusGoesToTheRowInItsPlace() {
+        val before = mapOf("continue" to listOf("moana"), "live-now" to listOf("game/nhl/1")) + (home - "continue")
+        val after = before - "live-now"
+
+        assertEquals(RowCard("new", "lupin"), restoredCard(RowCard("live-now", "game/nhl/1"), before, after))
+    }
+
+    @Test
     fun theLastRowGoneGivesFocusToTheRowBeforeIt() {
         val after = home - "genre/Drama"
 
