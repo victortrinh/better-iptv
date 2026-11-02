@@ -10,6 +10,7 @@ import java.io.Closeable
 import java.net.InetSocketAddress
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
 /**
@@ -26,6 +27,9 @@ class FakeCloud : Closeable {
 
     /** Answers every request with HTTP 503, as an unreachable cloud would. */
     @Volatile var down = false
+
+    /** While set, a `/v1/games` request isn't answered until the latch opens, as a hanging network would leave it. */
+    @Volatile var hangingGames: CountDownLatch? = null
 
     /** How many of the next `/v1/match` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
     @Volatile var failingMatches = 0
@@ -236,6 +240,7 @@ class FakeCloud : Closeable {
                 respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends) + ("genres" to genres.toList()))
             }
             "/v1/games" -> {
+                hangingGames?.await()
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
                 val asked = (read(body) as Map<*, *>)["leagues"] as List<*>

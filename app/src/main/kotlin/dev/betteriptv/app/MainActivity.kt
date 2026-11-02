@@ -106,12 +106,12 @@ private fun Root(app: BetterIptvApp) {
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
-        // The Game whose page is open, and which card on Live opened it.
+        // The Game whose page is open, and which card on Live or Home opened it.
         var openedGame by remember { mutableStateOf<OpenedGame?>(null) }
         // The country whose Channels screen is open, from Live's Channels row, and what that screen keeps while a Channel plays.
         var browsing by remember { mutableStateOf<LiveCountry?>(null) }
         val channels = remember { ChannelsState() }
-        // The card Back from a Title or Channel returns to, on Home, a Titles tab or Live.
+        // The card Back from a Title, Game or Channel returns to, on Home, a Titles tab or Live.
         var returnedTo by remember { mutableStateOf<RowCard?>(null) }
         // The screen was reached by picking its tab, which keeps focus there.
         var byTab by remember { mutableStateOf(false) }
@@ -166,7 +166,7 @@ private fun Root(app: BetterIptvApp) {
         } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
-                    app.library, contentLanguages, appLanguage, settings.region, home,
+                    app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, home,
                     restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,
@@ -176,6 +176,8 @@ private fun Root(app: BetterIptvApp) {
                         returnedTo = card
                         watch(channel)
                     },
+                    // Back from the Game's page comes back to its card, or to what took its place once it ended.
+                    onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
                 )
                 Browse.Live -> LiveScreen(
                     // In Settings' order, which the League rows follow.
@@ -248,5 +250,5 @@ private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: 
 /** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
 private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)
 
-/** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live opened it. */
+/** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live or Home opened it. */
 private data class OpenedGame(val entry: GameFeeds, val card: RowCard)

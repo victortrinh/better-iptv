@@ -52,16 +52,7 @@ fun LiveScreen(
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
     val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
-    // Bumped every couple of minutes while a Games row shows, so the rows are read (and the cloud asked) again.
-    var refreshes by remember { mutableIntStateOf(0) }
-    val gamesShown by remember(state) { derivedStateOf { state.rows?.any { it.hasGames } == true } }
-    LaunchedEffect(gamesShown) {
-        if (!gamesShown) return@LaunchedEffect
-        while (true) {
-            delay(GAMES_REFRESH.toMillis())
-            refreshes++
-        }
-    }
+    val refreshes = gamesRefreshes(state)
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
         reading = GamesReading(leagues, region, contentLanguages, refreshes),
@@ -80,10 +71,29 @@ fun LiveScreen(
     }
 }
 
-/** What the Live rows are read for: the Leagues on, the Region and Content languages, and which refresh this is, so a change of any reads them again. */
-private data class GamesReading(val leagues: List<League>, val region: String, val contentLanguages: List<String>, val refresh: Int)
+/** What the Live rows (and Home's, with its App language) are read for: the Leagues on, the Region and Content languages, and which refresh this is, so a change of any reads them again. */
+internal data class GamesReading(val leagues: List<League>, val region: String, val contentLanguages: List<String>, val refresh: Int)
 
-/** Whether a row holds Games, whose schedule the tab keeps asking for while they show. */
+/**
+ * How many times the Games have been due again since [state]'s rows first showed a Games row: bumped
+ * every [GAMES_REFRESH] while one shows (Live's Game rows, Home's Live now), so a screen reading its
+ * rows for it reads them (and asks the cloud) again; it stands still while no Games row shows.
+ */
+@Composable
+internal fun gamesRefreshes(state: RowsState): Int {
+    var refreshes by remember { mutableIntStateOf(0) }
+    val gamesShown by remember(state) { derivedStateOf { state.rows?.any { it.hasGames } == true } }
+    LaunchedEffect(gamesShown) {
+        if (!gamesShown) return@LaunchedEffect
+        while (true) {
+            delay(GAMES_REFRESH.toMillis())
+            refreshes++
+        }
+    }
+    return refreshes
+}
+
+/** Whether a row holds Games, whose schedule the screen keeps asking for while they show. */
 private val HomeRow.hasGames: Boolean get() = this is HomeRow.LiveNow || this is HomeRow.Today || this is HomeRow.LeagueGames
 
 /** How often the Games are asked for again while a Games row shows (docs/roadmap.md, M3): the cloud reads a League's day every 5 minutes. */

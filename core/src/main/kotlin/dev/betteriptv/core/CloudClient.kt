@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.LocalDate
 
 /**
@@ -165,9 +166,10 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
      * The Games of [leagues] (by the ids the cloud's schedule knows, cloud/src/schedule.ts) for
      * today and the week ahead, as the cloud's JSON, which [Games] reads; kept whole, so parts a
      * later app reads are already there. A League the cloud has no copy of yet is absent from it.
+     * The request is given [callTimeout] in all, so a screen reading behind it isn't held long.
      */
-    fun games(leagues: List<String>): String {
-        val answer = authorized { token -> post("v1/games", json.toJson(mapOf("leagues" to leagues)), token) } as? Map<*, *>
+    fun games(leagues: List<String>, callTimeout: Duration): String {
+        val answer = authorized { token -> post("v1/games", json.toJson(mapOf("leagues" to leagues)), token, callTimeout) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
         return json.serializeNulls().toJson(answer)
     }
@@ -202,14 +204,16 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         return token
     }
 
-    private fun post(path: String, body: String, token: String?): Any? {
+    private fun post(path: String, body: String, token: String?, callTimeout: Duration? = null): Any? {
         val request = Request.Builder()
             .url(base.newBuilder().addPathSegments(path).build())
             .post(body.toRequestBody(JSON))
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
+        // A client with a call timeout shares the pool and dispatcher of the one it is built from.
+        val client = if (callTimeout == null) http else http.newBuilder().callTimeout(callTimeout).build()
         try {
-            http.newCall(request).execute().use { response ->
+            client.newCall(request).execute().use { response ->
                 if (response.code == 401) throw Unauthorized()
                 if (response.code == 404) throw NotFound()
                 if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
