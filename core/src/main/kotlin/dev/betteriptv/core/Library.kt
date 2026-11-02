@@ -27,6 +27,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.ConcurrentHashMap
@@ -948,12 +949,46 @@ class Library private constructor(
     }
 
     /**
-     * The Live tab's rows (CONTEXT.md's Row): the Viewer's Favourites, in the order they were added,
-     * finished Event channels left out, or no rows while there are none. The sports hub's rows (Live
-     * now, Today, a row per League on, More live events, Replays, then the Channels' countries) take
-     * their places around it as M3's tickets land.
+     * The Live tab's rows (CONTEXT.md's Row), for the [leagues] on, in Settings' order: Live now, the
+     * Games in progress with at least one Feed; Today, the Games still to start today (the device's
+     * day); one row per League with its Games of the week ahead; then the Viewer's Favourites, in the
+     * order they were added, finished Event channels left out. A Game shows once, in the highest row
+     * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
+     * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
+     * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
+     * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
+     * More live events, Replays and the Channels' countries join as M3's tickets land.
      */
-    suspend fun liveRows(): List<HomeRow> = favourites().let { if (it.isEmpty()) emptyList() else listOf(HomeRow.Favourites(it)) }
+    suspend fun liveRows(leagues: List<League> = emptyList(), contentLanguages: List<String> = emptyList()): List<HomeRow> =
+        liveRows(leagues, contentLanguages, Instant.now(), ZoneId.systemDefault())
+
+    internal suspend fun liveRows(leagues: List<League>, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
+        val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
+        val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
+        val matched = if (games.isEmpty()) emptyList() else {
+            val categories = store.liveCategories().associateBy { it.id }
+            val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
+                EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
+            }
+            matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
+        }
+        val today = now.atZone(zone).toLocalDate()
+        val weekAhead = now + WEEK_AHEAD
+        val shown = HashSet<String>()
+        // A Game shows in the highest row it fits.
+        fun row(fits: (GameFeeds) -> Boolean): List<GameFeeds> = matched.filter { it.key !in shown && fits(it) }.also { taken -> taken.forEach { shown += it.key } }
+        val liveNow = row { it.game.state == GameState.Live && it.feeds.isNotEmpty() }
+        val todayRow = row { it.game.state == GameState.Upcoming && it.game.start.atZone(zone).toLocalDate() == today }
+        val perLeague = leagues.mapNotNull { league ->
+            row { it.game.league == league.key && it.game.state == GameState.Upcoming && it.game.start < weekAhead }.takeIf { it.isNotEmpty() }?.let { HomeRow.LeagueGames(league, it) }
+        }
+        buildList {
+            if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
+            if (todayRow.isNotEmpty()) add(HomeRow.Today(todayRow))
+            addAll(perLeague)
+            if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
+        }
+    }
 
     /**
      * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
@@ -1535,6 +1570,11 @@ class Library private constructor(
         /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
         private const val MIN_CHART_SIZE = 3
 
+        /** A League row shows the week ahead: the cloud answers today and the next seven days. */
+        private val WEEK_AHEAD: Duration = Duration.ofDays(7)
+        /** The Event channels read for matching: a day behind now (a live Game named for yesterday evening, in a zone ahead) and past the week ahead. */
+        private val EVENT_WINDOW_BEHIND: Duration = Duration.ofDays(1)
+        private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */

@@ -238,6 +238,7 @@ class HomeRowsTest {
                     is HomeRow.NewOnYourService -> "new"
                     is HomeRow.Favourites -> "favourites"
                     is HomeRow.Genre -> "genre"
+                    is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames -> "a Live row"
                 }
             },
         )

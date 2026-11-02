@@ -51,7 +51,7 @@ data class TitleAbout(
     val textlessBackdrop: String? = null,
 )
 
-/** A row on Home, or on the Movies or Shows tab. */
+/** A row on Home, on the Movies or Shows tab, or on Live (CONTEXT.md: Row). */
 sealed interface HomeRow {
     /** The Titles the Viewer started and didn't finish, last played first. */
     data class ContinueWatching(val titles: List<InProgress>) : HomeRow
@@ -75,6 +75,15 @@ sealed interface HomeRow {
 
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
+
+    /** On Live: the Games in progress that have a Feed, by start. A live Game with no Feed is left out of the tab. */
+    data class LiveNow(val games: List<GameFeeds>) : HomeRow
+
+    /** On Live: the Games still to start today (the device's day), by start, those with no Feed shown disabled. */
+    data class Today(val games: List<GameFeeds>) : HomeRow
+
+    /** On Live: [league]'s Games of the week ahead not shown in a row above, by start. A League with none gets no row. */
+    data class LeagueGames(val league: League, val games: List<GameFeeds>) : HomeRow
 }
 
 /**

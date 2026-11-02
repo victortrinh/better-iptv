@@ -28,12 +28,19 @@ sealed interface CardInfo {
 
     /** A Channel: its [name], since its card is only a logo, and what the menu key does ([hint]: "≡ Add to Favourites"). */
     data class Channel(val name: String, val hint: String) : CardInfo
+
+    /**
+     * A Game: its League and both [teams] ("NHL · Canadiens at Maple Leafs"), since its card is two
+     * logos, then its [feeds]: the Broadcasters the schedule names and how many Feeds were found
+     * ("TSN · 3 Feeds"), or that none was. Never a score.
+     */
+    data class Game(val teams: String, val feeds: String) : CardInfo
 }
 
 /**
  * The info under Home's focused rail, as on Netflix: the focused card's [info] and [badges], at the
- * left margin. As tall as the rail's kind of card needs ([short] for Continue watching and
- * Favourites, which have two lines), whichever card it tells about, so the rails under it stay put
+ * left margin. As tall as the rail's kind of card needs ([short] for Continue watching, Favourites
+ * and the Game rows, which have two lines), whichever card it tells about, so the rails under it stay put
  * as focus moves along. Empty when [info] is null.
  */
 @Composable
@@ -57,6 +64,10 @@ fun RailInfo(info: CardInfo?, badges: List<BadgeSpec>, short: Boolean, modifier:
             is CardInfo.Channel -> {
                 Line(info.name)
                 Text(info.hint, style = Type.railMeta, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            is CardInfo.Game -> {
+                Line(info.teams)
+                Text(info.feeds, style = Type.railMeta, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
