@@ -161,7 +161,7 @@ private fun Root(app: BetterIptvApp) {
                     },
                 )
                 Browse.Live -> LiveScreen(
-                    app.library, contentLanguages, settings.region, live,
+                    app.library, contentLanguages, appLanguage, settings.region, live,
                     restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,

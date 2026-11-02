@@ -61,7 +61,7 @@ fun TitlesScreen(
     // A first Sync leaves the tab empty for minutes: how far it is shows where the rows will be ([FirstSync]).
     val firstSync = count == 0 && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
     RowsScreen(
-        library, contentLanguages, state.rows, restoreFocus, focusTab,
+        library, contentLanguages, appLanguage, state.rows, restoreFocus, focusTab,
         reading = listOf(kind, contentLanguages, appLanguage, region),
         read = { library.tabRows(kind, contentLanguages, appLanguage, region) },
         empty = stringResource(R.string.home_empty),

@@ -16,7 +16,8 @@ import dev.betteriptv.core.SyncStatus
 /**
  * The Live tab, the sports hub's home (M3), in rows like Home's ([RowsScreen]): the Viewer's
  * Favourites as Channel cards, then the Channel browser's countries (the Channels row, the Viewer's
- * [region] first, then their Content languages' countries) as country cards, until the hub's rows
+ * [region] first, then their Content languages' countries) as country cards named in the
+ * [appLanguage], until the hub's rows
  * (Live now, Today, a row per League, More live events, Replays) take their places before them. OK
  * on a Channel's card watches it ([onWatch]), and the menu key adds or removes the Favourite, focus
  * moving to its neighbour; OK on a country opens its Channels screen ([onOpenCountry]).
@@ -26,6 +27,7 @@ import dev.betteriptv.core.SyncStatus
 fun LiveScreen(
     library: Library,
     contentLanguages: List<String>,
+    appLanguage: String,
     region: String,
     state: RowsState,
     restoreFocus: RowCard?,
@@ -38,7 +40,7 @@ fun LiveScreen(
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Home.
     val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
     RowsScreen(
-        library, contentLanguages, state, restoreFocus, focusTab,
+        library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
         reading = listOf(region, contentLanguages),
         read = { library.liveRows(region, contentLanguages) },
         // Before a Sync there are no Channels to save; after one, the Viewer saves them from Search.

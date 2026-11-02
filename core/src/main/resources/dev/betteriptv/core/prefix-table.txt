@@ -40,6 +40,11 @@
 # and `hevc`. Two live Listings are one Channel when their names match once the Tier tag and the
 # quality words are gone; the country tag (`UK:`, `CA FR:`, two capitals before the colon) stays
 # part of the Channel's identity.
+#
+# Country aliases are the codes before the bar at the start of a live Category's name (`AR| `,
+# `EX YU| `) that aren't a country: the whole code, as `code | name`. Each gets its own card in the
+# Channel browser, named as written here, after the countries. A code that is neither a country
+# (ISO 3166, with `UK` read as GB) nor listed here keeps its Categories out of the browser.
 
 [prefixes]
 
@@ -274,3 +279,10 @@ HEVC        | hevc                      # "ʰᵉᵛᶜ"
 60FPS
 (SAT)
 ◉
+
+[country aliases]
+
+AR    | Arabic
+LA    | Latin America
+AF    | Africa
+EX YU | Ex-Yugoslavia

@@ -539,51 +539,61 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /**
-     * The Channel browser's countries: each ISO code ([isoCountry]) of the regular Categories' country
-     * codes to how many Channels those Categories hold, a Channel once however many of them it's in,
-     * Event channels whose Game started before [startedBefore] left out. Categories with no country
-     * code, and Clutter and Event Categories, count for nothing.
+     * The Channel browser's countries, unordered: the regular Categories' country codes as [country]
+     * reads them (null keeps a code out), each with how many Channels its Categories hold, a Channel
+     * once however many of them it's in, Event channels whose Game started before [startedBefore]
+     * left out. Categories with no country code, and Clutter and Event Categories, count for nothing.
      */
-    fun liveCountries(startedBefore: Instant): Map<String, Int> = synchronized(reader) {
+    fun liveCountries(startedBefore: Instant, country: (String) -> BrowserCountry?): List<LiveCountry> = synchronized(reader) {
+        val resolved = HashMap<String, BrowserCountry?>()
+        val keys = LinkedHashMap<String, HashSet<String>>()
+        val aliases = HashMap<String, String?>()
         reader.prepare(
-            "SELECT substr(lc.country, 1, 2), c.channel_key FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
+            "SELECT DISTINCT lc.country, c.channel_key FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
                 "WHERE lc.kind = ? AND lc.country IS NOT NULL AND (c.event_start IS NULL OR c.event_start >= ?)",
         ).use {
             it.bindText(1, kindKey(CategoryKind.Regular))
             it.bindLong(2, startedBefore.epochSecond)
-            val keys = HashMap<String, HashSet<String>>()
-            while (it.step()) keys.getOrPut(isoCountry(it.getText(0))) { HashSet() }.add(it.getText(1))
-            keys.mapValues { (_, channels) -> channels.size }
+            while (it.step()) {
+                val where = resolved.getOrPut(it.getText(0)) { country(it.getText(0)) } ?: continue
+                keys.getOrPut(where.code) { HashSet() }.add(it.getText(1))
+                aliases[where.code] = where.alias
+            }
         }
+        keys.map { (code, channels) -> LiveCountry(code, channels.size, aliases[code]) }
     }
 
     /**
-     * The regular Categories of the country coded [code] ([isoCountry]), in the Provider's order,
-     * those sharing a normalised name merged into one with their ids, each with how many Channels
-     * they hold between them (once each, finished Event channels left out as in [liveCountries]);
-     * one holding none is left out.
+     * The regular Categories the browser lists for the country coded [code] (as [country] reads
+     * their codes), in the Provider's order, those sharing a name merged into one with their ids,
+     * each with how many Channels they hold between them (once each, finished Event channels left
+     * out as in [liveCountries]); one holding none is left out. The name is the normalised one with
+     * the code's language after it (`SPORTS · FR`), so a country's Categories of two languages stay apart.
      */
-    fun browsedCategories(code: String, startedBefore: Instant): List<BrowsedCategory> = synchronized(reader) {
-        val ids = LinkedHashMap<String, MutableList<String>>()
-        reader.prepare("SELECT id, normalised_name FROM live_category WHERE kind = ? AND country IS NOT NULL AND substr(country, 1, 2) IN (?, ?) ORDER BY position").use {
+    fun browsedCategories(code: String, startedBefore: Instant, country: (String) -> BrowserCountry?): List<BrowsedCategory> = synchronized(reader) {
+        val names = LinkedHashMap<String, MutableList<String>>()
+        reader.prepare("SELECT id, normalised_name, country FROM live_category WHERE kind = ? AND country IS NOT NULL ORDER BY position").use {
             it.bindText(1, kindKey(CategoryKind.Regular))
-            // The Provider's UK is GB; every other code is its own.
-            it.bindText(2, code)
-            it.bindText(3, if (code == "GB") "UK" else code)
-            while (it.step()) ids.getOrPut(it.getText(1)) { ArrayList() }.add(it.getText(0))
+            while (it.step()) {
+                val where = country(it.getText(2))?.takeIf { where -> where.code == code } ?: continue
+                val name = listOfNotNull(it.getText(1), where.language).joinToString(" · ")
+                names.getOrPut(name) { ArrayList() }.add(it.getText(0))
+            }
         }
-        val counts = HashMap<String, Int>()
-        reader.prepare(
-            "SELECT lc.normalised_name, count(DISTINCT c.channel_key) FROM live_category lc JOIN channel c ON c.category_id = lc.id " +
-                "WHERE lc.kind = ? AND lc.country IS NOT NULL AND substr(lc.country, 1, 2) IN (?, ?) AND (c.event_start IS NULL OR c.event_start >= ?) GROUP BY lc.normalised_name",
-        ).use {
-            it.bindText(1, kindKey(CategoryKind.Regular))
-            it.bindText(2, code)
-            it.bindText(3, if (code == "GB") "UK" else code)
-            it.bindLong(4, startedBefore.epochSecond)
-            while (it.step()) counts[it.getText(0)] = it.getLong(1).toInt()
+        val keys = HashMap<String, HashSet<String>>()
+        names.values.flatten().chunked(MAX_BOUND).forEach { chunk ->
+            reader.prepare(
+                "SELECT category_id, channel_key FROM channel WHERE category_id IN (${chunk.joinToString(",") { "?" }}) AND (event_start IS NULL OR event_start >= ?)",
+            ).use {
+                chunk.forEachIndexed { i, id -> it.bindText(i + 1, id) }
+                it.bindLong(chunk.size + 1, startedBefore.epochSecond)
+                while (it.step()) keys.getOrPut(it.getText(0)) { HashSet() }.add(it.getText(1))
+            }
         }
-        ids.mapNotNull { (name, categoryIds) -> counts[name]?.takeIf { it > 0 }?.let { BrowsedCategory(name, categoryIds, it) } }
+        names.mapNotNull { (name, ids) ->
+            val channels = ids.flatMap { keys[it].orEmpty() }.toSet().size
+            if (channels == 0) null else BrowsedCategory(name, ids, channels)
+        }
     }
 
     /**
@@ -1137,6 +1147,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE UNIQUE INDEX IF NOT EXISTS title_key ON title (key)",
             "CREATE INDEX IF NOT EXISTS channel_position ON channel (position)",
             "CREATE INDEX IF NOT EXISTS channel_key ON channel (channel_key, position)",
+            // The Channel browser's counts and Category lists, by Category: covered without touching the rows.
+            "CREATE INDEX IF NOT EXISTS channel_category ON channel (category_id, channel_key)",
             // The lead variant of each Channel, in the Provider's order, for the search index's scan.
             "CREATE INDEX IF NOT EXISTS channel_lead ON channel (position) WHERE lead = 1",
         )

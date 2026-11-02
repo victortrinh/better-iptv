@@ -89,7 +89,7 @@ fun ChannelsScreen(library: Library, country: LiveCountry, appLanguage: String, 
     var categories by remember { mutableStateOf<List<BrowsedCategory>?>(null) }
     LaunchedEffect(country, status.last) { categories = library.browsedCategories(country.code) }
     ChannelsLayout(
-        countryName(country.code, appLanguage), country.channels, categories, state,
+        country.name(appLanguage), country.channels, categories, state,
         channelsOf = { library.categoryChannels(it) },
         onWatch = onWatch,
         onFavourite = { channel, favourite -> library.setFavourite(channel.key, favourite) },

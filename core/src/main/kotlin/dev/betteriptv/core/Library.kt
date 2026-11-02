@@ -419,20 +419,24 @@ class Library private constructor(
     /**
      * The Channel browser's countries (the Channels row on Live), from the regular live Categories'
      * country codes: the Viewer's [region] first, then their [contentLanguages]' countries, then the
-     * rest by Channel count ([orderedCountries]). Clutter and Event Categories, and Categories whose
-     * names carry no country code, add none.
+     * rest by Channel count, then the Prefix table's aliased codes (`AR` for Arabic) by Channel count
+     * ([orderedCountries]). Clutter and Event Categories, and Categories whose names carry no
+     * country code or one that is neither a country nor aliased, add none ([browserCountry]).
      */
     suspend fun liveCountries(region: String, contentLanguages: List<String>): List<LiveCountry> = withContext(Dispatchers.IO) {
-        orderedCountries(store.liveCountries(Instant.now() - EVENT_FINISHED_AFTER), region, contentLanguages)
+        orderedCountries(store.liveCountries(Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry), region, contentLanguages)
     }
+
+    private fun browserCountry(country: String) = browserCountry(country, prefixTable::countryAlias)
 
     /**
      * The Categories the Channels screen lists for the country coded [country] ([LiveCountry.code]),
      * in the Provider's order: regular ones only (no Clutter or Event Categories), named without the
-     * country code and tags, those sharing a name merged, each with its Channel count.
+     * country code and tags (the code's language kept: `SPORTS · FR`), those sharing a name merged,
+     * each with its Channel count.
      */
     suspend fun browsedCategories(country: String): List<BrowsedCategory> = withContext(Dispatchers.IO) {
-        store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER)
+        store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry)
     }
 
     /**

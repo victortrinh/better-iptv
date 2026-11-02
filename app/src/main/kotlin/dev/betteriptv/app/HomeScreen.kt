@@ -65,7 +65,7 @@ fun HomeScreen(
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Movies and Shows.
     val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
     RowsScreen(
-        library, contentLanguages, state, restoreFocus, focusTab,
+        library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
         reading = listOf(contentLanguages, appLanguage, region),
         read = { library.homeRows(contentLanguages, appLanguage, region) },
         empty = stringResource(R.string.home_empty),

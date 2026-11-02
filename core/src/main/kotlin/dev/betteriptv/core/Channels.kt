@@ -7,6 +7,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 /**
  * A Channel: a live broadcast as one thing, however many Listings the Provider has for it (CONTEXT.md).
@@ -172,35 +173,56 @@ private val DAY_MONTH_NAME = Regex("""(?<![\d/])(\d{1,2})\s+$MONTH\s+(\d{1,2}):(
 private val SLASHED = Regex("""(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\s+(\d{1,2}):(\d\d)""")
 
 /**
- * A country the Channel browser lists (the Channels row on Live): its ISO 3166 [code] (`GB` for the
- * Provider's `UK`; `CA EN` and `CA FR` Categories are one Canada), as the App language names it,
- * and how many [channels] its regular Categories hold, a Channel in two of them counted once.
+ * A country the Channel browser lists (the Channels row on Live): its [code] and how many
+ * [channels] its regular Categories hold, a Channel in two of them counted once. The code is ISO
+ * 3166 (`GB` for the Provider's `UK`; `CA EN` and `CA FR` Categories are one Canada), named in the
+ * App language, unless [alias] names it: the Provider's codes that aren't countries (`AR` for
+ * Arabic, `EX YU`), as the Prefix table's country aliases name them, come after the countries.
  */
-data class LiveCountry(val code: String, val channels: Int)
+data class LiveCountry(val code: String, val channels: Int, val alias: String? = null)
 
 /**
  * A Category as the Channel browser lists it in a country's column: its [name] without the country
- * code and the Provider's tags (`NBC`, not `US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), the Provider's [categoryIds]
- * it merges (the `ⱽᴵᴾ` and `ᴳᴼᴸᴰ` Categories that share a name), and how many [channels] they hold
- * between them, each Channel once.
+ * code and the Provider's tags (`NBC`, not `US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`), with the code's language when it
+ * carries one (`SPORTS · FR` for `CA FR| SPORTS`), the Provider's [categoryIds] it merges (the
+ * `ⱽᴵᴾ` and `ᴳᴼᴸᴰ` Categories that share a name), and how many [channels] they hold between them,
+ * each Channel once.
  */
 data class BrowsedCategory(val name: String, val categoryIds: List<String>, val channels: Int)
 
 /**
- * The ISO 3166 code of a live Category's [country] code (`US| `, `CA FR| `, `UK| `): its first two
- * letters, so a language after the country (`CA FR`) still files under the country, and the
- * Provider's `UK` is `GB`, which is what names it in the App language.
+ * Where a live Category's country code files it in the browser: the country's [code] as
+ * [LiveCountry] carries it, its [alias] when the code isn't a country, and the [language] the code
+ * carries after the country (`FR` in `CA FR`), which tells the country's Categories of one language
+ * from the other's.
  */
-internal fun isoCountry(country: String): String = country.take(2).let { if (it == "UK") "GB" else it }
+internal class BrowserCountry(val code: String, val alias: String?, val language: String?)
 
 /**
- * The browser's countries in order: the Viewer's [region] first, then the countries of their
- * [contentLanguages] in order ([languageCountries]), each only when the Provider has it, then the
- * rest by Channel count, the fullest first (ties by code). [counts] is each country's Channel count
- * by ISO code.
+ * What the browser makes of a live Category's [country] code (`US`, `CA FR`, `UK`, `AR`, `EX YU`):
+ * a code the Prefix table [alias]es (the whole code, so `AR` is Arabic before it is Argentina) is its
+ * own card named so; else its first two letters must be an ISO 3166 country (`UK` read as `GB`),
+ * any second word being the language; else null, and the Category stays out of the browser, its
+ * Channels found through Search.
  */
-internal fun orderedCountries(counts: Map<String, Int>, region: String, contentLanguages: List<String>): List<LiveCountry> {
-    val preferred = (listOf(region) + contentLanguages.flatMap(::languageCountries)).filter { it in counts }
-    val byCount = counts.keys.sortedWith(compareByDescending<String> { counts.getValue(it) }.thenBy { it })
-    return (preferred + byCount).distinct().map { LiveCountry(it, counts.getValue(it)) }
+internal fun browserCountry(country: String, alias: (String) -> String?): BrowserCountry? {
+    val code = country.replace(SPACES, " ").trim().uppercase(Locale.ROOT)
+    alias(code)?.let { return BrowserCountry(code, it, null) }
+    val iso = code.take(2).let { if (it == "UK") "GB" else it }
+    if (iso !in ISO_COUNTRIES) return null
+    return BrowserCountry(iso, null, code.substringAfter(' ', "").ifEmpty { null })
+}
+
+private val ISO_COUNTRIES = Locale.getISOCountries().toSet()
+
+/**
+ * The browser's [countries] in order: the Viewer's [region] first, then the countries of their
+ * [contentLanguages] in order ([languageCountries]), each only when the Provider has it, then the
+ * rest by Channel count, the fullest first (ties by code), then the aliased codes the same way.
+ */
+internal fun orderedCountries(countries: Collection<LiveCountry>, region: String, contentLanguages: List<String>): List<LiveCountry> {
+    val byCode = countries.filter { it.alias == null }.associateBy { it.code }
+    val preferred = (listOf(region) + contentLanguages.flatMap(::languageCountries)).mapNotNull { byCode[it] }
+    val fullest = compareByDescending<LiveCountry> { it.channels }.thenBy { it.code }
+    return (preferred + byCode.values.sortedWith(fullest)).distinct() + countries.filter { it.alias != null }.sortedWith(fullest)
 }

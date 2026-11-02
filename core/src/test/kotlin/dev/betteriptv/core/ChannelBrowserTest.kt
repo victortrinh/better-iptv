@@ -66,6 +66,39 @@ class ChannelBrowserTest {
         assertEquals(listOf("DE", "NL", "US", "CA", "GB", "FR"), library.liveCountries("JP", emptyList()).map { it.code })
     }
 
+    @Test fun `a code that isn't a country gets its own card after the countries when the Prefix table names it, and is absent otherwise`() = runBlocking {
+        provider.serveChannels(
+            "FR: TF1" to "FR| GENERAL",
+            "AR: MBC 1" to "AR| GENERAL", "AR: MBC 2" to "AR| GENERAL",
+            "LA: TELEMUNDO" to "LA| GENERAL",
+            "EX YU: RTS 1" to "EX YU| GENERAL", "EX YU: HRT 1" to "EX YU| GENERAL", "EX YU: RTCG" to "EX YU| GENERAL",
+            "XX: NOWHERE 1" to "XX| GENERAL",
+        )
+        library.sync()
+
+        val countries = library.liveCountries("FR", listOf("fr"))
+        // France, then the aliased codes by Channel count: AR is Arabic here, not Argentina; XX is neither and is out.
+        assertEquals(listOf("FR" to null, "EX YU" to "Ex-Yugoslavia", "AR" to "Arabic", "LA" to "Latin America"), countries.map { it.code to it.alias })
+        assertEquals(listOf(1, 3, 2, 1), countries.map { it.channels })
+        assertEquals(listOf("GENERAL · 3"), categories("EX YU"))
+        assertEquals(emptyList<String>(), categories("XX"))
+    }
+
+    @Test fun `a country's Categories of two languages stay apart, named with the language`() = runBlocking {
+        provider.serveChannels(
+            "CA EN: TSN 1" to "CA EN| SPORTS",
+            "CA EN: SPORTSNET" to "CA EN| SPORTS",
+            "CA FR: RDS" to "CA FR| SPORTS",
+            "CA FR: TVA" to "CA FR| GÉNÉRAL",
+            "CA: CBC" to "CA| GENERAL",
+        )
+        library.sync()
+
+        assertEquals(listOf("CA" to 5), library.liveCountries("CA", emptyList()).map { it.code to it.channels })
+        assertEquals(listOf("SPORTS · EN · 2", "SPORTS · FR · 1", "GÉNÉRAL · FR · 1", "GENERAL · 1"), categories("CA"))
+        assertEquals(listOf("CA FR: RDS"), channels("CA", "SPORTS · FR"))
+    }
+
     @Test fun `a Channel in two Categories of a country counts once, and Clutter and Event Categories count for nothing`() = runBlocking {
         provider.serveChannels(
             "VIP: TNT SPORT 1 ᴴᴰ" to "UK| SPORTS ⱽᴵᴾ",

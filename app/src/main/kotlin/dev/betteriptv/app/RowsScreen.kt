@@ -139,13 +139,15 @@ class RowsState {
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
- * removes the Favourite; a country's (Live's Channels row) opens its Channels screen ([onOpenCountry]).
+ * removes the Favourite; a country's (Live's Channels row, named in the [appLanguage]) opens its
+ * Channels screen ([onOpenCountry]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RowsScreen(
     library: Library,
     contentLanguages: List<String>,
+    appLanguage: String,
     state: RowsState,
     restoreFocus: RowCard?,
     focusTab: Boolean,
@@ -310,7 +312,7 @@ fun RowsScreen(
                                 }
                                 if (row is HomeRow.Channels) {
                                     val country = row.countries[index]
-                                    CountryCard(countryName(country.code, LocalConfiguration.current.locales[0].language), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
+                                    CountryCard(country.name(appLanguage), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
                                     return@items
                                 }
                                 val title = titles[index]
@@ -345,7 +347,7 @@ fun RowsScreen(
                                 if (ranked) RankedCard(index + 1) { poster() } else poster()
                             }
                         }
-                        SettledInfo(library, row, state, contentLanguages)
+                        SettledInfo(library, row, state, contentLanguages, appLanguage)
                         Spacer(Modifier.height(14.dp))
                     }
                 }
@@ -363,14 +365,14 @@ fun RowsScreen(
  * of their cards again at every press (#63).
  */
 @Composable
-private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>) {
+private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>, appLanguage: String) {
     if (state.settled != row.key) return
-    RailInfo(library, row, state.focused, contentLanguages, Modifier.padding(start = Spacing.screenX, top = 12.dp))
+    RailInfo(library, row, state.focused, contentLanguages, appLanguage, Modifier.padding(start = Spacing.screenX, top = 12.dp))
 }
 
 /** The info under [row], telling about [card], the card focused last, when it is one of the row's. */
 @Composable
-private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLanguages: List<String>, modifier: Modifier) {
+private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLanguages: List<String>, appLanguage: String, modifier: Modifier) {
     val short = row is HomeRow.ContinueWatching || row is HomeRow.Favourites || row is HomeRow.Channels
     val channel = (row as? HomeRow.Favourites)?.channels?.firstOrNull { channelKey(it) == card?.key }
     if (channel != null) {
@@ -380,8 +382,7 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
     // A country: its name, since its card has nothing but it, and how many Channels it has.
     val country = (row as? HomeRow.Channels)?.countries?.firstOrNull { countryKey(it) == card?.key }
     if (country != null) {
-        val name = countryName(country.code, LocalConfiguration.current.locales[0].language)
-        RailInfo(CardInfo.Channel(name, pluralStringResource(R.plurals.channels_count, country.channels, country.channels)), emptyList(), short, modifier)
+        RailInfo(CardInfo.Channel(country.name(appLanguage), pluralStringResource(R.plurals.channels_count, country.channels, country.channels)), emptyList(), short, modifier)
         return
     }
     val titles = row.titles
