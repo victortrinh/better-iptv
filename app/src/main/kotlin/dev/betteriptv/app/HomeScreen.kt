@@ -15,6 +15,8 @@ import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
@@ -42,10 +44,13 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
 }
 
 /**
- * The home screen's rows ([RowsScreen]): Continue watching (stills with how far the Viewer got), the
- * Top 10 movies and shows in the Viewer's [region], New on your service, Trending this week, the
- * Viewer's Favourites, then a row per genre. [restoreFocus] and [focusTab] are as on [RowsScreen].
- * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
+ * The home screen's rows ([RowsScreen]): Continue watching (stills with how far the Viewer got),
+ * Live now (the Games of the [leagues] on that are in progress with a Feed, as the Live tab's Game
+ * cards; no row otherwise), the Top 10 movies and shows in the Viewer's [region], New on your
+ * service, Trending this week, the Viewer's Favourites, then a row per genre. The Games are asked
+ * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live.
+ * [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
+ * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
 @Composable
@@ -54,23 +59,27 @@ fun HomeScreen(
     contentLanguages: List<String>,
     appLanguage: String,
     region: String,
+    leagues: List<League>,
     state: RowsState,
     restoreFocus: RowCard?,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit,
+    onOpenGame: (RowCard, GameFeeds) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // With no catalog stored yet, a first Sync's progress (or why it failed) shows where the rows will be, as on Movies and Shows.
     val firstSync = status.last == null && (status is SyncStatus.Running || status is SyncStatus.Matching || status is SyncStatus.Failed)
+    val refreshes = gamesRefreshes(state)
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
-        reading = listOf(contentLanguages, appLanguage, region),
-        read = { library.homeRows(contentLanguages, appLanguage, region) },
+        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage),
+        read = { library.homeRows(contentLanguages, appLanguage, region, leagues) },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
         onWatch = onWatch,
+        onOpenGame = onOpenGame,
         placeholder = if (firstSync) {
             { FirstSync(status) }
         } else null,

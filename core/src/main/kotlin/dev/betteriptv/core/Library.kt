@@ -904,7 +904,8 @@ class Library private constructor(
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
 
     /**
-     * The home screen's rows: Continue watching, then the Charts for the Viewer's [region] (Top
+     * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
+     * are in progress with a Feed, as on the Live tab; no row at all otherwise), then the Charts for the Viewer's [region] (Top
      * movies, Top shows), then New on your service (Titles among the most recently added, most
      * popular on TMDB first), then TMDB's trending this week, then the Viewer's Favourites (in the order they were added; finished
      * Event channels left out), then one row per TMDB genre, its most common first. Browse rows and
@@ -916,10 +917,12 @@ class Library private constructor(
      * ([ScreenRows]); a genre row left with too few Titles gives its place to the next genre. Rows
      * with no Titles are left out.
      */
-    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
-        homeRows(contentLanguages, appLanguage, region, Instant.now())
+    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, leagues: List<League> = emptyList()): List<HomeRow> =
+        homeRows(contentLanguages, appLanguage, region, leagues, Instant.now())
 
-    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, leagues: List<League>, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+        // Home gets one Games row, Live now, while a Game with a Feed is on (docs/roadmap.md, M3): the same Games and Feeds as the Live tab's.
+        val liveNow = matchedGames(leagues, contentLanguages, now).filter { it.game.state == GameState.Live && it.feeds.isNotEmpty() }
         val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
         // Movies by how far the Viewer got, Shows by the Episode they're at; a Show they Watched to its end is left out.
         val resumes = store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
@@ -972,6 +975,7 @@ class Library private constructor(
                     ),
                 )
             }
+            if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
             if (trending.isNotEmpty()) add(HomeRow.Chart(ChartList.Trending, null, trending.map { card(it) }))
@@ -998,14 +1002,7 @@ class Library private constructor(
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
-        val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
-        val matched = if (games.isEmpty()) emptyList() else {
-            val categories = store.liveCategories().associateBy { it.id }
-            val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
-                EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
-            }
-            matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
-        }
+        val matched = matchedGames(leagues, contentLanguages, now)
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD
         val shown = HashSet<String>()
@@ -1023,6 +1020,22 @@ class Library private constructor(
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
         }
+    }
+
+    /**
+     * The Games of the [leagues] on that aren't over, each with its Feeds from the catalog
+     * ([matchFeeds]) ranked for the [contentLanguages], by start: what the Live tab's Game rows and
+     * Home's Live now row are made of. The Games come from [games] (the cloud's, or the kept copy
+     * when it fails); with no League on, or none the device has Games for, there are none.
+     */
+    private suspend fun matchedGames(leagues: List<League>, contentLanguages: List<String>, now: Instant): List<GameFeeds> {
+        val games = games(leagues.map { it.key }, now).filter { it.state != GameState.Over }
+        if (games.isEmpty()) return emptyList()
+        val categories = store.liveCategories().associateBy { it.id }
+        val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
+            EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
+        }
+        return matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
     }
 
     /**
