@@ -74,10 +74,23 @@ fun Context.gameInfo(entry: GameFeeds): CardInfo.Game {
     return CardInfo.Game("${leagueName(game.league)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
 }
 
-/** What a Feed is, under its name on the Game page: an Event channel, or the Broadcaster's Channel it is. */
-fun Context.feedKind(feed: Feed): String = when (feed.kind) {
-    FeedKind.EventChannel -> getString(R.string.feed_event_channel)
-    FeedKind.Broadcaster -> getString(R.string.feed_broadcaster, feed.broadcaster.orEmpty())
+/**
+ * What a Feed is, under its name on the Game page: an Event channel, the Broadcaster's Channel it
+ * is, or the League's network standing in; a Feed marked "Not this game" says so after it.
+ */
+fun Context.feedKind(feed: Feed): String {
+    val kind = when (feed.kind) {
+        FeedKind.EventChannel -> getString(R.string.feed_event_channel)
+        FeedKind.Broadcaster -> getString(R.string.feed_broadcaster, feed.broadcaster.orEmpty())
+        FeedKind.LeagueNetwork -> getString(R.string.feed_league_network, feed.broadcaster.orEmpty())
+    }
+    return if (feed.dropped) "$kind · ${getString(R.string.feed_not_this_game)}" else kind
+}
+
+/** A Feed's row in the player's Feed list: what it is and its language ("Event channel · English"), after "Playing" for the one on. */
+fun Context.feedNote(feed: Feed, playing: Boolean): String {
+    val note = "${feedKind(feed)} · ${feed.language?.let(::languageName) ?: getString(R.string.language_untagged)}"
+    return if (playing) "${getString(R.string.player_playing)} · $note" else note
 }
 
 /** The muted line under Play naming the Feed it starts: its name and its language ("Senators @ Bruins · English"). */

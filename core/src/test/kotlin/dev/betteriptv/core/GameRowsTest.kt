@@ -230,4 +230,76 @@ class GameRowsTest {
         assertEquals(first.liveNow().ids(), kept.liveNow().ids())
         assertTrue(kept.liveNow()!!.single().feeds.isNotEmpty())
     }
+    @Test fun `a named Broadcaster's Channel is a Feed under any of its spellings, an unnamed network is not, and the League's network only when nothing else is`() = runBlocking {
+        cloud.games(
+            "nhl",
+            // Named NHL Net by the schedule, listed as NHL Network by the Provider: a Broadcaster Feed, not a last resort.
+            game("2", "2026-11-02T00:00:00Z", home = "Boston Bruins", away = "Ottawa Senators", broadcasters = listOf("NHL Net")),
+            // Named Sportsnet, which the Provider hasn't: only the League's network is left.
+            game("3", "2026-11-03T00:00:00Z", home = "Edmonton Oilers", away = "Calgary Flames", broadcasters = listOf("Sportsnet")),
+            // An Event channel names it: the League's network stays out.
+            game("4", "2026-11-03T03:00:00Z", home = "Vancouver Canucks", away = "Seattle Kraken"),
+        )
+        cloud.games("nfl", game("100", "2026-11-05T01:15:00Z", league = "nfl", home = "Denver Broncos", away = "Houston Texans", broadcasters = listOf("Prime Video")))
+        provider.serveChannels(
+            "US: NHL Network" to "US| SPORT",
+            "CA: TSN" to "CA| SPORT",
+            "CA: Kraken vs Canucks (2026-11-02 22:00:00)" to "CA| NHL PPV",
+            "US: Amazon Prime Video" to "US| SPORT",
+            "US: NFL Network" to "US| SPORT",
+        )
+        library.sync()
+
+        val screen = rows()
+        // Tonight's Game is in Today, the others in the NHL's row.
+        val tonight = screen.today()!!.single { it.game.id == "2" }
+        assertEquals(listOf(FeedKind.Broadcaster), tonight.feeds.map { it.kind })
+        assertEquals(listOf("US: NHL Network"), screen.today().feedNames("2"))
+        assertEquals("NHL Net", tonight.feeds.single().broadcaster)
+        val nhl = screen.league(League.Nhl)!!
+        // TSN is not Sportsnet, and nothing is guessed from the Region: the League's network stands in, and says so.
+        val lastResort = nhl.single { it.game.id == "3" }.feeds.single()
+        assertEquals("US: NHL Network", lastResort.channel.variants.first().name)
+        assertEquals(FeedKind.LeagueNetwork, lastResort.kind)
+        assertEquals("NHL Network", lastResort.broadcaster)
+        assertEquals("en", lastResort.language)
+        assertEquals(listOf("CA: Kraken vs Canucks (2026-11-02 22:00:00)"), nhl.feedNames("4"))
+        // A streaming service's name spelt out by the Provider still finds its Channel; the NFL's network stays out beside it.
+        assertEquals(listOf("US: Amazon Prime Video"), screen.league(League.Nfl).feedNames("100"))
+    }
+
+    @Test fun `Not this game drops a Feed for that Game on this device, so it lists last and marked, and the next Feed is the best left`() = runBlocking {
+        serveSlate()
+        provider.serveChannels(
+            "Senators @ Bruins (2026-11-01 19:00:00)" to "US| NHL PPV",
+            "US: Senators vs Bruins (2026-11-01 19:00:00) ᴴᴰ" to "US| NHL PPV",
+            "CA: TSN" to "CA| SPORT",
+            "NHL: Canadiens vs Maple Leafs (2026-11-01 18:00:00)" to "US| ESPN+ PPV",
+            "CA: Canadiens vs Maple Leafs (2026-11-01 18:00:00)" to "CA| NHL PPV",
+        )
+        library.sync()
+        val before = rows().today()!!.single()
+        assertEquals(listOf("US: Senators vs Bruins (2026-11-01 19:00:00) ᴴᴰ", "Senators @ Bruins (2026-11-01 19:00:00)", "CA: TSN"), before.feeds.map { it.channel.variants.first().name })
+        assertFalse(before.feeds.any { it.dropped })
+
+        val dropped = library.notThisGame(before, before.best!!, listOf("en"))
+        assertEquals(listOf("Senators @ Bruins (2026-11-01 19:00:00)", "CA: TSN", "US: Senators vs Bruins (2026-11-01 19:00:00) ᴴᴰ"), dropped.feeds.map { it.channel.variants.first().name })
+        assertEquals(listOf(false, false, true), dropped.feeds.map { it.dropped })
+        assertEquals("Senators @ Bruins (2026-11-01 19:00:00)", dropped.best!!.channel.variants.first().name)
+        assertEquals("CA: TSN", dropped.next(dropped.best!!)!!.channel.variants.first().name)
+
+        // The rows read it the same way, after a Sync too, and the mark holds for this Game alone: the Leafs' Game keeps its Feeds.
+        library.sync()
+        val after = rows().today()!!.single()
+        assertEquals(dropped.feeds.map { it.channel.key to it.dropped }, after.feeds.map { it.channel.key to it.dropped })
+        assertFalse(rows().liveNow()!!.single().feeds.any { it.dropped })
+
+        // With every Feed dropped, none is best, and the Game still shows with its Feeds listed.
+        var left = after
+        while (left.best != null) left = library.notThisGame(left, left.best!!, listOf("en"))
+        assertEquals(3, left.feeds.size)
+        assertNull(rows().today()!!.single().best)
+        assertEquals(3, rows().today()!!.single().feeds.size)
+    }
+
 }

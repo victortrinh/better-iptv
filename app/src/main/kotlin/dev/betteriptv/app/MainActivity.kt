@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LiveCountry
@@ -136,6 +137,14 @@ private fun Root(app: BetterIptvApp) {
         val country = browsing
         if (now != null) {
             BackHandler { playing = null }
+            // Plays another of the Game's Feeds, a new plan for its Channel, as the Game page's Play does.
+            val playFeed = { entry: GameFeeds, feed: Feed ->
+                scope.launch {
+                    val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
+                    playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed))
+                }
+                Unit
+            }
             PlayerScreen(
                 app.library, now.plan, now.name, settings,
                 deviceProfile = { readDeviceProfile(context) },
@@ -143,6 +152,19 @@ private fun Root(app: BetterIptvApp) {
                 inARow = now.inARow,
                 onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
                 onEnded = { playing = null },
+                playingFeed = now.game,
+                onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
+                onNotThisGame = {
+                    now.game?.let { game ->
+                        scope.launch {
+                            val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages)
+                            // The Game page under the player lists the Feed last and marked when Back returns to it.
+                            if (openedGame?.entry?.key == updated.key) openedGame = openedGame?.copy(entry = updated)
+                            val next = updated.best
+                            if (next == null) playing = null else playFeed(updated, next)
+                        }
+                    }
+                },
             )
         } else if (openedGame != null) {
             val game = openedGame!!
@@ -155,7 +177,7 @@ private fun Root(app: BetterIptvApp) {
                 game.entry,
                 deviceProfile = { readDeviceProfile(context) },
                 planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
-                onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed)) },
             )
         } else if (country != null) {
             BackHandler {
@@ -241,9 +263,10 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 
 /**
  * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
- * row to start by itself since a key was pressed.
+ * row to start by itself since a key was pressed; for a Game's Feed, which [game] and Feed, so the
+ * player's menu key lists the others.
  */
-private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0)
+private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null)
 
 /** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
 private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)

@@ -1004,7 +1004,7 @@ class Library private constructor(
             val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
                 EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
             }
-            matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
+            matchFeeds(games, events, store.channelsNamed(broadcasterChannelNames(games)), contentLanguages, now, store.droppedFeeds(games.map { "${it.league}/${it.id}" }))
         }
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD
@@ -1023,6 +1023,19 @@ class Library private constructor(
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
         }
+    }
+
+    /**
+     * Marks [feed] "Not this game" for [entry]'s Game on this device (CONTEXT.md: Feed), and answers
+     * the entry as the Live tab will now list it: the Feed kept, last and [Feed.dropped], the rest
+     * ranked for the [contentLanguages] as before, so the caller plays [GameFeeds.best] next. The
+     * mark is kept by Game and Channel, so it survives Syncs and holds for every variant of the
+     * Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]).
+     */
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>): GameFeeds = withContext(Dispatchers.IO) {
+        val now = Instant.now()
+        store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
+        entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
     }
 
     /**
@@ -1610,6 +1623,8 @@ class Library private constructor(
         /** The Event channels read for matching: a day behind now (a live Game named for yesterday evening, in a zone ahead) and past the week ahead. */
         private val EVENT_WINDOW_BEHIND: Duration = Duration.ofDays(1)
         private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
+        /** A "Not this game" mark is forgotten this long after it was made: its Game is long over, and the rows ask for a week ahead at most. */
+        private val DROPPED_KEPT_FOR: Duration = Duration.ofDays(14)
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */

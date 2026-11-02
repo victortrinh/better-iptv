@@ -5,13 +5,15 @@ package dev.betteriptv.core
  * the device and the cloud share (cloud/src/schedule.ts's `LEAGUES`), stable across releases:
  * Settings keeps the Leagues on by key, and the cloud's Games call asks for Leagues by it. [names]
  * are what an Event channel's name calls the League (`NHL: Leafs vs Habs`, `EPL | Arsenal v
- * Chelsea`): a Game matches an Event channel naming one of its teams and one of these.
+ * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
+ * is the League's own channel, as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
+ * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none.
  */
-enum class League(val key: String, val names: List<String>) {
-    Nhl("nhl", listOf("NHL", "Hockey")),
-    Nfl("nfl", listOf("NFL")),
-    Nba("nba", listOf("NBA")),
-    Mlb("mlb", listOf("MLB", "Baseball")),
+enum class League(val key: String, val names: List<String>, val network: String? = null) {
+    Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
+    Nfl("nfl", listOf("NFL"), network = "NFL Network"),
+    Nba("nba", listOf("NBA"), network = "NBA TV"),
+    Mlb("mlb", listOf("MLB", "Baseball"), network = "MLB Network"),
     Cfl("cfl", listOf("CFL")),
     Mls("mls", listOf("MLS")),
     PremierLeague("premier-league", listOf("Premier League", "EPL", "PL")),

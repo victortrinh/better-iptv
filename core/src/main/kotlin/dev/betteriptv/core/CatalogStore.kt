@@ -73,6 +73,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
         // The Channels the Viewer saved, by Channel key, so they outlive Syncs.
         execSQL("CREATE TABLE IF NOT EXISTS favourite (key TEXT PRIMARY KEY, added_at INTEGER NOT NULL)")
+        // The Feeds the Viewer marked "Not this game" on this device (#255), by Game (League and schedule id) and Channel key, so they outlive Syncs.
+        execSQL("CREATE TABLE IF NOT EXISTS not_this_game (game_key TEXT NOT NULL, channel_key TEXT NOT NULL, dropped_at INTEGER NOT NULL, PRIMARY KEY (game_key, channel_key))")
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
@@ -533,6 +535,41 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             asked.forEachIndexed { i, name -> it.bindText(i + 1, name) }
             buildList { while (it.step()) add(it.variantRow(0)) }
         }.groupBy { it.key }.values.map(::channel).groupBy { it.name.lowercase() }
+    }
+
+    /**
+     * The Feeds marked "Not this game" among the Games keyed [gameKeys] ([GameFeeds.key]), each as
+     * [GameFeeds.droppedKey] forms it.
+     */
+    fun droppedFeeds(gameKeys: Collection<String>): Set<String> = synchronized(reader) {
+        if (gameKeys.isEmpty()) return emptySet()
+        val found = HashSet<String>()
+        gameKeys.distinct().chunked(MAX_BOUND).forEach { chunk ->
+            reader.prepare("SELECT game_key, channel_key FROM not_this_game WHERE game_key IN (${chunk.joinToString(",") { "?" }})").use {
+                chunk.forEachIndexed { i, key -> it.bindText(i + 1, key) }
+                while (it.step()) found += GameFeeds.droppedKey(it.getText(0), it.getText(1))
+            }
+        }
+        found
+    }
+
+    /**
+     * Marks the Channel keyed [channelKey] "Not this game" for the Game keyed [gameKey], at [at], and
+     * forgets the marks made before [forgetBefore]: their Games are long over, and a schedule id is
+     * never reused, so they would only grow.
+     */
+    fun dropFeed(gameKey: String, channelKey: String, at: Instant, forgetBefore: Instant) = synchronized(writer) {
+        writer.prepare("DELETE FROM not_this_game WHERE dropped_at < ?").use {
+            it.bindLong(1, forgetBefore.toEpochMilli())
+            it.step()
+        }
+        writer.prepare("INSERT OR REPLACE INTO not_this_game VALUES (?, ?, ?)").use {
+            it.bindText(1, gameKey)
+            it.bindText(2, channelKey)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        Unit
     }
 
     /** The keys of the Viewer's Favourites, whether or not the Provider still has them. */
