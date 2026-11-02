@@ -80,20 +80,21 @@ class GameScreenTest {
         return PlayPlan(null, versions.first(), listOf("en"), versions)
     }
 
-    private fun open(entry: GameFeeds, onPlay: (PlayPlan, String) -> Unit = { _, _ -> }) =
+    private fun open(entry: GameFeeds, onPlay: (PlayPlan, String, Feed) -> Unit = { _, _, _ -> }) =
         compose.setContent { GameScreen(entry, deviceProfile = { stick }, planFor = ::planFor, onPlay = onPlay) }
 
     @Test fun playTakesFirstFocusNamesTheBestFeedAndPlaysItsVariantsBestFirst() {
-        var played: Pair<PlayPlan, String>? = null
-        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en"), Feed(tsn, FeedKind.Broadcaster, "en", "TSN"))), onPlay = { plan, name -> played = plan to name })
+        var played: Triple<PlayPlan, String, Feed>? = null
+        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en"), Feed(tsn, FeedKind.Broadcaster, "en", "TSN"))), onPlay = { plan, name, feed -> played = Triple(plan, name, feed) })
 
         compose.onNodeWithTag("play").assertIsFocused()
         compose.onNodeWithTag("play-label").assertTextContains("Canadiens vs Maple Leafs · English")
         compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · 2 Feeds")
         compose.onNodeWithTag("play").performClick()
         compose.waitUntil { played != null }
-        val (plan, name) = played!!
+        val (plan, name, feed) = played!!
         assertEquals("Canadiens at Maple Leafs", name)
+        assertEquals(event, feed.channel)
         // The HD variant leads, the SD one its Backup, as watching the Channel would.
         assertEquals(12L, plan.version.listingId)
         assertEquals(listOf(12L, 12L, 11L, 11L), listOf(plan.version.listingId) + plan.version.backups.map { it.listingId })
@@ -101,7 +102,7 @@ class GameScreenTest {
 
     @Test fun theFeedsAreListedWithTheirVariantsAndAVariantRowPlaysFromIt() {
         var played: PlayPlan? = null
-        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en"), Feed(tsn, FeedKind.Broadcaster, "en", "TSN"))), onPlay = { plan, _ -> played = plan })
+        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en"), Feed(tsn, FeedKind.Broadcaster, "en", "TSN"))), onPlay = { plan, _, _ -> played = plan })
 
         compose.onNodeWithText("English · 2").assertExists()
         compose.onNodeWithText("Event channel").assertExists()
@@ -122,7 +123,7 @@ class GameScreenTest {
         val plan = PlayPlan(TitleId.Unmatched(TitleKind.Movie, 77), version, listOf("en"), listOf(version))
         var played: Pair<PlayPlan, String>? = null
         compose.setContent {
-            GameScreen(GameFeeds(over, emptyList()), deviceProfile = { stick }, planFor = ::planFor, onPlay = { p, n -> played = p to n }, replayFor = { replay }, replayPlanFor = { plan })
+            GameScreen(GameFeeds(over, emptyList()), deviceProfile = { stick }, planFor = ::planFor, onPlay = { _, _, _ -> }, replayFor = { replay }, replayPlanFor = { plan }, onPlayReplay = { p, n -> played = p to n })
         }
 
         compose.waitUntil { compose.onAllNodesWithTag("replay").fetchSemanticsNodes().isNotEmpty() }
@@ -137,7 +138,7 @@ class GameScreenTest {
 
     @Test fun withNoFeedPlayIsDisabledAndSaysNoStreamWasFound() {
         var played = 0
-        open(GameFeeds(game, emptyList()), onPlay = { _, _ -> played++ })
+        open(GameFeeds(game, emptyList()), onPlay = { _, _, _ -> played++ })
 
         compose.onNodeWithTag("play").assertIsFocused()
         compose.onNodeWithTag("play").performClick()
@@ -148,5 +149,40 @@ class GameScreenTest {
         assertNull(compose.onAllNodesWithText("Feeds").fetchSemanticsNodes().firstOrNull())
         // Without a Replay in the catalog, no Replay row either.
         assertNull(compose.onAllNodesWithTag("replay-title").fetchSemanticsNodes().firstOrNull())
+    }
+
+    @Test fun aDroppedFeedListsLastInItsOwnGroupMarkedAndPlayStartsTheNextOne() {
+        var played: Feed? = null
+        val rds = Channel("ca fr: rds", "RDS", "CA FR", null, false, listOf(ChannelVariant(31, "CA FR: RDS", null, false)))
+        open(
+            GameFeeds(game, listOf(Feed(tsn, FeedKind.Broadcaster, "en", "TSN"), Feed(rds, FeedKind.Broadcaster, "fr", "RDS"), Feed(event, FeedKind.EventChannel, "en", dropped = true))),
+            onPlay = { _, _, feed -> played = feed },
+        )
+
+        compose.onNodeWithTag("play-label").assertTextContains("TSN · English")
+        // The dropped Feed is not counted.
+        compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · 2 Feeds")
+        compose.onNodeWithText("English · 1").assertExists()
+        compose.onNodeWithText("Français · 1").assertExists()
+        compose.onNodeWithText("Not this game · 1").assertExists()
+        compose.onNodeWithText("Event channel · Not this game").assertExists()
+        // The groups come in rank order: the dropped one after the languages.
+        val headings = listOf("English · 1", "Français · 1", "Not this game · 1").map { compose.onNodeWithText(it).fetchSemanticsNode().positionInRoot.y }
+        assertEquals(headings, headings.sorted())
+        compose.onNodeWithTag("play").performClick()
+        compose.waitUntil { played != null }
+        assertEquals(tsn, played!!.channel)
+    }
+
+    @Test fun withEveryFeedDroppedPlayIsDisabledAndTheFeedsStayListed() {
+        var played = 0
+        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en", dropped = true))), onPlay = { _, _, _ -> played++ })
+
+        compose.onNodeWithTag("play").performClick()
+        compose.waitForIdle()
+        assertEquals(0, played)
+        compose.onNodeWithTag("play-label").assertTextContains("No stream found")
+        compose.onNodeWithTag("game-header").assertTextContains("NHL · Live · No stream found")
+        compose.onNodeWithText("Not this game · 1").assertExists()
     }
 }

@@ -230,7 +230,7 @@ class ReplaysTest {
         library.saveProgress(plan, 600_000, 7_200_000)
         assertEquals(600_000L, library.replayPlayPlan(replay, listOf("en")).from)
         // It never joins Continue watching, which shows Titles.
-        assertTrue(library.homeRows(listOf("en"), "en", "CA", now).none { it is HomeRow.ContinueWatching })
+        assertTrue(library.homeRows(listOf("en"), "en", "CA", emptyList(), now).none { it is HomeRow.ContinueWatching })
     }
 
     @Test fun `Search finds every Replay by name, highlights shows too, newest first`() = runBlocking {

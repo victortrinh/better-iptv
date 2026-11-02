@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LiveCountry
@@ -107,12 +108,12 @@ private fun Root(app: BetterIptvApp) {
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
-        // The Game whose page is open, and which card on Live opened it.
+        // The Game whose page is open, and which card on Live or Home opened it.
         var openedGame by remember { mutableStateOf<OpenedGame?>(null) }
         // The country whose Channels screen is open, from Live's Channels row, and what that screen keeps while a Channel plays.
         var browsing by remember { mutableStateOf<LiveCountry?>(null) }
         val channels = remember { ChannelsState() }
-        // The card Back from a Title or Channel returns to, on Home, a Titles tab or Live.
+        // The card Back from a Title, Game or Channel returns to, on Home, a Titles tab or Live.
         var returnedTo by remember { mutableStateOf<RowCard?>(null) }
         // The screen was reached by picking its tab, which keeps focus there.
         var byTab by remember { mutableStateOf(false) }
@@ -143,6 +144,14 @@ private fun Root(app: BetterIptvApp) {
         val country = browsing
         if (now != null) {
             BackHandler { playing = null }
+            // Plays another of the Game's Feeds, a new plan for its Channel, as the Game page's Play does.
+            val playFeed = { entry: GameFeeds, feed: Feed ->
+                scope.launch {
+                    val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
+                    if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed))
+                }
+                Unit
+            }
             PlayerScreen(
                 app.library, now.plan, now.name, settings,
                 deviceProfile = { readDeviceProfile(context) },
@@ -150,6 +159,21 @@ private fun Root(app: BetterIptvApp) {
                 inARow = now.inARow,
                 onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
                 onEnded = { playing = null },
+                playingFeed = now.game,
+                onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
+                onNotThisGame = {
+                    now.game?.let { game ->
+                        scope.launch {
+                            val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages, settings.region)
+                            // The Game page under the player lists the Feed last and marked when Back returns to it.
+                            if (openedGame?.entry?.key == updated.key) openedGame = openedGame?.copy(entry = updated)
+                            // Only while the player still plays what was dropped: Back meanwhile must not reopen it.
+                            if (playing != now) return@launch
+                            val next = updated.best
+                            if (next == null) playing = null else playFeed(updated, next)
+                        }
+                    }
+                },
             )
         } else if (openedGame != null) {
             val game = openedGame!!
@@ -162,9 +186,10 @@ private fun Root(app: BetterIptvApp) {
                 game.entry,
                 deviceProfile = { readDeviceProfile(context) },
                 planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
-                onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed)) },
                 replayFor = { app.library.gameReplay(it) },
                 replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
+                onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
             )
         } else if (country != null) {
             BackHandler {
@@ -175,7 +200,7 @@ private fun Root(app: BetterIptvApp) {
         } else when (val title = opened) {
             null -> when (tab) {
                 Browse.Home -> HomeScreen(
-                    app.library, contentLanguages, appLanguage, settings.region, home,
+                    app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, home,
                     restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,
@@ -185,6 +210,8 @@ private fun Root(app: BetterIptvApp) {
                         returnedTo = card
                         watch(channel)
                     },
+                    // Back from the Game's page comes back to its card, or to what took its place once it ended.
+                    onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
                 )
                 Browse.Live -> LiveScreen(
                     // In Settings' order, which the League rows follow.
@@ -255,12 +282,13 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 
 /**
  * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
- * row to start by itself since a key was pressed.
+ * row to start by itself since a key was pressed; for a Game's Feed, which [game] and Feed, so the
+ * player's menu key lists the others.
  */
-private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0)
+private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null)
 
 /** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
 private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)
 
-/** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live opened it. */
+/** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live or Home opened it. */
 private data class OpenedGame(val entry: GameFeeds, val card: RowCard)

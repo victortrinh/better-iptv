@@ -41,6 +41,11 @@
 # quality words are gone; the country tag (`UK:`, `CA FR:`, two capitals before the colon) stays
 # part of the Channel's identity.
 #
+# The event time zone is the zone the Provider writes Event channel times in (`(2026-10-29
+# 18:00:30)`, `@ Oct 27 7:00 PM`) when the name states none; a zone the name states (`(GMT)`,
+# `EEST`, `UK Sun 9 Feb 3:00pm`) wins. One line, a zone id (`America/Toronto`). It decides when an
+# Event channel counts as finished, which Game it matches and what time its card shows.
+#
 # Country aliases are the codes before the bar at the start of a live Category's name (`AR| `,
 # `EX YU| `) that aren't a country: the whole code, as `code | name`. Each gets its own card in the
 # Channel browser, named as written here, after the countries. A code that is neither a country
@@ -279,6 +284,12 @@ HEVC        | hevc                      # "ʰᵉᵛᶜ"
 60FPS
 (SAT)
 ◉
+
+[event time zone]
+
+# The surveyed Provider's "@ Oct 24 19:00" and "(2026-10-29 18:00:30)" are Eastern time: "NHL:
+# Leafs vs Habs @ Oct 24 19:00 :TSN+ 120" is the 7 PM puck drop in Toronto.
+America/Toronto
 
 [country aliases]
 

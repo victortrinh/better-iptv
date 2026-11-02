@@ -45,6 +45,8 @@
     <string name="live_empty">Your Favourites show up here. Press the menu key on a Channel in Search to add one.</string>
     <string name="row_live_now">Live now</string>
     <string name="row_today">Today</string>
+    <!-- Live's row of Event channels no Game matched: tennis, snooker, college games. -->
+    <string name="row_more_live_events">More live events</string>
     <!-- A Game in progress: on its card, its page and the info under its rail. Never a score. -->
     <string name="game_live">Live</string>
     <string name="game_no_stream">No stream found</string>
@@ -57,6 +59,12 @@
     <string name="feeds_title">Feeds</string>
     <string name="feed_event_channel">Event channel</string>
     <string name="feed_broadcaster">Broadcaster · %1$s</string>
+    <string name="feed_league_network">League network · %1$s</string>
+    <!-- The row that drops the playing Feed for this Game on this device, and the mark on a dropped Feed. -->
+    <string name="feed_not_this_game">Not this game</string>
+    <string name="feed_not_this_game_next">Drops this Feed for this Game and plays the next</string>
+    <string name="feed_not_this_game_last">Drops this Feed for this Game; none is left, so the Game page returns</string>
+    <string name="player_feeds_hint">≡ Feeds</string>
     <string name="row_channels">Channels</string>
     <!-- Live's row of Sports replays, after the League rows. -->
     <string name="row_replays">Replays</string>

@@ -10,7 +10,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /** The Live tab's rows, seen through the Library after a Sync: the Favourites row and the Channels row, until the sports hub's rows join them. */
@@ -41,8 +40,8 @@ class LiveRowsTest {
     /** The Favourites row's Channels, by key (the country tag and name without the Provider's quality words). */
     private fun List<HomeRow>.favourites() = filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
-    /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atOffset(ZoneOffset.UTC))
+    /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(PrefixTable.bundled().eventTimeZone))
 
     @Test fun `without Favourites the Live tab has only the Channels row`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")

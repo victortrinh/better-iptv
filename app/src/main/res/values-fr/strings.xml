@@ -19,6 +19,7 @@
     <string name="live_empty">Vos favoris apparaîtront ici. Appuyez sur la touche menu sur une chaîne dans la recherche pour en ajouter une.</string>
     <string name="row_live_now">En ce moment</string>
     <string name="row_today">Aujourd\'hui</string>
+    <string name="row_more_live_events">Autres événements en direct</string>
     <string name="game_live">En direct</string>
     <string name="game_no_stream">Aucun flux trouvé</string>
     <string name="game_matchup">%1$s c. %2$s</string>
@@ -29,6 +30,11 @@
     <string name="feeds_title">Flux</string>
     <string name="feed_event_channel">Chaîne d\'événement</string>
     <string name="feed_broadcaster">Diffuseur · %1$s</string>
+    <string name="feed_league_network">Chaîne de la ligue · %1$s</string>
+    <string name="feed_not_this_game">Pas ce match</string>
+    <string name="feed_not_this_game_next">Écarte ce flux pour ce match et lance le suivant</string>
+    <string name="feed_not_this_game_last">Écarte ce flux pour ce match; il n\'en reste aucun autre, la page du match revient</string>
+    <string name="player_feeds_hint">≡ Flux</string>
     <string name="row_channels">Chaînes</string>
     <string name="row_replays">Reprises</string>
     <string name="replay">Reprise</string>

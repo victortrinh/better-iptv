@@ -62,10 +62,12 @@ class Library private constructor(
     /** Bumped when a Sync or Matches change the catalog: the search index is rebuilt in the background, the old one serving meanwhile. */
     private val catalogGeneration = AtomicInteger()
     private val _catalogChanges = MutableStateFlow(0)
+    private val catalogChangeCount = AtomicInteger()
 
     /**
-     * The catalog's generation, bumped once a Sync's new catalog is in place and again when Matches
-     * regroup its Titles: screens read their Title counts again when it changes (#271).
+     * Bumped once a Sync's new catalog is in place, again when Matches regroup its Titles, and when
+     * fresh Games land behind a read ([games]): screens read their Title counts and rows again when
+     * it changes (#271, #256). Not the catalog's generation itself, which the search index follows.
      */
     val catalogChanges: StateFlow<Int> = _catalogChanges.asStateFlow()
     /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
@@ -88,6 +90,9 @@ class Library private constructor(
      * read from [unsavedCharts] or [unsavedMetadata] as if it were stored.
      */
     private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
+    /** The thread asking the cloud for Games behind a read that doesn't wait for them ([games]). */
+    private val gamesFetches = Executors.newSingleThreadExecutor { Thread(it, "library-games").apply { isDaemon = true } }
+    private val gamesFetching = AtomicBoolean()
     private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
     private val unsavedGames = ConcurrentHashMap<String, StoredGames>()
     private val unsavedMetadata = ConcurrentHashMap<Pair<String, TitleId.Tmdb>, StoredMetadata>()
@@ -178,7 +183,7 @@ class Library private constructor(
                             val tallies = HashMap<String?, IntArray>()
                             client.liveListings { id, name, categoryId, image, guideId ->
                                 val category = liveCategories[categoryId].orEmpty()
-                                val start = eventStart(name, now)
+                                val start = eventStart(name, now, prefixTable.eventTimeZone)
                                 val listing = prefixTable.describeLive(name, category)
                                 val tally = tallies.getOrPut(categoryId) { IntArray(2) }
                                 tally[0]++
@@ -238,7 +243,13 @@ class Library private constructor(
     }
 
     private fun catalogChanged() {
-        _catalogChanges.value = catalogGeneration.incrementAndGet()
+        catalogGeneration.incrementAndGet()
+        changed()
+    }
+
+    /** Tells the screens to read again ([catalogChanges]), without a new catalog generation. */
+    private fun changed() {
+        _catalogChanges.value = catalogChangeCount.incrementAndGet()
     }
 
     /**
@@ -916,7 +927,8 @@ class Library private constructor(
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
 
     /**
-     * The home screen's rows: Continue watching, then the Charts for the Viewer's [region] (Top
+     * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
+     * are in progress with a Feed, as on the Live tab; no row at all otherwise), then the Charts for the Viewer's [region] (Top
      * movies, Top shows), then New on your service (Titles among the most recently added, most
      * popular on TMDB first), then TMDB's trending this week, then the Viewer's Favourites (in the order they were added; finished
      * Event channels left out), then one row per TMDB genre, its most common first. Browse rows and
@@ -928,10 +940,13 @@ class Library private constructor(
      * ([ScreenRows]); a genre row left with too few Titles gives its place to the next genre. Rows
      * with no Titles are left out.
      */
-    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
-        homeRows(contentLanguages, appLanguage, region, Instant.now())
+    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, leagues: List<League> = emptyList()): List<HomeRow> =
+        homeRows(contentLanguages, appLanguage, region, leagues, Instant.now())
 
-    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, leagues: List<League>, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+        // Home gets one Games row, Live now, while a Game with a Feed is on (docs/roadmap.md, M3): the same Games and Feeds as the
+        // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
+        val liveNow = matchedGames(leagues, contentLanguages, region, now, waitForCloud = false).current.filter { it.game.state == GameState.Live && it.best != null }
         val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
         // Movies by how far the Viewer got, Shows by the Episode they're at; a Show they Watched to its end is left out.
         val resumes = store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
@@ -984,6 +999,7 @@ class Library private constructor(
                     ),
                 )
             }
+            if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
             if (trending.isNotEmpty()) add(HomeRow.Chart(ChartList.Trending, null, trending.map { card(it) }))
@@ -998,14 +1014,20 @@ class Library private constructor(
      * day); one row per League with its Games of the week ahead; then the Viewer's Favourites, in the
      * order they were added, finished Event channels left out; then the Channel browser's countries
      * ([liveCountries], for the [region] and [contentLanguages]). A Game shows once, in the highest row
-     * it fits, by start; a live Game with no Feed is hidden, an upcoming one with none is shown (its
-     * card disabled); a finished Game isn't shown. Rows with nothing are left out: a League with no
-     * Game in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when
-     * it fails) and their Feeds from the catalog ([matchFeeds]), ranked for the [contentLanguages].
-     * After the League rows, Replays: the Sports replays whose two teams are teams of the Leagues on
-     * (the teams the Leagues' Games name, finished ones included), newest first by the date in the
-     * name, then by when the Provider added them ([matchReplays]), at most [REPLAYS_ROW]; left out
-     * when none matches. More live events joins as its ticket lands.
+     * it fits, by start; a live Game with no Feed left (none, or every one marked "Not this game") is
+     * hidden, an upcoming one with none is shown (its card disabled); a finished Game isn't shown.
+     * After the League rows, More live events: the Event channels whose name gives a start within
+     * [MORE_LIVE_EVENTS_WITHIN] of now, either way, that no Game matched (a finished Game's included,
+     * since the schedule's state is trusted over the name's time; an Event channel of a League that
+     * is off is unmatched, so it shows here, the row being the catch-all for what no schedule covers;
+     * one marked `Live |` or `Next |` without a start isn't shown, its time being unknown), by start
+     * then the Provider's order, as Channels. Rows with nothing are left out: a League with no Game
+     * in seven days gets none. The Games come from [games] (the cloud's, or the kept copy when it
+     * fails) and their Feeds from the catalog ([matchedGames], run once for both the Game rows and
+     * More live events), ranked for the [contentLanguages]. After More live events, Replays: the
+     * Sports replays whose two teams are teams of the Leagues on (the teams the Leagues' Games name,
+     * finished ones included), newest first by the date in the name, then by when the Provider added
+     * them ([matchReplays]), at most [REPLAYS_ROW]; left out when none matches.
      */
     suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
         liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
@@ -1013,8 +1035,15 @@ class Library private constructor(
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
         val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
-        val schedule = games(leagues.map { it.key }, now)
-        val games = schedule.filter { it.state != GameState.Over }
+        val matchedGames = matchedGames(leagues, contentLanguages, region, now)
+        val matched = matchedGames.current
+        // An Event channel a Game matched, finished or not, is that Game's Feed, not one no Game matched.
+        val matchedEventChannels = matchedGames.all.flatMapTo(HashSet()) { entry -> entry.feeds.filter { it.kind == FeedKind.EventChannel }.map { it.channel.key } }
+        val moreLiveEvents = matchedGames.events
+            .mapNotNull { listing -> listing.start?.let { UnmatchedEventChannel(listing.channel, it) } }
+            .filter { it.channel.key !in matchedEventChannels && Duration.between(now, it.start).abs() <= MORE_LIVE_EVENTS_WITHIN }
+            .sortedBy { it.start }
+        val schedule = matchedGames.all.map { it.game }
         val replays = if (schedule.isEmpty()) emptyList() else {
             val teams = leagues.associateWith { league -> schedule.filter { it.league == league.key }.flatMap { listOf(it.home, it.away) } }.filterValues { it.isNotEmpty() }
             // Matched once per catalog and set of teams: the tab reads its rows every couple of minutes, and the catalog holds thousands of Replays.
@@ -1022,19 +1051,12 @@ class Library private constructor(
             matchedReplays?.takeIf { it.key == key }?.replays
                 ?: matchReplays(store.replays(withTeams = true), teams).take(REPLAYS_ROW).also { matchedReplays = MatchedReplays(key, it) }
         }
-        val matched = if (games.isEmpty()) emptyList() else {
-            val categories = store.liveCategories().associateBy { it.id }
-            val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
-                EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
-            }
-            matchFeeds(games, events, store.channelsNamed(games.flatMap { it.broadcasters }), contentLanguages, now)
-        }
         val today = now.atZone(zone).toLocalDate()
         val weekAhead = now + WEEK_AHEAD
         val shown = HashSet<String>()
         // A Game shows in the highest row it fits.
         fun row(fits: (GameFeeds) -> Boolean): List<GameFeeds> = matched.filter { it.key !in shown && fits(it) }.also { taken -> taken.forEach { shown += it.key } }
-        val liveNow = row { it.game.state == GameState.Live && it.feeds.isNotEmpty() }
+        val liveNow = row { it.game.state == GameState.Live && it.best != null }
         val todayRow = row { it.game.state == GameState.Upcoming && it.game.start.atZone(zone).toLocalDate() == today }
         val perLeague = leagues.mapNotNull { league ->
             row { it.game.league == league.key && it.game.state == GameState.Upcoming && it.game.start < weekAhead }.takeIf { it.isNotEmpty() }?.let { HomeRow.LeagueGames(league, it) }
@@ -1043,6 +1065,7 @@ class Library private constructor(
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             if (todayRow.isNotEmpty()) add(HomeRow.Today(todayRow))
             addAll(perLeague)
+            if (moreLiveEvents.isNotEmpty()) add(HomeRow.MoreLiveEvents(moreLiveEvents))
             if (replays.isNotEmpty()) add(HomeRow.Replays(replays))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             if (countries.isNotEmpty()) add(HomeRow.Channels(countries))
@@ -1086,6 +1109,55 @@ class Library private constructor(
         val version = Version(replay.listingId, replay.name, prefixTable.describe(replay.name, replay.category).attributes)
         val stopped = stopped(id)
         PlayPlan(id, version, contentLanguages, listOf(version), stopped?.position ?: 0, remembered = rememberedTracks(), length = stopped?.duration)
+    }
+
+    /**
+     * Marks [feed] "Not this game" for [entry]'s Game on this device (CONTEXT.md: Feed), and answers
+     * the entry as the Live tab will now list it: the Feed kept, last and [Feed.dropped], the rest
+     * ranked for the [contentLanguages] and [region] as before, so the caller plays [GameFeeds.best]
+     * next. The mark is kept by Game and Channel, so it survives Syncs and holds for every variant
+     * of the Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]). Once every
+     * named Feed is dropped, the League network joins, as it does for a Game with none.
+     */
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION): GameFeeds = withContext(Dispatchers.IO) {
+        val now = Instant.now()
+        store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
+        // Matched again, so the League network joins once every named Feed is dropped.
+        matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
+            ?: entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
+    }
+
+    /**
+     * The Games of the [leagues] on, every one the device has (finished ones too), each with its
+     * Feeds from the catalog ([matchedFeeds]) ranked for the [contentLanguages] and [region], by
+     * start, with the Event channels the matching looked at: what the Live tab's Game rows and
+     * Home's Live now row are made of ([MatchedGames.current]), and what More live events and
+     * Replays read. The Games come from [games] (the cloud's, or the kept copy when it fails or
+     * when the read doesn't [waitForCloud]); with no League on, or none the device has Games for,
+     * none are matched.
+     */
+    private suspend fun matchedGames(leagues: List<League>, contentLanguages: List<String>, region: String, now: Instant, waitForCloud: Boolean = true): MatchedGames =
+        matchedFeeds(games(leagues.map { it.key }, now, waitForCloud), contentLanguages, region, now)
+
+    /**
+     * Each of [games] with its Feeds from the catalog ([matchFeeds]): the Event channels on around
+     * [now], the Channels of the Games' Broadcasters and League networks under every spelling, and
+     * the Feeds marked "Not this game" on this device, ranked for the [contentLanguages] and [region].
+     */
+    private fun matchedFeeds(games: List<Game>, contentLanguages: List<String>, region: String, now: Instant): MatchedGames {
+        val categories = store.liveCategories().associateBy { it.id }
+        val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
+            EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
+        }
+        if (games.isEmpty()) return MatchedGames(emptyList(), events)
+        val dropped = store.droppedFeeds(games.map { "${it.league}/${it.id}" })
+        return MatchedGames(matchFeeds(games, events, store.channelsNamed(broadcasterChannelNames(games)), contentLanguages, now, dropped, region), events)
+    }
+
+    /** What [matchedGames] found: [all] the Games with their Feeds, finished ones included, and the Event channels in the matching window. */
+    internal class MatchedGames(val all: List<GameFeeds>, val events: List<EventChannelListing>) {
+        /** The Games not over: what the Game rows show. */
+        val current: List<GameFeeds> get() = all.filter { it.game.state != GameState.Over }
     }
 
     /**
@@ -1573,27 +1645,53 @@ class Library private constructor(
      * next time. When the cloud can't answer, or has no copy of a League yet, the kept copy stands
      * however old; a League with none is left out. The Leagues on are the caller's to say: the
      * Live tab asks for them when it opens and every couple of minutes while a Games row shows.
+     * A read that doesn't [waitForCloud] (Home's, whose other rows mustn't wait on the network)
+     * answers with the kept copies at once and asks the cloud behind it; once fresh copies land,
+     * [catalogChanges] tells the screen to read again. The cloud is given [GAMES_CALL_TIMEOUT].
      */
-    suspend fun games(leagues: List<String>, now: Instant = Instant.now()): List<Game> = withContext(Dispatchers.IO) {
+    suspend fun games(leagues: List<String>, now: Instant = Instant.now(), waitForCloud: Boolean = true): List<Game> = withContext(Dispatchers.IO) {
         val asked = leagues.distinct()
         if (asked.isEmpty()) return@withContext emptyList()
         val stored = store.games(asked)
         val kept = asked.mapNotNull { league -> (unsavedGames[league] ?: stored[league])?.let { league to it } }.toMap()
         var copies = kept
         if (cloud != null && now.isAfter(cloudRetryAt) && asked.any { !(kept[it]?.fetchedAt?.isAfter(now - GAMES_FRESH_FOR) ?: false) }) {
-            try {
-                val answered = Games.leagues(cloud.games(asked)).mapValues { (_, body) -> StoredGames(body, now) }
-                answered.forEach { (league, copy) -> unsavedGames[league] = copy }
-                // Saved without waiting on a Sync.
-                saveLater(after = { answered.forEach { (league, copy) -> unsavedGames.remove(league, copy) } }) {
-                    answered.forEach { (league, copy) -> store.saveGames(league, copy.body, now) }
+            if (waitForCloud) {
+                copies = kept + fetchGames(cloud, asked, now).orEmpty()
+            } else if (gamesFetching.compareAndSet(false, true)) {
+                try {
+                    gamesFetches.execute {
+                        try {
+                            if (!fetchGames(cloud, asked, now).isNullOrEmpty()) changed()
+                        } finally {
+                            gamesFetching.set(false)
+                        }
+                    }
+                } catch (e: RejectedExecutionException) {
+                    // Closing: the kept copies are the answer.
+                    gamesFetching.set(false)
                 }
-                copies = kept + answered
-            } catch (e: CloudException) {
-                cloudRetryAt = now + CLOUD_RETRY_AFTER
             }
         }
         copies.flatMap { (league, copy) -> Games.parse(league, copy.body) }.sortedWith(compareBy({ it.start }, { it.league }, { it.id }))
+    }
+
+    /**
+     * Asks [cloud] for the Games of [asked] and keeps each League's answer for next time, saved
+     * without waiting on a Sync; null when it couldn't answer, which holds the cloud off for a while.
+     */
+    private fun fetchGames(cloud: CloudClient, asked: List<String>, now: Instant): Map<String, StoredGames>? {
+        return try {
+            val answered = Games.leagues(cloud.games(asked, GAMES_CALL_TIMEOUT)).mapValues { (_, body) -> StoredGames(body, now) }
+            answered.forEach { (league, copy) -> unsavedGames[league] = copy }
+            saveLater(after = { answered.forEach { (league, copy) -> unsavedGames.remove(league, copy) } }) {
+                answered.forEach { (league, copy) -> store.saveGames(league, copy.body, now) }
+            }
+            answered
+        } catch (e: CloudException) {
+            cloudRetryAt = now + CLOUD_RETRY_AFTER
+            null
+        }
     }
 
     /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
@@ -1617,6 +1715,7 @@ class Library private constructor(
     private fun candidates(listing: StoredListing) = Candidate(listing, prefixTable.describe(listing.name, listing.category).attributes)
 
     override fun close() {
+        gamesFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.
         saves.shutdown()
         saves.awaitTermination(SAVES_ON_CLOSE_SECONDS, TimeUnit.SECONDS)
@@ -1672,11 +1771,18 @@ class Library private constructor(
         private val WEEK_AHEAD: Duration = Duration.ofDays(7)
         /** The Event channels read for matching: a day behind now (a live Game named for yesterday evening, in a zone ahead) and past the week ahead. */
         private val EVENT_WINDOW_BEHIND: Duration = Duration.ofDays(1)
+
+        /** How far from now an unmatched Event channel's start may be for More live events (docs/roadmap.md, M3): an evening's events, not a wall of stale or far-off ones. */
+        internal val MORE_LIVE_EVENTS_WITHIN: Duration = Duration.ofHours(6)
         private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
+        /** A "Not this game" mark is forgotten this long after it was made: its Game is long over, and the rows ask for a week ahead at most. */
+        private val DROPPED_KEPT_FOR: Duration = Duration.ofDays(14)
         /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
+        /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
+        private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
         /** How long closing waits for the answers still to be saved. */
         private const val SAVES_ON_CLOSE_SECONDS = 5L
         /** How often a read waiting on a save checks that no Sync has taken the writer. */

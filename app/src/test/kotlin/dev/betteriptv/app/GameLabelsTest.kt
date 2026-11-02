@@ -35,6 +35,11 @@ class GameLabelsTest {
         Game("nhl", "1", Instant.parse(start), state, home = leafs, away = habs, broadcasters = broadcasters)
     private fun channel(name: String, country: String? = "US") = Channel("$country: $name", name, country, null, false, listOf(ChannelVariant(1, name, Quality.HD, false)))
 
+    @Test fun anEventChannelsStartReadsAsAGamesDoesTheTimeAloneTodayAndTheWeekdayLater() {
+        assertEquals("7:00 PM", context.startCaption(Instant.parse("2026-11-02T00:00:00Z"), now, toronto))
+        assertEquals("Mon 7:00 PM", context.startCaption(Instant.parse("2026-11-03T00:00:00Z"), now, toronto))
+    }
+
     @Test fun aGameOnNowSaysLiveAndOneTonightSaysWhenItStartsInTheDevicesClock() {
         assertEquals("Live", context.gameCaption(game("2026-11-01T18:00:00Z", GameState.Live), now, toronto))
         // 7 PM in Toronto, midnight UTC: still Sunday for the Viewer.
@@ -66,6 +71,10 @@ class GameLabelsTest {
             context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("Sportsnet", "TSN")), feeds)),
         )
         assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "No stream found"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), emptyList())))
+        // A dropped Feed is neither counted nor named.
+        val dropped = listOf(feeds[0], feeds[1].copy(dropped = true))
+        assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "1 Feed"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z", broadcasters = listOf("TSN")), dropped)))
+        assertEquals(CardInfo.Game("NHL · Canadiens at Maple Leafs", "No stream found"), context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), dropped.map { it.copy(dropped = true) })))
     }
 
     @Test fun theLabelUnderPlayNamesTheFeedAndItsLanguage() {
@@ -73,5 +82,12 @@ class GameLabelsTest {
         assertEquals("ARENA 4 · Language not named", context.feedLabel(Feed(channel("ARENA 4", null), FeedKind.EventChannel, null)))
         assertEquals("Event channel", context.feedKind(Feed(channel("ARENA 4", null), FeedKind.EventChannel, null)))
         assertEquals("Broadcaster · TSN", context.feedKind(Feed(channel("TSN", "CA"), FeedKind.Broadcaster, "en", "TSN")))
+        assertEquals("League network · NHL Network", context.feedKind(Feed(channel("NHL Network"), FeedKind.LeagueNetwork, "en", "NHL Network")))
+        assertEquals("Event channel · Not this game", context.feedKind(Feed(channel("ARENA 4", null), FeedKind.EventChannel, null, dropped = true)))
+    }
+
+    @Test fun thePlayersFeedRowsSayWhatEachFeedIsAndWhichIsPlaying() {
+        assertEquals("Playing · Broadcaster · TSN · English", context.feedNote(Feed(channel("TSN", "CA"), FeedKind.Broadcaster, "en", "TSN"), playing = true))
+        assertEquals("Event channel · Language not named", context.feedNote(Feed(channel("ARENA 4", null), FeedKind.EventChannel, null), playing = false))
     }
 }

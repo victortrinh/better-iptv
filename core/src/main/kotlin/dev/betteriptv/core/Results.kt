@@ -79,7 +79,7 @@ sealed interface HomeRow {
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 
-    /** On Live: the Games in progress that have a Feed, by start. A live Game with no Feed is left out of the tab. */
+    /** On Live, and on Home after Continue watching: the Games in progress that have a Feed, by start. A live Game with no Feed is left out. */
     data class LiveNow(val games: List<GameFeeds>) : HomeRow
 
     /** On Live: the Games still to start today (the device's day), by start, those with no Feed shown disabled. */
@@ -88,9 +88,22 @@ sealed interface HomeRow {
     /** On Live: [league]'s Games of the week ahead not shown in a row above, by start. A League with none gets no row. */
     data class LeagueGames(val league: League, val games: List<GameFeeds>) : HomeRow
 
+    /**
+     * On Live, after the League rows: the Event channels on now or soon that no Game matched
+     * (tennis, snooker, handball, college games no schedule knows), by start. Left out when empty.
+     */
+    data class MoreLiveEvents(val events: List<UnmatchedEventChannel>) : HomeRow
+
     /** On Live, after the League rows: the Sports replays of the Leagues on (CONTEXT.md: Sports replay), newest first. Left out when there is none. */
     data class Replays(val replays: List<LeagueReplay>) : HomeRow
 }
+
+/**
+ * An Event channel no Game matched, on the More live events row: the merged [channel], watched as
+ * any Channel is (its best variant first), and when its name says its event [start]s, as
+ * [eventStart] reads it, for the time under the rail.
+ */
+data class UnmatchedEventChannel(val channel: Channel, val start: Instant)
 
 /**
  * Which Chart a [HomeRow.Chart] is: a Top 10, or TMDB's trending this week, mixed on Home and one
