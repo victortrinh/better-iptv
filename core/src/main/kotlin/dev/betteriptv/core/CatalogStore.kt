@@ -128,6 +128,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS episode_progress (title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, position INTEGER NOT NULL, " +
                 "duration INTEGER, watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (title_key, season, number))",
         )
+        // What the Viewer chose while a Title played (TitleChoices as JSON), kept by Title so it outlives Syncs and carries to a Show's next Episode (#291).
+        execSQL("CREATE TABLE IF NOT EXISTS title_choices (title_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at INTEGER NOT NULL)")
     }
     private val reader: SQLiteConnection = driver.open(path)
 
@@ -1353,6 +1355,25 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             buildList {
                 while (it.step()) add(StoredEpisodeProgress(EpisodeNumber(it.getInt(0), it.getInt(1)), it.getLong(2), if (it.isNull(3)) null else it.getLong(3), it.getLong(4) != 0L))
             }
+        }
+    }
+
+    /** Keeps what the Viewer chose while [id] played ([body]: TitleChoices as JSON). */
+    fun saveTitleChoices(id: TitleId, body: String, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO title_choices VALUES (?, ?, ?)").use {
+            it.bindText(1, key(id))
+            it.bindText(2, body)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /** What the Viewer chose while [id] last played, as JSON; null when they never chose anything in it. */
+    fun titleChoices(id: TitleId): String? = synchronized(reader) {
+        reader.prepare("SELECT body FROM title_choices WHERE title_key = ?").use {
+            it.bindText(1, key(id))
+            if (it.step()) it.getText(0) else null
         }
     }
 

@@ -17,7 +17,6 @@ import dev.betteriptv.app.ui.components.NuageIconButton
 import dev.betteriptv.app.ui.components.NuageIcons
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -102,6 +101,9 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Engine
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.ChosenSubtitles
+import dev.betteriptv.core.ChosenTrack
+import dev.betteriptv.core.TitleChoices
 import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.Library
@@ -117,8 +119,10 @@ import kotlin.time.Duration.Companion.seconds
  * falls back to the VLC engine when Media3 can't open a file and to the Version's Backups when it is
  * dead. The Version playing is named when it starts; repeated buffering brings a one-tap suggestion
  * of a lower Version. Any key shows the player overlay (centre pauses once it shows; left and
- * right, like rewind and fast-forward, scrub: see [Scrub]), with Versions and Audio and subtitles,
- * where the Viewer picks Tracks, which are remembered for the next file, styles subtitles ([settings]' style, changed through
+ * right, like rewind and fast-forward, scrub: see [Scrub]; held, they scrub even over the overlay's
+ * buttons, which a tap moves between), with Versions and Audio and subtitles,
+ * where the Viewer picks Tracks, which are remembered for the next file and kept for the Title (with the delays, so resuming it
+ * starts the same; #291), styles subtitles ([settings]' style, changed through
  * [onSubtitleStyle]) and delays the sound or subtitles. The remote's Menu key opens the Versions
  * directly, with "Try other player"; while a Game's Feed plays ([playingFeed]) it opens the Game's
  * Feeds instead, the one playing noted, where picking another plays it ([onFeed], a new plan the
@@ -150,12 +154,19 @@ fun PlayerScreen(
     channel: Channel? = null,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // The programme on now on the Channel playing: the one Channel on screen, so its guide is asked for.
     LaunchedEffect(channel) { if (channel != null) library.guideOnScreen(listOf(channel)) }
     val guideChanges by library.guideChanges.collectAsState()
     val programme = remember(channel, guideChanges) { channel?.let { library.guide(it)?.now?.title } }
     val style by rememberUpdatedState(settings.subtitleStyle)
-    val session = remember(plan) { library.playback(plan, playerEngines(context, plan, library::rememberedTracks) { style }) }
+    // What the Viewer chose for this Title, kept as they choose: the engines read it as each file opens.
+    var choices by remember(plan) { mutableStateOf(plan.choices) }
+    fun choose(chosen: TitleChoices) {
+        choices = chosen
+        scope.launch { library.saveChoices(plan, chosen) }
+    }
+    val session = remember(plan) { library.playback(plan, playerEngines(context, plan, library::rememberedTracks, { choices }) { style }) }
     val state by session.state.collectAsState()
     var panel by remember(session) { mutableStateOf(Panel.None) }
     var overlay by remember(session) { mutableStateOf(false) }
@@ -167,10 +178,9 @@ fun PlayerScreen(
     var touched by remember(session) { mutableStateOf(false) }
     var atCredits by remember(session) { mutableStateOf(false) }
     var dismissed by remember(session) { mutableStateOf(false) }
-    var audioDelay by remember { mutableLongStateOf(0L) }
-    var subtitleDelay by remember { mutableLongStateOf(0L) }
+    val audioDelay = choices.audioDelay
+    val subtitleDelay = choices.subtitleDelay
     val screen = remember { FocusRequester() }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(session) {
         // Looked up as the Episode starts, so the overlay and the credits can offer it.
@@ -221,7 +231,7 @@ fun PlayerScreen(
     var shownSubtitle by remember(session) { mutableStateOf<ShownSubtitle?>(null) }
     val downloads = remember(session) { HashMap<String, ShownSubtitle>() }
     val downloadLanguages = remember(player, chosen) {
-        if (chosen == null) emptyList() else player?.tracks?.let { plan.downloadLanguages(it.subtitles, library.rememberedTracks()) }.orEmpty()
+        if (chosen == null) emptyList() else player?.tracks?.let { plan.downloadLanguages(it.subtitles, library.rememberedTracks(), choices) }.orEmpty()
     }
     val showDownloaded: (SubtitleOffer) -> Unit = { offer ->
         scope.launch {
@@ -232,13 +242,16 @@ fun PlayerScreen(
         }
     }
     LaunchedEffect(session, downloadLanguages.isNotEmpty()) {
-        if (downloadLanguages.isNotEmpty() && offers == null) offers = library.subtitleOffers(plan, plan.subtitleLanguages(library.rememberedTracks()))
+        if (downloadLanguages.isNotEmpty() && offers == null) offers = library.subtitleOffers(plan, plan.subtitleLanguages(library.rememberedTracks(), choices))
     }
     LaunchedEffect(chosen, offers) {
         val choice = chosen ?: return@LaunchedEffect
         val language = choice.downloaded
         if (language == null) shownSubtitle = null
-        else if (shownSubtitle?.offer?.language != language) offers?.firstOrNull { it.language == language }?.let(showDownloaded)
+        else if (shownSubtitle?.offer?.language != language) {
+            // The file the Viewer chose for this Title, when it is still offered; else the best in its language.
+            (offers?.firstOrNull { it.id == choice.downloadedOffer } ?: offers?.firstOrNull { it.language == language })?.let(showDownloaded)
+        }
     }
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
     MatchRefreshRate(player)
@@ -321,6 +334,7 @@ fun PlayerScreen(
                 return@onPreviewKeyEvent true
             }
             pressed++
+            val heldOnOverlay = overlay && suggested == null && card == null && player != null && !plan.live && event.nativeKeyEvent.repeatCount > 0
             when {
                 event.key == Key.Menu -> panel = when {
                     state is PlaybackState.Ended -> Panel.None
@@ -331,6 +345,11 @@ fun PlayerScreen(
                 // A Channel is live: there is nowhere to seek to.
                 event.key == Key.MediaRewind -> if (!plan.live) moveScrub(forward = false, event)
                 event.key == Key.MediaFastForward -> if (!plan.live) moveScrub(forward = true, event)
+                // With the overlay up, a tap of Left or Right moves between its buttons, but holding
+                // one scrubs all the same (#290): a Viewer who overshot holds Left while the overlay
+                // is still up from the last scrub, and expects the picture to go back.
+                heldOnOverlay && event.key == Key.DirectionLeft -> moveScrub(forward = false, event)
+                heldOnOverlay && event.key == Key.DirectionRight -> moveScrub(forward = true, event)
                 // With the overlay or a card up, its buttons take the keys.
                 overlay || suggested != null || card != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
@@ -428,22 +447,30 @@ fun PlayerScreen(
                 onDownloaded = { offer ->
                     player?.chooseSubtitles(null)
                     showDownloaded(offer)
+                    choose(choices.copy(subtitles = ChosenSubtitles.Downloaded(offer.id, offer.language)))
                     scope.launch { library.rememberSubtitles(offer.language) }
                 },
                 onAudio = { index, track ->
                     player?.chooseAudio(index)
+                    player?.tracks?.let { choose(choices.copy(audio = ChosenTrack(index, it.audio.size, track.language))) }
                     track.language?.let { scope.launch { library.rememberAudio(it) } }
                 },
                 onSubtitles = { index, track ->
                     shownSubtitle = null
                     player?.chooseSubtitles(index)
+                    when {
+                        track == null || index == null -> choose(choices.copy(subtitles = ChosenSubtitles.Off))
+                        // A Channel's captions: a Channel keeps no choices.
+                        track.isClosedCaptions -> Unit
+                        else -> player?.tracks?.let { choose(choices.copy(subtitles = ChosenSubtitles.Embedded(ChosenTrack(index, it.subtitles.size, track.language)))) }
+                    }
                     if (track == null) scope.launch { library.rememberSubtitles(null) }
                     else if (track.isClosedCaptions) scope.launch { library.rememberClosedCaptions() }
                     else track.language?.let { scope.launch { library.rememberSubtitles(it) } }
                 },
                 onStyle = onSubtitleStyle,
-                onAudioDelay = { audioDelay = it },
-                onSubtitleDelay = { subtitleDelay = it },
+                onAudioDelay = { choose(choices.copy(audioDelay = it)) },
+                onSubtitleDelay = { choose(choices.copy(subtitleDelay = it)) },
                 onClose = { panel = Panel.None },
             )
         }
@@ -812,6 +839,10 @@ private fun Overlay(
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
+    // A scrub held from one of the buttons brings focus back to Play/Pause, so OK after it pauses
+    // rather than pressing the button the first tap moved to. Read through a flow, not in the
+    // composition: a held key's repeats would otherwise recompose the overlay.
+    LaunchedEffect(Unit) { snapshotFlow { target() != null }.collect { if (it) play.requestFocus() } }
     // Read twice a second: the engines don't report their position as it moves.
     val now by produceState(Triple(player.position, player.buffered, player.isPlaying), player) {
         while (true) {
