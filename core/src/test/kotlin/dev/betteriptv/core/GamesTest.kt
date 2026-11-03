@@ -129,6 +129,30 @@ class GamesTest {
         assertEquals(arkansas, games.first().event?.aliases)
     }
 
+    @Test fun `a UFC card comes as one Game naming its main event's two fighters instead of teams, and one without two fighters is left out`() = runBlocking {
+        cloud.games(
+            "ufc",
+            fightCard("600061268", "2026-11-01T22:00:00Z", "2026-11-02T01:00:00Z", state = "live"),
+            fightCard("600061269", "2026-11-07T22:00:00Z", "2026-11-08T01:00:00Z", fighters = listOf("Ciryl Gane" to "Gane")),
+        )
+
+        val card = library.games(listOf("ufc"), now).single()
+        assertEquals("600061268", card.id)
+        assertEquals(GameState.Live, card.state)
+        assertNull(card.home)
+        assertNull(card.event)
+        assertEquals(emptyList<GameTeam>(), card.teams)
+        val fight = card.fight!!
+        assertEquals("UFC Fight Night: Cortes Acosta vs. Walker", fight.name)
+        assertEquals("UFC Fight Night", fight.shortName)
+        assertEquals(Instant.parse("2026-11-02T01:00:00Z"), fight.mainCard)
+        assertEquals(listOf("Waldo Cortes Acosta", "Johnny Walker"), fight.fighters.map { it.name })
+        assertEquals(listOf("Cortes Acosta", "Walker"), fight.fighters.map { it.shortName })
+        assertEquals(listOf("Waldo Cortes Acosta", "Cortes Acosta"), fight.fighters.first().aliases)
+        assertEquals("https://headshots.example/CortesAcosta.png", fight.fighters.first().headshot)
+        assertEquals(listOf("Paramount+"), card.broadcasters)
+    }
+
     @Test fun `the kept Games serve while the cloud fails, and a League never kept is left out`() = runBlocking {
         cloud.games("nhl", game("1", "2026-11-01T19:00:00Z", state = "live"), game("2", "2026-11-02T00:00:00Z"))
         library.games(listOf("nhl"), now)

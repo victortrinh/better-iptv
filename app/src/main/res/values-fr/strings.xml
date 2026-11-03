@@ -34,6 +34,10 @@
     <string name="game_session_round_3">3e tour</string>
     <string name="game_session_round_4">4e tour</string>
     <string name="game_session_final_round">Dernier tour</string>
+    <!-- A UFC card's main event, where a Game names its teams: the fighters by surname, the first-named first ("Gane vs. Hokit"). -->
+    <string name="game_fighters">%1$s c. %2$s</string>
+    <!-- When a UFC card's main card starts, after the prelims: "Main card 9:00 PM". -->
+    <string name="game_main_card">Carte principale %1$s</string>
     <plurals name="game_feeds">
         <item quantity="one">%1$d flux</item>
         <item quantity="other">%1$d flux</item>
@@ -242,6 +246,7 @@
     <string name="league_nascar">NASCAR Cup</string>
     <string name="league_pga">PGA Tour</string>
     <string name="league_lpga">LPGA</string>
+    <string name="league_ufc">UFC</string>
     <string name="settings_display">Affichage</string>
     <string name="settings_text_size">Taille du texte</string>
     <string name="settings_text_size_detail">Selon votre téléviseur et votre distance de l\'écran</string>

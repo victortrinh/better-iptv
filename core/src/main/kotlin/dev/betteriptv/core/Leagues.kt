@@ -13,6 +13,7 @@ package dev.betteriptv.core
  * same sport's other series or tours, whose Event channels name the League too ("NASCAR Whelen
  * Modified Tour at Martinsville Speedway", "Golf: Korn Ferry Tour Championship"): one naming any is
  * none of this League's Games.
+ * A fight-card League ([fights]: UFC, #316) has no teams either: its Games are fight cards ([GameFight]).
  */
 enum class League(
     val key: String,
@@ -20,6 +21,7 @@ enum class League(
     val network: String? = null,
     val events: Boolean = false,
     val otherSeries: List<String> = emptyList(),
+    val fights: Boolean = false,
 ) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
@@ -50,7 +52,8 @@ enum class League(
     Lpga(
         "lpga", listOf("LPGA", "LPGA Tour", "Golf"), network = "Golf Channel", events = true,
         otherSeries = listOf("Korn Ferry", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "Ladies European Tour", "European Tour", "Epson Tour"),
-    );
+    ),
+    Ufc("ufc", listOf("UFC"), network = "UFC", fights = true);
 
     companion object {
         /**

@@ -1,8 +1,9 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
- * fifteen team Leagues, whose Games are two teams', and the event Leagues (#310), whose Games have
- * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's its races, the PGA Tour's and the LPGA's a
- * tournament's rounds.
+ * fifteen team Leagues, whose Games are two teams', the event Leagues (#310), whose Games have
+ * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's its races, the PGA Tour's and the LPGA's
+ * a tournament's rounds, and UFC, a fight-card League (#316), whose Games are fight cards, named after their main
+ * event's two fighters.
  */
 export const LEAGUES = [
   "nhl",
@@ -24,6 +25,7 @@ export const LEAGUES = [
   "nascar",
   "pga",
   "lpga",
+  "ufc",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
@@ -36,6 +38,9 @@ export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar", "pga", "lpga"];
  * has, so a day of one costs two requests to the source, not one.
  */
 export const GOLF_LEAGUES: readonly League[] = ["pga", "lpga"];
+
+/** The fight-card Leagues: their Games have no teams, but a fight card ({@link GameFight}). */
+export const FIGHT_LEAGUES: readonly League[] = ["ufc"];
 
 export const isLeague = (value: unknown): value is League => typeof value === "string" && (LEAGUES as readonly string[]).includes(value);
 
@@ -77,10 +82,36 @@ export interface GameEvent {
 }
 
 /**
+ * One of a fight card's main-event fighters: their [name] (Waldo Cortes Acosta), [shortName] (the
+ * surname the card's name gives, Cortes Acosta), the names an Event channel may call them by in
+ * [aliases] (those two), and their [headshot] URL, which may not exist.
+ */
+export interface GameFighter {
+  name: string;
+  shortName: string;
+  aliases: string[];
+  headshot: string | null;
+}
+
+/**
+ * A fight card, a fight-card League's Game in place of two teams: its [name] (UFC 334: Gane vs.
+ * Hokit) and [shortName] (UFC 334) as the source gives them, when its [mainCard] starts (UTC ISO
+ * 8601), and its main event's two [fighters], in the name's order. Never another bout, a result or a record.
+ */
+export interface GameFight {
+  name: string;
+  shortName: string;
+  mainCard: string;
+  fighters: GameFighter[];
+}
+
+/**
  * A scheduled contest of a League (CONTEXT.md: Game): its [id] at the source, when it [start]s (UTC
- * ISO 8601; with [dayOnly], only its day is known yet, and [start] is noon US Eastern that day), its [state], both teams (a team League's) or its [event] (an event League's), and the
- * names of the national Broadcasters the source says carry it. The device finds its Feeds by the
- * teams' or the event's aliases and the Broadcasters' names (#254).
+ * ISO 8601; with [dayOnly], only its day is known yet, and [start] is noon US Eastern that day),
+ * its [state], both teams (a team League's), its [event] (an event League's) or its [fight] (a
+ * fight-card League's), and the names of the national Broadcasters the source says carry it. The
+ * device finds its Feeds by the teams', the event's or the fighters' aliases and the Broadcasters'
+ * names (#254).
  */
 export interface Game {
   id: string;
@@ -91,6 +122,7 @@ export interface Game {
   home?: GameTeam;
   away?: GameTeam;
   event?: GameEvent;
+  fight?: GameFight;
   broadcasters: string[];
 }
 
@@ -108,7 +140,7 @@ export interface Team {
 export interface ScheduleSource {
   /** The Games of [league] on [day] (`YYYY-MM-DD`, in the source's own reckoning of a day), as the source has them now. */
   games(league: League, day: string): Promise<Game[]>;
-  /** Every team of [league], read now and then for aliases and logos; none for an event League. */
+  /** Every team of [league], read now and then for aliases and logos; none for an event or fight-card League. */
   teams(league: League): Promise<Team[]>;
 }
 

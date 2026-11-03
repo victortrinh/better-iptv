@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { Espn } from "./espn";
-import { EVENT_LEAGUES, type Game, GOLF_LEAGUES, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
+import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, GOLF_LEAGUES, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /** A wanted League's current days are read again this often, so "Live" flips within minutes of a Game starting. */
 const CURRENT_FRESH_FOR = 5 * 60_000;
@@ -83,7 +83,7 @@ export async function games(env: Env, leagues: League[]): Promise<{ leagues: Lea
     };
     const fresh = [...byId.values()]
       .filter((game) => Date.parse(game.start) > now - KEEP_GAMES_FOR)
-      .map((game) => (game.event ? game : { ...game, home: complete(game.home), away: complete(game.away) }))
+      .map((game) => (game.event || game.fight ? game : { ...game, home: complete(game.home), away: complete(game.away) }))
       .sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
     answer.push({ league, games: fresh });
   }
@@ -150,8 +150,8 @@ export async function fillGames(env: Env): Promise<number> {
       }
     });
     const at = teamsFetchedAt.get(league) ?? -1;
-    // An event League has no teams to read.
-    if (!EVENT_LEAGUES.includes(league) && at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, cost: 1, read: () => readTeams(env, league, now) });
+    // An event or fight-card League has no teams to read.
+    if (!EVENT_LEAGUES.includes(league) && !FIGHT_LEAGUES.includes(league) && at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, cost: 1, read: () => readTeams(env, league, now) });
   }
   parts.sort((a, b) => a.tier - b.tier || a.fetchedAt - b.fetchedAt);
 

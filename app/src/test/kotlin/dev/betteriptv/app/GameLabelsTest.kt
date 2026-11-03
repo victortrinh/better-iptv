@@ -9,11 +9,14 @@ import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameEvent
+import dev.betteriptv.core.GameFight
+import dev.betteriptv.core.GameFighter
 import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.GameTeam
 import dev.betteriptv.core.Quality
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -46,6 +49,10 @@ class GameLabelsTest {
     private val toto = Game(
         "lpga", "401835175-1", Instant.parse("2026-11-04T23:00:00Z"), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Golf Chnl"),
         event = GameEvent("TOTO Japan Classic", "TOTO Japan Classic", GameSession.Round1, listOf("TOTO Japan Classic", "Japan Classic"), null),
+    )
+    private fun card(name: String = "UFC 334: Gane vs. Hokit", shortName: String = "UFC 334") = Game(
+        "ufc", "600061400", Instant.parse("2026-11-01T22:00:00Z"), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Paramount+"),
+        fight = GameFight(name, shortName, Instant.parse("2026-11-02T02:00:00Z"), listOf(GameFighter("Ciryl Gane", "Gane", listOf("Gane"), null), GameFighter("Josh Hokit", "Hokit", listOf("Hokit"), null))),
     )
     private fun channel(name: String, country: String? = "US") = Channel("$country: $name", name, country, null, false, listOf(ChannelVariant(1, name, Quality.HD, false)))
 
@@ -85,6 +92,23 @@ class GameLabelsTest {
         assertEquals("MSC Cruises São Paulo GP · Course", context.matchup(race()))
         assertEquals("MSC Cruises São Paulo GP · Qualifications", context.matchup(race(GameSession.Qualifying)))
         assertEquals("F1 · MSC Cruises São Paulo GP · Sprint", context.gameInfo(GameFeeds(race(GameSession.Sprint), emptyList())).teams)
+    }
+
+    @Test fun aUfcCardIsNamedByItsMainEventsFightersAndTheCardsShortNameStandsForTheLeague() {
+        assertEquals("Gane vs. Hokit", context.matchup(card()))
+        assertEquals("UFC 334: Gane vs. Hokit", context.matchup(card(), short = false))
+        assertEquals(CardInfo.Game("UFC 334 · Gane vs. Hokit", "No stream found"), context.gameInfo(GameFeeds(card(), emptyList())))
+        assertEquals("UFC Fight Night · Gane vs. Hokit", context.gameInfo(GameFeeds(card("UFC Fight Night: Gane vs. Hokit", "UFC Fight Night"), emptyList())).teams)
+        // The main card's start, in the device's clock, for the page's header.
+        assertEquals("Main card 9:00 PM", context.mainCardCaption(card(), Instant.parse("2026-11-01T22:00:00Z"), ZoneId.of("America/Toronto")))
+    }
+
+    @Test
+    @Config(qualifiers = "fr")
+    fun aUfcCardReadsInFrenchToo() {
+        assertEquals("Gane c. Hokit", context.matchup(card()))
+        assertEquals("UFC 334 · Gane c. Hokit", context.gameInfo(GameFeeds(card(), emptyList())).teams)
+        assertTrue(context.mainCardCaption(card(), Instant.parse("2026-11-01T22:00:00Z"), ZoneId.of("America/Toronto"))!!.startsWith("Carte principale "))
     }
 
     @Test fun theMatchupPutsTheVisitorsFirst() {
