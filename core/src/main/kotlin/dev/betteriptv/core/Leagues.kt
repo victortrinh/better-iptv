@@ -7,9 +7,10 @@ package dev.betteriptv.core
  * are what an Event channel's name calls the League (`NHL: Leafs vs Habs`, `EPL | Arsenal v
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
- * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none.
+ * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
+ * League ([events]: F1, #310) has no teams: its Games are a Grand Prix's sessions ([GameEvent]).
  */
-enum class League(val key: String, val names: List<String>, val network: String? = null) {
+enum class League(val key: String, val names: List<String>, val network: String? = null, val events: Boolean = false) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
     Nba("nba", listOf("NBA"), network = "NBA TV"),
@@ -24,7 +25,8 @@ enum class League(val key: String, val names: List<String>, val network: String?
     Ligue1("ligue-1", listOf("Ligue 1")),
     NcaaFootball("ncaa-football", listOf("NCAA Football", "NCAAF", "College Football", "CFB")),
     NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
-    Wnba("wnba", listOf("WNBA"));
+    Wnba("wnba", listOf("WNBA")),
+    F1("f1", listOf("F1", "Formula 1", "Formula One"), network = "Sky Sports F1", events = true);
 
     companion object {
         /**

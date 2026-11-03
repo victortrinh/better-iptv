@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -41,12 +42,13 @@ class GamesTest {
         val live = games.first()
         assertEquals(GameState.Live, live.state)
         assertEquals(Instant.parse("2026-11-01T19:00:00Z"), live.start)
-        assertEquals("Toronto Maple Leafs", live.home.name)
-        assertEquals("Maple Leafs", live.home.shortName)
-        assertEquals("TOR", live.home.abbreviation)
-        assertEquals(listOf("Toronto Maple Leafs", "Maple Leafs", "TOR", "Toronto"), live.home.aliases)
-        assertEquals("https://logos.example/TOR.png", live.home.logo)
-        assertEquals("Montreal Canadiens", live.away.name)
+        val home = live.home!!
+        assertEquals("Toronto Maple Leafs", home.name)
+        assertEquals("Maple Leafs", home.shortName)
+        assertEquals("TOR", home.abbreviation)
+        assertEquals(listOf("Toronto Maple Leafs", "Maple Leafs", "TOR", "Toronto"), home.aliases)
+        assertEquals("https://logos.example/TOR.png", home.logo)
+        assertEquals("Montreal Canadiens", live.away?.name)
         assertEquals(listOf("ESPN+"), live.broadcasters)
         assertEquals(listOf(GameState.Upcoming, GameState.Upcoming), games.drop(1).map { it.state })
         assertEquals(listOf(listOf("nhl", "nfl")), cloud.gamesAsked)
@@ -57,6 +59,29 @@ class GamesTest {
         // A minute on, the cloud is asked again.
         library.games(listOf("nhl", "nfl"), now + Duration.ofSeconds(61))
         assertEquals(2, cloud.gamesAsked.size)
+    }
+
+    @Test fun `an F1 session comes as a Game naming its Grand Prix and session instead of teams, and one of a session this release doesn't know is left out`() = runBlocking {
+        cloud.games(
+            "f1",
+            session("405", "2026-11-01T17:00:00Z", "race", state = "live"),
+            session("404", "2026-10-31T18:00:00Z", "qualifying", state = "over"),
+            session("406", "2026-11-01T18:00:00Z", "parade"),
+        )
+
+        val games = library.games(listOf("f1"), now)
+        assertEquals(listOf("404", "405"), games.map { it.id })
+        val race = games.last()
+        assertNull(race.home)
+        assertNull(race.away)
+        val event = race.event!!
+        assertEquals("MSC Cruises São Paulo Grand Prix", event.name)
+        assertEquals("MSC Cruises São Paulo GP", event.shortName)
+        assertEquals(GameSession.Race, event.session)
+        assertEquals(listOf("MSC Cruises São Paulo", "Cruises São Paulo", "São Paulo", "Paulo", "Brazil"), event.aliases)
+        assertEquals("https://logos.example/f1.png", event.logo)
+        assertEquals(GameSession.Qualifying, games.first().event?.session)
+        assertEquals(listOf("Apple TV"), race.broadcasters)
     }
 
     @Test fun `the kept Games serve while the cloud fails, and a League never kept is left out`() = runBlocking {

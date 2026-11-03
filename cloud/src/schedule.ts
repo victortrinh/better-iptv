@@ -1,6 +1,7 @@
 /**
- * The fifteen Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud
- * share. Team sports only: F1 and UFC are a follow-up.
+ * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
+ * fifteen team Leagues, whose Games are two teams', and F1, an event League (#310), whose Games
+ * are a Grand Prix's sessions, with no teams.
  */
 export const LEAGUES = [
   "nhl",
@@ -18,9 +19,13 @@ export const LEAGUES = [
   "ncaa-football",
   "ncaa-basketball",
   "wnba",
+  "f1",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
+
+/** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
+export const EVENT_LEAGUES: readonly League[] = ["f1"];
 
 export const isLeague = (value: unknown): value is League => typeof value === "string" && (LEAGUES as readonly string[]).includes(value);
 
@@ -42,18 +47,36 @@ export interface GameTeam {
   logo: string | null;
 }
 
+/** Which of a Grand Prix weekend's sessions an event League's Game is. Practice and the sprint's qualifying are no Games. */
+export type GameSession = "qualifying" | "sprint" | "race";
+
+/**
+ * What an event League's Game is part of, in place of two teams: the event's [name] (Pirelli
+ * British Grand Prix) and [shortName] as the source gives them, sponsor and all, the [session], the
+ * names an Event channel may call it by in [aliases] (São Paulo, Brazil), and the League's [logo].
+ */
+export interface GameEvent {
+  name: string;
+  shortName: string;
+  session: GameSession;
+  aliases: string[];
+  logo: string | null;
+}
+
 /**
  * A scheduled contest of a League (CONTEXT.md: Game): its [id] at the source, when it [start]s (UTC
- * ISO 8601), its [state], both teams, and the names of the national Broadcasters the source says
- * carry it. The device finds its Feeds by the teams' aliases and the Broadcasters' names (#254).
+ * ISO 8601), its [state], both teams (a team League's) or its [event] (an event League's), and the
+ * names of the national Broadcasters the source says carry it. The device finds its Feeds by the
+ * teams' or the event's aliases and the Broadcasters' names (#254).
  */
 export interface Game {
   id: string;
   league: League;
   start: string;
   state: GameState;
-  home: GameTeam;
-  away: GameTeam;
+  home?: GameTeam;
+  away?: GameTeam;
+  event?: GameEvent;
   broadcasters: string[];
 }
 
@@ -71,7 +94,7 @@ export interface Team {
 export interface ScheduleSource {
   /** The Games of [league] on [day] (`YYYY-MM-DD`, in the source's own reckoning of a day), as the source has them now. */
   games(league: League, day: string): Promise<Game[]>;
-  /** Every team of [league], read now and then for aliases and logos. */
+  /** Every team of [league], read now and then for aliases and logos; none for an event League. */
   teams(league: League): Promise<Team[]>;
 }
 

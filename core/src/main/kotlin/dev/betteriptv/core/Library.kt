@@ -1289,7 +1289,7 @@ class Library private constructor(
             .sortedBy { it.start }
         val schedule = matchedGames.all.map { it.game }
         val replays = if (schedule.isEmpty()) emptyList() else {
-            val teams = leagues.associateWith { league -> schedule.filter { it.league == league.key }.flatMap { listOf(it.home, it.away) } }.filterValues { it.isNotEmpty() }
+            val teams = leagues.associateWith { league -> schedule.filter { it.league == league.key }.flatMap { it.teams } }.filterValues { it.isNotEmpty() }
             // Matched once per catalog and set of teams: the tab reads its rows every couple of minutes, and the catalog holds thousands of Replays.
             val key = ReplaysKey(catalogGeneration.get(), teams.flatMapTo(HashSet()) { (league, members) -> members.map { league to it.name } })
             matchedReplays?.takeIf { it.key == key }?.replays

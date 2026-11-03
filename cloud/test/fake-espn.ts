@@ -31,7 +31,8 @@ export class FakeEspn {
       const dates = url.searchParams.get("dates");
       if (dates !== null && !/^\d{8}$/.test(dates)) return new Response("", { status: 400 });
       const day = dates ?? new Date().toISOString().slice(0, 10).replaceAll("-", "");
-      return Response.json({ leagues: [{ slug: path }], day: { date: `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}` }, events: this.days.get(`${path}/${day}`) ?? [] });
+      const logo = `https://a.espncdn.com/i/teamlogos/leagues/500/${path.split("/").pop()}.png`;
+      return Response.json({ leagues: [{ slug: path, logos: [{ href: logo, rel: ["full", "default"] }, { href: logo.replace("http", "https"), rel: ["full", "dark"] }] }], day: { date: `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}` }, events: this.days.get(`${path}/${day}`) ?? [] });
     });
   }
 
@@ -152,3 +153,55 @@ export const bombers: TeamSpec = { id: "3", displayName: "Winnipeg Blue Bombers"
 export const argos: TeamSpec = { id: "7", displayName: "Toronto Argonauts", shortDisplayName: "Argonauts", abbreviation: "TOR", location: "Toronto", name: "Argonauts" };
 export const broncos: TeamSpec = { id: "7", displayName: "Denver Broncos", shortDisplayName: "Broncos", abbreviation: "DEN", location: "Denver", name: "Broncos" };
 export const texans: TeamSpec = { id: "34", displayName: "Houston Texans", shortDisplayName: "Texans", abbreviation: "HOU", location: "Houston", name: "Texans" };
+
+/** A driver as ESPN's racing scoreboard lists one among a session's competitors. */
+const driver = (id: string, name: string, order: number) => ({ id, type: "athlete", order, winner: order === 1, athlete: { displayName: name, shortName: name, flag: { alt: "Netherlands" } } });
+
+/**
+ * A Grand Prix weekend shaped like ESPN's F1 scoreboard gives it (`racing/f1`, checked 2026-11-03):
+ * one event named after the Grand Prix ([name], [shortName]) at a circuit in [city], [country],
+ * dated at its first session, with a competition per session in [sessions]: ESPN's session type
+ * (`FP1`, `SS` for the sprint qualifying, `SR` for the sprint, `Qual`, `Race`), its start and its
+ * state. Each lists drivers in finishing order, as ESPN does: the result, which the cloud must
+ * never pass on. Every session is on [broadcast] in the US.
+ */
+export function grandPrix(
+  id: string,
+  name: string,
+  shortName: string,
+  city: string,
+  country: string,
+  sessions: { type: "FP1" | "FP2" | "FP3" | "SS" | "SR" | "Qual" | "Race"; id: string; date: string; state: "pre" | "in" | "post"; statusName?: string }[],
+  broadcast = "Apple TV",
+): object {
+  const typeIds = { FP1: "1", FP2: "1", FP3: "1", Qual: "2", Race: "3", SS: "5", SR: "6" };
+  const status = (state: "pre" | "in" | "post", statusName?: string) => ({
+    clock: 0,
+    displayClock: "0:00",
+    period: state === "pre" ? 0 : 41,
+    type: { id: "1", name: statusName ?? { pre: "STATUS_SCHEDULED", in: "STATUS_IN_PROGRESS", post: "STATUS_FINAL" }[state], state, completed: state === "post", description: "Scheduled" },
+  });
+  const last = sessions[sessions.length - 1];
+  return {
+    id,
+    uid: `s:2000~l:2030~e:${id}`,
+    date: sessions[0].date,
+    endDate: last.date,
+    name,
+    shortName,
+    season: { year: 2026, type: 2 },
+    circuit: { id: "617", fullName: "Autodromo Jose Carlos Pace", address: { city, country } },
+    status: status(last.state),
+    competitions: sessions.map((s) => ({
+      id: s.id,
+      uid: `s:2000~l:2030~e:${id}~c:${s.id}`,
+      date: s.date,
+      startDate: s.date,
+      type: { id: typeIds[s.type], abbreviation: s.type },
+      status: status(s.state, s.statusName),
+      competitors: [driver("4665", "Max Verstappen", 1), driver("868", "Lewis Hamilton", 2)],
+      broadcasts: [{ market: "national", names: [broadcast] }],
+      geoBroadcasts: [{ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: broadcast }, lang: "en", region: "us" }],
+    })),
+  };
+}

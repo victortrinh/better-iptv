@@ -9,6 +9,7 @@ import dev.betteriptv.core.Feed
 import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LeagueReplay
@@ -41,6 +42,7 @@ private fun League.nameResource(): Int = when (this) {
     League.NcaaFootball -> R.string.league_ncaa_football
     League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
     League.Wnba -> R.string.league_wnba
+    League.F1 -> R.string.league_f1
 }
 
 /** The name of a Game's League as the schedule keys it ("nhl"), or the key itself for one this release doesn't offer. */
@@ -71,9 +73,25 @@ fun Context.startCaption(start: Instant, now: Instant = Instant.now(), zone: Zon
     return at.format(DateTimeFormatter.ofPattern(pattern, locale))
 }
 
-/** The two teams, the away team first, by their short names ("Canadiens at Maple Leafs") or their full names. */
-fun Context.matchup(game: Game, short: Boolean = true): String =
-    getString(R.string.game_matchup, if (short) game.away.shortName else game.away.name, if (short) game.home.shortName else game.home.name)
+/**
+ * The two teams, the away team first, by their short names ("Canadiens at Maple Leafs") or their
+ * full names; for an event League's Game, its event and session ("MSC Cruises São Paulo GP · Race").
+ */
+fun Context.matchup(game: Game, short: Boolean = true): String {
+    game.event?.let { event -> return getString(R.string.game_event_session, if (short) event.shortName else event.name, sessionName(event.session)) }
+    val away = game.away ?: return ""
+    val home = game.home ?: return ""
+    return getString(R.string.game_matchup, if (short) away.shortName else away.name, if (short) home.shortName else home.name)
+}
+
+/** An event League's session in the App language ("Race", "Qualifying"). */
+fun Context.sessionName(session: GameSession): String = getString(
+    when (session) {
+        GameSession.Qualifying -> R.string.game_session_qualifying
+        GameSession.Sprint -> R.string.game_session_sprint
+        GameSession.Race -> R.string.game_session_race
+    },
+)
 
 /**
  * What the info under a rail tells about a Game: its League and both teams on one line, then the

@@ -6,6 +6,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import dev.betteriptv.app.ui.components.EventGameCard
 import dev.betteriptv.app.ui.components.GameCard
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameState
@@ -15,7 +16,8 @@ import java.time.Instant
 
 /**
  * [entry]'s card: both teams' logos, "Live" or the start time in the device's clock, and the short
- * names when a logo doesn't load. Pressing it opens the Game's page ([onOpen]); an upcoming Game
+ * names when a logo doesn't load; an event League's Game shows the League's logo and its event and
+ * session instead ([EventGameCard]). Pressing it opens the Game's page ([onOpen]); an upcoming Game
  * with no Feed left (none, or every one marked "Not this game") is disabled, saying "No stream found", and opens nothing. The caption is read again
  * each minute, so a Game later today drops the weekday at midnight without the rows being read.
  */
@@ -30,15 +32,31 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
             value = context.gameCaption(game, Instant.now())
         }
     }
+    val disabled = if (entry.best == null) stringResource(R.string.game_no_stream) else null
+    val event = game.event
+    if (event != null) {
+        EventGameCard(
+            logo = rememberArtwork(event.logo, card = true),
+            leagueName = context.leagueName(game.league),
+            name = event.shortName,
+            session = context.sessionName(event.session),
+            caption = caption,
+            onClick = { onOpen(entry) },
+            modifier = modifier,
+            disabled = disabled,
+            onFocus = onFocus,
+        )
+        return
+    }
     GameCard(
-        away = rememberArtwork(game.away.logo, card = true),
-        home = rememberArtwork(game.home.logo, card = true),
-        awayName = game.away.shortName,
-        homeName = game.home.shortName,
+        away = rememberArtwork(game.away?.logo, card = true),
+        home = rememberArtwork(game.home?.logo, card = true),
+        awayName = game.away?.shortName.orEmpty(),
+        homeName = game.home?.shortName.orEmpty(),
         caption = caption,
         onClick = { onOpen(entry) },
         modifier = modifier,
-        disabled = if (entry.best == null) stringResource(R.string.game_no_stream) else null,
+        disabled = disabled,
         onFocus = onFocus,
     )
 }

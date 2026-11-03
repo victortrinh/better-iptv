@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { Espn } from "./espn";
-import { type Game, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
+import { EVENT_LEAGUES, type Game, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /** A wanted League's current days are read again this often, so "Live" flips within minutes of a Game starting. */
 const CURRENT_FRESH_FOR = 5 * 60_000;
@@ -26,7 +26,7 @@ const ASKED_EVERY = 3600_000;
 const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: fifteen Leagues' current days every 5 minutes and
+ * {@link SUBREQUESTS} that the Charts share: sixteen Leagues' current days every 5 minutes and
  * their coming days hourly need 8 a minute at most.
  */
 export const GAMES_SUBREQUESTS = 12;
@@ -76,13 +76,13 @@ export async function games(env: Env, leagues: League[]): Promise<{ leagues: Lea
     const byId = new Map<string, Game>();
     for (const row of kept) for (const game of JSON.parse(row.body) as Game[]) byId.set(game.id, game);
     const listed = teams.get(league);
-    const complete = (team: GameTeam): GameTeam => {
-      const known = listed?.get(team.id);
-      return known ? { ...team, aliases: [...new Set([...team.aliases, ...known.aliases])], logo: known.logo ?? team.logo } : team;
+    const complete = (team: GameTeam | undefined): GameTeam | undefined => {
+      const known = team && listed?.get(team.id);
+      return team && known ? { ...team, aliases: [...new Set([...team.aliases, ...known.aliases])], logo: known.logo ?? team.logo } : team;
     };
     const fresh = [...byId.values()]
       .filter((game) => Date.parse(game.start) > now - KEEP_GAMES_FOR)
-      .map((game) => ({ ...game, home: complete(game.home), away: complete(game.away) }))
+      .map((game) => (game.event ? game : { ...game, home: complete(game.home), away: complete(game.away) }))
       .sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
     answer.push({ league, games: fresh });
   }
@@ -145,7 +145,8 @@ export async function fillGames(env: Env): Promise<number> {
       }
     });
     const at = teamsFetchedAt.get(league) ?? -1;
-    if (at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, read: () => readTeams(env, league, now) });
+    // An event League has no teams to read.
+    if (!EVENT_LEAGUES.includes(league) && at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, read: () => readTeams(env, league, now) });
   }
   parts.sort((a, b) => a.tier - b.tier || a.fetchedAt - b.fetchedAt);
 

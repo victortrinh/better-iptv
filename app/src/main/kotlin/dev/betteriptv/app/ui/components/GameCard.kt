@@ -1,8 +1,11 @@
 package dev.betteriptv.app.ui.components
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +50,48 @@ fun GameCard(
     disabled: String? = null,
     onFocus: () -> Unit = {},
 ) {
+    GameCardFrame(caption, onClick, modifier, disabled, onFocus) {
+        TeamLogo(away, awayName, Modifier.weight(1f).fillMaxHeight().testTag("away"))
+        TeamLogo(home, homeName, Modifier.weight(1f).fillMaxHeight().testTag("home"))
+    }
+}
+
+/**
+ * An event League's Game (F1's, #310), which has no teams: the League's [logo] on the left, where
+ * the away team's goes, or its [leagueName] while there is none, and the event's [name] over its
+ * [session] in label type on the right, where the home team's goes. The rest is a [GameCard]'s.
+ */
+@Composable
+fun EventGameCard(
+    logo: Painter?,
+    leagueName: String,
+    name: String,
+    session: String,
+    caption: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    disabled: String? = null,
+    onFocus: () -> Unit = {},
+) {
+    GameCardFrame(caption, onClick, modifier, disabled, onFocus) {
+        TeamLogo(logo, leagueName, Modifier.weight(1f).fillMaxHeight().testTag("league"))
+        Column(Modifier.weight(1f).fillMaxHeight().padding(bottom = LOGO_ROOM_FOR_CAPTION).testTag("event"), verticalArrangement = Arrangement.Center) {
+            Text(name, style = Type.label, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(session, style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** A Game card's glass, its [caption] at the bottom left and its [disabled] state, around the [sides] it lays out in a row. */
+@Composable
+private fun GameCardFrame(
+    caption: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    disabled: String?,
+    onFocus: () -> Unit,
+    sides: @Composable RowScope.() -> Unit,
+) {
     FocusSurface(
         { if (disabled == null) onClick() },
         modifier.width(Cards.wideWidth).aspectRatio(16f / 9f),
@@ -54,10 +99,7 @@ fun GameCard(
         container = Colors.surface,
         onFocus = onFocus,
     ) {
-        Row(Modifier.fillMaxSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA).padding(horizontal = Spacing.m, vertical = Spacing.s)) {
-            TeamLogo(away, awayName, Modifier.weight(1f).fillMaxHeight().testTag("away"))
-            TeamLogo(home, homeName, Modifier.weight(1f).fillMaxHeight().testTag("home"))
-        }
+        Row(Modifier.fillMaxSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA).padding(horizontal = Spacing.m, vertical = Spacing.s), content = sides)
         Text(
             caption,
             style = Type.caption,

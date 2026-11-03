@@ -126,8 +126,9 @@ private fun GameContent(
         withFrameNanos {}
         playFocus.requestFocus()
     }
-    val away = rememberArtwork(game.away.logo)
-    val home = rememberArtwork(game.home.logo)
+    val away = rememberArtwork(game.away?.logo)
+    val home = rememberArtwork(game.home?.logo)
+    val leagueLogo = rememberArtwork(game.event?.logo)
     // The Feeds by language, as ranked; the dropped ones after every language, as one group.
     val groups = remember(entry) { entry.feeds.filter { !it.dropped }.groupBy { it.language } }
     val dropped = remember(entry) { entry.feeds.filter { it.dropped } }
@@ -171,10 +172,14 @@ private fun GameContent(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                // The teams as on the card: away left, home right, whole logos or short names.
+                // The teams as on the card: away left, home right, whole logos or short names; an event League's logo, or its name.
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xl), verticalAlignment = Alignment.CenterVertically) {
-                    HeaderLogo(away, game.away.shortName)
-                    HeaderLogo(home, game.home.shortName)
+                    if (game.event != null) {
+                        HeaderLogo(leagueLogo, context.leagueName(game.league))
+                    } else {
+                        HeaderLogo(away, game.away?.shortName.orEmpty())
+                        HeaderLogo(home, game.home?.shortName.orEmpty())
+                    }
                 }
             }
         }
