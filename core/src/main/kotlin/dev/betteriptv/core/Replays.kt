@@ -125,7 +125,8 @@ internal fun replayOf(replay: Replay, game: Game): Boolean {
     val home = replay.home ?: return false
     // The League only groups the teams here: one this release doesn't offer does as well as any.
     val league = League.byKey(game.league) ?: League.entries.first()
-    return TeamFinder(mapOf(league to listOf(game.home, game.away))).pair(away, home) != null
+    val teams = game.teams.takeIf { it.size == 2 } ?: return false
+    return TeamFinder(mapOf(league to teams)).pair(away, home) != null
 }
 
 /** Finds which of some Leagues' [teams] a Replay's team names, by their aliases' first words. */

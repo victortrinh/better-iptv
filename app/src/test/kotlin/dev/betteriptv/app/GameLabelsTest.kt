@@ -8,6 +8,8 @@ import dev.betteriptv.core.Feed
 import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.GameEvent
+import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.GameTeam
 import dev.betteriptv.core.Quality
@@ -33,6 +35,10 @@ class GameLabelsTest {
     private val habs = team("Montreal Canadiens", "Canadiens")
     private fun game(start: String, state: GameState = GameState.Upcoming, broadcasters: List<String> = emptyList()) =
         Game("nhl", "1", Instant.parse(start), state, home = leafs, away = habs, broadcasters = broadcasters)
+    private fun race(session: GameSession = GameSession.Race) = Game(
+        "f1", "405", Instant.parse("2026-11-01T17:00:00Z"), GameState.Live, home = null, away = null, broadcasters = listOf("Apple TV"),
+        event = GameEvent("MSC Cruises São Paulo Grand Prix", "MSC Cruises São Paulo GP", session, listOf("São Paulo"), null),
+    )
     private fun channel(name: String, country: String? = "US") = Channel("$country: $name", name, country, null, false, listOf(ChannelVariant(1, name, Quality.HD, false)))
 
     @Test fun anEventChannelsStartReadsAsAGamesDoesTheTimeAloneTodayAndTheWeekdayLater() {
@@ -56,6 +62,21 @@ class GameLabelsTest {
         assertEquals("En direct", context.gameCaption(game("2026-11-01T18:00:00Z", GameState.Live), now, toronto))
         assertEquals("Canadiens c. Maple Leafs", context.matchup(game("2026-11-02T00:00:00Z")))
         assertEquals("Aucun flux trouvé", context.gameInfo(GameFeeds(game("2026-11-02T00:00:00Z"), emptyList())).feeds)
+    }
+
+    @Test fun anF1SessionIsNamedByItsGrandPrixAndSessionWhereAGameNamesItsTeams() {
+        assertEquals("MSC Cruises São Paulo GP · Race", context.matchup(race()))
+        assertEquals("MSC Cruises São Paulo Grand Prix · Qualifying", context.matchup(race(GameSession.Qualifying), short = false))
+        assertEquals("MSC Cruises São Paulo GP · Sprint", context.matchup(race(GameSession.Sprint)))
+        assertEquals(CardInfo.Game("F1 · MSC Cruises São Paulo GP · Race", "No stream found"), context.gameInfo(GameFeeds(race(), emptyList())))
+    }
+
+    @Test
+    @Config(qualifiers = "fr")
+    fun anF1SessionReadsInFrenchToo() {
+        assertEquals("MSC Cruises São Paulo GP · Course", context.matchup(race()))
+        assertEquals("MSC Cruises São Paulo GP · Qualifications", context.matchup(race(GameSession.Qualifying)))
+        assertEquals("F1 · MSC Cruises São Paulo GP · Sprint", context.gameInfo(GameFeeds(race(GameSession.Sprint), emptyList())).teams)
     }
 
     @Test fun theMatchupPutsTheVisitorsFirst() {

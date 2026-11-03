@@ -2,7 +2,7 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, habs, leafs, sens, team, texans } from "./fake-espn";
+import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, leafs, sens, team, texans } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -903,18 +903,63 @@ describe("Games", () => {
       "ncaa-football": "football/college-football",
       "ncaa-basketball": "basketball/mens-college-basketball",
       wnba: "basketball/wnba",
+      f1: "racing/f1",
     };
     expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
-    for (const path of Object.values(paths)) {
-      expect(espn.asked).toContain(`${path}/2026-11-01`);
-      expect(espn.asked).toContain(`${path}/teams`);
-    }
+    for (const path of Object.values(paths)) expect(espn.asked).toContain(`${path}/2026-11-01`);
+    // F1 has drivers, not teams: no teams list is read for it.
+    for (const path of Object.values(paths).filter((p) => p !== "racing/f1")) expect(espn.asked).toContain(`${path}/teams`);
+    expect(espn.asked).not.toContain("racing/f1/teams");
     expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
+  });
+
+  it("answers an F1 weekend's Qualifying, Sprint and Race as Games naming the Grand Prix instead of teams: never practice, the sprint qualifying or a result", async () => {
+    // ESPN answers each day of the weekend with the whole weekend. (A night race, so its sprint and qualifying are within the day the cloud keeps.)
+    const weekend = grandPrix("600057448", "MSC Cruises São Paulo Grand Prix", "MSC Cruises São Paulo GP", "Sao paulo", "Brazil", [
+      { type: "FP1", id: "401", date: "2026-10-30T15:30Z", state: "post" },
+      { type: "SS", id: "402", date: "2026-10-30T19:30Z", state: "post" },
+      { type: "SR", id: "403", date: "2026-10-31T21:00Z", state: "post" },
+      { type: "Qual", id: "404", date: "2026-11-01T01:00Z", state: "post" },
+      { type: "Race", id: "405", date: "2026-11-01T17:00Z", state: "in" },
+    ]);
+    for (const day of ["2026-10-31", "2026-11-01"]) espn.scoreboard("racing/f1", day, weekend);
+    const nextWeekend = grandPrix("600057449", "Heineken Las Vegas Grand Prix", "Heineken Las Vegas GP", "Las Vegas", "USA", [
+      { type: "Qual", id: "501", date: "2026-11-07T06:00Z", state: "pre", statusName: "STATUS_POSTPONED" },
+      { type: "Race", id: "502", date: "2026-11-08T06:00Z", state: "pre" },
+    ]);
+    espn.scoreboard("racing/f1", "2026-11-07", nextWeekend);
+
+    const { leagues } = await filled(await registerDevice(), ["f1"]);
+
+    const logo = "https://a.espncdn.com/i/teamlogos/leagues/500/f1.png";
+    const saoPaulo = (session: string) => ({
+      name: "MSC Cruises São Paulo Grand Prix",
+      shortName: "MSC Cruises São Paulo GP",
+      session,
+      // What an Event channel may call it: the Grand Prix's name before "Grand Prix", ever shorter (a sponsor's words come first), then the circuit's city and country, each name once however it is accented.
+      aliases: ["MSC Cruises São Paulo", "Cruises São Paulo", "São Paulo", "Paulo", "Brazil"],
+      logo,
+    });
+    const lasVegas = { name: "Heineken Las Vegas Grand Prix", shortName: "Heineken Las Vegas GP", session: "race", aliases: ["Heineken Las Vegas", "Las Vegas", "Vegas", "USA"], logo };
+    expect(leagues).toEqual([
+      {
+        league: "f1",
+        games: [
+          { id: "403", league: "f1", start: "2026-10-31T21:00:00.000Z", state: "over", event: saoPaulo("sprint"), broadcasters: ["Apple TV"] },
+          { id: "404", league: "f1", start: "2026-11-01T01:00:00.000Z", state: "over", event: saoPaulo("qualifying"), broadcasters: ["Apple TV"] },
+          { id: "405", league: "f1", start: "2026-11-01T17:00:00.000Z", state: "live", event: saoPaulo("race"), broadcasters: ["Apple TV"] },
+          // The postponed qualifying is left out.
+          { id: "502", league: "f1", start: "2026-11-08T06:00:00.000Z", state: "upcoming", event: lasVegas, broadcasters: ["Apple TV"] },
+        ],
+      },
+    ]);
+    // No driver, position or winner: the result never leaves the cloud.
+    expect(JSON.stringify(leagues)).not.toMatch(/Verstappen|Hamilton|"(winner|order|athlete|competitors)"/);
   });
 
   it("rejects a malformed request", async () => {
     const token = await registerDevice();
-    expect((await call("POST", "/v1/games", { leagues: ["nhl", "f1"] }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/games", { leagues: ["nhl", "ufc"] }, token)).status).toBe(400);
     expect((await call("POST", "/v1/games", { leagues: "nhl" }, token)).status).toBe(400);
     expect((await call("POST", "/v1/games", {}, token)).status).toBe(400);
     expect(await gamesOf(token, [])).toEqual({ leagues: [] });

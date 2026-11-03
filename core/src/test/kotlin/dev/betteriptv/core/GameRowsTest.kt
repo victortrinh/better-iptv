@@ -334,4 +334,30 @@ class GameRowsTest {
         assertEquals(listOf("US: FOX", "FR: FOX", "ESPN 2"), rows(languages = listOf("en", "fr")).today().feedNames("2"))
     }
 
+    @Test fun `an F1 session's Feed is an Event channel naming F1, a name of its Grand Prix and no other session, else the League's network`() = runBlocking {
+        cloud.games(
+            "f1",
+            session("404", "2026-11-01T19:00:00Z", "qualifying", state = "live"),
+            session("405", "2026-11-02T17:00:00Z", "race"),
+        )
+        // As the surveyed Provider names them (2026-11-03): marked Live or Next, the place and the session, F1 in the slot's name.
+        provider.serveChannels(
+            "LIVE | SÃO PAULO: QUALIFYING | Sun 01 Nov 14:00 EST (US) | 8K EXCLUSIVE | US: APPLE TV F1 PPV 1" to "US| APPLE TV F1 PPV",
+            "NEXT | SÃO PAULO: RACE | Mon 02 Nov 12:00 EST (US) | 8K EXCLUSIVE | US: APPLE TV F1 PPV 2" to "US| APPLE TV F1 PPV",
+            "NEXT | LAS VEGAS: QUALIFYING | Sat 21 Nov 21:50 EST (US) | 8K EXCLUSIVE | US: APPLE TV F1 PPV 3" to "US| APPLE TV F1 PPV",
+            // MotoGP's, which names no F1.
+            "Malaysia Grand Prix @ Nov 1 3:00 PM :Viaplay NO 19" to "NO| VIAPLAY PPV",
+            "UK: SKY SPORTS F1 ᴴᴰ ◉" to "UK| SPORT ᴴᴰ",
+        )
+        library.sync()
+
+        val screen = rows(League.F1)
+        // The qualifying on now: its own Event channel, not the race's, nor another Grand Prix's; the League's network stays out beside it.
+        assertEquals(listOf("LIVE | SÃO PAULO: QUALIFYING | Sun 01 Nov 14:00 EST (US) | 8K EXCLUSIVE | US: APPLE TV F1 PPV 1"), screen.liveNow().feedNames("404"))
+        // Tomorrow's race, whose Event channel gives no start and isn't on within hours yet: Sky Sports F1 stands in.
+        val race = screen.league(League.F1)!!.single { it.game.id == "405" }.feeds.single()
+        assertEquals("UK: SKY SPORTS F1 ᴴᴰ ◉", race.channel.variants.first().name)
+        assertEquals(FeedKind.LeagueNetwork, race.kind)
+        assertEquals(listOf("Malaysia Grand Prix @ Nov 1 3:00 PM :Viaplay NO 19"), screen.filterIsInstance<HomeRow.MoreLiveEvents>().single().events.map { it.channel.variants.first().name })
+    }
 }

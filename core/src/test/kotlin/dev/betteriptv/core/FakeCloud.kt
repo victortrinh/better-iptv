@@ -345,6 +345,27 @@ fun tmdbTitle(
 )
 
 /**
+ * An event League's Game as the cloud's `/v1/games` lists one (cloud/src/espn.ts): a Grand Prix's
+ * [session] (`qualifying`, `sprint`, `race`) at [start], named after the Grand Prix, with the names
+ * an Event channel may call it by.
+ */
+fun session(
+    id: String,
+    start: String,
+    session: String,
+    state: String = "upcoming",
+    name: String = "MSC Cruises São Paulo Grand Prix",
+    shortName: String = "MSC Cruises São Paulo GP",
+    aliases: List<String> = listOf("MSC Cruises São Paulo", "Cruises São Paulo", "São Paulo", "Paulo", "Brazil"),
+    broadcasters: List<String> = listOf("Apple TV"),
+    league: String = "f1",
+): Map<String, Any?> = mapOf(
+    "id" to id, "league" to league, "start" to start, "state" to state,
+    "event" to mapOf("name" to name, "shortName" to shortName, "session" to session, "aliases" to aliases, "logo" to "https://logos.example/f1.png"),
+    "broadcasters" to broadcasters,
+)
+
+/**
  * A Game shaped like the cloud's answer (cloud/src/schedule.ts): [home] against [away] (full
  * names, each with the aliases ESPN gives: the name, the nickname as its short name, a three-letter
  * abbreviation and the location, "Toronto Maple Leafs" being Toronto's "Maple Leafs") at [start]

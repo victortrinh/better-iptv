@@ -1,22 +1,30 @@
 package dev.betteriptv.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `fifteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `sixteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
                 "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
-                "ncaa-football", "ncaa-basketball", "wnba",
+                "ncaa-football", "ncaa-basketball", "wnba", "f1",
             ),
             League.entries.map { it.key },
         )
         assertEquals(League.entries.toList(), League.entries.map { League.byKey(it.key) })
-        assertNull(League.byKey("f1"))
+        assertNull(League.byKey("ufc"))
+    }
+
+    @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {
+        assertEquals(listOf(League.F1), League.entries.filter { it.events })
+        assertEquals(listOf("F1", "Formula 1", "Formula One"), League.F1.names)
+        assertEquals("Sky Sports F1", League.F1.network)
+        for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.F1 in League.defaults(region))
     }
 
     @Test fun `a Leagues choice saved under the first release's ESPN slugs still finds its Leagues`() {

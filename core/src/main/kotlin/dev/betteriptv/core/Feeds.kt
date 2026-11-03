@@ -70,6 +70,11 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * ("NBA: Toronto vs Boston" for the Leafs and the Bruins) is never this Game's, and a match resting
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
  * either) needs the Game's League named too.
+ *
+ * An event League's Game ([GameEvent], F1's) has no teams: its Event channels name the League and
+ * one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US: APPLE TV F1 PPV 2"), and no session
+ * but the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel; one
+ * naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying) is none's.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -95,14 +100,22 @@ internal fun matchFeeds(
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
         val otherLeague = byLeague.filterKeys { it != thisLeague }.values.flatten().toSet()
-        val home = TeamAliases(game.home)
-        val away = TeamAliases(game.away)
-        val homeStrong = holdingAny(home.strong)
-        val awayStrong = holdingAny(away.strong)
-        val homeAny = homeStrong + holdingAny(home.weak)
-        val awayAny = awayStrong + holdingAny(away.weak)
-        val both = (homeAny intersect awayAny) intersect (homeStrong + awayStrong + league)
-        val named = (both + ((homeAny + awayAny) intersect league)) - otherLeague
+        val event = game.event
+        val named = if (event != null) {
+            // An event League's: the League and a name of the event, and no session but its own.
+            val own = holdingAny(SESSION_WORDS.getValue(event.session))
+            val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session }.values.flatten()) - own
+            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS)
+        } else {
+            val home = TeamAliases(game.home ?: return@map GameFeeds(game, emptyList()))
+            val away = TeamAliases(game.away ?: return@map GameFeeds(game, emptyList()))
+            val homeStrong = holdingAny(home.strong)
+            val awayStrong = holdingAny(away.strong)
+            val homeAny = homeStrong + holdingAny(home.weak)
+            val awayAny = awayStrong + holdingAny(away.weak)
+            val both = (homeAny intersect awayAny) intersect (homeStrong + awayStrong + league)
+            (both + ((homeAny + awayAny) intersect league)) - otherLeague
+        }
         val eventFeeds = named.sorted().map { events[it] }.filter { sameEvent(game, it.start, now) }.map { listing ->
             Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country))
         }
@@ -200,6 +213,16 @@ internal class TeamAliases(team: GameTeam) {
         val LEAGUE_WORDS: Set<String> = League.entries.flatMap { league -> league.names.flatMap(SearchIndex::words) }.toSet()
     }
 }
+
+/** The words an Event channel names each session of an event League's Game by, in English and French. */
+private val SESSION_WORDS: Map<GameSession, List<String>> = mapOf(
+    GameSession.Qualifying to listOf("Qualifying", "Quali", "Qualification", "Qualifications"),
+    GameSession.Sprint to listOf("Sprint"),
+    GameSession.Race to listOf("Race", "Course"),
+)
+
+/** The sessions of a Grand Prix weekend that are no Game: an Event channel naming one carries none. */
+private val NO_GAME_SESSIONS: List<String> = listOf("Sprint Qualifying", "Sprint Shootout", "Shootout", "Practice", "FP1", "FP2", "FP3", "Essais libres")
 
 /** Whether [words] hold [phrase]'s words in order, one after another. */
 internal fun containsPhrase(words: List<String>, phrase: List<String>): Boolean {

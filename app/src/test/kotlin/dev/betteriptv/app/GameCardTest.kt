@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.requestFocus
 import androidx.test.core.app.ApplicationProvider
+import dev.betteriptv.app.ui.components.EventGameCard
 import dev.betteriptv.app.ui.components.GameCard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,5 +64,17 @@ class GameCardTest {
         assertEquals(0, opened)
         compose.onNodeWithText("7:00 PM").requestFocus()
         compose.onNodeWithText("7:00 PM").assertIsFocused()
+    }
+
+    @Test fun anF1SessionsCardShowsTheLeaguesLogoLeftAndTheGrandPrixAndSessionRight() {
+        var opened = 0
+        compose.setContent { EventGameCard(logo = null, leagueName = "F1", name = "MSC Cruises São Paulo GP", session = "Race", caption = "Live", onClick = { opened++ }) }
+
+        val league = compose.onNodeWithText("F1", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
+        val name = compose.onNodeWithText("MSC Cruises São Paulo GP", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
+        assertTrue(league.right <= name.left)
+        compose.onNodeWithText("Race", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Live").performClick()
+        assertEquals(1, opened)
     }
 }

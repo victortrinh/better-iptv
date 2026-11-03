@@ -21,6 +21,8 @@ import dev.betteriptv.core.Feed
 import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.GameEvent
+import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.GameTeam
 import dev.betteriptv.core.Library
@@ -134,6 +136,21 @@ class GameScreenTest {
         compose.waitUntil { played != null }
         assertEquals(77L, played!!.first.version.listingId)
         assertEquals("Canadiens at Maple Leafs", played!!.second)
+    }
+
+    @Test fun anF1SessionsPageNamesItsGrandPrixAndSessionWithTheLeaguesLogoInPlaceOfTheTeams() {
+        val race = Game(
+            "f1", "405", Instant.parse("2026-11-01T17:00:00Z"), GameState.Live, home = null, away = null, broadcasters = emptyList(),
+            event = GameEvent("MSC Cruises São Paulo Grand Prix", "MSC Cruises São Paulo GP", GameSession.Race, listOf("São Paulo"), null),
+        )
+        open(GameFeeds(race, listOf(Feed(tsn, FeedKind.EventChannel, "en"))))
+
+        compose.onNodeWithTag("play").assertIsFocused()
+        compose.onNodeWithTag("game-header").assertTextContains("F1 · Live · 1 Feed")
+        compose.onNodeWithText("MSC Cruises São Paulo GP · Race").assertExists()
+        compose.onNodeWithText("MSC Cruises São Paulo Grand Prix · Race").assertExists()
+        // The League's name stands in for its logo while it hasn't loaded.
+        compose.onNodeWithText("F1", useUnmergedTree = true).assertExists()
     }
 
     @Test fun withNoFeedPlayIsDisabledAndSaysNoStreamWasFound() {
