@@ -1,5 +1,7 @@
 package dev.betteriptv.core
 
+import com.squareup.moshi.JsonDataException
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -8,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import java.io.Closeable
+import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
@@ -70,6 +73,8 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * the player knew then, null when it didn't or the Viewer never stopped in it. A Show's plan plays
  * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
  * [originalLanguage] is the language the Title was released in (TMDB's, ISO 639-1), when known.
+ * [choices] is what the Viewer chose the last time this Title played (#291), which wins over
+ * [remembered] for the Tracks the file still has.
  */
 data class PlayPlan(
     val titleId: TitleId?,
@@ -81,6 +86,7 @@ data class PlayPlan(
     val remembered: RememberedTracks = RememberedTracks(),
     val length: Long? = null,
     val originalLanguage: String? = null,
+    val choices: TitleChoices = TitleChoices(),
 ) {
     /** How far in the Viewer stopped, for a progress bar; null at the start or without the file's length. */
     val progress: Float? get() = length?.takeIf { it > 0 && from > 0 }?.let { (from.toFloat() / it).coerceIn(0f, 1f) }
@@ -92,7 +98,9 @@ data class PlayPlan(
     fun fromStart(): PlayPlan = copy(from = 0)
 
     /**
-     * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the audio in the
+     * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the Tracks the Viewer
+     * chose the last time this Title played ([choices]), when the file still has them (an Episode's
+     * choice carries to the next, whose file has the same Tracks); else the audio in the
      * language the Viewer last picked, else in the first Content language the file has. Among that
      * language's Tracks, one that passes through or plays on the stick's decoder beats one decoded
      * in software (a Blu-ray rip's Dolby Digital Track over its TrueHD one, without a soundbar), and
@@ -102,14 +110,28 @@ data class PlayPlan(
      * subtitles in the first Content language, when the file has them.
      *
      * Where the file lacks the subtitles that would show, [TrackChoice.downloaded] names the language
-     * to show downloaded ones in instead: the one the Viewer last picked, or, when no audio is in
+     * to show downloaded ones in instead: the ones the Viewer chose for this Title (by their file,
+     * [TrackChoice.downloadedOffer]), else the language they last picked, or, when no audio is in
      * those languages, the first Content language.
      */
-    fun chooseTracks(audio: List<Track>, subtitles: List<Track>, device: DeviceProfile, remembered: RememberedTracks = this.remembered): TrackChoice {
+    fun chooseTracks(
+        audio: List<Track>,
+        subtitles: List<Track>,
+        device: DeviceProfile,
+        remembered: RememberedTracks = this.remembered,
+        choices: TitleChoices = this.choices,
+    ): TrackChoice {
         val wanted = rankingLanguages(remembered, contentLanguages).map(::primaryLanguage)
         val outputs = audio.map { device.audioOutput(it.mimeType) }
-        val audioIndex = wanted.firstNotNullOfOrNull { language ->
+        val audioIndex = choices.audio?.find(audio)?.takeIf { outputs[it] != null } ?: wanted.firstNotNullOfOrNull { language ->
             audio.indices.filter { audio[it].isIn(language) && outputs[it] != null }.minByOrNull { outputs[it]!!.ordinal }
+        }
+        val chosenSubtitles = choices.subtitles
+        when (chosenSubtitles) {
+            ChosenSubtitles.Off -> return TrackChoice(audioIndex, null)
+            is ChosenSubtitles.Downloaded -> return TrackChoice(audioIndex, null, downloaded = primaryLanguage(chosenSubtitles.language), downloadedOffer = chosenSubtitles.offerId)
+            is ChosenSubtitles.Embedded -> chosenSubtitles.track.find(subtitles)?.let { return TrackChoice(audioIndex, it) }
+            null -> Unit
         }
         val picked = remembered.subtitles?.let { language -> subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 } }
         val subtitle = when {
@@ -128,17 +150,21 @@ data class PlayPlan(
 
     /**
      * The languages to offer downloaded subtitles in for a file with these embedded [subtitles]: the
-     * one the Viewer last picked and their Content languages, those the file has no subtitles in.
+     * one the Viewer last picked and their Content languages, those the file has no subtitles in,
+     * and the language of the downloaded ones they chose for this Title, whatever the file has.
      */
-    fun downloadLanguages(subtitles: List<Track>, remembered: RememberedTracks = this.remembered): List<String> =
-        subtitleLanguages(remembered).filter { language -> subtitles.none { it.isIn(language) } }
+    fun downloadLanguages(subtitles: List<Track>, remembered: RememberedTracks = this.remembered, choices: TitleChoices = this.choices): List<String> {
+        val chosen = (choices.subtitles as? ChosenSubtitles.Downloaded)?.language?.let(::primaryLanguage)
+        return subtitleLanguages(remembered, choices).filter { language -> language == chosen || subtitles.none { it.isIn(language) } }
+    }
 
     /**
      * Every language subtitles may be downloaded in for this plan, whatever the file holds, at most
      * [MAX_SUBTITLE_LANGUAGES]; the services know languages by ISO 639-1 code only.
      */
-    fun subtitleLanguages(remembered: RememberedTracks = this.remembered): List<String> =
-        (listOfNotNull(remembered.subtitles) + contentLanguages).map(::primaryLanguage).filter { it.length == 2 }.distinct().take(MAX_SUBTITLE_LANGUAGES)
+    fun subtitleLanguages(remembered: RememberedTracks = this.remembered, choices: TitleChoices = this.choices): List<String> =
+        (listOfNotNull((choices.subtitles as? ChosenSubtitles.Downloaded)?.language, remembered.subtitles) + contentLanguages)
+            .map(::primaryLanguage).filter { it.length == 2 }.distinct().take(MAX_SUBTITLE_LANGUAGES)
 
     /** Whether [track] is in the language the Title was released in: the player calls such audio "Original". */
     fun isOriginal(track: Track): Boolean = originalLanguage?.let { track.isIn(primaryLanguage(it)) } == true
@@ -158,6 +184,93 @@ data class EpisodeNumber(val season: Int, val number: Int)
  * subtitles off ([subtitlesOff]), picked a Channel's [closedCaptions], or never picked any.
  */
 data class RememberedTracks(val audio: String? = null, val subtitles: String? = null, val subtitlesOff: Boolean = false, val closedCaptions: Boolean = false)
+
+/**
+ * What the Viewer chose while a Title played, kept for the Title (#291): the [audio] Track and the
+ * [subtitles] they picked, and how much later than the picture the sound ([audioDelay]) and the
+ * subtitles ([subtitleDelay]) play, in milliseconds. Resuming the Title, or playing a Show's next
+ * Episode, starts the same way where the file has the same Tracks; a null choice is one they never
+ * made for this Title, so what they last picked anywhere ([RememberedTracks]) decides.
+ */
+data class TitleChoices(
+    val audio: ChosenTrack? = null,
+    val subtitles: ChosenSubtitles? = null,
+    val audioDelay: Long = 0,
+    val subtitleDelay: Long = 0,
+)
+
+/**
+ * A Track the Viewer picked: its [language] as the file tags it (null when it doesn't), and its
+ * [index] among the file's [count] Tracks of its kind, which finds an untagged Track again.
+ */
+data class ChosenTrack(val index: Int, val count: Int, val language: String?) {
+    /**
+     * The same Track among [tracks]: the one at its index when that is in its language, else the
+     * first in its language; an untagged one is the one at its index in a file with as many Tracks,
+     * untagged too. Null when the file doesn't have it.
+     */
+    internal fun find(tracks: List<Track>): Int? {
+        val wanted = language?.let(::trackLanguage)
+        if (wanted == null) return index.takeIf { tracks.size == count && it in tracks.indices && tracks[it].language == null }
+        if (index in tracks.indices && tracks[index].language?.let(::trackLanguage) == wanted) return index
+        return tracks.indexOfFirst { it.language?.let(::trackLanguage) == wanted }.takeIf { it >= 0 }
+    }
+}
+
+/** The subtitles the Viewer chose for a Title: none, one of the file's Tracks, or a downloaded file. */
+sealed interface ChosenSubtitles {
+    /** The Viewer turned subtitles off for this Title. */
+    data object Off : ChosenSubtitles
+
+    /** One of the file's subtitle Tracks. */
+    data class Embedded(val track: ChosenTrack) : ChosenSubtitles
+
+    /** A downloaded subtitle file, by its [SubtitleOffer.id], in [language] (ISO 639-1). */
+    data class Downloaded(val offerId: String, val language: String) : ChosenSubtitles
+}
+
+/** [TitleChoices] as kept on the device. */
+internal fun TitleChoices.toJson(): String {
+    fun track(track: ChosenTrack) = mapOf("index" to track.index, "count" to track.count, "language" to track.language)
+    return choicesJson.toJson(
+        mapOf(
+            "audio" to audio?.let(::track),
+            "subtitles" to when (val chosen = subtitles) {
+                null -> null
+                ChosenSubtitles.Off -> mapOf("off" to true)
+                is ChosenSubtitles.Embedded -> mapOf("track" to track(chosen.track))
+                is ChosenSubtitles.Downloaded -> mapOf("offer" to chosen.offerId, "language" to chosen.language)
+            },
+            "audioDelay" to audioDelay,
+            "subtitleDelay" to subtitleDelay,
+        ),
+    )
+}
+
+/** Reads [TitleChoices] kept as JSON; null when it isn't in that shape. */
+internal fun titleChoices(text: String): TitleChoices? = try {
+    (choicesJson.fromJson(text) as? Map<*, *>)?.let { body ->
+        fun track(map: Map<*, *>?) = map?.let { ChosenTrack((it["index"] as Number).toInt(), (it["count"] as Number).toInt(), it["language"] as? String) }
+        val subtitles = (body["subtitles"] as? Map<*, *>)?.let {
+            when {
+                it["off"] == true -> ChosenSubtitles.Off
+                it["offer"] is String -> ChosenSubtitles.Downloaded(it["offer"] as String, it["language"] as String)
+                else -> ChosenSubtitles.Embedded(track(it["track"] as Map<*, *>)!!)
+            }
+        }
+        TitleChoices(track(body["audio"] as? Map<*, *>), subtitles, (body["audioDelay"] as? Number)?.toLong() ?: 0, (body["subtitleDelay"] as? Number)?.toLong() ?: 0)
+    }
+} catch (e: IOException) {
+    null
+} catch (e: JsonDataException) {
+    null
+} catch (e: ClassCastException) {
+    null
+} catch (e: NullPointerException) {
+    null
+}
+
+private val choicesJson = Moshi.Builder().build().adapter(Any::class.java).serializeNulls()
 
 /** The languages Versions and Tracks are preferred in: the audio language the Viewer last picked, then their [contentLanguages]. */
 internal fun rankingLanguages(remembered: RememberedTracks, contentLanguages: List<String>): List<String> =
@@ -248,9 +361,11 @@ private val SOFTWARE_AUDIO = setOf(
 /**
  * Indexes into the Tracks given to [PlayPlan.chooseTracks]. A null [audio] leaves the file's default
  * audio; a null [subtitle] turns on no subtitles (forced ones, for foreign dialogue, may still show).
- * [downloaded] is a language (ISO 639-1) to show downloaded subtitles in, which the file lacks.
+ * [downloaded] is a language (ISO 639-1) to show downloaded subtitles in, which the file lacks;
+ * [downloadedOffer] is the file to show, by [SubtitleOffer.id], when the Viewer chose one for this
+ * Title, else the best in that language.
  */
-data class TrackChoice(val audio: Int?, val subtitle: Int?, val downloaded: String? = null)
+data class TrackChoice(val audio: Int?, val subtitle: Int?, val downloaded: String? = null, val downloadedOffer: String? = null)
 
 /**
  * The Viewer's one connection to the Provider, held while a Version plays; close it once the player

@@ -35,6 +35,7 @@ import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.Quality
 import dev.betteriptv.core.RememberedTracks
+import dev.betteriptv.core.TitleChoices
 import dev.betteriptv.core.Track
 import dev.betteriptv.core.TrackChoice
 import dev.betteriptv.core.frameRateOf
@@ -67,16 +68,16 @@ internal const val PLAYER_TAG = "Player"
 
 /**
  * Creates the engine a Playback session asks for, choosing a [plan]'s Tracks for this stick and TV
- * once the file is open, with what the Viewer last picked ([remembered], read as each file opens,
- * so a pick made while playing carries over to a Backup), and drawing subtitles in the [style] of
- * the moment.
+ * once the file is open, with what the Viewer chose for its Title ([choices]) and last picked
+ * anywhere ([remembered]), both read as each file opens, so a pick made while playing carries over
+ * to a Backup, and drawing subtitles in the [style] of the moment.
  */
-fun playerEngines(context: Context, plan: PlayPlan, remembered: () -> RememberedTracks, style: () -> SubtitleStyle): (Engine) -> PlayerEngine {
+fun playerEngines(context: Context, plan: PlayPlan, remembered: () -> RememberedTracks, choices: () -> TitleChoices, style: () -> SubtitleStyle): (Engine) -> PlayerEngine {
     val device = readDeviceProfile(context)
     return { engine ->
         when (engine) {
-            Engine.Media3 -> Media3Engine(context, plan, device, remembered)
-            Engine.Vlc -> VlcEngine(context, plan, device, remembered, style())
+            Engine.Media3 -> Media3Engine(context, plan, device, remembered, choices)
+            Engine.Vlc -> VlcEngine(context, plan, device, remembered, choices, style())
         }
     }
 }
@@ -128,12 +129,12 @@ private const val SEEK_GRACE_MILLIS = 2_000L
 
 /** Media3 (ExoPlayer), the default engine. Used on the main thread only. */
 @OptIn(UnstableApi::class)
-class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, remembered: () -> RememberedTracks) : ControlledEngine {
+class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, remembered: () -> RememberedTracks, choices: () -> TitleChoices) : ControlledEngine {
     override val engine = Engine.Media3
     private val requests = OpenRequests()
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
     override val chosen = MutableStateFlow<TrackChoice?>(null)
-    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered, { seen = it }) { chosen.value = it }) }
+    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered, choices, { seen = it }) { chosen.value = it }) }
     /** The presentation times of the frames shown since playback started or the Viewer last seeked, on the playback thread. */
     private val frameTimes = ArrayList<Long>(MIN_FRAMES_FOR_RATE)
     @Volatile private var measuredFrameRate: Float? = null
@@ -350,6 +351,7 @@ private class TrackChooser(
     private val plan: PlayPlan,
     private val device: DeviceProfile,
     private val remembered: () -> RememberedTracks,
+    private val choices: () -> TitleChoices,
     private val onSeen: (FileContents) -> Unit,
     private val onChosen: (TrackChoice) -> Unit,
 ) : Player.Listener {
@@ -367,6 +369,7 @@ private class TrackChooser(
             subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
             device,
             remembered(),
+            choices(),
         )
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
             choice.audio?.let { setOverrideForType(TrackSelectionOverride(audio[it].mediaTrackGroup, 0)) }
@@ -390,6 +393,7 @@ class VlcEngine(
     private val plan: PlayPlan,
     private val device: DeviceProfile,
     private val remembered: () -> RememberedTracks,
+    private val choices: () -> TitleChoices,
     style: SubtitleStyle,
 ) : ControlledEngine {
     override val engine = Engine.Vlc
@@ -423,7 +427,7 @@ class VlcEngine(
     @Volatile private var subtitleTracks = emptyList<VlcTrack>()
     @Volatile private var audioId = -1
     @Volatile private var spuId = -1
-    private val listed = ListedTracks { audio, subtitles -> plan.chooseTracks(audio, subtitles, device, remembered()) }
+    private val listed = ListedTracks { audio, subtitles -> plan.chooseTracks(audio, subtitles, device, remembered(), choices()) }
 
     /** Whether the Viewer wants it playing: a pause asked for before the picture shows waits for it. */
     @Volatile private var wanted = true

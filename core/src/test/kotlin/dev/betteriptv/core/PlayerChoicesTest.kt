@@ -123,6 +123,103 @@ class PlayerChoicesTest {
         assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("eng", "fre"), tracks(), fullHdTv, library.rememberedTracks()))
     }
 
+    // Choices kept for a Title (#291)
+
+    private val korean = ChosenTrack(index = 2, count = 3, language = "kor")
+    private val colony = TitleChoices(audio = korean, subtitles = ChosenSubtitles.Embedded(ChosenTrack(1, 2, "eng")), subtitleDelay = 17_000)
+
+    @Test fun `a Title resumes with the audio, subtitles and delay the Viewer chose in it, not the default`() = runBlocking {
+        syncMovies()
+        val french = listOf("fr", "en")
+        library.saveChoices(library.playPlan(movie, french, fullHdTv)!!, colony)
+
+        val plan = library.playPlan(movie, french, fullHdTv)!!
+        assertEquals(colony, plan.choices)
+        assertEquals(17_000L, plan.choices.subtitleDelay)
+        // Without the choice, French audio would play, with no subtitles.
+        assertEquals(TrackChoice(audio = 2, subtitle = 1), plan.chooseTracks(tracks("fre", "eng", "kor"), tracks("fre", "eng"), fullHdTv))
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("fre", "eng", "kor"), tracks("fre", "eng"), fullHdTv, choices = TitleChoices()))
+        // A Version by hand and Restart keep the choice too.
+        assertEquals(colony, library.chosenPlayPlan(movie, listingId = 1, french)!!.choices)
+        assertEquals(colony, plan.fromStart().choices)
+    }
+
+    @Test fun `the chosen Track is found by language, wherever another file puts it, and the choice beats what was picked elsewhere`() = runBlocking {
+        syncMovies()
+        library.rememberAudio("fr")
+        library.rememberSubtitles("fr")
+        library.saveChoices(library.playPlan(movie, english, fullHdTv)!!, colony)
+
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        assertEquals(TrackChoice(audio = 0, subtitle = 2), plan.chooseTracks(tracks("ko", "fre"), tracks("fre", "spa", "en"), fullHdTv))
+        // Two Tracks in its language: the one at its place.
+        assertEquals(TrackChoice(audio = 2, subtitle = 1), plan.chooseTracks(tracks("kor", "fre", "kor"), tracks("eng", "eng"), fullHdTv))
+    }
+
+    @Test fun `a chosen Track the file doesn't have gives way to what the Viewer's languages would choose`() = runBlocking {
+        syncMovies()
+        library.saveChoices(library.playPlan(movie, listOf("fr", "en"), fullHdTv)!!, colony)
+        val plan = library.playPlan(movie, listOf("fr", "en"), fullHdTv)!!
+
+        // Another Version, dubbed: no Korean audio, no English subtitles.
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("fre", "spa"), tracks("spa"), fullHdTv))
+        // Korean audio the stick can't play is no better than none.
+        val device = fullHdTv.copy(audioDecoders = setOf("audio/mp4a-latm"))
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(listOf(Track("kor", "audio/x-unknown"), Track("fre", "audio/mp4a-latm")), tracks(), device))
+        // The delay stays, for the subtitles the Viewer picks next.
+        assertEquals(17_000L, plan.choices.subtitleDelay)
+    }
+
+    @Test fun `an untagged Track is found again by its place in a file with as many Tracks`() = runBlocking {
+        syncMovies()
+        val untagged = TitleChoices(audio = ChosenTrack(index = 1, count = 2, language = null))
+        library.saveChoices(library.playPlan(movie, english, fullHdTv)!!, untagged)
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+
+        assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks(null, null), tracks(), fullHdTv))
+        // A file with other Tracks is another file: its English plays.
+        assertEquals(TrackChoice(audio = 0, subtitle = null), plan.chooseTracks(tracks("eng", null, null), tracks(), fullHdTv))
+        assertEquals(TrackChoice(audio = null, subtitle = null, downloaded = "en"), plan.chooseTracks(tracks(null, "fre"), tracks(), fullHdTv))
+    }
+
+    @Test fun `subtitles turned off for a Title stay off, and downloaded ones chosen show again by their file`() = runBlocking {
+        syncMovies()
+        library.rememberSubtitles("en")
+        library.saveChoices(library.playPlan(movie, english, fullHdTv)!!, TitleChoices(subtitles = ChosenSubtitles.Off))
+        assertEquals(TrackChoice(audio = 0, subtitle = null), library.playPlan(movie, english, fullHdTv)!!.chooseTracks(tracks("eng"), tracks("eng"), fullHdTv))
+
+        val downloaded = TitleChoices(audio = korean, subtitles = ChosenSubtitles.Downloaded(offerId = "os-42", language = "ko"), subtitleDelay = 17_000)
+        library.saveChoices(library.playPlan(movie, english, fullHdTv)!!, downloaded)
+        val plan = library.playPlan(movie, english, fullHdTv)!!
+        assertEquals(TrackChoice(audio = 2, subtitle = null, downloaded = "ko", downloadedOffer = "os-42"), plan.chooseTracks(tracks("eng", "fre", "kor"), tracks("ko"), fullHdTv))
+        // Its language is searched for and offered even though the file has Korean subtitles of its own.
+        assertEquals(listOf("ko", "en"), plan.subtitleLanguages())
+        assertEquals(listOf("ko"), plan.downloadLanguages(tracks("ko", "en")))
+    }
+
+    @Test fun `a Show's choices carry to its next Episode, and outlive the app`() = runBlocking {
+        val first = episodePlan(1, 1)
+        library.saveChoices(first, colony)
+
+        assertEquals(colony, library.nextEpisodePlan(first, fullHdTv)!!.choices)
+        assertEquals(colony, episodePlan(1, 2).choices)
+        library.close()
+        library = openLibrary()
+        assertEquals(colony, episodePlan(1, 2).choices)
+        syncMovies()
+        assertEquals(TitleChoices(), library.playPlan(movie, english, fullHdTv)!!.choices)
+    }
+
+    @Test fun `choices are kept as JSON on the device, and come back whole`() {
+        val choices = TitleChoices(korean, ChosenSubtitles.Downloaded("os-42", "ko"), audioDelay = -250, subtitleDelay = 17_000)
+
+        assertEquals(choices, titleChoices(choices.toJson()))
+        assertEquals(TitleChoices(subtitles = ChosenSubtitles.Off), titleChoices(TitleChoices(subtitles = ChosenSubtitles.Off).toJson()))
+        assertEquals(TitleChoices(audio = ChosenTrack(0, 1, null)), titleChoices(TitleChoices(audio = ChosenTrack(0, 1, null)).toJson()))
+        assertNull(titleChoices("not json"))
+        assertNull(titleChoices("""{"audio": {"index": "two"}}"""))
+    }
+
     // The next Episode
 
     private suspend fun episodePlan(season: Int, number: Int): PlayPlan {
