@@ -84,6 +84,20 @@ class GamesTest {
         assertEquals(listOf("Apple TV"), race.broadcasters)
     }
 
+    @Test fun `a NASCAR Cup race comes as a Game naming its race, the race its session`() = runBlocking {
+        cloud.games(
+            "nascar",
+            session("202611010020", "2026-11-01T19:00:00Z", "race", name = "NASCAR Cup Series at Martinsville", shortName = "Martinsville", aliases = listOf("Martinsville"), broadcasters = listOf("NBC"), league = "nascar"),
+        )
+
+        val race = library.games(listOf("nascar"), now).single()
+        assertNull(race.home)
+        assertEquals("nascar", race.league)
+        assertEquals("Martinsville", race.event?.shortName)
+        assertEquals(GameSession.Race, race.event?.session)
+        assertEquals(listOf("Martinsville"), race.event?.aliases)
+    }
+
     @Test fun `the kept Games serve while the cloud fails, and a League never kept is left out`() = runBlocking {
         cloud.games("nhl", game("1", "2026-11-01T19:00:00Z", state = "live"), game("2", "2026-11-02T00:00:00Z"))
         library.games(listOf("nhl"), now)
