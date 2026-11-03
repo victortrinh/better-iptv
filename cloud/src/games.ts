@@ -26,8 +26,9 @@ const ASKED_EVERY = 3600_000;
 const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: seventeen Leagues' current days every 5 minutes and
- * their coming days hourly need 8 a minute at most, a golf League's day two.
+ * {@link SUBREQUESTS} that the Charts share: eighteen Leagues' current days every 5 minutes and
+ * their coming days hourly need 11 a minute at most, a golf League's day two and its tomorrow
+ * read as a current day.
  */
 export const GAMES_SUBREQUESTS = 12;
 
@@ -101,7 +102,7 @@ interface Part {
 /**
  * One run of the Cron Trigger, each minute, before the Charts' part: reads the days of the wanted
  * Leagues that are missing or stale, the current days (yesterday's and today's: ESPN's days run on
- * US Eastern time, so a Game in progress may be on either) first, then the Leagues' teams, then
+ * US Eastern time, so a Game in progress may be on either; a golf League's tomorrow too) first, then the Leagues' teams, then
  * the coming days, missing ones before the oldest. Each day is saved as soon as it is read, so a
  * run stopped short keeps what it read. A run sends at most [GAMES_SUBREQUESTS] requests, and says
  * how many it may have sent. A part started in the last [RETRY_AFTER] is passed over. Leagues nobody asked
@@ -139,7 +140,8 @@ export async function fillGames(env: Env): Promise<number> {
   const parts: Part[] = [];
   for (const league of leagues) {
     window.forEach((day, i) => {
-      const current = i <= 1;
+      // A golf round may tee off the US evening before its tournament's first day as ESPN dates it (in Asia, a day ahead): tomorrow is current for golf.
+      const current = i <= 1 || (i === 2 && GOLF_LEAGUES.includes(league));
       const at = fetchedAt.get(`${league}/${day}`) ?? -1;
       if (at < now - (current ? CURRENT_FRESH_FOR : COMING_FRESH_FOR)) {
         // A golf League's day may ask the leaderboard too.

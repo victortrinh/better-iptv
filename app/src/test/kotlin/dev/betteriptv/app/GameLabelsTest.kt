@@ -43,6 +43,10 @@ class GameLabelsTest {
         "pga", "401850979-1", Instant.parse(start), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Golf Chnl"),
         event = GameEvent("World Wide Technology Championship", "World Wide Technology Championship", session, emptyList(), null), dayOnly = dayOnly,
     )
+    private val toto = Game(
+        "lpga", "401835175-1", Instant.parse("2026-11-04T23:00:00Z"), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Golf Chnl"),
+        event = GameEvent("TOTO Japan Classic", "TOTO Japan Classic", GameSession.Round1, listOf("TOTO Japan Classic", "Japan Classic"), null),
+    )
     private fun channel(name: String, country: String? = "US") = Channel("$country: $name", name, country, null, false, listOf(ChannelVariant(1, name, Quality.HD, false)))
 
     @Test fun anEventChannelsStartReadsAsAGamesDoesTheTimeAloneTodayAndTheWeekdayLater() {
@@ -123,6 +127,10 @@ class GameLabelsTest {
         assertEquals(CardInfo.Game("PGA Tour · World Wide Technology Championship · Round 2", "No stream found"), context.gameInfo(GameFeeds(round(GameSession.Round2), emptyList())))
     }
 
+    @Test fun anLpgaRoundIsNamedByTheLpgaItsTournamentAndRound() {
+        assertEquals(CardInfo.Game("LPGA · TOTO Japan Classic · Round 1", "No stream found"), context.gameInfo(GameFeeds(toto, emptyList())))
+    }
+
     @Test fun aRoundWhoseTeeTimesAreNotOutYetSaysItsDayAlone() {
         // Noon in Toronto: the day is known, not the time.
         assertEquals("Today", context.gameCaption(round(GameSession.Round1, "2026-11-01T17:00:00Z", dayOnly = true), now, toronto))
@@ -136,5 +144,6 @@ class GameLabelsTest {
         assertEquals("World Wide Technology Championship · 1er tour", context.matchup(round(GameSession.Round1)))
         assertEquals("World Wide Technology Championship · Dernier tour", context.matchup(round(GameSession.FinalRound)))
         assertEquals("Aujourd'hui", context.gameCaption(round(GameSession.Round1, "2026-11-01T17:00:00Z", dayOnly = true), now, toronto))
+        assertEquals(CardInfo.Game("LPGA · TOTO Japan Classic · 1er tour", "Aucun flux trouvé"), context.gameInfo(GameFeeds(toto, emptyList())))
     }
 }

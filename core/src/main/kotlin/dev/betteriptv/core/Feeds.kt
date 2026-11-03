@@ -77,7 +77,9 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor round 1 round
  * 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying)
  * is none's, and one naming what the League calls elsewhere ([League.elsewhere]: the LPGA, the
- * Korn Ferry Tour) is not the League's. A name two Leagues share ("Golf") keeps neither out.
+ * Korn Ferry Tour) is not the League's. A name two Leagues share ("Golf"), or
+ * another League's name the event's own name holds ("PGA" in the LPGA's KPMG Women's PGA
+ * Championship), keeps none out.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -99,17 +101,19 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") apart, and what this one names elsewhere.
-    val notThis = HashMap<League?, Set<Int>>()
-    fun otherLeagues(league: League?): Set<Int> = notThis.getOrPut(league) {
+    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart, and what this one names elsewhere.
+    val notThis = HashMap<Pair<League?, String?>, Set<Int>>()
+    fun otherLeagues(league: League?, event: GameEvent?): Set<Int> = notThis.getOrPut(league to event?.name) {
         val own = league?.names.orEmpty().map { it.lowercase() }
-        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } + league?.elsewhere.orEmpty())
+        val eventWords = event?.let { SearchIndex.words(it.name) }.orEmpty()
+        val others = League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own && !containsPhrase(eventWords, SearchIndex.words(it)) }
+        holdingAny(others + league?.elsewhere.orEmpty())
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
-        val otherLeague = otherLeagues(thisLeague)
         val event = game.event
+        val otherLeague = otherLeagues(thisLeague, event)
         val named = if (event != null) {
             // An event League's: the League and a name of the event, and no session of the same kind but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))

@@ -3,7 +3,7 @@ import { EVENT_LEAGUES, type Game, GOLF_LEAGUES, type GameSession, type GameStat
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1 and the PGA Tour on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1, the PGA Tour and the LPGA on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -23,10 +23,11 @@ const PATHS: Record<League, string> = {
   wnba: "basketball/wnba",
   f1: "racing/f1",
   pga: "golf/pga",
+  lpga: "golf/lpga",
 };
 
 /** Each golf League's tour on ESPN's leaderboard (`golf/leaderboard?league=<tour>`), checked 2026-11-03. */
-const TOURS: Partial<Record<League, string>> = { pga: "pga" };
+const TOURS: Partial<Record<League, string>> = { pga: "pga", lpga: "lpga" };
 
 /** A day, and the hours from a golf tournament's day's local midnight, as ESPN dates it, to noon there: an untimed round's start. */
 const DAY = 86_400_000;
