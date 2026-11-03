@@ -43,6 +43,7 @@ private fun League.nameResource(): Int = when (this) {
     League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
     League.Wnba -> R.string.league_wnba
     League.F1 -> R.string.league_f1
+    League.Nascar -> R.string.league_nascar
     League.Pga -> R.string.league_pga
 }
 

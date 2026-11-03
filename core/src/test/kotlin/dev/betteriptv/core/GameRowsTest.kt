@@ -361,6 +361,37 @@ class GameRowsTest {
         assertEquals(listOf("Malaysia Grand Prix @ Nov 1 3:00 PM :Viaplay NO 19"), screen.filterIsInstance<HomeRow.MoreLiveEvents>().single().events.map { it.channel.variants.first().name })
     }
 
+    @Test fun `a NASCAR Cup race's Feed is an Event channel naming NASCAR and its track, never another series' or session's there, then its Broadcasters`() = runBlocking {
+        cloud.games(
+            "nascar",
+            session(
+                "202611010020", "2026-11-01T19:00:00Z", "race", state = "live",
+                name = "NASCAR Cup Series at Martinsville", shortName = "Martinsville", aliases = listOf("Martinsville"),
+                broadcasters = listOf("NBC", "HBO Max"), league = "nascar",
+            ),
+        )
+        // As the surveyed Provider names racing (2026-11-03): Flo's slots, the year and the series before the track; no Cup race was listed.
+        provider.serveChannels(
+            "Flo (FLSP) 236: 2026 NASCAR Cup Series at Martinsville Speedway - 01/11 14:00" to "US| FLO SPORTS PPV",
+            // The weekend's lower series, at the same track the same day, and the Cup's own qualifying.
+            "Flo (FLSP) 235: 2026 NASCAR Whelen Modified Tour at Martinsville Speedway - 01/11 10:15" to "US| FLO SPORTS PPV",
+            "Flo (FLSP) 237: 2026 NASCAR Craftsman Truck Series at Martinsville Speedway - 01/11 11:00" to "US| FLO SPORTS PPV",
+            "Flo (FLSP) 238: 2026 NASCAR O'Reilly Auto Parts Series at Martinsville Speedway - 01/11 12:30" to "US| FLO SPORTS PPV",
+            "Flo (FLSP) 239: 2026 NASCAR Xfinity Series at Martinsville Speedway - 01/11 12:30" to "US| FLO SPORTS PPV",
+            "Flo (FLSP) 240: 2026 NASCAR Cup Series Qualifying at Martinsville Speedway - 01/11 09:00" to "US| FLO SPORTS PPV",
+            "US: NBC ᴴᴰ" to "US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            // NASCAR's own streaming channels show old races: no League network.
+            "PRIME: NASCAR ᴿᴬᵂ" to "US| PRIME ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "TUBI: NASCAR ᴿᴬᵂ" to "US| TUBI ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+        )
+        library.sync()
+
+        assertEquals(
+            listOf("Flo (FLSP) 236: 2026 NASCAR Cup Series at Martinsville Speedway - 01/11 14:00", "US: NBC ᴴᴰ"),
+            rows(League.Nascar).liveNow().feedNames("202611010020"),
+        )
+    }
+
     @Test fun `a PGA Tour round's Feed is an Event channel naming golf, its tournament and its round, never another tour's, else Golf Channel`() = runBlocking {
         cloud.games(
             "pga",

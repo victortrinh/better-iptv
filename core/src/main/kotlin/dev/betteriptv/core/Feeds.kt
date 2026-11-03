@@ -71,13 +71,14 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
  * either) needs the Game's League named too.
  *
- * An event League's Game ([GameEvent], F1's or a golf round) has no teams: its Event channels name
- * the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US: APPLE TV F1 PPV 2",
- * "Golf: World Wide Technology Championship Round 1 @ …"), and no session but the Game's
- * ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor round 1 round
- * 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying)
- * is none's, and one naming what the League calls elsewhere ([League.elsewhere]: the LPGA, the
- * Korn Ferry Tour) is not the League's. A name two Leagues share ("Golf") keeps neither out.
+ * An event League's Game ([GameEvent], F1's, a NASCAR race or a golf round) has no teams: its
+ * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:
+ * APPLE TV F1 PPV 2", "Golf: World Wide Technology Championship Round 1 @ …"), and no session but
+ * the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor
+ * round 1 round 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the
+ * sprint's qualifying) is none's, nor one naming another series or tour of the sport
+ * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend; the LPGA,
+ * the Korn Ferry Tour). A name two Leagues share ("Golf") keeps neither out.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -99,11 +100,11 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") apart, and what this one names elsewhere.
+    // Another League's names, those it shares with this one ("Golf") apart, and this one's other series.
     val notThis = HashMap<League?, Set<Int>>()
     fun otherLeagues(league: League?): Set<Int> = notThis.getOrPut(league) {
         val own = league?.names.orEmpty().map { it.lowercase() }
-        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } + league?.elsewhere.orEmpty())
+        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } + league?.otherSeries.orEmpty())
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)

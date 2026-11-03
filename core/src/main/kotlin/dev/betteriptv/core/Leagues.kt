@@ -8,11 +8,18 @@ package dev.betteriptv.core
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
- * League ([events]: F1 and the PGA Tour, #310) has no teams: its Games are a Grand Prix's sessions
- * or a golf tournament's rounds ([GameEvent]). An Event channel naming one of [elsewhere] (another
- * tour, the amateurs) beside the League's names is none of its Games.
+ * League ([events]: F1, NASCAR Cup and the PGA Tour, #310) has no teams: its Games are a Grand
+ * Prix's sessions, a race or a golf tournament's rounds ([GameEvent]). [otherSeries] name the same
+ * sport's other series or tours, whose Event channels name the League too ("NASCAR Whelen Modified
+ * Tour at Martinsville Speedway", "Golf: LPGA … Round 1"): one naming any is none of this League's Games.
  */
-enum class League(val key: String, val names: List<String>, val network: String? = null, val events: Boolean = false, val elsewhere: List<String> = emptyList()) {
+enum class League(
+    val key: String,
+    val names: List<String>,
+    val network: String? = null,
+    val events: Boolean = false,
+    val otherSeries: List<String> = emptyList(),
+) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
     Nba("nba", listOf("NBA"), network = "NBA TV"),
@@ -29,11 +36,15 @@ enum class League(val key: String, val names: List<String>, val network: String?
     NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
     Wnba("wnba", listOf("WNBA")),
     F1("f1", listOf("F1", "Formula 1", "Formula One"), network = "Sky Sports F1", events = true),
+    Nascar(
+        "nascar", listOf("NASCAR"), events = true,
+        otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
+    ),
 
     // The Provider's golf slots name no tour, only `Golf:` (catalog 2026-11-03), so the other tours' and the amateurs' are told apart by name.
     Pga(
         "pga", listOf("PGA Tour", "PGA", "Golf"), network = "Golf Channel", events = true,
-        elsewhere = listOf("LPGA", "Korn Ferry", "PGA Tour Champions", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "European Tour"),
+        otherSeries = listOf("LPGA", "Korn Ferry", "PGA Tour Champions", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "European Tour"),
     );
 
     companion object {

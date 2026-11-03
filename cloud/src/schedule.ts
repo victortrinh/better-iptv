@@ -1,7 +1,7 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
  * fifteen team Leagues, whose Games are two teams', and the event Leagues (#310), whose Games have
- * no teams: F1's are a Grand Prix's sessions, the PGA Tour's a tournament's rounds.
+ * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's its races, the PGA Tour's a tournament's rounds.
  */
 export const LEAGUES = [
   "nhl",
@@ -20,13 +20,14 @@ export const LEAGUES = [
   "ncaa-basketball",
   "wnba",
   "f1",
+  "nascar",
   "pga",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
 
 /** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
-export const EVENT_LEAGUES: readonly League[] = ["f1", "pga"];
+export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar", "pga"];
 
 /**
  * The golf Leagues: their Games are a tournament's rounds, whose times only ESPN's leaderboard
