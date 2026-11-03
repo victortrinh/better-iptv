@@ -288,7 +288,7 @@ class GameRowsTest {
         assertEquals(listOf("US: Senators vs Bruins (2026-11-01 19:00:00) ᴴᴰ", "Senators @ Bruins (2026-11-01 19:00:00)", "CA: TSN"), before.feeds.map { it.channel.variants.first().name })
         assertFalse(before.feeds.any { it.dropped })
 
-        val dropped = library.notThisGame(before, before.best!!, listOf("en"))
+        val dropped = library.notThisGame(before, before.best!!, listOf("en"), now = now)
         assertEquals(listOf("Senators @ Bruins (2026-11-01 19:00:00)", "CA: TSN", "US: Senators vs Bruins (2026-11-01 19:00:00) ᴴᴰ"), dropped.feeds.map { it.channel.variants.first().name })
         assertEquals(listOf(false, false, true), dropped.feeds.map { it.dropped })
         assertEquals("Senators @ Bruins (2026-11-01 19:00:00)", dropped.best!!.channel.variants.first().name)
@@ -303,17 +303,17 @@ class GameRowsTest {
         // Once every named Feed is dropped the League network joins, as for a Game with none; with it dropped too, none is best,
         // and the upcoming Game still shows with its Feeds listed, while a live one with none left is hidden.
         var left = after
-        while (left.best?.kind != FeedKind.LeagueNetwork) left = library.notThisGame(left, left.best!!, listOf("en"))
+        while (left.best?.kind != FeedKind.LeagueNetwork) left = library.notThisGame(left, left.best!!, listOf("en"), now = now)
         assertEquals(listOf(false, true, true, true), left.feeds.map { it.dropped })
         assertEquals("US: NHL Network", left.best!!.channel.variants.first().name)
-        left = library.notThisGame(left, left.best!!, listOf("en"))
+        left = library.notThisGame(left, left.best!!, listOf("en"), now = now)
         assertNull(left.best)
         assertEquals(4, left.feeds.size)
         assertNull(rows().today()!!.single().best)
         assertEquals(4, rows().today()!!.single().feeds.size)
 
         var live = rows().liveNow()!!.single()
-        while (live.best != null) live = library.notThisGame(live, live.best!!, listOf("en"))
+        while (live.best != null) live = library.notThisGame(live, live.best!!, listOf("en"), now = now)
         assertNull(rows().liveNow())
     }
 

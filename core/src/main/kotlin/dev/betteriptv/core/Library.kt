@@ -974,7 +974,7 @@ class Library private constructor(
         ranked.firstOrNull()?.let {
             PlayPlan(
                 id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0,
-                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id), choices = titleChoices(id),
             )
         }
     }
@@ -1009,13 +1009,15 @@ class Library private constructor(
         val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
         val original = originalLanguage(id)
+        // The Show's: what the Viewer chose in one Episode carries to the next.
+        val choices = titleChoices(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
                 val ranked = playable(candidates, languages, device, qualityCap)
                 ranked.firstOrNull()?.let {
                     val at = stopped[episode]
-                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, original)
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, original, choices)
                 }
             }
         }
@@ -1056,6 +1058,18 @@ class Library private constructor(
 
     @Volatile private var remembered: RememberedTracks? = null
 
+    /** What the Viewer chose the last time [id] played (#291); nothing, when they never chose anything in it. */
+    fun titleChoices(id: TitleId): TitleChoices = store.titleChoices(id)?.let(::titleChoices) ?: TitleChoices()
+
+    /**
+     * Keeps what the Viewer chose while [plan] plays, so the Title starts the same next time: a
+     * Movie's, or its Show's, which its next Episode starts with too. A Channel's plan keeps nothing.
+     */
+    suspend fun saveChoices(plan: PlayPlan, choices: TitleChoices) = withContext(Dispatchers.IO) {
+        val id = plan.titleId ?: return@withContext
+        store.saveTitleChoices(id, choices.toJson(), Instant.now())
+    }
+
     /**
      * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
      * stopped last time; null for a Show or when the Title doesn't have it.
@@ -1071,7 +1085,7 @@ class Library private constructor(
             val stopped = stopped(id)
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0,
-                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id),
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id), choices = titleChoices(id),
             )
         }
     }
@@ -1320,7 +1334,7 @@ class Library private constructor(
         val id = TitleId.Unmatched(TitleKind.Movie, replay.listingId)
         val version = Version(replay.listingId, replay.name, prefixTable.describe(replay.name, replay.category).attributes)
         val stopped = stopped(id)
-        PlayPlan(id, version, contentLanguages, listOf(version), stopped?.position ?: 0, remembered = rememberedTracks(), length = stopped?.duration)
+        PlayPlan(id, version, contentLanguages, listOf(version), stopped?.position ?: 0, remembered = rememberedTracks(), length = stopped?.duration, choices = titleChoices(id))
     }
 
     /**
@@ -1331,8 +1345,7 @@ class Library private constructor(
      * of the Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]). Once every
      * named Feed is dropped, the League network joins, as it does for a Game with none.
      */
-    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION): GameFeeds = withContext(Dispatchers.IO) {
-        val now = Instant.now()
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Instant.now()): GameFeeds = withContext(Dispatchers.IO) {
         store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
         // Matched again, so the League network joins once every named Feed is dropped.
         matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
