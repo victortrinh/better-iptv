@@ -115,7 +115,7 @@ fun SearchScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
-        BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
+        BrowseTabs(Browse.Search, { if (it != Browse.Search) onTab(it) }, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab, library = library)
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxSize()) {
             // Scrolls once focus goes down into the completions, so they all can be reached, and back

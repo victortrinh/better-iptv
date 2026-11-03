@@ -64,6 +64,7 @@ fun TitlesScreen(
             if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab,
             Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp),
             selectedFocus = tab,
+            library = library,
         )
     }
 }
