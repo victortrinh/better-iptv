@@ -8,6 +8,9 @@ icon on its tile and ignores the banner (#314). On the icon the ground is a card
 in Fire OS's tile grey, so the tile keeps a margin around it (#323). The letters are the app's Inter Bold,
 turned into outlines because a vector drawable can't hold text.
 
+The debug build (and benchmark, the same `.debug` app) is a separate app beside the released
+one, so its icon adds a small "debug" caption in Caution Amber under the Wordmark (#325).
+
 Writes:
   app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml   adaptive icon (API 26+)
   app/src/main/res/mipmap-anydpi/ic_launcher.xml       legacy icon (API 25)
@@ -15,6 +18,8 @@ Writes:
   app/src/main/res/drawable/ic_launcher_monochrome.xml themed icons (API 33+)
   app/src/main/res/drawable/banner.xml                 320 x 180 android:banner
   app/src/main/res/values/ic_launcher.xml              the ground colour
+  app/src/{debug,benchmark}/res/drawable/ic_launcher_{foreground,monochrome}.xml
+  app/src/{debug,benchmark}/res/mipmap-anydpi/ic_launcher.xml   the same, captioned "debug"
 
 Usage: python3 scripts/app_icon.py   (needs fonttools: pip install fonttools)
 """
@@ -28,12 +33,15 @@ from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "app" / "src" / "main" / "res"
+DEBUG_RES = [ROOT / "app" / "src" / build / "res" for build in ("debug", "benchmark")]
 FONT = TTFont(RES / "font" / "inter_700.ttf")
+LABEL_FONT = TTFont(RES / "font" / "inter_600.ttf")  # Type.caption's weight
 
 GROUND = "#FF16171B"  # charcoal, a step above Colors.ground so the icon isn't a hole
 TILE_GREY = "#FF5A5A5A"  # the grey Fire OS puts behind a sideloaded icon, measured on the stick
 WHITE = "#FFF2F2F4"   # off-white
 DOT_GREY = "#FF77787E"  # the Wordmark's dot: a step back from the white letters
+CAUTION = "#FFFFB35C"  # Caution Amber: small text only, as DESIGN.md allows
 
 WORD = "zugig"
 TRACKING = -0.03  # Inter Bold tracked like Type.display
@@ -51,14 +59,18 @@ DOT_GAP_EM = 0.0643
 ICON_CARD = 56
 ICON_CARD_RADIUS = 12
 ICON_WORD = 16
+# The debug caption: "debug" under the Wordmark, the pair's ink centred on the card.
+DEBUG_CAPTION = "debug"
+DEBUG_SIZE = 9
+DEBUG_GAP = 4
 
 
 def n(v):
     return f"{v:.2f}".rstrip("0").rstrip(".")
 
 
-def text_outline(s, x, baseline, size, tracking=0.0):
-    gs, cmap, upm = FONT.getGlyphSet(), FONT.getBestCmap(), FONT["head"].unitsPerEm
+def text_outline(s, x, baseline, size, tracking=0.0, font=FONT):
+    gs, cmap, upm = font.getGlyphSet(), font.getBestCmap(), font["head"].unitsPerEm
     pen = SVGPathPen(gs)
     k = size / upm
     cursor = 0
@@ -69,9 +81,9 @@ def text_outline(s, x, baseline, size, tracking=0.0):
     return pen.getCommands(), cursor - tracking * size
 
 
-def ink_bounds(s, size, tracking=0.0):
+def ink_bounds(s, size, tracking=0.0, font=FONT):
     """The ink box of `s` set at the origin, y down: (left, top, right, bottom)."""
-    gs, cmap, upm = FONT.getGlyphSet(), FONT.getBestCmap(), FONT["head"].unitsPerEm
+    gs, cmap, upm = font.getGlyphSet(), font.getBestCmap(), font["head"].unitsPerEm
     k, cursor, box = size / upm, 0, None
     for ch in s:
         g = cmap[ord(ch)]
@@ -96,6 +108,26 @@ def wordmark(size, cx, cy, tracking=0.0):
     rad, x, y = d / 2, ox + dot_l + d / 2, oy + dot_t + d / 2
     dot = f"M{n(x)},{n(y - rad)}A{n(rad)},{n(rad)} 0 1 1 {n(x)},{n(y + rad)}A{n(rad)},{n(rad)} 0 1 1 {n(x)},{n(y - rad)}Z"
     return word, dot
+
+
+def wordmark_height(size, tracking=0.0):
+    """The ink height of the Wordmark, dot included."""
+    _, t, _, b = ink_bounds(WORD, size, tracking)
+    return b - min(t, -FONT["OS/2"].sCapHeight * size / FONT["head"].unitsPerEm)
+
+
+def captioned_wordmark(size, cx, cy, tracking=0.0):
+    """The Wordmark with the debug caption under it, the pair's ink centred on (cx, cy):
+    (word path, dot path, caption path)."""
+    k = size / ICON_WORD
+    cap_size, gap = DEBUG_SIZE * k, DEBUG_GAP * k
+    l, t, r, b = ink_bounds(DEBUG_CAPTION, cap_size, font=LABEL_FONT)
+    word_h = wordmark_height(size, tracking)
+    top = cy - (word_h + gap + b - t) / 2
+    word, dot = wordmark(size, cx, top + word_h / 2, tracking)
+    caption, _ = text_outline(DEBUG_CAPTION, round(cx - (l + r) / 2, 2), round(top + word_h + gap - t, 2), cap_size,
+                              font=LABEL_FONT)
+    return word, dot, caption
 
 
 def rounded_square(size, radius, cx, cy):
@@ -123,16 +155,38 @@ def write(path, text):
     print(path.relative_to(ROOT))
 
 
-def main():
+def launcher_icon(res, comment, debug=False):
+    """The adaptive icon's foreground and monochrome layers and the legacy icon, into `res`."""
+    def marks(size, c):
+        if debug:
+            word, dot, caption = captioned_wordmark(size, c, c, TRACKING)
+            return [(word, WHITE), (dot, DOT_GREY), (caption, CAUTION)]
+        word, dot = wordmark(size, c, c, TRACKING)
+        return [(word, WHITE), (dot, DOT_GREY)]
+
     # Adaptive icon: 108 dp layers, of which Fire OS shows the middle 72 dp square.
-    word, dot = wordmark(ICON_WORD, 54, 54, TRACKING)
+    ink = marks(ICON_WORD, 54)
     card = rounded_square(ICON_CARD, ICON_CARD_RADIUS, 54, 54)
-    write(RES / "drawable" / "ic_launcher_foreground.xml",
-          vector(108, 108, path_xml(card, GROUND, "    ") + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "),
-                 "Adaptive icon foreground: the charcoal card, zugig in Inter Bold and its grey dot."))
-    write(RES / "drawable" / "ic_launcher_monochrome.xml",
-          vector(108, 108, path_xml(word, WHITE, "    ") + path_xml(dot, WHITE, "    "),
-                 "Themed icon: the word and dot, which the system tints one colour."))
+    write(res / "drawable" / "ic_launcher_foreground.xml",
+          vector(108, 108, path_xml(card, GROUND, "    ") + "".join(path_xml(d, c, "    ") for d, c in ink),
+                 f"Adaptive icon foreground: the charcoal card, {comment}."))
+    write(res / "drawable" / "ic_launcher_monochrome.xml",
+          vector(108, 108, "".join(path_xml(d, WHITE, "    ") for d, _ in ink),
+                 f"Themed icon: the word{', dot and caption' if debug else ' and dot'}, which the system tints one colour."))
+
+    # Legacy icon for API 25 (Fire OS 6): a full-bleed square, the launcher masks it.
+    k = 48 / 72
+    ink = marks(ICON_WORD * k, 24)
+    card = rounded_square(ICON_CARD * k, ICON_CARD_RADIUS * k, 24, 24)
+    body = (path_xml("M0,0h48v48h-48z", TILE_GREY, "    ") + path_xml(card, GROUND, "    ")
+            + "".join(path_xml(d, c, "    ") for d, c in ink))
+    write(res / "mipmap-anydpi" / "ic_launcher.xml", vector(48, 48, body, "Launcher icon below API 26."))
+
+
+def main():
+    launcher_icon(RES, "zugig in Inter Bold and its grey dot")
+    for res in DEBUG_RES:
+        launcher_icon(res, "zugig in Inter Bold, its grey dot and an amber debug caption", debug=True)
     write(RES / "values" / "ic_launcher.xml",
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
           f'    <color name="ic_launcher_background">{TILE_GREY}</color>\n</resources>\n')
@@ -143,14 +197,6 @@ def main():
           '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
           '    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />\n'
           '</adaptive-icon>\n')
-
-    # Legacy icon for API 25 (Fire OS 6): a full-bleed square, the launcher masks it.
-    k = 48 / 72
-    word, dot = wordmark(ICON_WORD * k, 24, 24, TRACKING)
-    card = rounded_square(ICON_CARD * k, ICON_CARD_RADIUS * k, 24, 24)
-    body = (path_xml("M0,0h48v48h-48z", TILE_GREY, "    ") + path_xml(card, GROUND, "    ")
-            + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "))
-    write(RES / "mipmap-anydpi" / "ic_launcher.xml", vector(48, 48, body, "Launcher icon below API 26."))
 
     # Banner: the wordmark and its dot alone, their ink centred on the 320 x 180 card.
     word, dot = wordmark(64, 160, 90, TRACKING)
