@@ -591,16 +591,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
 
     /**
      * Matches the stored catalog's suspects by the answers kept, regrouping its Titles if that moves
-     * any Listing, and returns the Sync with its new count of Listings Matched by name.
+     * any Listing, and returns the Sync with its new count of Listings Matched by name; null when no
+     * Listing moved (answers a Matching cut short saved are applied by the next one).
      */
     fun applyMatchAnswers(): CompletedSync? = synchronized(writer) {
         writer.execSQL("BEGIN IMMEDIATE")
-        try {
+        val moved = try {
             writer.execSQL(
                 "UPDATE listing SET title_key = $ANSWERED_KEY WHERE suspect = 1 AND match_key IN (SELECT key FROM match_answer) AND title_key IS NOT $ANSWERED_KEY",
             )
-            val moved = writer.prepare("SELECT changes()").use { it.step(); it.getLong(0) }
-            if (moved > 0) {
+            val changed = writer.prepare("SELECT changes()").use { it.step(); it.getLong(0) }
+            if (changed > 0) {
                 writer.execSQL("DELETE FROM title")
                 writer.execSQL("INSERT INTO title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("listing"))
                 writer.execSQL("UPDATE listing SET title = (SELECT position FROM title WHERE key = listing.title_key)")
@@ -611,10 +612,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 }
             }
             writer.execSQL("COMMIT")
+            changed
         } catch (e: Throwable) {
             writer.execSQL("ROLLBACK")
             throw e
         }
+        if (moved == 0L) return null
         truncateLog()
         lastSync()
     }

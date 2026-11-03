@@ -12,9 +12,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     lateinit var library: Library
@@ -28,6 +34,14 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val _catalogJobs = MutableStateFlow(0)
+
+    /** How many Syncs and Matchings are running: [CatalogWorkService] keeps the process alive while any is. */
+    val catalogJobs: StateFlow<Int> = _catalogJobs.asStateFlow()
+
+    /** Whether this launch has picked up Matching a closed app left unfinished ([Library.resumeMatching]). */
+    private val matchingResumed = AtomicBoolean()
 
     override fun onCreate() {
         super.onCreate()
@@ -75,25 +89,36 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     /**
      * The app came to the front (launch or resume): a held Sync's catalog lands now, between screens,
-     * or else a Sync starts if the last one is stale. Nothing while the player is open or before login.
+     * or else a Sync starts if the last one is stale. Either Matches the catalog after; with neither,
+     * the first time, Matching a closed app left unfinished resumes. Nothing while the player is
+     * open or before login.
      */
     fun onResumed() {
         if (!library.isLoggedIn || playerOpen) return
-        if (library.hasPendingCatalog) applyPendingCatalog() else syncIfStale()
+        when {
+            library.hasPendingCatalog -> applyPendingCatalog()
+            syncIfStale() -> Unit
+            matchingResumed.compareAndSet(false, true) -> scope.launch { keepingAlive { library.resumeMatching() } }
+        }
     }
 
     /** Lands a held Sync's catalog ([Library.applyPendingCatalog]), on entering a top-level screen; never while the player is open. */
     fun applyPendingCatalog() {
         if (playerOpen || !library.hasPendingCatalog) return
-        scope.launch { library.applyPendingCatalog() }
+        scope.launch { keepingAlive { library.applyPendingCatalog() } }
     }
 
-    /** Starts a Sync unless one finished recently or waits to be applied. The catalog on screen stays until the new one lands. */
-    fun syncIfStale() {
+    /**
+     * Starts a Sync unless one finished recently or waits to be applied, and says whether it did. The
+     * catalog on screen stays until the new one lands.
+     */
+    fun syncIfStale(): Boolean {
         val status = library.syncStatus.value
-        if (status is SyncStatus.Ready) return
+        if (status is SyncStatus.Ready) return false
         val last = status.last
-        if (last == null || Duration.between(last.finishedAt, Instant.now()) > STALE_AFTER) sync()
+        if (last != null && Duration.between(last.finishedAt, Instant.now()) <= STALE_AFTER) return false
+        sync()
+        return true
     }
 
     /**
@@ -104,7 +129,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         if (library.syncStatus.value is SyncStatus.Running) return
         scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
-            when (val status = library.sync(hold = true)) {
+            when (val status = keepingAlive { library.sync(hold = true) }) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
                     "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.rematchedListings} Matched by name",
@@ -113,6 +138,16 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed at ${status.step}: ${status.problem}")
                 else -> Unit
             }
+        }
+    }
+
+    /** Runs [work] with [CatalogWorkService] keeping the process alive, so switching apps doesn't end it. */
+    private suspend fun <T> keepingAlive(work: suspend () -> T): T {
+        if (_catalogJobs.getAndUpdate { it + 1 } == 0) CatalogWorkService.start(this)
+        try {
+            return work()
+        } finally {
+            _catalogJobs.update { it - 1 }
         }
     }
 

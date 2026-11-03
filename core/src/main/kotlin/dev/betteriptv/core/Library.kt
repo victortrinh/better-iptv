@@ -383,6 +383,22 @@ class Library private constructor(
     }
 
     /**
+     * Picks up Matching the app closed on (or the cloud didn't answer): asks the cloud about the
+     * stored catalog's suspects it hasn't answered for lately and regroups the Titles by the answers
+     * kept, without waiting for the next Sync. Asks nothing, and shows no [matchingStatus], when
+     * every suspect has its answer.
+     */
+    suspend fun resumeMatching() = matchLock.withLock {
+        withContext(Dispatchers.IO) {
+            try {
+                if (store.lastSync() != null) matchByName()
+            } finally {
+                _matchingStatus.value = null
+            }
+        }
+    }
+
+    /**
      * Tells the cloud which Prefixes the Sync found that the Prefix table doesn't know, so they get
      * added to it. The Viewer never sees them; a Sync that can't report them leaves it to the next.
      */
@@ -416,13 +432,12 @@ class Library private constructor(
             val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
                 .map { question(it.kind, it.name, prefixTable.describe(it.name, it.category), it.providerTmdbId) }
                 .distinctBy { it.key }
-            if (questions.isEmpty()) return
             // A batch can fail on its own (the cloud ran out of CPU time, say): its suspects are asked
             // again next Sync. Several in a row mean the cloud is down.
             var failedInARow = 0
             var asked = 0
             var answeredAt = matchClock.instant()
-            _matchingStatus.value = MatchingStatus(asked, questions.size)
+            if (questions.isNotEmpty()) _matchingStatus.value = MatchingStatus(asked, questions.size)
             for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
                 if (Duration.between(answeredAt, matchClock.instant()) >= MATCH_STALL_AFTER) break
                 try {
@@ -438,7 +453,9 @@ class Library private constructor(
                 asked += batch.size
                 _matchingStatus.value = MatchingStatus(asked, questions.size)
             }
-            store.applyMatchAnswers()?.let { regrouped ->
+            // Answers saved before the app closed are applied even when nothing is left to ask; with
+            // nothing asked and no Listing moved, the screens needn't read again.
+            (store.applyMatchAnswers() ?: store.lastSync()?.takeIf { questions.isNotEmpty() })?.let { regrouped ->
                 // The regrouped Sync replaces the one showing, not a Sync running or held meanwhile.
                 _syncStatus.update { if (it is SyncStatus.Synced) SyncStatus.Synced(regrouped) else it }
                 catalogChanged()

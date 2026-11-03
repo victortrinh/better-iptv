@@ -122,6 +122,31 @@ class MatchingTest {
         assertTrue(cards().single { it.name == "Titanic" && it.year == 1996 }.id is TitleId.Unmatched)
     }
 
+    @Test fun `Matching cut short picks up on the next launch, without waiting for a Sync`() = runBlocking {
+        // The app closed (or the cloud was out) before Matching got its answers.
+        cloud.down = true
+        library.sync()
+        library.close()
+        cloud.down = false
+
+        library = openLibrary()
+        library.resumeMatching()
+
+        assertTrue("EN - Titanic  (1996)" in versionNames(titanic))
+        assertEquals(1, cards().count { it.id == titanic })
+        assertEquals(3, library.syncStatus.value.last?.rematchedListings)
+    }
+
+    @Test fun `a launch after Matching finished asks the cloud nothing`() = runBlocking {
+        library.sync()
+        val asked = cloud.matchAsked.size
+
+        library.resumeMatching()
+
+        assertEquals(asked, cloud.matchAsked.size)
+        assertEquals(null, library.matchingStatus.value)
+    }
+
     @Test fun `a batch the cloud fails doesn't stop the batches after it`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
         provider.showListOverride = "[]"
