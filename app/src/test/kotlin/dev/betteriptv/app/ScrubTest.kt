@@ -52,6 +52,20 @@ class ScrubTest {
     }
 
     @Test
+    fun aHoldStartedAtARepeatMovesByHowLongTheKeyIsHeld() {
+        // With the overlay up, a tap of Left moves focus between its buttons; only the repeats of a
+        // held key reach the scrub (#290), which then moves as if the tap had been its first press.
+        val scrub = Scrub(from = hour, duration = movie)
+        scrub.move(forward = false, at = 500, downAt = 0)
+        assertEquals(hour - 10_000, scrub.target)
+        scrub.move(forward = false, at = 1_000, downAt = 0)
+        assertEquals(hour - 20_000, scrub.target)
+        val forward = Scrub(from = hour, duration = movie)
+        forward.move(forward = true, at = 1_000, downAt = 0)
+        assertEquals(hour + 20_000, forward.target)
+    }
+
+    @Test
     fun theTargetStaysInTheFile() {
         val scrub = Scrub(from = hour, duration = movie)
         hold(scrub, forward = true, interval = 50, until = { it > 10_000 })
