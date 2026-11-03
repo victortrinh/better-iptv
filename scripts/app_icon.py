@@ -4,7 +4,8 @@
 Both are the Wordmark on the charcoal ground: a white lowercase "zugig" ending in a
 grey dot raised to cap height, the same dot the in-app Wordmark draws. The icon carries
 the whole word, not a lone z, because Fire OS's App Library shows a sideloaded app's
-icon on its tile and ignores the banner (#314). The letters are the app's Inter Bold,
+icon on its tile and ignores the banner (#314). On the icon the ground is a card inset
+in Fire OS's tile grey, so the tile keeps a margin around it (#323). The letters are the app's Inter Bold,
 turned into outlines because a vector drawable can't hold text.
 
 Writes:
@@ -30,6 +31,7 @@ RES = ROOT / "app" / "src" / "main" / "res"
 FONT = TTFont(RES / "font" / "inter_700.ttf")
 
 GROUND = "#FF16171B"  # charcoal, a step above Colors.ground so the icon isn't a hole
+TILE_GREY = "#FF5A5A5A"  # the grey Fire OS puts behind a sideloaded icon, measured on the stick
 WHITE = "#FFF2F2F4"   # off-white
 DOT_GREY = "#FF77787E"  # the Wordmark's dot: a step back from the white letters
 
@@ -41,11 +43,14 @@ TRACKING = -0.03  # Inter Bold tracked like Type.display
 DOT_EM = 0.2169
 DOT_GAP_EM = 0.0643
 
-# The icon's Wordmark size: its ink, dot included, is 2.77 em wide, so 25 dp spans
-# 69 dp of the 72 dp square Fire OS shows of an adaptive icon, the tile's full width.
-# A round mask (66 dp) would clip the z and the dot; the TV launchers that use one
-# show the banner instead.
-ICON_WORD = 25
+# Fire OS draws the middle 72 dp of the adaptive icon at the tile's full height, on a
+# grey tile. The icon's ground is that grey, so the visible card is a smaller charcoal
+# square inside it, with the tile's grey around it. The Wordmark's ink, dot included,
+# is 2.77 em wide, so 16 dp spans 44 dp of the 56 dp card. The card also fits the
+# 66 dp round mask other TV launchers use.
+ICON_CARD = 56
+ICON_CARD_RADIUS = 12
+ICON_WORD = 16
 
 
 def n(v):
@@ -93,6 +98,14 @@ def wordmark(size, cx, cy, tracking=0.0):
     return word, dot
 
 
+def rounded_square(size, radius, cx, cy):
+    l, t, r = cx - size / 2, cy - size / 2, size - 2 * radius
+    return (f"M{n(l + radius)},{n(t)}h{n(r)}a{n(radius)},{n(radius)} 0 0 1 {n(radius)},{n(radius)}"
+            f"v{n(r)}a{n(radius)},{n(radius)} 0 0 1 {n(-radius)},{n(radius)}h{n(-r)}"
+            f"a{n(radius)},{n(radius)} 0 0 1 {n(-radius)},{n(-radius)}v{n(-r)}"
+            f"a{n(radius)},{n(radius)} 0 0 1 {n(radius)},{n(-radius)}z")
+
+
 def path_xml(d, colour, indent):
     return f'{indent}<path\n{indent}    android:fillColor="{colour}"\n{indent}    android:pathData="{d}" />\n'
 
@@ -113,15 +126,16 @@ def write(path, text):
 def main():
     # Adaptive icon: 108 dp layers, of which Fire OS shows the middle 72 dp square.
     word, dot = wordmark(ICON_WORD, 54, 54, TRACKING)
+    card = rounded_square(ICON_CARD, ICON_CARD_RADIUS, 54, 54)
     write(RES / "drawable" / "ic_launcher_foreground.xml",
-          vector(108, 108, path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "),
-                 "Adaptive icon foreground: zugig in Inter Bold and its grey dot."))
+          vector(108, 108, path_xml(card, GROUND, "    ") + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "),
+                 "Adaptive icon foreground: the charcoal card, zugig in Inter Bold and its grey dot."))
     write(RES / "drawable" / "ic_launcher_monochrome.xml",
           vector(108, 108, path_xml(word, WHITE, "    ") + path_xml(dot, WHITE, "    "),
                  "Themed icon: the word and dot, which the system tints one colour."))
     write(RES / "values" / "ic_launcher.xml",
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-          f'    <color name="ic_launcher_background">{GROUND}</color>\n</resources>\n')
+          f'    <color name="ic_launcher_background">{TILE_GREY}</color>\n</resources>\n')
     write(RES / "mipmap-anydpi-v26" / "ic_launcher.xml",
           '<?xml version="1.0" encoding="utf-8"?>\n'
           '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
@@ -131,8 +145,11 @@ def main():
           '</adaptive-icon>\n')
 
     # Legacy icon for API 25 (Fire OS 6): a full-bleed square, the launcher masks it.
-    word, dot = wordmark(ICON_WORD * 48 / 72, 24, 24, TRACKING)
-    body = path_xml("M0,0h48v48h-48z", GROUND, "    ") + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    ")
+    k = 48 / 72
+    word, dot = wordmark(ICON_WORD * k, 24, 24, TRACKING)
+    card = rounded_square(ICON_CARD * k, ICON_CARD_RADIUS * k, 24, 24)
+    body = (path_xml("M0,0h48v48h-48z", TILE_GREY, "    ") + path_xml(card, GROUND, "    ")
+            + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "))
     write(RES / "mipmap-anydpi" / "ic_launcher.xml", vector(48, 48, body, "Launcher icon below API 26."))
 
     # Banner: the wordmark and its dot alone, their ink centred on the 320 x 180 card.
