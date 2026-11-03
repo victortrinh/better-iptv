@@ -419,4 +419,38 @@ class GameRowsTest {
         // The TOUR Championship's final round takes neither the Korn Ferry Tour's nor the LPGA's.
         assertEquals(listOf("CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401850980-4"))
     }
+
+    @Test fun `a UFC card's Feed is an Event channel naming UFC and both main-event fighters, or the numbered event, never another promotion's, else the League's network`() = runBlocking {
+        cloud.games(
+            "ufc",
+            fightCard("600061268", "2026-11-01T18:00:00Z", "2026-11-01T21:00:00Z", state = "live"),
+            fightCard("600061400", "2026-11-02T22:00:00Z", "2026-11-03T02:00:00Z", name = "UFC 334: Gane vs. Hokit", shortName = "UFC 334", fighters = listOf("Ciryl Gane" to "Gane", "Josh Hokit" to "Hokit")),
+        )
+        // As the surveyed Provider names them (2026-11-03): the card's name with PRELIMS, and a start and stop; another promotion's card in the same slots.
+        provider.serveChannels(
+            "UFC event: 1 name: UFC FIGHT NIGHT: CORTES ACOSTA VS WALKER PRELIMS start:2026-11-01 18:55:00 stop:2026-11-01 23:00:00" to "US| UFC PPV",
+            "UFC 00 : ANTHONY PETTIS FC 26 start:2026-11-01 19:55:00 stop:2026-11-01 23:00:00" to "US| UFC PPV",
+            "PFL: Cortes Acosta vs Walker start:2026-11-01 18:00:00" to "US| FIGHT PPV",
+            "UFC 33 : Ortiz vs Belfort start:2026-11-02 22:00:00" to "US| UFC PPV",
+            "US: UFC HD" to "US| SPORT ᴴᴰ",
+        )
+        library.sync()
+
+        val screen = rows(League.Ufc)
+        // Tonight's card: its own Event channel, not Anthony Pettis FC's nor PFL's; the League's network stays out beside it.
+        assertEquals(listOf("UFC event: 1 name: UFC FIGHT NIGHT: CORTES ACOSTA VS WALKER PRELIMS start:2026-11-01 18:55:00 stop:2026-11-01 23:00:00"), screen.liveNow().feedNames("600061268"))
+        // UFC 334, named by neither its fighters nor its number in any Event channel (UFC 33 is another event): the UFC channel stands in.
+        val ufc334 = screen.league(League.Ufc)!!.single { it.game.id == "600061400" }.feeds.single()
+        assertEquals("US: UFC HD", ufc334.channel.variants.first().name)
+        assertEquals(FeedKind.LeagueNetwork, ufc334.kind)
+        assertFalse(screen.filterIsInstance<HomeRow.MoreLiveEvents>().single().events.any { "CORTES ACOSTA VS WALKER" in it.channel.variants.first().name })
+    }
+
+    @Test fun `a numbered UFC card's Event channel may name only its number`() = runBlocking {
+        cloud.games("ufc", fightCard("600061400", "2026-11-01T22:00:00Z", "2026-11-02T02:00:00Z", name = "UFC 334: Gane vs. Hokit", shortName = "UFC 334", fighters = listOf("Ciryl Gane" to "Gane", "Josh Hokit" to "Hokit")))
+        provider.serveChannels("UFC 334 MAIN CARD start:2026-11-01 22:00:00" to "US| UFC PPV", "UFC 3345 start:2026-11-01 22:00:00" to "US| UFC PPV")
+        library.sync()
+
+        assertEquals(listOf("UFC 334 MAIN CARD start:2026-11-01 22:00:00"), rows(League.Ufc).today().feedNames("600061400"))
+    }
 }

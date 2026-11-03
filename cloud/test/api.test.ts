@@ -2,7 +2,7 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
+import { argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -921,13 +921,14 @@ describe("Games", () => {
       f1: "racing/f1",
       nascar: "racing/nascar-premier",
       pga: "golf/pga",
+      ufc: "mma/ufc",
     };
     expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
     for (const path of Object.values(paths)) expect(espn.asked).toContain(`${path}/2026-11-01`);
-    // The event Leagues have drivers or golfers, not teams: no teams list is read for them.
-    const eventPaths = ["racing/f1", "racing/nascar-premier", "golf/pga"];
-    for (const path of Object.values(paths).filter((p) => !eventPaths.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
-    for (const path of eventPaths) expect(espn.asked).not.toContain(`${path}/teams`);
+    // The event Leagues have drivers or golfers and UFC fighters, not teams: no teams list is read for them.
+    const noTeams = ["racing/f1", "racing/nascar-premier", "golf/pga", "mma/ufc"];
+    for (const path of Object.values(paths).filter((p) => !noTeams.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
+    for (const path of noTeams) expect(espn.asked).not.toContain(`${path}/teams`);
     expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
   });
 
@@ -1105,9 +1106,91 @@ describe("Games", () => {
     });
   });
 
+  it("answers a UFC fight card as one Game named after its main event, its two fighters in the name's order: never another bout, a winner or a record", async () => {
+    const headshot = (id: string) => `https://a.espncdn.com/combiner/i?img=/i/headshots/mma/players/full/${id}.png&w=200&h=146`;
+    // Last night's card, over: its result is in ESPN's answer.
+    espn.scoreboard(
+      "mma/ufc",
+      "2026-10-31",
+      fightCard("600061420", "UFC Fight Night: Moicano vs. Nolan", "UFC Fight Night", "post", [
+        { id: "11", date: "2026-10-31T21:00Z", fighters: [["1", "Jared Gordon"], ["2", "Melquizael Costa"]] },
+        { id: "12", date: "2026-11-01T00:00Z", fighters: [["3028863", "Renato Moicano"], ["5144007", "Tom Nolan"]], rounds: 5 },
+      ]),
+    );
+    // Saturday's: prelims at 5 PM Eastern, the main card at 8; ESPN lists the main event last, its fighters in the other order than the name's.
+    espn.scoreboard(
+      "mma/ufc",
+      "2026-11-07",
+      fightCard("600061268", "UFC Fight Night: Cortes Acosta vs. Walker", "UFC Fight Night", "pre", [
+        { id: "21", date: "2026-11-07T22:00Z", fighters: [["3", "Adrian Yañez"], ["4", "Juan Diaz"]] },
+        { id: "22", date: "2026-11-08T01:00Z", fighters: [["5", "Kevin Holland"], ["6", "Uroš Medić"]] },
+        { id: "23", date: "2026-11-08T01:00Z", fighters: [["3146944", "Johnny Walker"], ["4903365", "Waldo Cortes Acosta"]], rounds: 5 },
+      ]),
+      // A card called off is left out.
+      fightCard("600061999", "UFC Fight Night: Smith vs. Jones", "UFC Fight Night", "pre", [{ id: "31", date: "2026-11-07T23:00Z", fighters: [["7", "Bob Smith"], ["8", "Tom Jones"]] }], "STATUS_CANCELED"),
+    );
+
+    const { leagues } = await filled(await registerDevice(), ["ufc"]);
+
+    expect(leagues).toEqual([
+      {
+        league: "ufc",
+        games: [
+          {
+            id: "600061420",
+            league: "ufc",
+            start: "2026-10-31T21:00:00.000Z",
+            state: "over",
+            fight: {
+              name: "UFC Fight Night: Moicano vs. Nolan",
+              shortName: "UFC Fight Night",
+              mainCard: "2026-11-01T00:00:00.000Z",
+              fighters: [
+                { name: "Renato Moicano", shortName: "Moicano", aliases: ["Renato Moicano", "Moicano"], headshot: headshot("3028863") },
+                { name: "Tom Nolan", shortName: "Nolan", aliases: ["Tom Nolan", "Nolan"], headshot: headshot("5144007") },
+              ],
+            },
+            broadcasters: ["Paramount+"],
+          },
+          {
+            id: "600061268",
+            league: "ufc",
+            start: "2026-11-07T22:00:00.000Z",
+            state: "upcoming",
+            fight: {
+              name: "UFC Fight Night: Cortes Acosta vs. Walker",
+              shortName: "UFC Fight Night",
+              mainCard: "2026-11-08T01:00:00.000Z",
+              fighters: [
+                // A surname of two words, as the event's name gives it.
+                { name: "Waldo Cortes Acosta", shortName: "Cortes Acosta", aliases: ["Waldo Cortes Acosta", "Cortes Acosta"], headshot: headshot("4903365") },
+                { name: "Johnny Walker", shortName: "Walker", aliases: ["Johnny Walker", "Walker"], headshot: headshot("3146944") },
+              ],
+            },
+            broadcasters: ["Paramount+"],
+          },
+        ],
+      },
+    ]);
+    // No other bout's fighters, no winner, record or result: the card's outcome never leaves the cloud.
+    expect(JSON.stringify(leagues)).not.toMatch(/Gordon|Costa"|Holland|Yañez|Smith|"(winner|order|records?|details|competitors|home|away)"|13-2/);
+  });
+
+  it("names a card's fighters by their names when the event's name doesn't give the main event", async () => {
+    espn.scoreboard("mma/ufc", "2026-11-01", fightCard("600061500", "UFC 335", "UFC 335", "pre", [{ id: "41", date: "2026-11-02T01:00Z", fighters: [["9", "Ciryl Gane"], ["10", "Josh Hokit"]], rounds: 5 }]));
+
+    const { leagues } = await filled(await registerDevice(), ["ufc"]);
+
+    const fight = leagues[0].games[0].fight as { fighters: { shortName: string; aliases: string[] }[] };
+    expect(fight.fighters.map((f) => [f.shortName, f.aliases])).toEqual([
+      ["Gane", ["Ciryl Gane", "Gane"]],
+      ["Hokit", ["Josh Hokit", "Hokit"]],
+    ]);
+  });
+
   it("rejects a malformed request", async () => {
     const token = await registerDevice();
-    expect((await call("POST", "/v1/games", { leagues: ["nhl", "ufc"] }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/games", { leagues: ["nhl", "boxing"] }, token)).status).toBe(400);
     expect((await call("POST", "/v1/games", { leagues: "nhl" }, token)).status).toBe(400);
     expect((await call("POST", "/v1/games", {}, token)).status).toBe(400);
     expect(await gamesOf(token, [])).toEqual({ leagues: [] });

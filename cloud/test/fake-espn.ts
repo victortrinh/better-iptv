@@ -315,3 +315,61 @@ export function leaderboard(id: string, period: number, teeTimes: string[]): obj
     ],
   };
 }
+
+/** A fighter as ESPN's MMA scoreboard lists one in a bout: their athlete id, corner, the result and their record, which the cloud must never pass on. */
+const fighter = (id: string, name: string, order: number, winner: boolean) => ({
+  id,
+  type: "athlete",
+  order,
+  winner,
+  athlete: { fullName: name, displayName: name, shortName: `${name[0]}. ${name.split(" ").slice(1).join(" ")}`, flag: { alt: "France", rel: ["country-flag"] } },
+  records: [{ name: "overall", abbreviation: "TOT", type: "total", summary: winner ? "13-2-0" : "12-3-0" }],
+});
+
+/**
+ * A UFC fight card shaped like ESPN's MMA scoreboard gives it (`mma/ufc`, checked 2026-11-03): one
+ * event named after its main event ([name]: "UFC 334: Gane vs. Hokit", [shortName] "UFC 334"),
+ * dated at its first bout, with a competition per bout in [bouts], the main event last: each
+ * with its two fighters (id and name, as ESPN lists them, not always in the event name's order), its
+ * start and its state. The first fighter listed wins, with a record that says so, as ESPN gives the
+ * result: the cloud must never pass it on. Every bout is on [broadcast] in the US.
+ */
+export function fightCard(
+  id: string,
+  name: string,
+  shortName: string,
+  state: "pre" | "in" | "post",
+  bouts: { id: string; date: string; fighters: [string, string][]; rounds?: number }[],
+  statusName?: string,
+  broadcast = "Paramount+",
+): object {
+  const status = (s: "pre" | "in" | "post", n?: string) => ({
+    clock: 0,
+    displayClock: "-",
+    period: s === "pre" ? 0 : 3,
+    type: { id: "1", name: n ?? { pre: "STATUS_SCHEDULED", in: "STATUS_IN_PROGRESS", post: "STATUS_FINAL" }[s], state: s, completed: s === "post", description: "Scheduled" },
+  });
+  return {
+    id,
+    uid: `s:3301~l:3321~e:${id}`,
+    date: bouts[0].date,
+    name,
+    shortName,
+    season: { year: 2026, type: 2 },
+    venues: [{ id: "1830", fullName: "Madison Square Garden", address: { city: "New York", state: "NY", country: "USA" } }],
+    status: status(state, statusName),
+    competitions: bouts.map((b) => ({
+      id: b.id,
+      uid: `s:3301~l:3321~e:${id}~c:${b.id}`,
+      date: b.date,
+      startDate: b.date,
+      type: { id: "982", abbreviation: "Heavyweight" },
+      format: { regulation: { periods: b.rounds ?? 3 } },
+      status: status(state),
+      competitors: b.fighters.map(([fid, fname], i) => fighter(fid, fname, i + 1, i === 0 && state === "post")),
+      details: [{ type: { text: "Unofficial Winner Kotko" } }],
+      broadcasts: [{ market: "national", names: [broadcast] }],
+      geoBroadcasts: [{ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: broadcast }, lang: "en", region: "us" }],
+    })),
+  };
+}

@@ -79,6 +79,11 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * sprint's qualifying) is none's, nor one naming another series or tour of the sport
  * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend; the LPGA,
  * the Korn Ferry Tour). A name two Leagues share ("Golf") keeps neither out.
+ *
+ * A fight-card League's Game ([GameFight], UFC's) has no teams either: its Event channels name the
+ * League and an alias of both main-event fighters ("UFC event: 1 name: UFC FIGHT NIGHT: MOICANO VS
+ * NOLAN PRELIMS start:…"), or the League and the card's number ([numberedCard]: "UFC 334"). A
+ * card of another promotion in the League's slots ("UFC 00 : ANTHONY PETTIS FC 26") names neither.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -111,7 +116,12 @@ internal fun matchFeeds(
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
         val otherLeague = otherLeagues(thisLeague)
         val event = game.event
-        val named = if (event != null) {
+        val fight = game.fight
+        val named = if (fight != null) {
+            // A fight card's: the League and both main-event fighters, or the League and the card's number.
+            val both = fight.fighters.map { holdingAny(it.aliases) }.reduce { a, b -> a intersect b }
+            ((both + numberedCard(fight)?.let(::holding).orEmpty()) intersect league) - otherLeague
+        } else if (event != null) {
             // An event League's: the League and a name of the event, and no session of the same kind but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))
             val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session && it.round == event.session.round }.values.flatten()) - own
@@ -240,6 +250,9 @@ private val SESSION_WORDS: Map<GameSession, List<String>> = mapOf(
 
 /** The sessions of a Grand Prix weekend that are no Game: an Event channel naming one carries none. */
 private val NO_GAME_SESSIONS: List<String> = listOf("Sprint Qualifying", "Sprint Shootout", "Shootout", "Practice", "FP1", "FP2", "FP3", "Essais libres")
+
+/** A numbered fight card's short name ("UFC 334"), which an Event channel may name it by alone, or null for one with no number ("UFC Fight Night"). */
+private fun numberedCard(fight: GameFight): String? = fight.shortName.takeIf { name -> name.any(Char::isDigit) }
 
 /** Whether [words] hold [phrase]'s words in order, one after another. */
 internal fun containsPhrase(words: List<String>, phrase: List<String>): Boolean {
