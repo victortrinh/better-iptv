@@ -42,6 +42,10 @@ class GameLabelsTest {
         "f1", "405", Instant.parse("2026-11-01T17:00:00Z"), GameState.Live, home = null, away = null, broadcasters = listOf("Apple TV"),
         event = GameEvent("MSC Cruises São Paulo Grand Prix", "MSC Cruises São Paulo GP", session, listOf("São Paulo"), null),
     )
+    private val midOhio = Game(
+        "indycar", "202611010119", Instant.parse("2026-11-01T16:30:00Z"), GameState.Live, home = null, away = null, broadcasters = listOf("FOX"),
+        event = GameEvent("Grand Prix of Mid-Ohio", "Grand Prix of Mid-Ohio", GameSession.Race, listOf("Mid-Ohio"), null),
+    )
     private fun round(session: GameSession, start: String = "2026-11-05T13:30:00Z", dayOnly: Boolean = false) = Game(
         "pga", "401850979-1", Instant.parse(start), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Golf Chnl"),
         event = GameEvent("World Wide Technology Championship", "World Wide Technology Championship", session, emptyList(), null), dayOnly = dayOnly,
@@ -94,6 +98,10 @@ class GameLabelsTest {
         assertEquals("F1 · MSC Cruises São Paulo GP · Sprint", context.gameInfo(GameFeeds(race(GameSession.Sprint), emptyList())).teams)
     }
 
+    @Test fun anIndyCarRaceIsNamedByTheRace() {
+        assertEquals(CardInfo.Game("IndyCar · Grand Prix of Mid-Ohio · Race", "No stream found"), context.gameInfo(GameFeeds(midOhio, emptyList())))
+    }
+
     @Test fun aUfcCardIsNamedByItsMainEventsFightersAndTheCardsShortNameStandsForTheLeague() {
         assertEquals("Gane vs. Hokit", context.matchup(card()))
         assertEquals("UFC 334: Gane vs. Hokit", context.matchup(card(), short = false))
@@ -101,6 +109,12 @@ class GameLabelsTest {
         assertEquals("UFC Fight Night · Gane vs. Hokit", context.gameInfo(GameFeeds(card("UFC Fight Night: Gane vs. Hokit", "UFC Fight Night"), emptyList())).teams)
         // The main card's start, in the device's clock, for the page's header.
         assertEquals("Main card 9:00 PM", context.mainCardCaption(card(), Instant.parse("2026-11-01T22:00:00Z"), ZoneId.of("America/Toronto")))
+    }
+
+    @Test
+    @Config(qualifiers = "fr")
+    fun anIndyCarRaceReadsInFrenchToo() {
+        assertEquals("IndyCar · Grand Prix of Mid-Ohio · Course", context.gameInfo(GameFeeds(midOhio, emptyList())).teams)
     }
 
     @Test

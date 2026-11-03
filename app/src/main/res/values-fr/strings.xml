@@ -23,7 +23,7 @@
     <string name="game_live">En direct</string>
     <string name="game_no_stream">Aucun flux trouvé</string>
     <string name="game_matchup">%1$s c. %2$s</string>
-    <!-- An F1 session's name where a Game names its teams: the Grand Prix, then the session ("São Paulo GP · Race"). -->
+    <!-- An event League's Game's name where a Game names its teams: the Grand Prix or race, then the session ("São Paulo GP · Race"). -->
     <string name="game_event_session">%1$s · %2$s</string>
     <string name="game_session_qualifying">Qualifications</string>
     <string name="game_session_sprint">Sprint</string>
@@ -244,6 +244,7 @@
     <string name="league_wnba">WNBA</string>
     <string name="league_f1">F1</string>
     <string name="league_nascar">NASCAR Cup</string>
+    <string name="league_indycar">IndyCar</string>
     <string name="league_pga">PGA Tour</string>
     <string name="league_lpga">LPGA</string>
     <string name="league_ufc">UFC</string>

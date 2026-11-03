@@ -98,6 +98,16 @@ class GamesTest {
         assertEquals(listOf("Martinsville"), race.event?.aliases)
     }
 
+    @Test fun `an IndyCar race comes as a Game naming the race, its one session`() = runBlocking {
+        cloud.games("indycar", session("202611010119", "2026-11-01T16:30:00Z", "race", state = "live", name = "Grand Prix of Mid-Ohio", shortName = "Grand Prix of Mid-Ohio", aliases = listOf("Mid-Ohio"), broadcasters = listOf("FOX"), league = "indycar"))
+
+        val race = library.games(listOf("indycar"), now).single()
+        assertEquals("indycar", race.league)
+        assertEquals(GameSession.Race, race.event?.session)
+        assertEquals("Grand Prix of Mid-Ohio", race.event?.shortName)
+        assertEquals(listOf("Mid-Ohio"), race.event?.aliases)
+    }
+
     @Test fun `a PGA Tour round comes as a Game naming its tournament and round, its day alone known until ESPN has its tee times`() = runBlocking {
         cloud.games(
             "pga",

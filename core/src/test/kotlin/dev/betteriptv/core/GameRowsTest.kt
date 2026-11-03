@@ -392,6 +392,27 @@ class GameRowsTest {
         )
     }
 
+    @Test fun `an IndyCar race's Feed is an Event channel naming IndyCar and its place, never its practice, qualifying or Indy NXT's race`() = runBlocking {
+        cloud.games("indycar", session("202611010119", "2026-11-01T16:30:00Z", "race", state = "live", name = "Grand Prix of Mid-Ohio", shortName = "Grand Prix of Mid-Ohio", aliases = listOf("Mid-Ohio"), broadcasters = listOf("FOX"), league = "indycar"))
+        // As the surveyed Provider named Mid-Ohio's weekend (2026-11-03's catalog, July's slots): Viaplay Denmark's, the sponsor's name for the race and the session in Danish.
+        provider.serveChannels(
+            "Live | Honda Indy 200 at Mid-Ohio | IndyCar Løb 2026 | 8K EXCLUSIVE | DK: VIAPLAY PPV 71" to "DK| VIAPLAY PPV ˢᵘᵖᵉʳ",
+            "Live | Honda Indy 200 at Mid-Ohio | IndyCar Træning 2 2026 | 8K EXCLUSIVE | DK: VIAPLAY PPV 56" to "DK| VIAPLAY PPV ˢᵘᵖᵉʳ",
+            "Next | Honda Indy 200 at Mid-Ohio | IndyCar Kvalifikation 2026 | 8K EXCLUSIVE | DK: VIAPLAY PPV 70" to "DK| VIAPLAY PPV ˢᵘᵖᵉʳ",
+            "Next | Grand Prix at Mid-Ohio | Indy NXT Løb 1 2026 | 8K EXCLUSIVE | DK: VIAPLAY PPV 69" to "DK| VIAPLAY PPV ˢᵘᵖᵉʳ",
+            "Live | ECHL Hockey: Cincinnati Cyclones vs Indy Fuel | all | 8K EXCLUSIVE | US: SOCCER PPV 62" to "US| SOCCER PPV",
+            "US: FOX HD" to "US| NETWORKS",
+            "US: FOX SPORTS 1 HD" to "US| SPORTS",
+        )
+        library.sync()
+
+        // FOX, the Broadcaster ESPN names, in English first; then the race's own Danish slot.
+        assertEquals(
+            listOf("US: FOX HD", "Live | Honda Indy 200 at Mid-Ohio | IndyCar Løb 2026 | 8K EXCLUSIVE | DK: VIAPLAY PPV 71"),
+            rows(League.IndyCar).liveNow().feedNames("202611010119"),
+        )
+    }
+
     @Test fun `a PGA Tour round's Feed is an Event channel naming golf, its tournament and its round, never another tour's, else Golf Channel`() = runBlocking {
         cloud.games(
             "pga",
