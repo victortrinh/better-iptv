@@ -2,7 +2,7 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, leaderboard, leafs, sens, team, texans, tournament } from "./fake-espn";
+import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -919,13 +919,14 @@ describe("Games", () => {
       "ncaa-basketball": "basketball/mens-college-basketball",
       wnba: "basketball/wnba",
       f1: "racing/f1",
+      nascar: "racing/nascar-premier",
       pga: "golf/pga",
       lpga: "golf/lpga",
     };
     expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
     for (const path of Object.values(paths)) expect(espn.asked).toContain(`${path}/2026-11-01`);
-    // F1 has drivers and the golf tours golfers, not teams: no teams list is read for them.
-    const eventPaths = ["racing/f1", "golf/pga", "golf/lpga"];
+    // The event Leagues have drivers or golfers, not teams: no teams list is read for them.
+    const eventPaths = ["racing/f1", "racing/nascar-premier", "golf/pga", "golf/lpga"];
     for (const path of Object.values(paths).filter((p) => !eventPaths.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
     for (const path of eventPaths) expect(espn.asked).not.toContain(`${path}/teams`);
     expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
@@ -973,6 +974,49 @@ describe("Games", () => {
     ]);
     // No driver, position or winner: the result never leaves the cloud.
     expect(JSON.stringify(leagues)).not.toMatch(/Verstappen|Hamilton|"(winner|order|athlete|competitors)"/);
+  });
+
+  it("answers each NASCAR Cup race as a Game named after its track, the race its one session: never a driver or a result", async () => {
+    // ESPN's NASCAR events have one competition, with no session type and no circuit; a day query finds that day's races only.
+    espn.scoreboard("racing/nascar-premier", "2026-11-01", stockCarRace("202611010020", "NASCAR Cup Series at Martinsville", "2026-11-01T19:00Z", "in", ["NBC", "HBO Max"]));
+    espn.scoreboard("racing/nascar-premier", "2026-11-02", stockCarRace("202611020001", "Daytona 500", "2026-11-02T18:30Z", "pre", ["FOX"]));
+    espn.scoreboard(
+      "racing/nascar-premier",
+      "2026-11-03",
+      stockCarRace("202611030044", "Duel #1", "2026-11-03T00:00Z", "pre", ["FS1"], "STATUS_POSTPONED"),
+      stockCarRace("202611030045", "NASCAR Cup Series All Star Race", "2026-11-03T22:00Z", "pre", ["FS1"]),
+    );
+
+    const { leagues } = await filled(await registerDevice(), ["nascar"]);
+
+    const logo = "https://a.espncdn.com/i/teamlogos/leagues/500/nascar-premier.png";
+    expect(leagues).toEqual([
+      {
+        league: "nascar",
+        games: [
+          // The short name drops the series' name, which the League's logo beside it says; an Event channel may name the track alone.
+          {
+            id: "202611010020",
+            league: "nascar",
+            start: "2026-11-01T19:00:00.000Z",
+            state: "live",
+            event: { name: "NASCAR Cup Series at Martinsville", shortName: "Martinsville", session: "race", aliases: ["Martinsville"], logo },
+            broadcasters: ["NBC", "HBO Max"],
+          },
+          { id: "202611020001", league: "nascar", start: "2026-11-02T18:30:00.000Z", state: "upcoming", event: { name: "Daytona 500", shortName: "Daytona 500", session: "race", aliases: ["Daytona 500"], logo }, broadcasters: ["FOX"] },
+          // The postponed Duel is left out.
+          {
+            id: "202611030045",
+            league: "nascar",
+            start: "2026-11-03T22:00:00.000Z",
+            state: "upcoming",
+            event: { name: "NASCAR Cup Series All Star Race", shortName: "All Star Race", session: "race", aliases: ["All Star Race"], logo },
+            broadcasters: ["FS1"],
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(leagues)).not.toMatch(/Larson|Hamlin|"(winner|order|athlete|competitors)"/);
   });
 
   describe("PGA Tour", () => {

@@ -71,15 +71,15 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
  * either) needs the Game's League named too.
  *
- * An event League's Game ([GameEvent], F1's or a golf round) has no teams: its Event channels name
- * the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US: APPLE TV F1 PPV 2",
- * "Golf: World Wide Technology Championship Round 1 @ …"), and no session but the Game's
- * ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor round 1 round
- * 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying)
- * is none's, and one naming what the League calls elsewhere ([League.elsewhere]: the LPGA, the
- * Korn Ferry Tour) is not the League's. A name two Leagues share ("Golf"), or
- * another League's name the event's own name holds ("PGA" in the LPGA's KPMG Women's PGA
- * Championship), keeps none out.
+ * An event League's Game ([GameEvent], F1's, a NASCAR race or a golf round) has no teams: its
+ * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:
+ * APPLE TV F1 PPV 2", "Golf: World Wide Technology Championship Round 1 @ …"), and no session but
+ * the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor
+ * round 1 round 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the
+ * sprint's qualifying) is none's, nor one naming another series or tour of the sport
+ * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend, the
+ * Korn Ferry Tour). A name two Leagues share ("Golf"), or another League's name the event's own
+ * name holds ("PGA" in the LPGA's KPMG Women's PGA Championship), keeps none out.
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -101,13 +101,13 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart, and what this one names elsewhere.
+    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart.
     val notThis = HashMap<Pair<League?, String?>, Set<Int>>()
     fun otherLeagues(league: League?, event: GameEvent?): Set<Int> = notThis.getOrPut(league to event?.name) {
         val own = league?.names.orEmpty().map { it.lowercase() }
         val eventWords = event?.let { SearchIndex.words(it.name) }.orEmpty()
         val others = League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own && !containsPhrase(eventWords, SearchIndex.words(it)) }
-        holdingAny(others + league?.elsewhere.orEmpty())
+        holdingAny(others)
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
@@ -118,7 +118,8 @@ internal fun matchFeeds(
             // An event League's: the League and a name of the event, and no session of the same kind but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))
             val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session && it.round == event.session.round }.values.flatten()) - own
-            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS)
+            val otherSeries = holdingAny(thisLeague?.otherSeries.orEmpty())
+            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS) - otherSeries
         } else {
             val home = TeamAliases(game.home ?: return@map GameFeeds(game, emptyList()))
             val away = TeamAliases(game.away ?: return@map GameFeeds(game, emptyList()))
