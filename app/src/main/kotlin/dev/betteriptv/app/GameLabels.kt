@@ -44,6 +44,7 @@ private fun League.nameResource(): Int = when (this) {
     League.Wnba -> R.string.league_wnba
     League.F1 -> R.string.league_f1
     League.Nascar -> R.string.league_nascar
+    League.Ufc -> R.string.league_ufc
 }
 
 /** The name of a Game's League as the schedule keys it ("nhl"), or the key itself for one this release doesn't offer. */
@@ -76,13 +77,36 @@ fun Context.startCaption(start: Instant, now: Instant = Instant.now(), zone: Zon
 
 /**
  * The two teams, the away team first, by their short names ("Canadiens at Maple Leafs") or their
- * full names; for an event League's Game, its event and session ("MSC Cruises São Paulo GP · Race").
+ * full names; for an event League's Game, its event and session ("MSC Cruises São Paulo GP · Race");
+ * for a fight card, its main event's fighters by surname ("Gane vs. Hokit") or the card's full name
+ * ("UFC 334: Gane vs. Hokit").
  */
 fun Context.matchup(game: Game, short: Boolean = true): String {
+    game.fight?.let { fight ->
+        if (!short) return fight.name
+        return getString(R.string.game_fighters, fight.fighters.first().shortName, fight.fighters.last().shortName)
+    }
     game.event?.let { event -> return getString(R.string.game_event_session, if (short) event.shortName else event.name, sessionName(event.session)) }
     val away = game.away ?: return ""
     val home = game.home ?: return ""
     return getString(R.string.game_matchup, if (short) away.shortName else away.name, if (short) home.shortName else home.name)
+}
+
+/**
+ * What names a Game's League beside it: a fight card's short name ("UFC 334", "UFC Fight Night"),
+ * which already says the League, else the League's name.
+ */
+fun Context.gameLeague(game: Game): String = game.fight?.shortName ?: leagueName(game.league)
+
+/**
+ * When a fight card's main card starts, after its prelims, as its page's header says it ("Main card
+ * 9:00 PM", in the device's [zone] and clock, the weekday before it when it isn't today), or null
+ * for any other Game, a card that is over, or one whose main card is its start.
+ */
+fun Context.mainCardCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String? {
+    val mainCard = game.fight?.mainCard ?: return null
+    if (game.state == GameState.Over || !mainCard.isAfter(game.start)) return null
+    return getString(R.string.game_main_card, startCaption(mainCard, now, zone))
 }
 
 /** An event League's session in the App language ("Race", "Qualifying"). */
@@ -103,7 +127,7 @@ fun Context.gameInfo(entry: GameFeeds): CardInfo.Game {
     val game = entry.game
     val feeds = feedCount(entry)
     val found = entry.feeds.filter { !it.dropped }.mapNotNull { it.broadcaster }.distinct().take(3).joinToString(", ")
-    return CardInfo.Game("${leagueName(game.league)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
+    return CardInfo.Game("${gameLeague(game)} · ${matchup(game)}", listOfNotNull(found.ifEmpty { null }, feeds).joinToString(" · "))
 }
 
 /** The two teams of a Replay, the away team first, by their short names, as a Game's [matchup]. */

@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -22,6 +23,8 @@ import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameEvent
+import dev.betteriptv.core.GameFight
+import dev.betteriptv.core.GameFighter
 import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.GameTeam
@@ -35,6 +38,7 @@ import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -151,6 +155,23 @@ class GameScreenTest {
         compose.onNodeWithText("MSC Cruises São Paulo Grand Prix · Race").assertExists()
         // The League's name stands in for its logo while it hasn't loaded.
         compose.onNodeWithText("F1", useUnmergedTree = true).assertExists()
+    }
+
+    @Test fun aUfcCardsPageNamesItsMainEventWithBothFightersInPlaceOfTheTeams() {
+        val card = Game(
+            "ufc", "600061400", Instant.parse("2026-11-01T22:00:00Z"), GameState.Live, home = null, away = null, broadcasters = emptyList(),
+            fight = GameFight("UFC 334: Gane vs. Hokit", "UFC 334", Instant.parse("2026-11-02T02:00:00Z"), listOf(GameFighter("Ciryl Gane", "Gane", listOf("Gane"), null), GameFighter("Josh Hokit", "Hokit", listOf("Hokit"), null))),
+        )
+        open(GameFeeds(card, listOf(Feed(tsn, FeedKind.EventChannel, "en"))))
+
+        compose.onNodeWithTag("play").assertIsFocused()
+        compose.onNodeWithTag("game-header").assertTextContains("UFC 334 · Live · Main card", substring = true)
+        compose.onNodeWithText("Gane vs. Hokit").assertExists()
+        compose.onNodeWithText("UFC 334: Gane vs. Hokit").assertExists()
+        // Each fighter's surname stands in for their headshot while it hasn't loaded, the first-named left.
+        val gane = compose.onNodeWithText("Gane", useUnmergedTree = true).assertExists().getBoundsInRoot()
+        val hokit = compose.onNodeWithText("Hokit", useUnmergedTree = true).assertExists().getBoundsInRoot()
+        assertTrue(gane.right <= hokit.left)
     }
 
     @Test fun withNoFeedPlayIsDisabledAndSaysNoStreamWasFound() {

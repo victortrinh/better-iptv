@@ -27,11 +27,27 @@ enum class GameSession { Qualifying, Sprint, Race }
 class GameEvent(val name: String, val shortName: String, val session: GameSession, val aliases: List<String>, val logo: String?)
 
 /**
+ * One of a fight card's main-event fighters: their [name] (Waldo Cortes Acosta), their [shortName]
+ * (the surname the card's name gives, Cortes Acosta), the names an Event channel may call them by in
+ * [aliases], and their [headshot] URL when the schedule has one (it may not exist).
+ */
+class GameFighter(val name: String, val shortName: String, val aliases: List<String>, val headshot: String?)
+
+/**
+ * A fight-card League's Game ([League.fights]) in place of two teams: the card's [name] (UFC 334:
+ * Gane vs. Hokit) and [shortName] (UFC 334) as the schedule gives them, when its [mainCard] starts
+ * (the Game's start is the prelims'), and its main event's two [fighters], in the name's order.
+ * Never another bout, a result or a record.
+ */
+class GameFight(val name: String, val shortName: String, val mainCard: Instant?, val fighters: List<GameFighter>)
+
+/**
  * A scheduled contest of a [league] (CONTEXT.md: Game), as the cloud's schedule gives it
  * (cloud/src/schedule.ts): its [id] at the schedule source, when it [start]s, its [state], both
- * teams (a team League's) or its [event] (an event League's, whose [home] and [away] are null), and
- * the names of the national Broadcasters the schedule says carry it. Its Feeds are found among the
- * catalog's Channels by the teams' or the event's aliases and the Broadcasters' names.
+ * teams (a team League's), its [event] (an event League's) or its [fight] (a fight-card League's;
+ * for these two, [home] and [away] are null), and the names of the national Broadcasters the
+ * schedule says carry it. Its Feeds are found among the catalog's Channels by the teams', the
+ * event's or the fighters' aliases and the Broadcasters' names.
  */
 class Game(
     val league: String,
@@ -42,8 +58,9 @@ class Game(
     val away: GameTeam?,
     val broadcasters: List<String>,
     val event: GameEvent? = null,
+    val fight: GameFight? = null,
 ) {
-    /** Both teams, the away team first, or none for an event League's Game. */
+    /** Both teams, the away team first, or none for an event or fight-card League's Game. */
     val teams: List<GameTeam> get() = listOfNotNull(away, home)
 }
 
@@ -61,10 +78,13 @@ internal object Games {
         }.toMap()
     }
 
-    /** The Games in [league]'s kept [json], as the cloud listed them. A Game missing a part (two teams, or its event) is left out. */
+    /** The Games in [league]'s kept [json], as the cloud listed them. A Game missing a part (two teams, its event, or its card's two fighters) is left out. */
     fun parse(league: String, json: String): List<Game> = (read(json) as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { game ->
         val event = event(game["event"])
         if (game["event"] != null && event == null) return@mapNotNull null
+        val fight = fight(game["fight"])
+        if (game["fight"] != null && fight == null) return@mapNotNull null
+        val teamless = event != null || fight != null
         Game(
             league = league,
             id = game["id"] as? String ?: return@mapNotNull null,
@@ -75,10 +95,33 @@ internal object Games {
                 "over" -> GameState.Over
                 else -> return@mapNotNull null
             },
-            home = if (event != null) null else team(game["home"]) ?: return@mapNotNull null,
-            away = if (event != null) null else team(game["away"]) ?: return@mapNotNull null,
+            home = if (teamless) null else team(game["home"]) ?: return@mapNotNull null,
+            away = if (teamless) null else team(game["away"]) ?: return@mapNotNull null,
             broadcasters = (game["broadcasters"] as? List<*>).orEmpty().filterIsInstance<String>(),
             event = event,
+            fight = fight,
+        )
+    }
+
+    /** A fight-card League's Game's card, or null when there is none or it doesn't name two fighters. */
+    private fun fight(json: Any?): GameFight? {
+        val fight = json as? Map<*, *> ?: return null
+        val name = fight["name"] as? String ?: return null
+        val fighters = (fight["fighters"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { fighter ->
+            val full = fighter["name"] as? String ?: return@mapNotNull null
+            GameFighter(
+                name = full,
+                shortName = fighter["shortName"] as? String ?: full,
+                aliases = (fighter["aliases"] as? List<*>).orEmpty().filterIsInstance<String>().ifEmpty { listOf(full) },
+                headshot = fighter["headshot"] as? String,
+            )
+        }
+        if (fighters.size != 2) return null
+        return GameFight(
+            name = name,
+            shortName = fight["shortName"] as? String ?: name,
+            mainCard = (fight["mainCard"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            fighters = fighters,
         )
     }
 

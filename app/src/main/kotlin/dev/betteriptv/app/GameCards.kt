@@ -17,7 +17,8 @@ import java.time.Instant
 /**
  * [entry]'s card: both teams' logos, "Live" or the start time in the device's clock, and the short
  * names when a logo doesn't load; an event League's Game shows the League's logo and its event and
- * session instead ([EventGameCard]). Pressing it opens the Game's page ([onOpen]); an upcoming Game
+ * session instead ([EventGameCard]), and a fight card its main event's fighters' headshots, the
+ * first-named left, or their surnames. Pressing it opens the Game's page ([onOpen]); an upcoming Game
  * with no Feed left (none, or every one marked "Not this game") is disabled, saying "No stream found", and opens nothing. The caption is read again
  * each minute, so a Game later today drops the weekday at midnight without the rows being read.
  */
@@ -40,6 +41,21 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
             leagueName = context.leagueName(game.league),
             name = event.shortName,
             session = context.sessionName(event.session),
+            caption = caption,
+            onClick = { onOpen(entry) },
+            modifier = modifier,
+            disabled = disabled,
+            onFocus = onFocus,
+        )
+        return
+    }
+    val fighters = game.fight?.fighters
+    if (fighters != null) {
+        GameCard(
+            away = rememberArtwork(fighters.first().headshot, card = true),
+            home = rememberArtwork(fighters.last().headshot, card = true),
+            awayName = fighters.first().shortName,
+            homeName = fighters.last().shortName,
             caption = caption,
             onClick = { onOpen(entry) },
             modifier = modifier,
