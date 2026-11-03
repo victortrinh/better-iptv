@@ -8,11 +8,19 @@ package dev.betteriptv.core
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
- * League ([events]: F1 and IndyCar, #310) has no teams: its Games are an event's sessions
- * ([GameEvent]), a Grand Prix's or an IndyCar race. IndyCar is never "Indy" alone: the Provider's
- * Indy Fuel (ECHL) and Indy NXT (its feeder series) slots say that too.
+ * League ([events]: F1, NASCAR Cup and IndyCar, #310) has no teams: its Games are a Grand Prix's
+ * sessions or a race ([GameEvent]). [otherSeries] name the same sport's other series, whose Event
+ * channels name the League too ("NASCAR Whelen Modified Tour at Martinsville Speedway"): one naming
+ * any is none of this League's Games. IndyCar is never "Indy" alone: the Provider's Indy Fuel (ECHL)
+ * and Indy NXT (its feeder series) slots say that too.
  */
-enum class League(val key: String, val names: List<String>, val network: String? = null, val events: Boolean = false) {
+enum class League(
+    val key: String,
+    val names: List<String>,
+    val network: String? = null,
+    val events: Boolean = false,
+    val otherSeries: List<String> = emptyList(),
+) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
     Nba("nba", listOf("NBA"), network = "NBA TV"),
@@ -29,7 +37,11 @@ enum class League(val key: String, val names: List<String>, val network: String?
     NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
     Wnba("wnba", listOf("WNBA")),
     F1("f1", listOf("F1", "Formula 1", "Formula One"), network = "Sky Sports F1", events = true),
-    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true);
+    Nascar(
+        "nascar", listOf("NASCAR"), events = true,
+        otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
+    ),
+    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true, otherSeries = listOf("Indy NXT"));
 
     companion object {
         /**

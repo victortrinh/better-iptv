@@ -202,7 +202,7 @@ A Channel the Viewer has saved. It stays saved whichever variants the Provider l
 _Avoid_: Bookmark
 
 **League**:
-A competition whose Games the sports hub follows, such as the NHL or the Premier League. The Region picks the default Leagues (Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League); the Viewer turns Leagues on and off in Settings. F1 and IndyCar are event Leagues: their Games have no teams and are named after the event, a Grand Prix's Qualifying, Sprint and Race for F1 and each race for IndyCar; they are on in no Region until the Viewer turns them on.
+A competition whose Games the sports hub follows, such as the NHL or the Premier League. The Region picks the default Leagues (Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League); the Viewer turns Leagues on and off in Settings. F1, NASCAR Cup and IndyCar are event Leagues: their Games have no teams. F1's are a Grand Prix's Qualifying, Sprint and Race, named after the Grand Prix; NASCAR Cup's are its races, named after the track ("Martinsville") or the race ("Daytona 500"); IndyCar's are its races, named as ESPN names them ("Grand Prix of Mid-Ohio"). An event League is on in no Region until the Viewer turns it on.
 _Avoid_: Competition, sport
 
 **Pinned team**:

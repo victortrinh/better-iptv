@@ -207,6 +207,44 @@ export function grandPrix(
 }
 
 /**
+ * A NASCAR Cup race shaped like ESPN's scoreboard gives it (`racing/nascar-premier`, checked
+ * 2026-11-03): one event named [name] ("NASCAR Cup Series at Martinsville", "Daytona 500"), its
+ * short name the same, no circuit, and one competition with no session type, listing drivers in
+ * finishing order: the result, which the cloud must never pass on. [broadcasts] carry it in the US.
+ */
+export function stockCarRace(id: string, name: string, date: string, state: "pre" | "in" | "post", broadcasts: string[], statusName?: string): object {
+  const status = {
+    clock: 0,
+    displayClock: "0:00",
+    period: state === "pre" ? 0 : 412,
+    type: { id: "1", name: statusName ?? { pre: "STATUS_SCHEDULED", in: "STATUS_IN_PROGRESS", post: "STATUS_FINAL" }[state], state, completed: state === "post", description: "Scheduled" },
+  };
+  return {
+    id,
+    uid: `s:2000~l:2042~e:${id}`,
+    date,
+    name,
+    shortName: name,
+    season: { year: 2026, type: 2, slug: "regular-season" },
+    circuit: null,
+    status,
+    competitions: [
+      {
+        id,
+        uid: `s:2000~l:2042~e:${id}~c:${id}`,
+        date,
+        startDate: date,
+        type: null,
+        status,
+        competitors: [driver("4513", "Kyle Larson", 1), driver("3888", "Denny Hamlin", 2)],
+        broadcasts: [{ market: "national", names: broadcasts }],
+        geoBroadcasts: broadcasts.map((b) => ({ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: b }, lang: "en", region: "us" })),
+      },
+    ],
+  };
+}
+
+/**
  * A race shaped like ESPN's IndyCar scoreboard gives it (`racing/irl`, checked 2026-11-03 against
  * St. Petersburg, the Indianapolis 500, Mid-Ohio and Monterey): one event a race, named and short
  * named alike ("Grand Prix of Mid-Ohio"), with no circuit, and a single competition, the race, that
