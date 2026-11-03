@@ -24,13 +24,11 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
-import androidx.media3.ui.PlayerView
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegAudioRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
 import io.github.peerless2012.ass.media.factory.AssRenderersFactory
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
-import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import java.net.ProtocolException
@@ -41,11 +39,8 @@ import java.net.ProtocolException
  */
 @OptIn(UnstableApi::class)
 internal class Playing(val player: ExoPlayer, val ass: AssHandler, val delays: Delays) {
-    /** Shows the player in a [view] made for it: ASS subtitles are drawn over the picture by libass, not by Media3's subtitle view. */
-    fun showIn(view: PlayerView) {
-        view.subtitleView?.withAssSupport(ass)
-        view.player = player
-    }
+    /** Shows the player in a [picture] made for it: ASS subtitles are drawn over the picture by libass, not by Media3's subtitle view. */
+    fun showIn(picture: Media3Picture) = picture.show(this)
 
     fun release() {
         player.release()

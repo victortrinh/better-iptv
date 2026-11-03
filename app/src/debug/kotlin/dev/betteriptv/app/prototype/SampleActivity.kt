@@ -18,8 +18,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.ui.PlayerView
+import dev.betteriptv.app.Media3Picture
 import dev.betteriptv.app.Playing
+import dev.betteriptv.app.SubtitleStyle
 import dev.betteriptv.app.buildPlayer
 import dev.betteriptv.app.readDeviceProfile
 
@@ -93,10 +94,8 @@ class SampleActivity : ComponentActivity() {
                 Log.i(TAG, "video decoder $decoderName")
             }
         })
-        setContentView(PlayerView(this).apply {
-            useController = false
-            playing.showIn(this)
-        })
+        // Subtitles in the app's default style, placed as the app places them (#292).
+        setContentView(Media3Picture(this).also { playing.showIn(it); it.draw(SubtitleStyle()) }.view)
         val file = intent.data ?: return finish().also { Log.e(TAG, "no sample: start with -d <file>") }
         val sidecars = listOfNotNull(intent.getStringExtra("sidecar")).map { uri ->
             val type = when (uri.substringAfterLast('.')) {
