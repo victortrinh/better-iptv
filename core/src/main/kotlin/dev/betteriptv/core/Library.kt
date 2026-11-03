@@ -117,6 +117,8 @@ class Library private constructor(
     @Volatile internal var guideClock: Clock = Clock.systemDefaultZone()
     private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
     private val unsavedGames = ConcurrentHashMap<String, StoredGames>()
+    /** When the cloud last answered a request for each League, listing it or not: one it has no copy of yet waits as a kept copy does (#307). */
+    private val gamesAnsweredAt = ConcurrentHashMap<String, Instant>()
     private val unsavedMetadata = ConcurrentHashMap<Pair<String, TitleId.Tmdb>, StoredMetadata>()
     /** Whether a Sync is replacing the catalog, holding its writer: saves then don't wait for it. */
     @Volatile private var syncWriting = false
@@ -1897,7 +1899,10 @@ class Library private constructor(
         val stored = store.games(asked)
         val kept = asked.mapNotNull { league -> (unsavedGames[league] ?: stored[league])?.let { league to it } }.toMap()
         var copies = kept
-        if (cloud != null && now.isAfter(cloudRetryAt) && asked.any { !(kept[it]?.fetchedAt?.isAfter(now - GAMES_FRESH_FOR) ?: false) }) {
+        // A League the cloud left out of its last answer isn't due again before one it listed: asking at
+        // once would land the others again, and Home would read its rows again for them, without end (#307).
+        val due = asked.any { league -> listOfNotNull(kept[league]?.fetchedAt, gamesAnsweredAt[league]).none { it.isAfter(now - GAMES_FRESH_FOR) } }
+        if (cloud != null && now.isAfter(cloudRetryAt) && due) {
             if (waitForCloud) {
                 copies = kept + fetchGames(cloud, asked, now).orEmpty()
             } else if (gamesFetching.compareAndSet(false, true)) {
@@ -1925,6 +1930,7 @@ class Library private constructor(
     private fun fetchGames(cloud: CloudClient, asked: List<String>, now: Instant): Map<String, StoredGames>? {
         return try {
             val answered = Games.leagues(cloud.games(asked, GAMES_CALL_TIMEOUT)).mapValues { (_, body) -> StoredGames(body, now) }
+            asked.forEach { gamesAnsweredAt[it] = now }
             answered.forEach { (league, copy) -> unsavedGames[league] = copy }
             saveLater(after = { answered.forEach { (league, copy) -> unsavedGames.remove(league, copy) } }) {
                 answered.forEach { (league, copy) -> store.saveGames(league, copy.body, now) }

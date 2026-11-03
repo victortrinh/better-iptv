@@ -316,6 +316,24 @@ class HomeRowsTest {
         assertEquals(withoutLiveNow, rows(now = later, leagues = listOf(League.Nhl)).names())
     }
 
+    @Test fun `a League the cloud has no copy of yet doesn't keep Home reading its rows again`() = runBlocking {
+        serveHomeWithGames()
+        // The Champions League just turned on: the cloud reads it within minutes, and leaves it out of its answers till then (#307).
+        val leagues = listOf(League.Nhl, League.ChampionsLeague)
+        withGamesLanded { rows(leagues = leagues) }
+
+        // Home reads again since the NHL's Games landed: nothing is due for the next minute, so nothing lands behind it to read again for.
+        val landed = library.catalogChanges.value
+        assertEquals(withLiveNow, rows(leagues = leagues).names())
+        delay(500)
+        assertEquals(landed, library.catalogChanges.value)
+        assertEquals(1, cloud.gamesAsked.size)
+
+        // A minute on, the Champions League is asked for again.
+        withGamesLanded { rows(now = Instant.now() + Duration.ofSeconds(61), leagues = leagues) }
+        assertEquals(2, cloud.gamesAsked.size)
+    }
+
     @Test fun `Home still builds when the cloud has no Games for the Leagues on, or is down`() = runBlocking {
         serveHomeWithGames()
         cloud.forgetGames("nhl")
