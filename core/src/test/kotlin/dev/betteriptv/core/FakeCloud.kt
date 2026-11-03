@@ -366,6 +366,27 @@ fun session(
 )
 
 /**
+ * A golf tournament's round as the cloud's `/v1/games` lists one (cloud/src/espn.ts): [session]
+ * (`round-1` … `final-round`) at [start], at its first tee time, or noon US Eastern on its day when
+ * [dayOnly], named after the tournament with the names an Event channel may call it by.
+ */
+fun round(
+    id: String,
+    start: String,
+    session: String,
+    state: String = "upcoming",
+    dayOnly: Boolean = false,
+    name: String = "World Wide Technology Championship",
+    aliases: List<String> = listOf("World Wide Technology Championship", "Wide Technology Championship", "Technology Championship"),
+    league: String = "pga",
+): Map<String, Any?> = buildMap {
+    put("id", id); put("league", league); put("start", start); put("state", state)
+    if (dayOnly) put("dayOnly", true)
+    put("event", mapOf("name" to name, "shortName" to name, "session" to session, "aliases" to aliases, "logo" to "https://logos.example/pga.png"))
+    put("broadcasters", listOf("Golf Chnl"))
+}
+
+/**
  * A fight-card League's Game as the cloud's `/v1/games` lists one (cloud/src/espn.ts): a UFC card
  * from [start], its main card from [mainCard], named after its main event's two [fighters] (full
  * name to surname, in the card's name's order).

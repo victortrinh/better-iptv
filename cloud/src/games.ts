@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { Espn } from "./espn";
-import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
+import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, GOLF_LEAGUES, type GameTeam, isLeague, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /** A wanted League's current days are read again this often, so "Live" flips within minutes of a Game starting. */
 const CURRENT_FRESH_FOR = 5 * 60_000;
@@ -26,8 +26,9 @@ const ASKED_EVERY = 3600_000;
 const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: nineteen Leagues' current days every 5 minutes and
- * their coming days hourly need 10 a minute at most.
+ * {@link SUBREQUESTS} that the Charts share: twenty-one Leagues' current days every 5 minutes and
+ * their coming days hourly need 12 a minute at most, a golf League's day two and its tomorrow
+ * read as a current day.
  */
 export const GAMES_SUBREQUESTS = 12;
 
@@ -89,21 +90,22 @@ export async function games(env: Env, leagues: League[]): Promise<{ leagues: Lea
   return { leagues: answer };
 }
 
-/** One part the Cron Trigger reads: its [key] in `game_try`, how it ranks ([tier], then the oldest first), and [read], which saves what it read. */
+/** One part the Cron Trigger reads: its [key] in `game_try`, how it ranks ([tier], then the oldest first), the requests it may send ([cost]), and [read], which saves what it read. */
 interface Part {
   key: string;
   tier: number;
   fetchedAt: number;
+  cost: number;
   read: () => Promise<void>;
 }
 
 /**
  * One run of the Cron Trigger, each minute, before the Charts' part: reads the days of the wanted
  * Leagues that are missing or stale, the current days (yesterday's and today's: ESPN's days run on
- * US Eastern time, so a Game in progress may be on either) first, then the Leagues' teams, then
+ * US Eastern time, so a Game in progress may be on either; a golf League's tomorrow too) first, then the Leagues' teams, then
  * the coming days, missing ones before the oldest. Each day is saved as soon as it is read, so a
  * run stopped short keeps what it read. A run sends at most [GAMES_SUBREQUESTS] requests, and says
- * how many it sent. A part started in the last [RETRY_AFTER] is passed over. Leagues nobody asked
+ * how many it may have sent. A part started in the last [RETRY_AFTER] is passed over. Leagues nobody asked
  * for in [WANTED_FOR], days gone by and tries older than [TRIES_FOR] are dropped first.
  */
 export async function fillGames(env: Env): Promise<number> {
@@ -138,24 +140,27 @@ export async function fillGames(env: Env): Promise<number> {
   const parts: Part[] = [];
   for (const league of leagues) {
     window.forEach((day, i) => {
-      const current = i <= 1;
+      // A golf round may tee off the US evening before its tournament's first day as ESPN dates it (in Asia, a day ahead): tomorrow is current for golf.
+      const current = i <= 1 || (i === 2 && GOLF_LEAGUES.includes(league));
       const at = fetchedAt.get(`${league}/${day}`) ?? -1;
       if (at < now - (current ? CURRENT_FRESH_FOR : COMING_FRESH_FOR)) {
-        parts.push({ key: `${league}/${day}`, tier: current ? 0 : 2, fetchedAt: at, read: () => readDay(env, league, day, now) });
+        // A golf League's day may ask the leaderboard too.
+        const cost = GOLF_LEAGUES.includes(league) ? 2 : 1;
+        parts.push({ key: `${league}/${day}`, tier: current ? 0 : 2, fetchedAt: at, cost, read: () => readDay(env, league, day, now) });
       }
     });
     const at = teamsFetchedAt.get(league) ?? -1;
     // An event or fight-card League has no teams to read.
-    if (!EVENT_LEAGUES.includes(league) && !FIGHT_LEAGUES.includes(league) && at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, read: () => readTeams(env, league, now) });
+    if (!EVENT_LEAGUES.includes(league) && !FIGHT_LEAGUES.includes(league) && at < now - TEAMS_FRESH_FOR) parts.push({ key: `${league}/teams`, tier: 1, fetchedAt: at, cost: 1, read: () => readTeams(env, league, now) });
   }
   parts.sort((a, b) => a.tier - b.tier || a.fetchedAt - b.fetchedAt);
 
   let sent = 0;
   for (const part of parts) {
-    if (sent >= GAMES_SUBREQUESTS) break;
+    if (sent + part.cost > GAMES_SUBREQUESTS) break;
     if ((tried.get(part.key) ?? -Infinity) > now - RETRY_AFTER) continue;
     await env.DB.prepare("INSERT OR REPLACE INTO game_try (part, tried_at) VALUES (?1, ?2)").bind(part.key, now).run();
-    sent++;
+    sent += part.cost;
     await part.read();
   }
   return sent;

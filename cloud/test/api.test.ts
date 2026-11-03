@@ -2,7 +2,7 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leafs, sens, stockCarRace, team, texans } from "./fake-espn";
+import { argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -921,14 +921,16 @@ describe("Games", () => {
       f1: "racing/f1",
       nascar: "racing/nascar-premier",
       indycar: "racing/irl",
+      pga: "golf/pga",
+      lpga: "golf/lpga",
       ufc: "mma/ufc",
     };
     expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
     for (const path of Object.values(paths)) expect(espn.asked).toContain(`${path}/2026-11-01`);
-    // The event Leagues have drivers and UFC fighters, not teams: no teams list is read for them.
-    const racing = ["racing/f1", "racing/nascar-premier", "racing/irl", "mma/ufc"];
-    for (const path of Object.values(paths).filter((p) => !racing.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
-    for (const path of racing) expect(espn.asked).not.toContain(`${path}/teams`);
+    // The event Leagues have drivers or golfers and UFC fighters, not teams: no teams list is read for them.
+    const noTeams = ["racing/f1", "racing/nascar-premier", "racing/irl", "golf/pga", "golf/lpga", "mma/ufc"];
+    for (const path of Object.values(paths).filter((p) => !noTeams.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
+    for (const path of noTeams) expect(espn.asked).not.toContain(`${path}/teams`);
     expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
   });
 
@@ -1049,6 +1051,156 @@ describe("Games", () => {
       },
     ]);
     expect(JSON.stringify(leagues)).not.toMatch(/O'Ward|Palou|"(winner|order|athlete|competitors)"/);
+  });
+
+  describe("PGA Tour", () => {
+    const logo = "https://a.espncdn.com/i/teamlogos/leagues/500/pga.png";
+    const mexicoOpen = (session: string) => ({ name: "VidantaWorld Mexico Open", shortName: "VidantaWorld Mexico Open", session, aliases: ["VidantaWorld Mexico Open", "Mexico Open"], logo });
+    // What an Event channel may call it: the name, then ever fewer of its words while one is more than "Championship".
+    const wwt = (session: string) => ({ name: "World Wide Technology Championship", shortName: "World Wide Technology Championship", session, aliases: ["World Wide Technology Championship", "Wide Technology Championship", "Technology Championship"], logo });
+    const wwtDays = ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"];
+
+    it("answers a tournament's rounds as Games, each on its day, at its first tee time once ESPN's leaderboard has it: never a golfer, a score or a position", async () => {
+      // Sunday: the Mexico Open's final round is on (ESPN answers each of its days with the whole tournament); next week's hasn't started.
+      const sunday = tournament("401850978", "VidantaWorld Mexico Open", "2026-10-29T04:00Z", "2026-11-01T04:00Z", "in", 4);
+      for (const day of ["2026-10-31", "2026-11-01"]) espn.scoreboard("golf/pga", day, sunday);
+      const next = tournament("401850979", "World Wide Technology Championship", "2026-11-05T05:00Z", "2026-11-08T05:00Z", "pre", 0);
+      for (const day of wwtDays) espn.scoreboard("golf/pga", day, next);
+      // The leaderboard has the tee times of the round on, the earliest of them first neither in time nor in order.
+      espn.leaderboard("pga", leaderboard("401850978", 4, ["2026-11-01T14:50Z", "2026-11-01T12:40Z", "2026-11-01T17:10Z"]));
+
+      const { leagues } = await filled(await registerDevice(), ["pga"], 3);
+
+      expect(leagues).toEqual([
+        {
+          league: "pga",
+          games: [
+            // Rounds 1 to 3 started over a day ago.
+            { id: "401850978-4", league: "pga", start: "2026-11-01T12:40:00.000Z", state: "live", event: mexicoOpen("final-round"), broadcasters: ["Golf Chnl"] },
+            // No tee times yet: each round on its day, at noon US Eastern, with no time to show.
+            { id: "401850979-1", league: "pga", start: "2026-11-05T17:00:00.000Z", dayOnly: true, state: "upcoming", event: wwt("round-1"), broadcasters: ["Golf Chnl"] },
+            { id: "401850979-2", league: "pga", start: "2026-11-06T17:00:00.000Z", dayOnly: true, state: "upcoming", event: wwt("round-2"), broadcasters: ["Golf Chnl"] },
+            { id: "401850979-3", league: "pga", start: "2026-11-07T17:00:00.000Z", dayOnly: true, state: "upcoming", event: wwt("round-3"), broadcasters: ["Golf Chnl"] },
+            { id: "401850979-4", league: "pga", start: "2026-11-08T17:00:00.000Z", dayOnly: true, state: "upcoming", event: wwt("final-round"), broadcasters: ["Golf Chnl"] },
+          ],
+        },
+      ]);
+      expect(JSON.stringify(leagues)).not.toMatch(/Scheffler|McIlroy|Golfer|"(score|position|earnings|teeTime|athlete|competitors)"/);
+    });
+
+    it("ends a round when ESPN says its play is complete, and starts the next at its first tee time", async () => {
+      vi.setSystemTime(new Date("2026-11-06T23:00:00Z"));
+      const friday = tournament("401850979", "World Wide Technology Championship", "2026-11-05T05:00Z", "2026-11-08T05:00Z", "in", 2, "STATUS_PLAY_COMPLETE");
+      for (const day of wwtDays) espn.scoreboard("golf/pga", day, friday);
+      espn.leaderboard("pga", leaderboard("401850979", 3, ["2026-11-07T13:05Z", "2026-11-07T18:22Z"]));
+      const token = await registerDevice();
+
+      const games = (answer: Awaited<ReturnType<typeof gamesOf>>) => answer.leagues[0].games.map((g) => [g.id, g.start, g.state]);
+      expect(games(await filled(token, ["pga"], 3))).toEqual([
+        ["401850979-2", "2026-11-06T17:00:00.000Z", "over"],
+        ["401850979-3", "2026-11-07T13:05:00.000Z", "upcoming"],
+        ["401850979-4", "2026-11-08T17:00:00.000Z", "upcoming"],
+      ]);
+
+      // Saturday morning ESPN says round 3 is on before its first tee time: it isn't yet. Then it is.
+      vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+      const saturday = tournament("401850979", "World Wide Technology Championship", "2026-11-05T05:00Z", "2026-11-08T05:00Z", "in", 3);
+      for (const day of wwtDays) espn.scoreboard("golf/pga", day, saturday);
+      await fill(3);
+      expect(games(await gamesOf(token, ["pga"]))[1]).toEqual(["401850979-3", "2026-11-07T13:05:00.000Z", "upcoming"]);
+      vi.setSystemTime(new Date("2026-11-07T13:10:00Z"));
+      await fill(3);
+      expect(games(await gamesOf(token, ["pga"]))[1]).toEqual(["401850979-3", "2026-11-07T13:05:00.000Z", "live"]);
+    });
+
+    it("asks the leaderboard only while a tournament is on or ahead", async () => {
+      const over = tournament("401850978", "VidantaWorld Mexico Open", "2026-10-29T04:00Z", "2026-11-01T04:00Z", "post", 4);
+      for (const day of ["2026-10-31", "2026-11-01"]) espn.scoreboard("golf/pga", day, over);
+      await filled(await registerDevice(), ["pga"], 3);
+      expect(espn.asked.filter((a) => a.startsWith("golf/leaderboard"))).toEqual([]);
+    });
+
+    it("counts the leaderboard against a run's dozen requests", async () => {
+      // Thursday morning, before the first tee time: the tournament's first day is a current day.
+      vi.setSystemTime(new Date("2026-11-05T11:00:00Z"));
+      for (const day of wwtDays) espn.scoreboard("golf/pga", day, tournament("401850979", "World Wide Technology Championship", "2026-11-05T05:00Z", "2026-11-08T05:00Z", "pre", 0));
+      espn.leaderboard("pga", leaderboard("401850979", 1, ["2026-11-05T13:30Z"]));
+      const token = await registerDevice();
+      await gamesOf(token, [...LEAGUES]);
+      const perRun: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const before = espn.requests.length;
+        vi.setSystemTime(Date.now() + 60_000);
+        await run();
+        perRun.push(espn.requests.length - before);
+      }
+      expect(Math.max(...perRun)).toBeLessThanOrEqual(12);
+      expect(espn.asked).toContain("golf/leaderboard?league=pga");
+      expect((await gamesOf(token, ["pga"])).leagues[0].games[0]).toMatchObject({ id: "401850979-1", start: "2026-11-05T13:30:00.000Z" });
+    });
+  });
+
+  describe("LPGA", () => {
+    const logo = "https://a.espncdn.com/i/teamlogos/leagues/500/lpga.png";
+    const toto = (session: string) => ({ name: "TOTO Japan Classic", shortName: "TOTO Japan Classic", session, aliases: ["TOTO Japan Classic", "Japan Classic"], logo });
+    // ESPN dates it at US Eastern midnights, though it is played in Japan, half a day ahead.
+    const totoDays = ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"];
+    const totoOn = (state: "pre" | "in", period: number) => tournament("401835175", "TOTO Japan Classic", "2026-11-05T05:00Z", "2026-11-08T05:00Z", state, period);
+
+    it("answers a tournament in Asia with its first round on the US evening before its first day, on at its first tee time within minutes", async () => {
+      // Wednesday afternoon in Toronto: round 1 tees off at 8 AM Thursday in Japan, 6 PM here. ESPN's Wednesday has no tournament.
+      vi.setSystemTime(new Date("2026-11-04T22:50:00Z"));
+      for (const day of totoDays) espn.scoreboard("golf/lpga", day, totoOn("pre", 0));
+      espn.leaderboard("lpga", leaderboard("401835175", 1, ["2026-11-05T01:12Z", "2026-11-04T23:00Z"]));
+      const token = await registerDevice();
+
+      const { leagues } = await filled(token, ["lpga"], 3);
+
+      expect(leagues).toEqual([
+        {
+          league: "lpga",
+          games: [
+            { id: "401835175-1", league: "lpga", start: "2026-11-04T23:00:00.000Z", state: "upcoming", event: toto("round-1"), broadcasters: ["Golf Chnl"] },
+            { id: "401835175-2", league: "lpga", start: "2026-11-06T17:00:00.000Z", dayOnly: true, state: "upcoming", event: toto("round-2"), broadcasters: ["Golf Chnl"] },
+            { id: "401835175-3", league: "lpga", start: "2026-11-07T17:00:00.000Z", dayOnly: true, state: "upcoming", event: toto("round-3"), broadcasters: ["Golf Chnl"] },
+            { id: "401835175-4", league: "lpga", start: "2026-11-08T17:00:00.000Z", dayOnly: true, state: "upcoming", event: toto("final-round"), broadcasters: ["Golf Chnl"] },
+          ],
+        },
+      ]);
+      expect(JSON.stringify(leagues)).not.toMatch(/Scheffler|McIlroy|Golfer|"(score|position|earnings|teeTime|athlete|competitors)"/);
+      // The LPGA's own leaderboard, never the PGA Tour's.
+      expect(espn.asked).toContain("golf/leaderboard?league=lpga");
+      expect(espn.asked).not.toContain("golf/leaderboard?league=pga");
+
+      // Its first day, tomorrow, is read as often as today, since a golf round may start on the eve of it: Live within minutes, not within the hour.
+      vi.setSystemTime(new Date("2026-11-04T23:04:00Z"));
+      for (const day of totoDays) espn.scoreboard("golf/lpga", day, totoOn("in", 1));
+      await fill();
+      expect((await gamesOf(token, ["lpga"])).leagues[0].games[0]).toMatchObject({ id: "401835175-1", state: "live" });
+    });
+
+    it("makes a three-round tournament's last round its final round", async () => {
+      vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+      const arkansas = tournament("401835170", "Walmart NW Arkansas Championship pres. by P&G", "2026-09-25T04:00Z", "2026-09-27T04:00Z", "pre", 0);
+      for (const day of ["2026-09-25", "2026-09-26", "2026-09-27"]) espn.scoreboard("golf/lpga", day, arkansas);
+      espn.leaderboard("lpga", leaderboard("401835170", 1, ["2026-09-25T13:45Z"]));
+
+      const { leagues } = await filled(await registerDevice(), ["lpga"], 3);
+
+      const games = leagues[0].games;
+      expect(games.map((g) => [g.id, (g.event as { session: string }).session])).toEqual([
+        ["401835170-1", "round-1"],
+        ["401835170-2", "round-2"],
+        ["401835170-3", "final-round"],
+      ]);
+      // Without what follows "pres. by", then ever fewer words while one is more than "Championship".
+      expect((games[0].event as { aliases: string[] }).aliases).toEqual([
+        "Walmart NW Arkansas Championship pres. by P&G",
+        "Walmart NW Arkansas Championship",
+        "NW Arkansas Championship",
+        "Arkansas Championship",
+      ]);
+    });
   });
 
   it("answers a UFC fight card as one Game named after its main event, its two fighters in the name's order: never another bout, a winner or a record", async () => {

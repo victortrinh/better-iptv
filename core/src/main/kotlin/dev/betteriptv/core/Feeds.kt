@@ -71,12 +71,15 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
  * either) needs the Game's League named too.
  *
- * An event League's Game ([GameEvent], F1's or IndyCar's) has no teams: its Event channels name the League and
- * one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US: APPLE TV F1 PPV 2"), and no session
- * but the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel; one
- * naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying) is none's,
- * nor one naming another series of the sport ([League.otherSeries]: NASCAR's Truck Series races at
- * the Cup's track the same weekend).
+ * An event League's Game ([GameEvent], F1's, a NASCAR or IndyCar race, or a golf round) has no teams: its
+ * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:
+ * APPLE TV F1 PPV 2", "Golf: World Wide Technology Championship Round 1 @ …"), and no session but
+ * the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor
+ * round 1 round 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the
+ * sprint's qualifying) is none's, nor one naming another series or tour of the sport
+ * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend, the
+ * Korn Ferry Tour). A name two Leagues share ("Golf"), or another League's name the event's own
+ * name holds ("PGA" in the LPGA's KPMG Women's PGA Championship), keeps none out.
  *
  * A fight-card League's Game ([GameFight], UFC's) has no teams either: its Event channels name the
  * League and an alias of both main-event fighters ("UFC event: 1 name: UFC FIGHT NIGHT: MOICANO VS
@@ -103,20 +106,28 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
+    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart.
+    val notThis = HashMap<Pair<League?, String?>, Set<Int>>()
+    fun otherLeagues(league: League?, event: GameEvent?): Set<Int> = notThis.getOrPut(league to event?.name) {
+        val own = league?.names.orEmpty().map { it.lowercase() }
+        val eventWords = event?.let { SearchIndex.words(it.name) }.orEmpty()
+        val others = League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own && !containsPhrase(eventWords, SearchIndex.words(it)) }
+        holdingAny(others)
+    }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
-        val otherLeague = byLeague.filterKeys { it != thisLeague }.values.flatten().toSet()
         val event = game.event
+        val otherLeague = otherLeagues(thisLeague, event)
         val fight = game.fight
         val named = if (fight != null) {
             // A fight card's: the League and both main-event fighters, or the League and the card's number.
             val both = fight.fighters.map { holdingAny(it.aliases) }.reduce { a, b -> a intersect b }
             ((both + numberedCard(fight)?.let(::holding).orEmpty()) intersect league) - otherLeague
         } else if (event != null) {
-            // An event League's: the League and a name of the event, and no session but its own.
+            // An event League's: the League and a name of the event, and no session of the same kind but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))
-            val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session }.values.flatten()) - own
+            val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session && it.round == event.session.round }.values.flatten()) - own
             val otherSeries = holdingAny(thisLeague?.otherSeries.orEmpty())
             (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS) - otherSeries
         } else {
@@ -202,6 +213,7 @@ private val BROADCASTER_SPELLINGS: Map<String, List<String>> = listOf(
     listOf("Prime Video", "Amazon Prime Video", "Amazon Prime"),
     listOf("Peacock", "Peacock TV"),
     listOf("Paramount+", "Paramount Plus"),
+    listOf("Golf Chnl", "Golf Channel"),
 ).flatMap { spellings -> spellings.map { channelKey(it) to spellings.map(::channelKey) } }.toMap()
 
 /**
@@ -235,6 +247,11 @@ private val SESSION_WORDS: Map<GameSession, List<String>> = mapOf(
     GameSession.Qualifying to listOf("Qualifying", "Quali", "Qualification", "Qualifications", "Kvalifikation"),
     GameSession.Sprint to listOf("Sprint"),
     GameSession.Race to listOf("Race", "Course", "Løb"),
+    GameSession.Round1 to listOf("Round 1", "R1", "First Round", "1st Round", "Round One", "1er tour", "Premier tour"),
+    GameSession.Round2 to listOf("Round 2", "R2", "Second Round", "2nd Round", "Round Two", "2e tour", "Deuxième tour"),
+    GameSession.Round3 to listOf("Round 3", "R3", "Third Round", "3rd Round", "Round Three", "3e tour", "Troisième tour"),
+    GameSession.Round4 to listOf("Round 4", "R4", "Fourth Round", "4th Round", "Round Four", "4e tour", "Quatrième tour"),
+    GameSession.FinalRound to listOf("Final Round", "Round 4", "R4", "Fourth Round", "4th Round", "Round Four", "Dernier tour", "4e tour"),
 )
 
 /** The sessions of a race weekend that are no Game: an Event channel naming one carries none. */

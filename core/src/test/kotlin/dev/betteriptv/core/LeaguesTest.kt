@@ -7,12 +7,12 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `nineteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `twenty-one Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
                 "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
-                "ncaa-football", "ncaa-basketball", "wnba", "f1", "nascar", "indycar", "ufc",
+                "ncaa-football", "ncaa-basketball", "wnba", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
             ),
             League.entries.map { it.key },
         )
@@ -21,7 +21,7 @@ class LeaguesTest {
     }
 
     @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {
-        assertEquals(listOf(League.F1, League.Nascar, League.IndyCar), League.entries.filter { it.events })
+        assertEquals(listOf(League.F1, League.Nascar, League.IndyCar, League.Pga, League.Lpga), League.entries.filter { it.events })
         assertEquals(listOf("F1", "Formula 1", "Formula One"), League.F1.names)
         assertEquals("Sky Sports F1", League.F1.network)
         for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.F1 in League.defaults(region))
@@ -40,6 +40,18 @@ class LeaguesTest {
         assertNull(League.IndyCar.network)
         assertEquals(listOf("Indy NXT"), League.IndyCar.otherSeries)
         for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.IndyCar in League.defaults(region))
+    }
+
+    @Test fun `the PGA Tour is an event League, its Games a tournament's rounds, on Golf Channel, and on in no Region until the Viewer turns it on`() {
+        assertEquals(listOf("PGA Tour", "PGA", "Golf"), League.Pga.names)
+        assertEquals("Golf Channel", League.Pga.network)
+        for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.Pga in League.defaults(region))
+    }
+
+    @Test fun `the LPGA is an event League, its Games a tournament's rounds, on Golf Channel, and on in no Region until the Viewer turns it on`() {
+        assertEquals(listOf("LPGA", "LPGA Tour", "Golf"), League.Lpga.names)
+        assertEquals("Golf Channel", League.Lpga.network)
+        for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.Lpga in League.defaults(region))
     }
 
     @Test fun `UFC is a fight-card League, its Games fight cards, and on in no Region until the Viewer turns it on`() {
