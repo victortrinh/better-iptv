@@ -104,7 +104,7 @@ internal fun matchFeeds(
     val notThis = HashMap<League?, Set<Int>>()
     fun otherLeagues(league: League?): Set<Int> = notThis.getOrPut(league) {
         val own = league?.names.orEmpty().map { it.lowercase() }
-        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } 
+        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own })
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
