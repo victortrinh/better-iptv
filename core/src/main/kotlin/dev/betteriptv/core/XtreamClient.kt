@@ -268,15 +268,17 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         base.newBuilder().addPathSegment("series").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
 
     /**
-     * The Provider's short guide for Channel variant [streamId] (`get_short_epg`): up to [limit]
-     * programmes from the one on now, in order, their titles decoded from the base64 the Provider
-     * sends (a title that isn't base64 is kept as it came). A programme whose times the Provider
-     * doesn't give as timestamps is left out. Throws [GuideRefused] when the Provider answers with
-     * anything but a guide (a 4xx, a 5xx), so the caller can stop asking for the day; the usual
-     * [ProviderException] when it doesn't answer at all.
+     * The Provider's guide for Channel variant [streamId] (its full table, `get_simple_data_table`):
+     * up to [limit] programmes from the one on at [now], in order, their titles decoded from the
+     * base64 the Provider sends (a title that isn't base64 is kept as it came). The short guide
+     * (`get_short_epg`) would be ~2 KB rather than ~80 KB, but the surveyed Provider leaves out of it
+     * every programme ending within the next hour, the one on now among them (#306). A programme whose
+     * times the Provider doesn't give as timestamps is left out. Throws [GuideRefused] when the
+     * Provider answers with anything but a guide (a 4xx, a 5xx), so the caller can stop asking for the
+     * day; the usual [ProviderException] when it doesn't answer at all.
      */
-    fun shortGuide(streamId: Long, limit: Int): List<Programme> = api(
-        "get_short_epg", "stream_id" to streamId.toString(), "limit" to limit.toString(),
+    fun guide(streamId: Long, now: Instant, limit: Int): List<Programme> = api(
+        "get_simple_data_table", "stream_id" to streamId.toString(),
         refused = { status -> GuideRefused(status) },
     ) { json ->
         val programmes = mutableListOf<Programme>()
@@ -290,7 +292,8 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "stop_timestamp" -> end = nextScalar()?.toLongOrNull()
                 else -> skipValue()
             }
-            if (title != null && start != null && end != null && end > start) {
+            // The table runs from days ago to days ahead: only the programmes from now on are kept.
+            if (title != null && start != null && end != null && end > start && end > now.epochSecond && programmes.size < limit) {
                 programmes += Programme(decodeTitle(title), Instant.ofEpochSecond(start), Instant.ofEpochSecond(end))
             }
         }

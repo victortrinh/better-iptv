@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -162,7 +163,14 @@ private const val CAP_HEIGHT_EM = 0.7275f
  * from the screen lands on it too, not on whichever tab is nearest (#187).
  */
 @Composable
-fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null) {
+fun TopTabs(
+    tabs: List<TopTab>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    selectedFocus: FocusRequester? = null,
+    end: @Composable BoxScope.() -> Unit = {},
+) {
     val capsule = RoundedCornerShape(50)
     Box(modifier.fillMaxWidth()) {
         Wordmark(Modifier.align(Alignment.CenterStart))
@@ -200,6 +208,7 @@ fun TopTabs(tabs: List<TopTab>, selected: Int, onSelect: (Int) -> Unit, modifier
                 }
             }
         }
+        end()
     }
 }
 

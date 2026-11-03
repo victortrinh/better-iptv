@@ -75,7 +75,7 @@ fun LiveScreen(
             { SyncChecklist(status, SyncStep.Channels, onRetry) }
         } else null,
     ) { tab ->
-        BrowseTabs(Browse.Live, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab)
+        BrowseTabs(Browse.Live, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
     }
 }
 

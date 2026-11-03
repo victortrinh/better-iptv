@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
@@ -29,9 +30,12 @@ import dev.betteriptv.core.TitleId
 /** The browsing screens, in tab order. */
 enum class Browse { Home, Movies, Shows, Live, Search, Settings }
 
-/** The tabs across the top of the browsing screens; [selectedFocus] focuses the [selected] one. */
+/**
+ * The tabs across the top of the browsing screens; [selectedFocus] focuses the [selected] one. With
+ * [library], the pill at their right end says while a Sync or Matching may still change the rows.
+ */
 @Composable
-fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null) {
+fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null, library: Library? = null) {
     TopTabs(
         listOf(
             TopTab(stringResource(R.string.home_title)),
@@ -45,7 +49,9 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
         onSelect = { onSelect(Browse.entries[it]) },
         modifier = modifier,
         selectedFocus = selectedFocus,
-    )
+    ) {
+        if (library != null) CatalogActivityPill(library, Modifier.align(Alignment.CenterEnd))
+    }
 }
 
 /**
@@ -104,6 +110,6 @@ fun HomeScreen(
             { PlaceholderRows(caption) }
         } else null,
     ) { tab ->
-        BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab)
+        BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
     }
 }

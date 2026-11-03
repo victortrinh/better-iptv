@@ -66,7 +66,10 @@ export class Espn implements ScheduleSource {
     if (!Array.isArray(listed?.sports)) throw new ScheduleUnavailable(`ESPN answered no teams for ${path}`);
     return listed.sports.flatMap((sport) => sport.leagues ?? []).flatMap((l) => l.teams ?? []).flatMap(({ team }) => {
       if (!team?.id) return [];
-      return [{ id: String(team.id), aliases: aliases(team), logo: defaultLogo(team.logos) }];
+      // The logo ESPN marks for dark backgrounds, as the cards' glass is: a black one (the Raiders') vanishes on it.
+      const marked = (rel: string) => team.logos?.find((l) => l.rel?.includes(rel))?.href;
+      const logo = marked("dark") ?? marked("default") ?? team.logos?.[0]?.href ?? null;
+      return [{ id: String(team.id), aliases: aliases(team), logo }];
     });
   }
 
