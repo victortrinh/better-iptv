@@ -57,7 +57,7 @@ export interface Game {
   broadcasters: string[];
 }
 
-/** A League's team as the source lists it: the names it goes by and a logo, for Games whose day lacks them. */
+/** A League's team as the source lists it: the names it goes by, for Games whose day lacks them, and its logo for dark backgrounds, which Games show over the day's. */
 export interface Team {
   id: string;
   aliases: string[];

@@ -47,8 +47,8 @@ export function scheduleSource(env: Env, _league: League): ScheduleSource {
  * D1 is read, never the source: the Cron Trigger ([fillGames]) reads it, so an answer costs little.
  * The Leagues are noted as wanted, so a new one is read within the next minutes; till then, it is
  * absent from the answer, as is any League without a copy. A copy stands however stale it is. A
- * Game that started over a day ago is dropped. Each team's aliases and logo are completed from the
- * League's teams when the source listed them.
+ * Game that started over a day ago is dropped. Each team's aliases are completed from the League's
+ * teams when the source listed them, and its logo is theirs: the scoreboard's is for light backgrounds.
  */
 export async function games(env: Env, leagues: League[]): Promise<{ leagues: LeagueGames[] }> {
   const now = Date.now();
@@ -78,7 +78,7 @@ export async function games(env: Env, leagues: League[]): Promise<{ leagues: Lea
     const listed = teams.get(league);
     const complete = (team: GameTeam): GameTeam => {
       const known = listed?.get(team.id);
-      return known ? { ...team, aliases: [...new Set([...team.aliases, ...known.aliases])], logo: team.logo ?? known.logo } : team;
+      return known ? { ...team, aliases: [...new Set([...team.aliases, ...known.aliases])], logo: known.logo ?? team.logo } : team;
     };
     const fresh = [...byId.values()]
       .filter((game) => Date.parse(game.start) > now - KEEP_GAMES_FOR)

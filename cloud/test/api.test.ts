@@ -748,7 +748,8 @@ describe("Games", () => {
   it("answers a League's Games for today and the week ahead, by start: state, both teams with aliases and logo, the national Broadcasters, never a score", async () => {
     const { leagues } = await filled(await registerDevice(), ["nhl"]);
 
-    const logo = (abbreviation: string) => `https://a.espncdn.com/i/teamlogos/500/scoreboard/${abbreviation.toLowerCase()}.png`;
+    // The teams list's logo for dark backgrounds, over the scoreboard's.
+    const logo = (abbreviation: string) => `https://a.espncdn.com/i/teamlogos/500-dark/${abbreviation.toLowerCase()}.png`;
     const torontoMapleLeafs = { id: "21", name: "Toronto Maple Leafs", shortName: "Maple Leafs", abbreviation: "TOR", aliases: ["Toronto Maple Leafs", "Maple Leafs", "TOR", "Toronto"], logo: logo("TOR") };
     const montrealCanadiens = { id: "10", name: "Montreal Canadiens", shortName: "Canadiens", abbreviation: "MTL", aliases: ["Montreal Canadiens", "Canadiens", "MTL", "Montreal", "Montréal"], logo: logo("MTL") };
     const bostonBruins = { id: "1", name: "Boston Bruins", shortName: "Bruins", abbreviation: "BOS", aliases: ["Boston Bruins", "Bruins", "BOS", "Boston"], logo: logo("BOS") };
@@ -768,6 +769,20 @@ describe("Games", () => {
     ]);
     // No field of ESPN's that tells how the game is going: not a score, a period, a clock or a record.
     expect(JSON.stringify(leagues)).not.toMatch(/"(score|period|clock|records?|displayClock)"/i);
+  });
+
+  it("gives each team ESPN's logo for dark backgrounds, else its default one, else the scoreboard's", async () => {
+    // The Senators have no logo for dark backgrounds; the Bruins aren't in the teams list.
+    espn.teams(nhl, team(leafs), team(habs), team(sens, { dark: false }));
+    const { leagues } = await filled(await registerDevice(), ["nhl"]);
+
+    const logos = Object.fromEntries(leagues[0].games.flatMap((g) => [g.home, g.away] as { abbreviation: string; logo: string }[]).map((t) => [t.abbreviation, t.logo]));
+    expect(logos).toEqual({
+      TOR: "https://a.espncdn.com/i/teamlogos/500-dark/tor.png",
+      MTL: "https://a.espncdn.com/i/teamlogos/500-dark/mtl.png",
+      OTT: "https://a.espncdn.com/i/teamlogos/500/ott.png",
+      BOS: "https://a.espncdn.com/i/teamlogos/500/scoreboard/bos.png",
+    });
   });
 
   it("answers only the Leagues asked for, and reads only the Leagues some device has on", async () => {

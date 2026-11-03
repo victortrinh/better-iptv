@@ -697,7 +697,7 @@ class Library private constructor(
             val next = wanted.firstOrNull { guideWanted(it, now) } ?: return
             val variant = next.variants.first { it.guideId.isNotEmpty() }
             try {
-                val programmes = XtreamClient(login, http).shortGuide(variant.id, GUIDE_PROGRAMMES)
+                val programmes = XtreamClient(login, http).guide(variant.id, now, GUIDE_PROGRAMMES)
                 val until = programmes.maxOfOrNull { it.end }?.takeIf { it.isAfter(now) } ?: now + GUIDE_EMPTY_KEPT_FOR
                 guideCache[next.key] = GuideEntry(programmes, until)
                 guideUnanswered.remove(next.key)
@@ -2032,7 +2032,7 @@ class Library private constructor(
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
         private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
-        /** How many programmes a guide call asks for: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
+        /** How many programmes of a guide call are kept: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
         private const val GUIDE_PROGRAMMES = 4
         /** How long a Channel the guide listed nothing for stays unasked: the guide covers 15% of Channels, and a listed one rarely goes blank for long. */
         private val GUIDE_EMPTY_KEPT_FOR: Duration = Duration.ofHours(1)
