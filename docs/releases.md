@@ -45,6 +45,8 @@ The release app, `dev.betteriptv`, is a separate package from the debug app, `de
 
 If the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the stick has an old debug-signed build under `dev.betteriptv`, from before debug builds became their own package. Uninstall that one first (`adb uninstall dev.betteriptv`, which deletes its catalog and login), then install again.
 
+If **Your Apps & Games** then shows an old icon on Zugig's tile (a navy disc, a cloud or a lone z) instead of the wordmark, that's the Appstore's record of an earlier build under the same package. Fire OS keeps it through updates, uninstalls and reboots, and nothing in the APK can refresh it. Clear the Appstore's cache: **Settings › Applications › Manage Installed Applications › Appstore › Clear cache** (not Clear data), then open Your Apps again.
+
 ## Building a release locally
 
 ```bash
