@@ -8,10 +8,20 @@ package dev.betteriptv.core
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
- * League ([events]: F1, #310) has no teams: its Games are a Grand Prix's sessions ([GameEvent]). A
- * fight-card League ([fights]: UFC, #316) has none either: its Games are fight cards ([GameFight]).
+ * League ([events]: F1, NASCAR Cup, #310) has no teams: its Games are a Grand Prix's sessions or a
+ * race ([GameEvent]). [otherSeries] name the same sport's other series, whose Event channels name
+ * the League too ("NASCAR Whelen Modified Tour at Martinsville Speedway"): one naming any is none
+ * of this League's Games. A fight-card League ([fights]: UFC, #316) has no teams either: its Games
+ * are fight cards ([GameFight]).
  */
-enum class League(val key: String, val names: List<String>, val network: String? = null, val events: Boolean = false, val fights: Boolean = false) {
+enum class League(
+    val key: String,
+    val names: List<String>,
+    val network: String? = null,
+    val events: Boolean = false,
+    val otherSeries: List<String> = emptyList(),
+    val fights: Boolean = false,
+) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
     Nba("nba", listOf("NBA"), network = "NBA TV"),
@@ -28,6 +38,10 @@ enum class League(val key: String, val names: List<String>, val network: String?
     NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
     Wnba("wnba", listOf("WNBA")),
     F1("f1", listOf("F1", "Formula 1", "Formula One"), network = "Sky Sports F1", events = true),
+    Nascar(
+        "nascar", listOf("NASCAR"), events = true,
+        otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
+    ),
     Ufc("ufc", listOf("UFC"), network = "UFC", fights = true);
 
     companion object {

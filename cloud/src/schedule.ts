@@ -1,8 +1,8 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
- * fifteen team Leagues, whose Games are two teams', F1, an event League (#310), whose Games
- * are a Grand Prix's sessions, with no teams, and UFC, a fight-card League (#316), whose Games are
- * fight cards, named after their main event's two fighters.
+ * fifteen team Leagues, whose Games are two teams', the event Leagues (#310), whose Games have
+ * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's its races, and UFC, a fight-card League
+ * (#316), whose Games are fight cards, named after their main event's two fighters.
  */
 export const LEAGUES = [
   "nhl",
@@ -21,13 +21,14 @@ export const LEAGUES = [
   "ncaa-basketball",
   "wnba",
   "f1",
+  "nascar",
   "ufc",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
 
 /** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
-export const EVENT_LEAGUES: readonly League[] = ["f1"];
+export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar"];
 
 /** The fight-card Leagues: their Games have no teams, but a fight card ({@link GameFight}). */
 export const FIGHT_LEAGUES: readonly League[] = ["ufc"];
