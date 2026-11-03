@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Write the launcher icon and the TV banner as vector drawables (#66, #104).
+"""Write the launcher icon and the TV banner as vector drawables (#66, #104, #314).
 
-The mark is a solid white lowercase z on a glass disc, on the charcoal ground:
-Verre's translucent glass plus the one solid white thing. The banner's "zugig" ends
-in a grey dot raised to cap height, the same dot the in-app Wordmark draws. It is drawn on a
-512 x 512 master canvas and placed by <group> transforms, so every resource
-shares one geometry. The z and the banner's "zugig" are the app's Inter Bold,
+Both are the Wordmark on the charcoal ground: a white lowercase "zugig" ending in a
+grey dot raised to cap height, the same dot the in-app Wordmark draws. The icon carries
+the whole word, not a lone z, because Fire OS's App Library shows a sideloaded app's
+icon on its tile and ignores the banner (#314). The letters are the app's Inter Bold,
 turned into outlines because a vector drawable can't hold text.
 
 Writes:
@@ -32,7 +31,6 @@ FONT = TTFont(RES / "font" / "inter_700.ttf")
 
 GROUND = "#FF16171B"  # charcoal, a step above Colors.ground so the icon isn't a hole
 WHITE = "#FFF2F2F4"   # off-white
-GLASS = "#FF4A4B50"   # white glass over the ground, flattened to an opaque colour
 DOT_GREY = "#FF77787E"  # the Wordmark's dot: a step back from the white letters
 
 WORD = "zugig"
@@ -43,9 +41,11 @@ TRACKING = -0.03  # Inter Bold tracked like Type.display
 DOT_EM = 0.2169
 DOT_GAP_EM = 0.0643
 
-# The disc fills the 512 master; the z's x-height is 45% of it, its ink centred.
-DISC = "M256,0A256,256 0 1 1 256,512A256,256 0 1 1 256,0Z"
-Z_HEIGHT = 230
+# The icon's Wordmark size: its ink, dot included, is 2.77 em wide, so 25 dp spans
+# 69 dp of the 72 dp square Fire OS shows of an adaptive icon, the tile's full width.
+# A round mask (66 dp) would clip the z and the dot; the TV launchers that use one
+# show the banner instead.
+ICON_WORD = 25
 
 
 def n(v):
@@ -80,12 +80,6 @@ def ink_bounds(s, size, tracking=0.0):
     return box
 
 
-def centred_text(s, size, cx, cy, tracking=0.0):
-    l, t, r, b = ink_bounds(s, size, tracking)
-    d, _ = text_outline(s, cx - (l + r) / 2, cy - (t + b) / 2, size, tracking)
-    return d
-
-
 def wordmark(size, cx, cy, tracking=0.0):
     """ "zugig" and its dot, their ink centred together on (cx, cy): (word path, dot path)."""
     l, t, r, b = ink_bounds(WORD, size, tracking)
@@ -99,22 +93,8 @@ def wordmark(size, cx, cy, tracking=0.0):
     return word, dot
 
 
-def mark(monochrome=False):
-    size = Z_HEIGHT * FONT["head"].unitsPerEm / FONT["OS/2"].sxHeight
-    z = centred_text("z", size, 256, 256)
-    return [(z, WHITE)] if monochrome else [(DISC, GLASS), (z, WHITE)]
-
-
 def path_xml(d, colour, indent):
     return f'{indent}<path\n{indent}    android:fillColor="{colour}"\n{indent}    android:pathData="{d}" />\n'
-
-
-def group_xml(paths, scale, tx, ty, indent="    "):
-    out = (f'{indent}<group\n{indent}    android:scaleX="{scale:.5f}"\n{indent}    android:scaleY="{scale:.5f}"\n'
-           f'{indent}    android:translateX="{n(tx)}"\n{indent}    android:translateY="{n(ty)}">\n')
-    for d, colour in paths:
-        out += path_xml(d, colour, indent + "    ")
-    return out + f"{indent}</group>\n"
 
 
 def vector(width, height, body, comment):
@@ -124,12 +104,6 @@ def vector(width, height, body, comment):
             f'    android:viewportWidth="{width}"\n    android:viewportHeight="{height}">\n{body}</vector>\n')
 
 
-def fit(radius, centre):
-    """Scale and offset that put the disc on a circle of `radius` around `centre`."""
-    k = radius / 256
-    return k, centre - 256 * k, centre - 256 * k
-
-
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
@@ -137,14 +111,14 @@ def write(path, text):
 
 
 def main():
-    # Adaptive icon: 108 dp layers, of which a launcher may show as little as the
-    # 66 dp circle in the middle. The disc keeps inside it with a little air.
-    k, tx, ty = fit(30, 54)
+    # Adaptive icon: 108 dp layers, of which Fire OS shows the middle 72 dp square.
+    word, dot = wordmark(ICON_WORD, 54, 54, TRACKING)
     write(RES / "drawable" / "ic_launcher_foreground.xml",
-          vector(108, 108, group_xml(mark(), k, tx, ty), "Adaptive icon foreground: the glass disc and the white z."))
+          vector(108, 108, path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    "),
+                 "Adaptive icon foreground: zugig in Inter Bold and its grey dot."))
     write(RES / "drawable" / "ic_launcher_monochrome.xml",
-          vector(108, 108, group_xml(mark(monochrome=True), k, tx, ty),
-                 "Themed icon: only the z, since the system tints every layer one colour."))
+          vector(108, 108, path_xml(word, WHITE, "    ") + path_xml(dot, WHITE, "    "),
+                 "Themed icon: the word and dot, which the system tints one colour."))
     write(RES / "values" / "ic_launcher.xml",
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
           f'    <color name="ic_launcher_background">{GROUND}</color>\n</resources>\n')
@@ -157,8 +131,8 @@ def main():
           '</adaptive-icon>\n')
 
     # Legacy icon for API 25 (Fire OS 6): a full-bleed square, the launcher masks it.
-    k, tx, ty = fit(19, 24)
-    body = path_xml("M0,0h48v48h-48z", GROUND, "    ") + group_xml(mark(), k, tx, ty)
+    word, dot = wordmark(ICON_WORD * 48 / 72, 24, 24, TRACKING)
+    body = path_xml("M0,0h48v48h-48z", GROUND, "    ") + path_xml(word, WHITE, "    ") + path_xml(dot, DOT_GREY, "    ")
     write(RES / "mipmap-anydpi" / "ic_launcher.xml", vector(48, 48, body, "Launcher icon below API 26."))
 
     # Banner: the wordmark and its dot alone, their ink centred on the 320 x 180 card.
