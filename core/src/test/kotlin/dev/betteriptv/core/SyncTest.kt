@@ -70,6 +70,72 @@ class SyncTest {
         assertEquals("EN - Oz the Great and Powerful (2013)", library.movieListings(0, 1).single().name)
     }
 
+    @Test fun `an empty movie list beside movie Categories fails the Sync and keeps the catalog`() = runBlocking {
+        val library = openLibrary()
+        library.logIn(provider.login)
+        library.sync()
+        provider.movieListOverride = "[]"
+
+        val status = library.sync()
+
+        assertTrue(status is SyncStatus.Failed)
+        assertEquals(SyncStep.Movies, (status as SyncStatus.Failed).step)
+        assertEquals(150, library.movieListingCount())
+    }
+
+    @Test fun `a first Sync given empty movie and show lists fails, so it isn't counted as synced`() = runBlocking {
+        val library = openLibrary()
+        library.logIn(provider.login)
+        provider.movieListOverride = "[]"
+        provider.showListOverride = "[]"
+
+        val status = library.sync()
+
+        // Once seen on the stick: the Provider answered both lists with [] and the empty catalog stood as a finished Sync.
+        assertTrue(status is SyncStatus.Failed)
+        assertEquals(null, status.last)
+        assertTrue(status.channelsAt != null)
+        assertEquals(0, library.movieListingCount())
+    }
+
+    @Test fun `an empty show list beside show Categories fails the Sync`() = runBlocking {
+        val library = openLibrary()
+        library.logIn(provider.login)
+        provider.showListOverride = "[]"
+
+        val status = library.sync()
+
+        assertTrue(status is SyncStatus.Failed)
+        assertEquals(SyncStep.Shows, (status as SyncStatus.Failed).step)
+    }
+
+    @Test fun `an empty live list beside live Categories fails the Sync before its Channels land`() = runBlocking {
+        val library = openLibrary()
+        library.logIn(provider.login)
+        provider.liveCategoriesOverride = """[{"category_id":"1","category_name":"UK | SPORTS"}]"""
+        provider.liveListOverride = "[]"
+
+        val status = library.sync()
+
+        assertTrue(status is SyncStatus.Failed)
+        assertEquals(SyncStep.Channels, (status as SyncStatus.Failed).step)
+        assertEquals(null, status.channelsAt)
+    }
+
+    @Test fun `a Provider without movies or shows at all still syncs`() = runBlocking {
+        val library = openLibrary()
+        library.logIn(provider.login)
+        provider.movieCategoriesOverride = "[]"
+        provider.movieListOverride = "[]"
+        provider.showCategoriesOverride = "[]"
+        provider.showListOverride = "[]"
+
+        val status = library.sync()
+
+        assertTrue(status is SyncStatus.Synced)
+        assertEquals(0, status.last?.movieListingCount)
+    }
+
     @Test fun `a later Sync replaces the catalog with what the Provider has now`() = runBlocking {
         val library = openLibrary()
         library.logIn(provider.login)
