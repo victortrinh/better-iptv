@@ -56,8 +56,13 @@ enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xF
 /** What sits behind subtitles: a dark outline round the letters, a shadow, or a dark box. */
 enum class SubtitleBackground { Outline, Shadow, Box }
 
-/** How high subtitles sit, as a share of the picture's height from its bottom. */
-enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.05f), Raised(0.15f) }
+/**
+ * How high subtitles sit, as a share of the screen's height from its bottom (Media3 text cues), or
+ * of the picture's (VLC). Bottom lands in the black bar under a wide picture (#292). Raised clears
+ * the player overlay's scrubber, whose track sits 23% to 24% up a 1080-line screen (#277), on a
+ * 16:9 film too, where the screen is the picture: its text ends about 2% above the track.
+ */
+enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.05f), Raised(0.26f) }
 
 /** The app's interface languages: the App language is one of these. */
 val APP_LANGUAGES = listOf("en", "fr")

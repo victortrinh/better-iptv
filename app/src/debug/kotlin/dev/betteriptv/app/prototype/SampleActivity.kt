@@ -18,8 +18,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.ui.PlayerView
+import dev.betteriptv.app.Media3Picture
 import dev.betteriptv.app.Playing
+import dev.betteriptv.app.SubtitlePosition
+import dev.betteriptv.app.SubtitleStyle
 import dev.betteriptv.app.buildPlayer
 import dev.betteriptv.app.readDeviceProfile
 
@@ -32,7 +34,8 @@ import dev.betteriptv.app.readDeviceProfile
  *         -d http://192.168.4.20:8000/dts.mkv --ei audio 0 --ei subtitle 1
  *
  * `audio` and `subtitle` pick Tracks by index among the file's audio and subtitle Tracks; `sidecar`
- * adds a subtitle file beside it (WebVTT, SRT or ASS, by its extension), as downloaded subtitles will be.
+ * adds a subtitle file beside it (WebVTT, SRT or ASS, by its extension), as downloaded subtitles will be;
+ * `position` is `raised` for the Raised subtitle position.
  */
 @OptIn(UnstableApi::class)
 class SampleActivity : ComponentActivity() {
@@ -93,10 +96,9 @@ class SampleActivity : ComponentActivity() {
                 Log.i(TAG, "video decoder $decoderName")
             }
         })
-        setContentView(PlayerView(this).apply {
-            useController = false
-            playing.showIn(this)
-        })
+        // Subtitles in the app's default style, placed as the app places them (#292); `--es position raised` lifts them.
+        val position = if (intent.getStringExtra("position") == "raised") SubtitlePosition.Raised else SubtitlePosition.Bottom
+        setContentView(Media3Picture(this).also { playing.showIn(it); it.draw(SubtitleStyle(position = position)) }.view)
         val file = intent.data ?: return finish().also { Log.e(TAG, "no sample: start with -d <file>") }
         val sidecars = listOfNotNull(intent.getStringExtra("sidecar")).map { uri ->
             val type = when (uri.substringAfterLast('.')) {
