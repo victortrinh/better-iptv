@@ -231,10 +231,10 @@ fun RowsScreen(
     val focusedRow by remember(state) { derivedStateOf { state.rows?.indexOfFirst { it.key == state.focused?.row } ?: -1 } }
     LaunchedEffect(focusedRow) {
         if (focusedRow < 0) return@LaunchedEffect
-        state.list.animateScrollToItem(focusedRow)
-        // The info moves under the row once it is at the top: the rows below it make way then, not
-        // while they slide.
+        // Every row keeps the info's slot, so the info moves under the focused row as it slides up,
+        // and nothing below it makes way.
         state.settled = state.focused?.row
+        state.list.animateScrollToItem(focusedRow)
     }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
@@ -398,14 +398,15 @@ fun RowsScreen(
 }
 
 /**
- * The info under [row] while it is the row settled at the top ([RowsState.settled]). The focused
- * and settled cards are read here, not in the row: there they composed the rows on screen and each
- * of their cards again at every press (#63).
+ * The info under [row]: about the focused card while the row is the one at the top
+ * ([RowsState.settled]), else an empty slot of the same height, so the rows under it never move
+ * down when the info arrives. The focused and settled cards are read here, not in the row: there
+ * they composed the rows on screen and each of their cards again at every press (#63).
  */
 @Composable
 private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>, appLanguage: String) {
-    if (state.settled != row.key) return
-    RailInfo(library, row, state.focused, contentLanguages, appLanguage, Modifier.padding(start = Spacing.screenX, top = 12.dp))
+    val card = if (state.settled == row.key) state.focused else null
+    RailInfo(library, row, card, contentLanguages, appLanguage, Modifier.padding(start = Spacing.screenX, top = 12.dp))
 }
 
 /** The info under [row], telling about [card], the card focused last, when it is one of the row's. */
