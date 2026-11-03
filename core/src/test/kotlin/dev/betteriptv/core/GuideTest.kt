@@ -30,6 +30,7 @@ class GuideTest {
     private val now get() = clock.now
 
     @Before fun logIn() = runBlocking {
+        provider.guideNow = { clock.now }
         library = open()
         library.logIn(provider.login)
         Unit
@@ -88,6 +89,28 @@ class GuideTest {
         // CTV has no guide id: never asked about, nothing to show.
         assertEquals(listOf(1L), provider.guideRequests)
         assertNull(library.guide(ctv))
+    }
+
+    @Test fun `the programme on now shows in its last hour, and the ones already over don't`() = runBlocking {
+        syncLineup()
+        // As the Provider answered for A & E at 14:17 on 2026-11-03 (#306): half-hours, the one on now
+        // ending in 13 minutes, which the short guide leaves out.
+        provider.serveGuide(
+            1,
+            programme("Storage Wars", Duration.ofMinutes(-47), Duration.ofMinutes(-17)),
+            programme("Hoarders", Duration.ofMinutes(-17), Duration.ofMinutes(13)),
+            programme("Hoarders", Duration.ofMinutes(13), Duration.ofMinutes(43)),
+            programme("Intervention", Duration.ofMinutes(43), Duration.ofMinutes(103)),
+        )
+        val cbc = channel("CA: CBC")
+
+        library.guideOnScreen(listOf(cbc))
+
+        val onCbc = awaitGuide(cbc)
+        assertEquals("Hoarders", onCbc.now?.title)
+        assertEquals(now + Duration.ofMinutes(13), onCbc.next?.start)
+        settle()
+        assertEquals(listOf(1L), provider.guideRequests)
     }
 
     @Test fun `a merged Channel is asked about once, by the variant the guide knows, and a Channel off screen is not`() = runBlocking {
