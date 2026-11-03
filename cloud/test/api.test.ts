@@ -2,7 +2,7 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, leafs, sens, team, texans } from "./fake-espn";
+import { argos, bombers, broncos, bruins, event, FakeEspn, grandPrix, habs, indyCarRace, leafs, sens, team, texans } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -919,12 +919,14 @@ describe("Games", () => {
       "ncaa-basketball": "basketball/mens-college-basketball",
       wnba: "basketball/wnba",
       f1: "racing/f1",
+      indycar: "racing/irl",
     };
     expect(Object.keys(paths).sort()).toEqual([...LEAGUES].sort());
     for (const path of Object.values(paths)) expect(espn.asked).toContain(`${path}/2026-11-01`);
-    // F1 has drivers, not teams: no teams list is read for it.
-    for (const path of Object.values(paths).filter((p) => p !== "racing/f1")) expect(espn.asked).toContain(`${path}/teams`);
-    expect(espn.asked).not.toContain("racing/f1/teams");
+    // F1 and IndyCar have drivers, not teams: no teams list is read for them.
+    const racing = ["racing/f1", "racing/irl"];
+    for (const path of Object.values(paths).filter((p) => !racing.includes(p))) expect(espn.asked).toContain(`${path}/teams`);
+    for (const path of racing) expect(espn.asked).not.toContain(`${path}/teams`);
     expect(espn.requests.every((r) => r.userAgent === null)).toBe(true);
   });
 
@@ -970,6 +972,38 @@ describe("Games", () => {
     ]);
     // No driver, position or winner: the result never leaves the cloud.
     expect(JSON.stringify(leagues)).not.toMatch(/Verstappen|Hamilton|"(winner|order|athlete|competitors)"/);
+  });
+
+  it("answers an IndyCar race as a Game naming the race instead of teams: never a result", async () => {
+    espn.scoreboard("racing/irl", "2026-11-01", indyCarRace("202611010119", "Grand Prix of Mid-Ohio", "2026-11-01T16:30Z", "in"));
+    espn.scoreboard("racing/irl", "2026-11-02", indyCarRace("202611020106", "Indianapolis 500", "2026-11-02T16:00Z", "pre", "FOX"));
+    espn.scoreboard("racing/irl", "2026-11-03", indyCarRace("202611034000", "Grand Prix of Indianapolis (Road Course)", "2026-11-03T19:30Z", "pre"));
+    espn.scoreboard("racing/irl", "2026-11-04", indyCarRace("202611044252", "Grand Prix of Milwaukee Race 1", "2026-11-04T21:30Z", "pre"));
+
+    const { leagues } = await filled(await registerDevice(), ["indycar"]);
+
+    const logo = "https://a.espncdn.com/i/teamlogos/leagues/500/irl.png";
+    // What an Event channel may call a race: its place, without "Grand Prix of", the course or which of the weekend's races it is, and a race named for its distance by its place too.
+    const race = (id: string, start: string, state: string, name: string, aliases: string[]) => ({
+      id,
+      league: "indycar",
+      start,
+      state,
+      event: { name, shortName: name, session: "race", aliases, logo },
+      broadcasters: ["FOX"],
+    });
+    expect(leagues).toEqual([
+      {
+        league: "indycar",
+        games: [
+          race("202611010119", "2026-11-01T16:30:00.000Z", "live", "Grand Prix of Mid-Ohio", ["Mid-Ohio"]),
+          race("202611020106", "2026-11-02T16:00:00.000Z", "upcoming", "Indianapolis 500", ["Indianapolis 500", "Indianapolis"]),
+          race("202611034000", "2026-11-03T19:30:00.000Z", "upcoming", "Grand Prix of Indianapolis (Road Course)", ["Indianapolis"]),
+          race("202611044252", "2026-11-04T21:30:00.000Z", "upcoming", "Grand Prix of Milwaukee Race 1", ["Milwaukee"]),
+        ],
+      },
+    ]);
+    expect(JSON.stringify(leagues)).not.toMatch(/O'Ward|Palou|"(winner|order|athlete|competitors)"/);
   });
 
   it("rejects a malformed request", async () => {

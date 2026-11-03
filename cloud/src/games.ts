@@ -26,8 +26,8 @@ const ASKED_EVERY = 3600_000;
 const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: sixteen Leagues' current days every 5 minutes and
- * their coming days hourly need 8 a minute at most.
+ * {@link SUBREQUESTS} that the Charts share: seventeen Leagues' current days every 5 minutes and
+ * their coming days hourly need 9 a minute at most.
  */
 export const GAMES_SUBREQUESTS = 12;
 

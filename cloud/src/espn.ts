@@ -3,7 +3,7 @@ import { EVENT_LEAGUES, type Game, type GameSession, type GameState, type GameTe
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1 on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1 and IndyCar on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -22,11 +22,13 @@ const PATHS: Record<League, string> = {
   "ncaa-basketball": "basketball/mens-college-basketball",
   wnba: "basketball/wnba",
   f1: "racing/f1",
+  indycar: "racing/irl",
 };
 
 /**
  * The F1 sessions that are Games, by ESPN's session type id (`type.id`: 1 practice, 2 qualifying,
  * 3 race, 5 the sprint's qualifying, 6 the sprint; checked 2026-11-03 on three sprint weekends).
+ * A competition with no type is a race: IndyCar's events are each one race, its only competition.
  */
 const SESSIONS: Record<string, GameSession> = { "2": "qualifying", "3": "race", "6": "sprint" };
 
@@ -104,8 +106,8 @@ function readGame(league: League, event: EspnEvent): Game | null {
 }
 
 /**
- * [event], a Grand Prix weekend, as a Game per session that is one ({@link SESSIONS}), each with its
- * own start, state and Broadcasters, naming the Grand Prix instead of teams. ESPN answers every day
+ * [event], a Grand Prix weekend or an IndyCar race, as a Game per session that is one ({@link
+ * SESSIONS}), each with its own start, state and Broadcasters, naming the event instead of teams. ESPN answers every day
  * of a weekend with the whole weekend; the same session read on two days is the same Game. The
  * drivers ESPN lists, in finishing order, are never read.
  */
@@ -115,7 +117,7 @@ function readSessions(league: League, event: EspnEvent, logo: string | null): Ga
   const shortName = text(event.shortName) ?? name;
   const names = eventAliases(name, event.circuit?.address);
   return (event.competitions ?? []).flatMap((competition) => {
-    const session = SESSIONS[String(competition.type?.id ?? "")];
+    const session = competition.type === undefined ? "race" : SESSIONS[String(competition.type.id ?? "")];
     const type = competition.status?.type;
     const state = type?.state === undefined ? undefined : STATES[type.state];
     const start = new Date(competition.date ?? "");
@@ -125,13 +127,23 @@ function readSessions(league: League, event: EspnEvent, logo: string | null): Ga
 }
 
 /**
- * What an Event channel may call a Grand Prix named [name]: the words before "Grand Prix", then
- * ever fewer of them, since a sponsor's come first ("MSC Cruises São Paulo", …, "São Paulo",
- * "Paulo"), then the circuit's city and country, each once however it is cased or accented.
+ * What an Event channel may call an event named [name]: its place, the words before "Grand Prix"
+ * (F1's) or after "Grand Prix of" (IndyCar's, the course in brackets and which of a weekend's races
+ * it is left off), then ever fewer of them, since a sponsor's come first ("MSC Cruises São Paulo",
+ * …, "São Paulo", "Paulo"), never a number alone; a race named for its distance is also called by
+ * its place ("Indianapolis 500", "Indianapolis"); then the circuit's city and country, each once
+ * however it is cased or accented.
  */
 function eventAliases(name: string, address: { city?: unknown; country?: unknown } | undefined): string[] {
-  const words = name.replace(/\s+(Grand Prix|GP)\b.*$/i, "").split(/\s+/).filter((w) => w !== "");
-  const found = [...words.map((_, i) => words.slice(i).join(" ")), text(address?.city), text(address?.country)].filter((n): n is string => n !== null);
+  const place = name
+    .replace(/\s*\(.*?\)/g, "")
+    .replace(/^(Grand Prix|GP)\s+(of|at)\s+/i, "")
+    .replace(/\s+Race\s+\d+$/i, "")
+    .replace(/\s+(Grand Prix|GP)\b.*$/i, "");
+  const words = place.split(/\s+/).filter((w) => w !== "");
+  const shorter = words.map((_, i) => words.slice(i).join(" ")).filter((n) => !/^\d+$/.test(n));
+  const distance = words.length > 1 && /^\d+$/.test(words[words.length - 1]) ? [words.slice(0, -1).join(" ")] : [];
+  const found = [...shorter, ...distance, text(address?.city), text(address?.country)].filter((n): n is string => n !== null);
   const seen = new Set<string>();
   return found.filter((n) => {
     const folded = n.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
