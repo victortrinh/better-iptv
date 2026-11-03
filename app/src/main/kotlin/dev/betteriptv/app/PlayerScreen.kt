@@ -117,7 +117,8 @@ import kotlin.time.Duration.Companion.seconds
  * falls back to the VLC engine when Media3 can't open a file and to the Version's Backups when it is
  * dead. The Version playing is named when it starts; repeated buffering brings a one-tap suggestion
  * of a lower Version. Any key shows the player overlay (centre pauses once it shows; left and
- * right, like rewind and fast-forward, scrub: see [Scrub]), with Versions and Audio and subtitles,
+ * right, like rewind and fast-forward, scrub: see [Scrub]; held, they scrub even over the overlay's
+ * buttons, which a tap moves between), with Versions and Audio and subtitles,
  * where the Viewer picks Tracks, which are remembered for the next file, styles subtitles ([settings]' style, changed through
  * [onSubtitleStyle]) and delays the sound or subtitles. The remote's Menu key opens the Versions
  * directly, with "Try other player"; while a Game's Feed plays ([playingFeed]) it opens the Game's
@@ -321,6 +322,7 @@ fun PlayerScreen(
                 return@onPreviewKeyEvent true
             }
             pressed++
+            val heldOnOverlay = overlay && suggested == null && card == null && player != null && !plan.live && event.nativeKeyEvent.repeatCount > 0
             when {
                 event.key == Key.Menu -> panel = when {
                     state is PlaybackState.Ended -> Panel.None
@@ -331,6 +333,11 @@ fun PlayerScreen(
                 // A Channel is live: there is nowhere to seek to.
                 event.key == Key.MediaRewind -> if (!plan.live) moveScrub(forward = false, event)
                 event.key == Key.MediaFastForward -> if (!plan.live) moveScrub(forward = true, event)
+                // With the overlay up, a tap of Left or Right moves between its buttons, but holding
+                // one scrubs all the same (#290): a Viewer who overshot holds Left while the overlay
+                // is still up from the last scrub, and expects the picture to go back.
+                heldOnOverlay && event.key == Key.DirectionLeft -> moveScrub(forward = false, event)
+                heldOnOverlay && event.key == Key.DirectionRight -> moveScrub(forward = true, event)
                 // With the overlay or a card up, its buttons take the keys.
                 overlay || suggested != null || card != null || player == null -> return@onPreviewKeyEvent false
                 else -> when (event.key) {
@@ -812,6 +819,10 @@ private fun Overlay(
     val context = LocalContext.current
     val play = remember { FocusRequester() }
     LaunchedEffect(Unit) { play.requestFocus() }
+    // A scrub held from one of the buttons brings focus back to Play/Pause, so OK after it pauses
+    // rather than pressing the button the first tap moved to. Read through a flow, not in the
+    // composition: a held key's repeats would otherwise recompose the overlay.
+    LaunchedEffect(Unit) { snapshotFlow { target() != null }.collect { if (it) play.requestFocus() } }
     // Read twice a second: the engines don't report their position as it moves.
     val now by produceState(Triple(player.position, player.buffered, player.isPlaying), player) {
         while (true) {
