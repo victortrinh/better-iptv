@@ -128,8 +128,8 @@ export function event(
   };
 }
 
-/** A team shaped like ESPN's teams list gives it, with its logos in ESPN's order (default first). */
-export function team(spec: TeamSpec): object {
+/** A team shaped like ESPN's teams list gives it, with its logos in ESPN's order (default first), and one for dark backgrounds unless [dark] is false. */
+export function team(spec: TeamSpec, { dark = true } = {}): object {
   const { logo, ...rest } = spec;
   const file = spec.abbreviation.toLowerCase();
   return {
@@ -138,7 +138,8 @@ export function team(spec: TeamSpec): object {
     isActive: true,
     logos: [
       { href: logo ?? `https://a.espncdn.com/i/teamlogos/500/${file}.png`, rel: ["full", "default"], width: 500, height: 500 },
-      { href: `https://a.espncdn.com/i/teamlogos/500-dark/${file}.png`, rel: ["full", "dark"], width: 500, height: 500 },
+      ...(dark ? [{ href: `https://a.espncdn.com/i/teamlogos/500-dark/${file}.png`, rel: ["full", "dark"], width: 500, height: 500 }] : []),
+      { href: `https://a.espncdn.com/i/teamlogos/500/scoreboard/${file}.png`, rel: ["full", "scoreboard"], width: 500, height: 500 },
     ],
   };
 }
