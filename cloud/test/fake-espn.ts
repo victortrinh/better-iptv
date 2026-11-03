@@ -255,6 +255,40 @@ export function stockCarRace(id: string, name: string, date: string, state: "pre
   };
 }
 
+/**
+ * A race shaped like ESPN's IndyCar scoreboard gives it (`racing/irl`, checked 2026-11-03 against
+ * St. Petersburg, the Indianapolis 500, Mid-Ohio and Monterey): one event a race, named and short
+ * named alike ("Grand Prix of Mid-Ohio"), with no circuit, and a single competition, the race, that
+ * has the event's id and no session type. Only race day answers; practice and qualifying aren't
+ * listed. Its drivers come in finishing order, as ESPN lists them: the result, never passed on.
+ */
+export function indyCarRace(id: string, name: string, date: string, state: "pre" | "in" | "post", broadcast = "FOX"): object {
+  const status = { period: state === "pre" ? 0 : 95, type: { id: "1", name: { pre: "STATUS_SCHEDULED", in: "STATUS_IN_PROGRESS", post: "STATUS_FINAL" }[state], state, completed: state === "post", description: "Scheduled" } };
+  return {
+    id,
+    uid: `s:2000~l:2040~e:${id}`,
+    date,
+    name,
+    shortName: name,
+    season: { year: 2026, type: 2, slug: "regular-season" },
+    status,
+    competitions: [
+      {
+        id,
+        uid: `s:2000~l:2040~e:${id}~c:${id}`,
+        date,
+        startDate: date,
+        timeValid: true,
+        status,
+        competitors: [driver("5581", "Pato O'Ward", 1), driver("4569", "Alex Palou", 2)],
+        broadcasts: [{ market: "national", names: [broadcast] }],
+        broadcast,
+        geoBroadcasts: [{ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: broadcast }, lang: "en", region: "us" }],
+      },
+    ],
+  };
+}
+
 /** A golfer as ESPN's golf scoreboard and leaderboard list one: a name, a flag, a score to par and a position, all the result. */
 const golfer = (id: string, name: string, order: number) => ({ id, type: "athlete", order, athlete: { fullName: name, displayName: name, shortName: name, flag: { alt: "USA" } }, score: `-${20 - order}`, linescores: [{ period: 1, value: 67 }] });
 

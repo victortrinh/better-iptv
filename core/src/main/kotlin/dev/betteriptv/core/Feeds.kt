@@ -71,7 +71,7 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
  * either) needs the Game's League named too.
  *
- * An event League's Game ([GameEvent], F1's, a NASCAR race or a golf round) has no teams: its
+ * An event League's Game ([GameEvent], F1's, a NASCAR or IndyCar race, or a golf round) has no teams: its
  * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:
  * APPLE TV F1 PPV 2", "Golf: World Wide Technology Championship Round 1 @ …"), and no session but
  * the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor
@@ -236,11 +236,14 @@ internal class TeamAliases(team: GameTeam) {
     }
 }
 
-/** The words an Event channel names each session of an event League's Game by, in English and French. */
+/**
+ * The words an Event channel names each session of an event League's Game by, in English and
+ * French, and in Danish as Viaplay Denmark's IndyCar slots do ("IndyCar Kvalifikation 2026").
+ */
 private val SESSION_WORDS: Map<GameSession, List<String>> = mapOf(
-    GameSession.Qualifying to listOf("Qualifying", "Quali", "Qualification", "Qualifications"),
+    GameSession.Qualifying to listOf("Qualifying", "Quali", "Qualification", "Qualifications", "Kvalifikation"),
     GameSession.Sprint to listOf("Sprint"),
-    GameSession.Race to listOf("Race", "Course"),
+    GameSession.Race to listOf("Race", "Course", "Løb"),
     GameSession.Round1 to listOf("Round 1", "R1", "First Round", "1st Round", "Round One", "1er tour", "Premier tour"),
     GameSession.Round2 to listOf("Round 2", "R2", "Second Round", "2nd Round", "Round Two", "2e tour", "Deuxième tour"),
     GameSession.Round3 to listOf("Round 3", "R3", "Third Round", "3rd Round", "Round Three", "3e tour", "Troisième tour"),
@@ -248,8 +251,8 @@ private val SESSION_WORDS: Map<GameSession, List<String>> = mapOf(
     GameSession.FinalRound to listOf("Final Round", "Round 4", "R4", "Fourth Round", "4th Round", "Round Four", "Dernier tour", "4e tour"),
 )
 
-/** The sessions of a Grand Prix weekend that are no Game: an Event channel naming one carries none. */
-private val NO_GAME_SESSIONS: List<String> = listOf("Sprint Qualifying", "Sprint Shootout", "Shootout", "Practice", "FP1", "FP2", "FP3", "Essais libres")
+/** The sessions of a race weekend that are no Game: an Event channel naming one carries none. */
+private val NO_GAME_SESSIONS: List<String> = listOf("Sprint Qualifying", "Sprint Shootout", "Shootout", "Practice", "FP1", "FP2", "FP3", "Essais libres", "Træning")
 
 /** A numbered fight card's short name ("UFC 334"), which an Event channel may name it by alone, or null for one with no number ("UFC Fight Night"). */
 private fun numberedCard(fight: GameFight): String? = fight.shortName.takeIf { name -> name.any(Char::isDigit) }

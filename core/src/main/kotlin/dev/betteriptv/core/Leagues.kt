@@ -8,11 +8,13 @@ package dev.betteriptv.core
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
- * League ([events]: F1, NASCAR Cup and the PGA Tour, #310) has no teams: its Games are a Grand
- * Prix's sessions, a race or a golf tournament's rounds ([GameEvent]). [otherSeries] name the same
- * sport's other series or tours, whose Event channels name the League too ("NASCAR Whelen Modified
- * Tour at Martinsville Speedway", "Golf: LPGA … Round 1"): one naming any is none of this League's Games.
- * A fight-card League ([fights]: UFC, #316) has no teams either: its Games are fight cards ([GameFight]).
+ * League ([events]: F1, NASCAR Cup, IndyCar and the PGA Tour, #310) has no teams: its Games are a
+ * Grand Prix's sessions, a race or a golf tournament's rounds ([GameEvent]). [otherSeries] name the
+ * same sport's other series or tours, whose Event channels name the League too ("NASCAR Whelen
+ * Modified Tour at Martinsville Speedway", "Golf: LPGA … Round 1"): one naming any is none of this
+ * League's Games. IndyCar is never "Indy" alone: the Provider's Indy Fuel (ECHL) and Indy NXT (its
+ * feeder series) slots say that too. A fight-card League ([fights]: UFC, #316) has no teams either:
+ * its Games are fight cards ([GameFight]).
  */
 enum class League(
     val key: String,
@@ -42,6 +44,7 @@ enum class League(
         "nascar", listOf("NASCAR"), events = true,
         otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
     ),
+    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true, otherSeries = listOf("Indy NXT")),
 
     // The Provider's golf slots name no tour, only `Golf:` (catalog 2026-11-03), so the other tours' and the amateurs' are told apart by name.
     Pga(
