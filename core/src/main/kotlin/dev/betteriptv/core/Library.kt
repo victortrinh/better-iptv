@@ -1345,8 +1345,7 @@ class Library private constructor(
      * of the Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]). Once every
      * named Feed is dropped, the League network joins, as it does for a Game with none.
      */
-    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION): GameFeeds = withContext(Dispatchers.IO) {
-        val now = Instant.now()
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Instant.now()): GameFeeds = withContext(Dispatchers.IO) {
         store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
         // Matched again, so the League network joins once every named Feed is dropped.
         matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
