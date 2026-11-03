@@ -15,10 +15,31 @@ class SubtitleStyleTest {
 
     @Test
     fun positionsAreAShareOfTheScreensHeight() {
-        assertEquals(listOf(0.05f, 0.26f), SubtitlePosition.entries.map { it.fromBottom })
+        assertEquals(0.05f, SubtitlePosition.Bottom.fromBottom)
+        assertEquals(0.26f, SubtitlePosition.Raised.fromBottom)
         // Raised clears the overlay's scrubber, whose track starts 258 lines up a 1080-line screen (#277).
         assertTrue(SubtitlePosition.Raised.fromBottom * 1080 > 258 + 12)
         assertEquals(SubtitlePosition.Bottom, SubtitleStyle().position)
+    }
+
+    @Test
+    fun positionsStepFromTheBottomToHalfTheScreen() {
+        val steps = generateSequence(SubtitlePosition(SubtitlePosition.LOWEST)) { it.higher().takeIf { next -> next != it } }.map { it.percent }.toList()
+        assertEquals((2..50 step 3).toList(), steps)
+        // Bottom and Raised, the two heights before they were stepped, are both a step.
+        assertTrue(SubtitlePosition.Bottom.percent in steps && SubtitlePosition.Raised.percent in steps)
+        assertEquals(SubtitlePosition(2), SubtitlePosition(2).lower())
+        assertEquals(SubtitlePosition(50), SubtitlePosition(50).higher())
+        assertEquals(SubtitlePosition(23), SubtitlePosition.Raised.lower())
+    }
+
+    @Test
+    fun aStoredHeightOffTheStepsLandsOnTheNearest() {
+        assertEquals(SubtitlePosition(26), SubtitlePosition.nearest(26))
+        assertEquals(SubtitlePosition(26), SubtitlePosition.nearest(27))
+        assertEquals(SubtitlePosition(29), SubtitlePosition.nearest(28))
+        assertEquals(SubtitlePosition(2), SubtitlePosition.nearest(-4))
+        assertEquals(SubtitlePosition(50), SubtitlePosition.nearest(90))
     }
 
     @Test

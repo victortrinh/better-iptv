@@ -170,8 +170,9 @@
     <string name="subtitle_shadow">Ombre</string>
     <string name="subtitle_box">Cadre sombre</string>
     <string name="subtitle_position">Position</string>
-    <string name="subtitle_bottom">En bas</string>
-    <string name="subtitle_raised">Plus haut</string>
+    <string name="subtitle_lower">Plus bas</string>
+    <string name="subtitle_higher">Plus haut</string>
+    <string name="subtitle_height">%1$d %%</string>
     <string name="delays">Décalages</string>
     <string name="audio_delay">Décalage audio</string>
     <string name="subtitle_delay">Décalage des sous-titres</string>
