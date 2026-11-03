@@ -112,11 +112,7 @@
     <string name="version_audio_description">Audiodescription</string>
     <string name="subtitles_many">Plusieurs langues</string>
     <string name="language_untagged">Langue non précisée</string>
-    <plurals name="backups_count">
-        <item quantity="one">%1$d copie de secours</item>
-        <item quantity="many">%1$d copies de secours</item>
-        <item quantity="other">%1$d copies de secours</item>
-    </plurals>
+    <string name="version_backup">Copie de secours</string>
 
     <string name="versions_title">Versions</string>
     <string name="play">Lecture</string>

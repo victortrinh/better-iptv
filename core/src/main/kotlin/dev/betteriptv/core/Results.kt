@@ -204,7 +204,14 @@ data class Version(
     val attributes: VersionAttributes,
     val backups: List<Version> = emptyList(),
     val liveFormat: String? = null,
-)
+) {
+    /**
+     * This Version as the Viewer gets it by choosing its Backup [backup]: [backup] first, then this
+     * one, then its other Backups, so a dead [backup] still falls back to the rest.
+     */
+    fun ledBy(backup: Version): Version =
+        backup.copy(backups = listOf(copy(backups = emptyList())) + backups.filter { it.listingId != backup.listingId })
+}
 
 /** How the app knows a Version attribute. */
 enum class Provenance {

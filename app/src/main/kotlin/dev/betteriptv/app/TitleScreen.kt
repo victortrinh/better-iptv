@@ -479,5 +479,9 @@ private fun LazyListScope.languageGroup(
                 modifier = if (first && index == 0) Modifier.focusRequester(firstVersion).onFocusChanged { onFirstFocused(it.isFocused) } else Modifier,
             )
         }
+        // Its Backups follow it, so the Viewer can pick one that looks the same from its name but not on screen.
+        version.backups.forEach { backup ->
+            item(key = backup.listingId) { VersionRow(context.versionLine(backup, backup = true), onClick = { onChoose(backup) }) }
+        }
     }
 }

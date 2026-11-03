@@ -86,15 +86,15 @@ fun Context.playLabel(version: Version): String = when (version.liveFormat) {
 }
 
 /**
- * What a [version]'s row in a Versions list shows; [playing] is the Version playing when it is this
- * one or one of its Backups. A Channel variant's row names it as the Provider lists it ("VIP: TNT
+ * What a [version]'s row in a Versions list shows, noted as a [backup] when it is one; [playing] is
+ * the Version playing when it is this one. A Channel variant's row names it as the Provider lists it ("VIP: TNT
  * SPORT 1 ᴴᴰ") instead of filling the columns, with how it streams once it plays ("Playing · Live · HLS").
  */
-fun Context.versionLine(version: Version, playing: Version? = null): VersionLine {
+fun Context.versionLine(version: Version, playing: Version? = null, backup: Boolean = false): VersionLine {
     val playingNote = playing?.let { getString(R.string.player_playing) }
     if (version.liveFormat != null) {
         val note = playing?.let { "$playingNote · ${playLabel(it)}" }
-        return VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = note, live = version.name)
+        return VersionLine(emptyList(), "", "", "", bitrate = null, backup = null, note = note, live = version.name)
     }
     val attributes = version.attributes
     val none = getString(R.string.version_none)
@@ -104,7 +104,7 @@ fun Context.versionLine(version: Version, playing: Version? = null): VersionLine
         audio = attributes.language?.value?.let(::languageName) ?: getString(R.string.language_untagged),
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) } ?: none,
         bitrate = attributes.bitrate?.value?.let { getString(R.string.version_bitrate_value, it / 1e6) },
-        backups = version.backups.size.takeIf { it > 0 }?.let { resources.getQuantityString(R.plurals.backups_count, it, it) },
+        backup = if (backup) getString(R.string.version_backup) else null,
         // Both other notes are cautions.
         note = when {
             playingNote != null -> playingNote

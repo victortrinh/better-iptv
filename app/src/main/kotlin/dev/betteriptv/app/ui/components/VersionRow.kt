@@ -33,7 +33,8 @@ data class VersionLine(
     val audio: String,
     val subtitles: String,
     val bitrate: String?,
-    val backups: String?,
+    /** "Backup" on a Backup's row, which sits under its Version's. */
+    val backup: String?,
     /** A warning or explanation under the badges: "Likely English", "Cinema recording (CAM)". */
     val note: String? = null,
     val noteIsCaution: Boolean = false,
@@ -85,7 +86,7 @@ fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modi
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                     Column(horizontalAlignment = Alignment.End) {
                         line.bitrate?.let { Text(it, style = Type.detail, color = Colors.ink, textAlign = TextAlign.End) }
-                        line.backups?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
+                        line.backup?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
                     }
                 }
             }
