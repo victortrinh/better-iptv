@@ -43,6 +43,7 @@ private fun League.nameResource(): Int = when (this) {
     League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
     League.Wnba -> R.string.league_wnba
     League.F1 -> R.string.league_f1
+    League.Nascar -> R.string.league_nascar
 }
 
 /** The name of a Game's League as the schedule keys it ("nhl"), or the key itself for one this release doesn't offer. */

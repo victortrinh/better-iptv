@@ -74,7 +74,9 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * An event League's Game ([GameEvent], F1's) has no teams: its Event channels name the League and
  * one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US: APPLE TV F1 PPV 2"), and no session
  * but the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel; one
- * naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying) is none's.
+ * naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the sprint's qualifying) is none's,
+ * nor one naming another series of the sport ([League.otherSeries]: NASCAR's Truck Series races at
+ * the Cup's track the same weekend).
  */
 internal fun matchFeeds(
     games: List<Game>,
@@ -105,7 +107,8 @@ internal fun matchFeeds(
             // An event League's: the League and a name of the event, and no session but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))
             val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session }.values.flatten()) - own
-            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS)
+            val otherSeries = holdingAny(thisLeague?.otherSeries.orEmpty())
+            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS) - otherSeries
         } else {
             val home = TeamAliases(game.home ?: return@map GameFeeds(game, emptyList()))
             val away = TeamAliases(game.away ?: return@map GameFeeds(game, emptyList()))

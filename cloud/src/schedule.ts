@@ -1,7 +1,7 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
- * fifteen team Leagues, whose Games are two teams', and F1, an event League (#310), whose Games
- * are a Grand Prix's sessions, with no teams.
+ * fifteen team Leagues, whose Games are two teams', and the event Leagues (#310), whose Games have
+ * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's its races.
  */
 export const LEAGUES = [
   "nhl",
@@ -20,12 +20,13 @@ export const LEAGUES = [
   "ncaa-basketball",
   "wnba",
   "f1",
+  "nascar",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
 
 /** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
-export const EVENT_LEAGUES: readonly League[] = ["f1"];
+export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar"];
 
 export const isLeague = (value: unknown): value is League => typeof value === "string" && (LEAGUES as readonly string[]).includes(value);
 

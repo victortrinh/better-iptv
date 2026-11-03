@@ -3,7 +3,7 @@ import { EVENT_LEAGUES, type Game, type GameSession, type GameState, type GameTe
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1 on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1 and NASCAR Cup on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -22,6 +22,7 @@ const PATHS: Record<League, string> = {
   "ncaa-basketball": "basketball/mens-college-basketball",
   wnba: "basketball/wnba",
   f1: "racing/f1",
+  nascar: "racing/nascar-premier",
 };
 
 /**
@@ -29,6 +30,16 @@ const PATHS: Record<League, string> = {
  * 3 race, 5 the sprint's qualifying, 6 the sprint; checked 2026-11-03 on three sprint weekends).
  */
 const SESSIONS: Record<string, GameSession> = { "2": "qualifying", "3": "race", "6": "sprint" };
+
+/**
+ * The event Leagues whose events are each one race, a single competition with no session type
+ * (NASCAR Cup: "NASCAR Cup Series at Martinsville", "Daytona 500", "Duel #1"; checked 2026-11-03
+ * across the 2026 season). Their events carry no circuit: the name is all there is to match by.
+ */
+const ONE_RACE: readonly League[] = ["nascar"];
+
+/** The series' name an event's name starts with, which the League's logo beside its short name already says. */
+const SERIES = /^NASCAR Cup Series\s+(at\s+)?/i;
 
 /** ESPN's `status.type.state`, as the app says it. */
 const STATES: Record<string, GameState> = { pre: "upcoming", in: "live", post: "over" };
@@ -112,10 +123,11 @@ function readGame(league: League, event: EspnEvent): Game | null {
 function readSessions(league: League, event: EspnEvent, logo: string | null): Game[] {
   const name = text(event.name);
   if (!event.id || name === null) return [];
-  const shortName = text(event.shortName) ?? name;
-  const names = eventAliases(name, event.circuit?.address);
+  const oneRace = ONE_RACE.includes(league);
+  const shortName = oneRace ? (text(event.shortName) ?? name).replace(SERIES, "") || name : (text(event.shortName) ?? name);
+  const names = oneRace ? raceAliases(shortName) : eventAliases(name, event.circuit?.address);
   return (event.competitions ?? []).flatMap((competition) => {
-    const session = SESSIONS[String(competition.type?.id ?? "")];
+    const session = oneRace ? "race" : SESSIONS[String(competition.type?.id ?? "")];
     const type = competition.status?.type;
     const state = type?.state === undefined ? undefined : STATES[type.state];
     const start = new Date(competition.date ?? "");
@@ -139,6 +151,15 @@ function eventAliases(name: string, address: { city?: unknown; country?: unknown
     seen.add(folded);
     return true;
   });
+}
+
+/**
+ * What an Event channel may call a race whose short name is [shortName] ("Martinsville", "Daytona
+ * 500", "Clash at Bowman Gray"): the short name, and the track it is "at" when it names one.
+ */
+function raceAliases(shortName: string): string[] {
+  const track = / at (.+)$/i.exec(shortName)?.[1];
+  return track ? [shortName, track] : [shortName];
 }
 
 /** The national Broadcasters ESPN names for [competition], each once. */
@@ -183,7 +204,7 @@ interface EspnEvent {
   date?: string;
   name?: unknown;
   shortName?: unknown;
-  circuit?: { address?: { city?: unknown; country?: unknown } };
+  circuit?: { address?: { city?: unknown; country?: unknown } } | null;
   status?: { type?: { name?: string; state?: string } };
   competitions?: EspnCompetition[];
 }
