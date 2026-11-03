@@ -2,6 +2,7 @@ package dev.betteriptv.app
 
 import dev.betteriptv.core.Quality
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Subtitles are drawn at the Viewer's size and height, the same on both engines. */
@@ -13,8 +14,10 @@ class SubtitleStyleTest {
     }
 
     @Test
-    fun positionsAreAShareOfThePicturesHeight() {
-        assertEquals(listOf(0.05f, 0.15f), SubtitlePosition.entries.map { it.fromBottom })
+    fun positionsAreAShareOfTheScreensHeight() {
+        assertEquals(listOf(0.05f, 0.26f), SubtitlePosition.entries.map { it.fromBottom })
+        // Raised clears the overlay's scrubber, whose track starts 258 lines up a 1080-line screen (#277).
+        assertTrue(SubtitlePosition.Raised.fromBottom * 1080 > 258 + 12)
         assertEquals(SubtitlePosition.Bottom, SubtitleStyle().position)
     }
 
@@ -32,8 +35,8 @@ class SubtitleStyleTest {
         // On top of the 4% VLC leaves by itself.
         assertEquals(11, SubtitleStyle(position = SubtitlePosition.Bottom).vlcOptions(1080).option("--sub-margin"))
         assertEquals(22, SubtitleStyle(position = SubtitlePosition.Bottom).vlcOptions(2160).option("--sub-margin"))
-        assertEquals(119, SubtitleStyle(position = SubtitlePosition.Raised).vlcOptions(1080).option("--sub-margin"))
-        assertEquals(238, SubtitleStyle(position = SubtitlePosition.Raised).vlcOptions(2160).option("--sub-margin"))
+        assertEquals(238, SubtitleStyle(position = SubtitlePosition.Raised).vlcOptions(1080).option("--sub-margin"))
+        assertEquals(475, SubtitleStyle(position = SubtitlePosition.Raised).vlcOptions(2160).option("--sub-margin"))
     }
 
     @Test

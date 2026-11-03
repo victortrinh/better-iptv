@@ -20,7 +20,6 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.CaptionStyleCompat
-import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import dev.betteriptv.core.CEA_608
 import dev.betteriptv.core.CEA_708
@@ -143,7 +142,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     override val answeredAt get() = requests.answeredAt
     override val isPlaying: Boolean get() = player.playWhenReady
     override val buffered: Long get() = player.bufferedPosition
-    private var subtitleView: SubtitleView? = null
+    private var picture: Media3Picture? = null
     private var style = SubtitleStyle()
 
     @Volatile override var seen: FileContents? = null
@@ -160,10 +159,11 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
         }
     }
 
-    /** Shows the player in a [view] made for it, ASS subtitles included. */
-    fun showIn(view: PlayerView) {
-        playing.showIn(view)
-        subtitleView = view.subtitleView
+    /** Shows the player in a [picture] made for it, ASS subtitles included. */
+    fun showIn(picture: Media3Picture) {
+        this.picture?.let(player::removeListener)
+        this.picture = picture
+        playing.showIn(picture)
         style(style)
     }
 
@@ -211,7 +211,7 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
 
     override fun style(style: SubtitleStyle) {
         this.style = style
-        subtitleView?.draw(style)
+        picture?.draw(style)
     }
 
     override val frameRate: Float?
