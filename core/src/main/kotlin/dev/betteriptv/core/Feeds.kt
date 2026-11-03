@@ -100,11 +100,11 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") apart, and this one's other series.
+    // Another League's names, those it shares with this one ("Golf") apart.
     val notThis = HashMap<League?, Set<Int>>()
     fun otherLeagues(league: League?): Set<Int> = notThis.getOrPut(league) {
         val own = league?.names.orEmpty().map { it.lowercase() }
-        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } + league?.otherSeries.orEmpty())
+        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own } 
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
@@ -115,7 +115,8 @@ internal fun matchFeeds(
             // An event League's: the League and a name of the event, and no session of the same kind but its own.
             val own = holdingAny(SESSION_WORDS.getValue(event.session))
             val others = holdingAny(SESSION_WORDS.filterKeys { it != event.session && it.round == event.session.round }.values.flatten()) - own
-            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS)
+            val otherSeries = holdingAny(thisLeague?.otherSeries.orEmpty())
+            (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS) - otherSeries
         } else {
             val home = TeamAliases(game.home ?: return@map GameFeeds(game, emptyList()))
             val away = TeamAliases(game.away ?: return@map GameFeeds(game, emptyList()))
