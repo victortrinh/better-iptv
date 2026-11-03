@@ -46,6 +46,10 @@ class GameLabelsTest {
         "indycar", "202611010119", Instant.parse("2026-11-01T16:30:00Z"), GameState.Live, home = null, away = null, broadcasters = listOf("FOX"),
         event = GameEvent("Grand Prix of Mid-Ohio", "Grand Prix of Mid-Ohio", GameSession.Race, listOf("Mid-Ohio"), null),
     )
+    private fun round(session: GameSession, start: String = "2026-11-05T13:30:00Z", dayOnly: Boolean = false) = Game(
+        "pga", "401850979-1", Instant.parse(start), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Golf Chnl"),
+        event = GameEvent("World Wide Technology Championship", "World Wide Technology Championship", session, emptyList(), null), dayOnly = dayOnly,
+    )
     private fun card(name: String = "UFC 334: Gane vs. Hokit", shortName: String = "UFC 334") = Game(
         "ufc", "600061400", Instant.parse("2026-11-01T22:00:00Z"), GameState.Upcoming, home = null, away = null, broadcasters = listOf("Paramount+"),
         fight = GameFight(name, shortName, Instant.parse("2026-11-02T02:00:00Z"), listOf(GameFighter("Ciryl Gane", "Gane", listOf("Gane"), null), GameFighter("Josh Hokit", "Hokit", listOf("Hokit"), null))),
@@ -148,5 +152,27 @@ class GameLabelsTest {
     @Test fun thePlayersFeedRowsSayWhatEachFeedIsAndWhichIsPlaying() {
         assertEquals("Playing · Broadcaster · TSN · English", context.feedNote(Feed(channel("TSN", "CA"), FeedKind.Broadcaster, "en", "TSN"), playing = true))
         assertEquals("Event channel · Language not named", context.feedNote(Feed(channel("ARENA 4", null), FeedKind.EventChannel, null), playing = false))
+    }
+
+    @Test fun aGolfRoundIsNamedByItsTournamentAndRound() {
+        assertEquals("World Wide Technology Championship · Round 1", context.matchup(round(GameSession.Round1)))
+        assertEquals("World Wide Technology Championship · Round 3", context.matchup(round(GameSession.Round3)))
+        assertEquals("World Wide Technology Championship · Final round", context.matchup(round(GameSession.FinalRound)))
+        assertEquals(CardInfo.Game("PGA Tour · World Wide Technology Championship · Round 2", "No stream found"), context.gameInfo(GameFeeds(round(GameSession.Round2), emptyList())))
+    }
+
+    @Test fun aRoundWhoseTeeTimesAreNotOutYetSaysItsDayAlone() {
+        // Noon in Toronto: the day is known, not the time.
+        assertEquals("Today", context.gameCaption(round(GameSession.Round1, "2026-11-01T17:00:00Z", dayOnly = true), now, toronto))
+        assertEquals("Thu", context.gameCaption(round(GameSession.Round1, "2026-11-05T17:00:00Z", dayOnly = true), now, toronto))
+        assertEquals("Thu 8:30 AM", context.gameCaption(round(GameSession.Round1), now, toronto))
+    }
+
+    @Test
+    @Config(qualifiers = "fr")
+    fun aGolfRoundReadsInFrenchToo() {
+        assertEquals("World Wide Technology Championship · 1er tour", context.matchup(round(GameSession.Round1)))
+        assertEquals("World Wide Technology Championship · Dernier tour", context.matchup(round(GameSession.FinalRound)))
+        assertEquals("Aujourd'hui", context.gameCaption(round(GameSession.Round1, "2026-11-01T17:00:00Z", dayOnly = true), now, toronto))
     }
 }

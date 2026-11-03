@@ -16,6 +16,7 @@ export class FakeEspn {
   answerNull = false;
   private readonly days = new Map<string, object[]>();
   private readonly teamLists = new Map<string, object[]>();
+  private readonly leaderboards = new Map<string, object>();
 
   constructor(tmdb: FakeTmdb) {
     tmdb.alsoServe(API, (url, init) => {
@@ -24,6 +25,10 @@ export class FakeEspn {
       if (userAgent !== null && /Mozilla|Chrome|Safari/.test(userAgent)) return new Response("Access Denied", { status: 403 });
       if (this.failWith !== null) return new Response("", { status: this.failWith });
       if (this.answerNull) return Response.json(null);
+      if (url.pathname === "/apis/site/v2/sports/golf/leaderboard") {
+        const board = this.leaderboards.get(url.searchParams.get("league") ?? "");
+        return board ? Response.json(board) : new Response("Not found", { status: 404 });
+      }
       const match = /^\/apis\/site\/v2\/sports\/(.+)\/(scoreboard|teams)$/.exec(url.pathname);
       if (!match) return new Response("Not found", { status: 404 });
       const [, path, what] = match;
@@ -46,10 +51,16 @@ export class FakeEspn {
     this.teamLists.set(path, teams);
   }
 
-  /** The scoreboard requests that reached ESPN, as `hockey/nhl/2026-11-01`, and the teams requests as `hockey/nhl/teams`. */
+  /** ESPN's golf leaderboard for the tour [league] (`pga`): [board], shaped like ESPN's ({@link leaderboard}). */
+  leaderboard(league: string, board: object) {
+    this.leaderboards.set(league, board);
+  }
+
+  /** The scoreboard requests that reached ESPN, as `hockey/nhl/2026-11-01`, the teams requests as `hockey/nhl/teams`, and the leaderboard's as `golf/leaderboard?league=pga`. */
   get asked(): string[] {
     return this.requests.map(({ url }) => {
       const path = url.pathname.replace("/apis/site/v2/sports/", "");
+      if (path === "golf/leaderboard") return `${path}?league=${url.searchParams.get("league")}`;
       if (path.endsWith("/teams")) return path;
       const dates = url.searchParams.get("dates") ?? "";
       return `${path.replace(/\/scoreboard$/, "")}/${dates.slice(0, 4)}-${dates.slice(4, 6)}-${dates.slice(6)}`;
@@ -273,6 +284,67 @@ export function indyCarRace(id: string, name: string, date: string, state: "pre"
         broadcasts: [{ market: "national", names: [broadcast] }],
         broadcast,
         geoBroadcasts: [{ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: broadcast }, lang: "en", region: "us" }],
+      },
+    ],
+  };
+}
+
+/** A golfer as ESPN's golf scoreboard and leaderboard list one: a name, a flag, a score to par and a position, all the result. */
+const golfer = (id: string, name: string, order: number) => ({ id, type: "athlete", order, athlete: { fullName: name, displayName: name, shortName: name, flag: { alt: "USA" } }, score: `-${20 - order}`, linescores: [{ period: 1, value: 67 }] });
+
+/**
+ * A tournament shaped like ESPN's golf scoreboard gives it (`golf/pga`, checked 2026-11-03): one
+ * event named [name] with one competition and its field, dated at the local (US Eastern) midnights
+ * of its first and last days ([date], [endDate]) with `timeValid` false, and no round's time. Its
+ * status says which round is on ([period]) and how it stands ([statusName], [state]). The field is
+ * listed in leaderboard order, the result the cloud must never pass on. Every round is on Golf Channel.
+ */
+export function tournament(id: string, name: string, date: string, endDate: string, state: "pre" | "in" | "post", period: number, statusName?: string): object {
+  const status = { period, type: { id: "1", name: statusName ?? { pre: "STATUS_SCHEDULED", in: "STATUS_IN_PROGRESS", post: "STATUS_FINAL" }[state], state, completed: state === "post", description: "Scheduled", detail: `Round ${period}` } };
+  return {
+    id,
+    uid: `s:1100~l:1106~e:${id}`,
+    date,
+    endDate,
+    name,
+    shortName: name,
+    season: { year: 2026, type: 2 },
+    status,
+    competitions: [
+      {
+        id,
+        date,
+        endDate,
+        timeValid: false,
+        competitors: [golfer("9478", "Scottie Scheffler", 1), golfer("3470", "Rory McIlroy", 2)],
+        status,
+        broadcasts: [{ market: "national", names: ["Golf Chnl"] }],
+        geoBroadcasts: [{ type: { id: "1", shortName: "TV" }, market: { id: "1", type: "National" }, media: { shortName: "Golf Chnl" }, lang: "en", region: "us" }],
+      },
+    ],
+  };
+}
+
+/**
+ * ESPN's golf leaderboard (`golf/leaderboard?league=pga`, checked 2026-11-03) for tournament [id]:
+ * the only place with tee times, each player's for the round on or next ([period]), at [teeTimes]
+ * one by one; positions, scores and earnings too, which never leave the cloud.
+ */
+export function leaderboard(id: string, period: number, teeTimes: string[]): object {
+  return {
+    events: [
+      {
+        id,
+        competitions: [
+          {
+            id,
+            competitors: teeTimes.map((teeTime, i) => ({
+              ...golfer(String(100 + i), `Golfer ${i}`, i + 1),
+              earnings: 100_000,
+              status: { period, teeTime, startHole: 1, thru: 0, position: { displayName: `T${i + 1}` }, type: { state: "pre", name: "STATUS_SCHEDULED" } },
+            })),
+          },
+        ],
       },
     ],
   };

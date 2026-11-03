@@ -15,8 +15,14 @@ enum class GameState { Upcoming, Live, Over }
  */
 class GameTeam(val name: String, val shortName: String, val abbreviation: String, val aliases: List<String>, val logo: String?)
 
-/** Which of a Grand Prix weekend's sessions an event League's Game is. Practice and the sprint's qualifying are no Games. */
-enum class GameSession { Qualifying, Sprint, Race }
+/**
+ * Which part of its event an event League's Game is: a Grand Prix weekend's session (practice and
+ * the sprint's qualifying are no Games), or a golf tournament's [round], the last one its final round.
+ */
+enum class GameSession(val round: Boolean = false) {
+    Qualifying, Sprint, Race,
+    Round1(round = true), Round2(round = true), Round3(round = true), Round4(round = true), FinalRound(round = true),
+}
 
 /**
  * What an event League's Game ([League.events]) is part of, in place of two teams: the event's
@@ -46,8 +52,9 @@ class GameFight(val name: String, val shortName: String, val mainCard: Instant?,
  * (cloud/src/schedule.ts): its [id] at the schedule source, when it [start]s, its [state], both
  * teams (a team League's), its [event] (an event League's) or its [fight] (a fight-card League's;
  * for these two, [home] and [away] are null), and the names of the national Broadcasters the
- * schedule says carry it. Its Feeds are found among the catalog's Channels by the teams', the
- * event's or the fighters' aliases and the Broadcasters' names.
+ * schedule says carry it. A Game [dayOnly] has only its day known yet (a golf round before its tee
+ * times are out): [start] is noon US Eastern that day. Its Feeds are found among the catalog's
+ * Channels by the teams', the event's or the fighters' aliases and the Broadcasters' names.
  */
 class Game(
     val league: String,
@@ -59,6 +66,7 @@ class Game(
     val broadcasters: List<String>,
     val event: GameEvent? = null,
     val fight: GameFight? = null,
+    val dayOnly: Boolean = false,
 ) {
     /** Both teams, the away team first, or none for an event or fight-card League's Game. */
     val teams: List<GameTeam> get() = listOfNotNull(away, home)
@@ -99,6 +107,7 @@ internal object Games {
             away = if (teamless) null else team(game["away"]) ?: return@mapNotNull null,
             broadcasters = (game["broadcasters"] as? List<*>).orEmpty().filterIsInstance<String>(),
             event = event,
+            dayOnly = game["dayOnly"] == true,
             fight = fight,
         )
     }
@@ -136,6 +145,11 @@ internal object Games {
                 "qualifying" -> GameSession.Qualifying
                 "sprint" -> GameSession.Sprint
                 "race" -> GameSession.Race
+                "round-1" -> GameSession.Round1
+                "round-2" -> GameSession.Round2
+                "round-3" -> GameSession.Round3
+                "round-4" -> GameSession.Round4
+                "final-round" -> GameSession.FinalRound
                 else -> return null
             },
             aliases = (event["aliases"] as? List<*>).orEmpty().filterIsInstance<String>(),

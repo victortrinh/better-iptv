@@ -1,9 +1,9 @@
 import type { Env } from "./env";
-import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, type GameSession, type GameState, type GameTeam, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
+import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, GOLF_LEAGUES, type GameSession, type GameState, type GameTeam, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar and UFC on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour and UFC on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -24,8 +24,16 @@ const PATHS: Record<League, string> = {
   f1: "racing/f1",
   nascar: "racing/nascar-premier",
   indycar: "racing/irl",
+  pga: "golf/pga",
   ufc: "mma/ufc",
 };
+
+/** Each golf League's tour on ESPN's leaderboard (`golf/leaderboard?league=<tour>`), checked 2026-11-03. */
+const TOURS: Partial<Record<League, string>> = { pga: "pga" };
+
+/** A day, and the hours from a golf tournament's day's local midnight, as ESPN dates it, to noon there: an untimed round's start. */
+const DAY = 86_400_000;
+const NOON = 12 * 3600_000;
 
 /**
  * The F1 sessions that are Games, by ESPN's session type id (`type.id`: 1 practice, 2 qualifying,
@@ -63,6 +71,13 @@ export class Espn implements ScheduleSource {
     const path = `${PATHS[league]}/scoreboard?dates=${day.replaceAll("-", "")}`;
     const scoreboard = (await this.get(path)) as Scoreboard | null;
     if (!Array.isArray(scoreboard?.events)) throw new ScheduleUnavailable(`ESPN answered no events for ${path}`);
+    if (GOLF_LEAGUES.includes(league)) {
+      const logo = defaultLogo(scoreboard.leagues?.[0]?.logos);
+      // Tee times are only on the leaderboard: asked only while a tournament is on or ahead.
+      const on = scoreboard.events.some((event) => (event.competitions?.[0]?.status ?? event.status)?.type?.state !== "post");
+      const teeTimes = on ? await this.teeTimes(TOURS[league] ?? league) : new Map<string, number>();
+      return scoreboard.events.flatMap((event) => readRounds(league, event, logo, teeTimes));
+    }
     if (EVENT_LEAGUES.includes(league)) {
       const logo = defaultLogo(scoreboard.leagues?.[0]?.logos);
       return scoreboard.events.flatMap((event) => readSessions(league, event, logo));
@@ -91,6 +106,28 @@ export class Espn implements ScheduleSource {
       const logo = marked("dark") ?? marked("default") ?? team.logos?.[0]?.href ?? null;
       return [{ id: String(team.id), aliases: aliases(team), logo }];
     });
+  }
+
+  /**
+   * The first tee time of each round ESPN's leaderboard of [tour] has them for, by `<event id>/<round>`
+   * (ms since the epoch): it gives each golfer's for the round on or next, a day ahead at most. Its
+   * positions, scores and earnings are never read.
+   */
+  private async teeTimes(tour: string): Promise<Map<string, number>> {
+    const path = `golf/leaderboard?league=${tour}`;
+    const board = (await this.get(path)) as Leaderboard | null;
+    if (!Array.isArray(board?.events)) throw new ScheduleUnavailable(`ESPN answered no events for ${path}`);
+    const first = new Map<string, number>();
+    for (const event of board.events) {
+      for (const golfer of event.competitions?.[0]?.competitors ?? []) {
+        const at = Date.parse(golfer.status?.teeTime ?? "");
+        const round = golfer.status?.period;
+        if (!event.id || typeof round !== "number" || Number.isNaN(at)) continue;
+        const key = `${event.id}/${round}`;
+        first.set(key, Math.min(at, first.get(key) ?? Infinity));
+      }
+    }
+    return first;
   }
 
   /** ESPN's JSON answer for [path], or {@link ScheduleUnavailable} when it gave none: an answer it can't be read from is no answer. */
@@ -143,6 +180,64 @@ function readSessions(league: League, event: EspnEvent, logo: string | null): Ga
     if (!competition.id || !session || state === undefined || (type?.name !== undefined && NOT_PLAYED.has(type.name)) || Number.isNaN(start.getTime())) return [];
     return [{ id: String(competition.id), league, start: start.toISOString(), state, event: { name, shortName, session, aliases: names, logo }, broadcasters: national(competition) }];
   });
+}
+
+/**
+ * [event], a golf tournament, as a Game per round, one a day from its first to its last (the
+ * final round), naming the tournament instead of teams. ESPN dates a tournament at the local
+ * midnights of its first and last days and times no round, so a round starts at the first tee time
+ * in [teeTimes] once the leaderboard has one, and until then at noon on its day, [dayOnly]. ESPN's
+ * status says which round is on: those before it are over, those after upcoming, and it is live
+ * from its first tee time till ESPN says its play is complete. ESPN answers every day of a
+ * tournament with all of it; the same round read on two days is the same Game. The field and its
+ * scores are never read.
+ */
+function readRounds(league: League, event: EspnEvent, logo: string | null, teeTimes: Map<string, number>): Game[] {
+  const name = text(event.name);
+  const first = Date.parse(event.date ?? "");
+  const last = Date.parse(event.endDate ?? event.date ?? "");
+  const competition = event.competitions?.[0];
+  const type = (competition?.status ?? event.status)?.type;
+  const state = type?.state === undefined ? undefined : STATES[type.state];
+  if (!event.id || name === null || Number.isNaN(first) || Number.isNaN(last) || state === undefined || (type?.name !== undefined && NOT_PLAYED.has(type.name))) return [];
+  const on = (competition?.status ?? event.status)?.period ?? 0;
+  const complete = type?.name === "STATUS_PLAY_COMPLETE";
+  const rounds = Math.min(Math.max(Math.round((last - first) / DAY) + 1, 1), 5);
+  const shortName = text(event.shortName) ?? name;
+  const names = tournamentAliases(name);
+  const now = Date.now();
+  return Array.from({ length: rounds }, (_, i): Game => {
+    const round = i + 1;
+    const teeTime = teeTimes.get(`${event.id}/${round}`);
+    const start = teeTime ?? first + i * DAY + NOON;
+    const roundState: GameState =
+      state !== "live" ? state : round < on || (round === on && complete) ? "over" : round > on || (teeTime !== undefined && teeTime > now) ? "upcoming" : "live";
+    const session: GameSession = round === rounds ? "final-round" : (`round-${round}` as GameSession);
+    return {
+      id: `${event.id}-${round}`,
+      league,
+      start: new Date(start).toISOString(),
+      ...(teeTime === undefined ? { dayOnly: true as const } : {}),
+      state: roundState,
+      event: { name, shortName, session, aliases: names, logo },
+      broadcasters: competition ? national(competition) : [],
+    };
+  });
+}
+
+/** The words a golf tournament's name ends with that name no tournament alone. */
+const GENERIC = /^(the|championships?|open|classic|invitational|tournament|challenge|cup|pro-am|at|of)$/i;
+
+/**
+ * What an Event channel may call a golf tournament named [name]: the name, then, without what
+ * follows "presented by" (`pres. by`), ever fewer of its first words, a sponsor's first, while a
+ * word is left that isn't a generic one ({@link GENERIC}): "VidantaWorld Mexico Open", "Mexico
+ * Open", never "Open", which every Open is called.
+ */
+function tournamentAliases(name: string): string[] {
+  const words = name.replace(/\s+(pres\.|presented)\s+by\b.*$/i, "").split(/\s+/).filter((w) => w !== "");
+  const shorter = words.map((_, i) => words.slice(i)).filter((rest) => rest.some((w) => !GENERIC.test(w))).map((rest) => rest.join(" "));
+  return [...new Set([name, ...shorter])];
 }
 
 /**
@@ -262,23 +357,35 @@ interface Scoreboard {
   events?: EspnEvent[];
 }
 
-/** One of ESPN's scoreboard events: a team League's Game, a Grand Prix weekend or a fight card, not the glossary's Event channel. */
+/** One of ESPN's scoreboard events: a team League's Game, a Grand Prix weekend, a golf tournament or a fight card, not the glossary's Event channel. */
 interface EspnEvent {
   id?: string | number;
   date?: string;
+  endDate?: string;
   name?: unknown;
   shortName?: unknown;
   circuit?: { address?: { city?: unknown; country?: unknown } } | null;
-  status?: { type?: { name?: string; state?: string } };
+  status?: EspnStatus;
   competitions?: EspnCompetition[];
 }
 
-/** A team League's game, one session of a Grand Prix weekend, or one bout of a fight card. */
+/** Where a Game stands: [period] is a golf tournament's round on, and never leaves here. */
+interface EspnStatus {
+  period?: number;
+  type?: { name?: string; state?: string };
+}
+
+/** What the app reads of ESPN's golf leaderboard: who tees off when, in which round. Positions and scores are never looked at. */
+interface Leaderboard {
+  events?: { id?: string | number; competitions?: { competitors?: { status?: { period?: unknown; teeTime?: string } }[] }[] }[];
+}
+
+/** A team League's game, one session of a Grand Prix weekend, a whole golf tournament, or one bout of a fight card. */
 interface EspnCompetition {
   id?: string | number;
   date?: string;
   type?: { id?: string | number };
-  status?: { type?: { name?: string; state?: string } };
+  status?: EspnStatus;
   competitors?: { id?: string | number; homeAway?: string; team?: EspnTeam; athlete?: { displayName?: unknown } }[];
   geoBroadcasts?: { market?: { type?: string }; media?: { shortName?: string } }[];
 }
