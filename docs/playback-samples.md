@@ -14,7 +14,7 @@ adb shell am start -f 0x10008000 -n dev.betteriptv.debug/dev.betteriptv.app.prot
 adb logcat -s Samples
 ```
 
-`audio` and `subtitle` pick Tracks by index; `--es sidecar file:///…/plain.vtt` adds a subtitle file beside the video, as a downloaded subtitle will be.
+`audio` and `subtitle` pick Tracks by index; `--es sidecar file:///…/plain.vtt` adds a subtitle file beside the video, as a downloaded subtitle will be; `--es position raised` shows them in the Raised position.
 
 Subtitles are drawn in the app's default style and placed as the app places them: text cues over the whole screen, so on a picture wider than 16:9 they sit in the black bar under it (#292); bitmap cues (PGS, VobSub) and ASS on the picture. `Media3Picture` has the rule. On the emulator (`subs_tv`), a 1920×804 clip with an SRT Track checks the bar case and a 1920×1080 one the full-screen case: `docs/design/screens/player-subtitles-239.jpg` and `player-subtitles-169.jpg`.
 
