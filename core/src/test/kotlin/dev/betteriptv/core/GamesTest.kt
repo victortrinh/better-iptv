@@ -84,6 +84,22 @@ class GamesTest {
         assertEquals(listOf("Apple TV"), race.broadcasters)
     }
 
+    @Test fun `a PGA Tour round comes as a Game naming its tournament and round, its day alone known until ESPN has its tee times`() = runBlocking {
+        cloud.games(
+            "pga",
+            round("401850979-1", "2026-11-05T13:30:00Z", "round-1"),
+            round("401850979-2", "2026-11-06T17:00:00Z", "round-2", dayOnly = true),
+            round("401850979-3", "2026-11-07T17:00:00Z", "round-3", dayOnly = true),
+            round("401850979-4", "2026-11-08T17:00:00Z", "final-round", dayOnly = true),
+        )
+
+        val games = library.games(listOf("pga"), now)
+        assertEquals(listOf(GameSession.Round1, GameSession.Round2, GameSession.Round3, GameSession.FinalRound), games.map { it.event?.session })
+        assertEquals(listOf(false, true, true, true), games.map { it.dayOnly })
+        assertEquals("World Wide Technology Championship", games.first().event?.name)
+        assertEquals(listOf("Golf Chnl"), games.first().broadcasters)
+    }
+
     @Test fun `the kept Games serve while the cloud fails, and a League never kept is left out`() = runBlocking {
         cloud.games("nhl", game("1", "2026-11-01T19:00:00Z", state = "live"), game("2", "2026-11-02T00:00:00Z"))
         library.games(listOf("nhl"), now)

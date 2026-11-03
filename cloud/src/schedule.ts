@@ -1,7 +1,7 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
- * fifteen team Leagues, whose Games are two teams', and F1, an event League (#310), whose Games
- * are a Grand Prix's sessions, with no teams.
+ * fifteen team Leagues, whose Games are two teams', and the event Leagues (#310), whose Games have
+ * no teams: F1's are a Grand Prix's sessions, the PGA Tour's a tournament's rounds.
  */
 export const LEAGUES = [
   "nhl",
@@ -20,12 +20,19 @@ export const LEAGUES = [
   "ncaa-basketball",
   "wnba",
   "f1",
+  "pga",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
 
 /** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
-export const EVENT_LEAGUES: readonly League[] = ["f1"];
+export const EVENT_LEAGUES: readonly League[] = ["f1", "pga"];
+
+/**
+ * The golf Leagues: their Games are a tournament's rounds, whose times only ESPN's leaderboard
+ * has, so a day of one costs two requests to the source, not one.
+ */
+export const GOLF_LEAGUES: readonly League[] = ["pga"];
 
 export const isLeague = (value: unknown): value is League => typeof value === "string" && (LEAGUES as readonly string[]).includes(value);
 
@@ -47,8 +54,11 @@ export interface GameTeam {
   logo: string | null;
 }
 
-/** Which of a Grand Prix weekend's sessions an event League's Game is. Practice and the sprint's qualifying are no Games. */
-export type GameSession = "qualifying" | "sprint" | "race";
+/**
+ * Which part of its event an event League's Game is: a Grand Prix weekend's session (practice and
+ * the sprint's qualifying are no Games), or a golf tournament's round, the last one being the final round.
+ */
+export type GameSession = "qualifying" | "sprint" | "race" | "round-1" | "round-2" | "round-3" | "round-4" | "final-round";
 
 /**
  * What an event League's Game is part of, in place of two teams: the event's [name] (Pirelli
@@ -65,7 +75,7 @@ export interface GameEvent {
 
 /**
  * A scheduled contest of a League (CONTEXT.md: Game): its [id] at the source, when it [start]s (UTC
- * ISO 8601), its [state], both teams (a team League's) or its [event] (an event League's), and the
+ * ISO 8601; with [dayOnly], only its day is known yet, and [start] is noon US Eastern that day), its [state], both teams (a team League's) or its [event] (an event League's), and the
  * names of the national Broadcasters the source says carry it. The device finds its Feeds by the
  * teams' or the event's aliases and the Broadcasters' names (#254).
  */
@@ -73,6 +83,7 @@ export interface Game {
   id: string;
   league: League;
   start: string;
+  dayOnly?: true;
   state: GameState;
   home?: GameTeam;
   away?: GameTeam;

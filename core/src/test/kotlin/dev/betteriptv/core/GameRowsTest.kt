@@ -360,4 +360,32 @@ class GameRowsTest {
         assertEquals(FeedKind.LeagueNetwork, race.kind)
         assertEquals(listOf("Malaysia Grand Prix @ Nov 1 3:00 PM :Viaplay NO 19"), screen.filterIsInstance<HomeRow.MoreLiveEvents>().single().events.map { it.channel.variants.first().name })
     }
+
+    @Test fun `a PGA Tour round's Feed is an Event channel naming golf, its tournament and its round, never another tour's, else Golf Channel`() = runBlocking {
+        cloud.games(
+            "pga",
+            round("401850979-1", "2026-11-01T13:30:00Z", "round-1", state = "live"),
+            round("401850979-2", "2026-11-02T17:00:00Z", "round-2", dayOnly = true),
+            round("401850980-4", "2026-11-01T12:00:00Z", "final-round", state = "live", name = "TOUR Championship", aliases = listOf("TOUR Championship")),
+        )
+        // As the surveyed Provider names them (2026-11-03): `Golf:`, the tournament and the round, a time, the slot.
+        provider.serveChannels(
+            "Golf: World Wide Technology Championship Round 1 @ Nov 1 3:00 PM :Golf  01" to "US| GOLF PPV",
+            "Golf: World Wide Technology Championship Round 2 @ Nov 2 3:00 PM :Golf  02" to "US| GOLF PPV",
+            // Another tour's and the amateurs', which share words with the PGA Tour's tournaments.
+            "Golf: Korn Ferry Tour Championship Final Round @ Nov 1 1:00 PM :Golf  03" to "US| GOLF PPV",
+            "Golf: LPGA TOUR Championship Final Round @ Nov 1 2:00 PM :Golf  04" to "US| GOLF PPV",
+            "Golf: Asia Pacific Amateur Championship Final Round @ Nov 1 9:00 PM :Golf  05" to "US| GOLF PPV",
+            "CA EN: GOLF CHANNEL HD" to "CA| SPORTS EN",
+        )
+        library.sync()
+
+        val screen = rows(League.Pga)
+        // Round 1, on now: its own slot, not round 2's; Golf Channel, the Broadcaster ESPN names, beside it.
+        assertEquals(listOf("Golf: World Wide Technology Championship Round 1 @ Nov 1 3:00 PM :Golf  01", "CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401850979-1"))
+        // Tomorrow's round 2, whose day alone is known: its slot at 3 PM is still its own.
+        assertEquals(listOf("Golf: World Wide Technology Championship Round 2 @ Nov 2 3:00 PM :Golf  02", "CA EN: GOLF CHANNEL HD"), screen.league(League.Pga).feedNames("401850979-2"))
+        // The TOUR Championship's final round takes neither the Korn Ferry Tour's nor the LPGA's.
+        assertEquals(listOf("CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401850980-4"))
+    }
 }

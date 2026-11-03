@@ -202,7 +202,7 @@ A Channel the Viewer has saved. It stays saved whichever variants the Provider l
 _Avoid_: Bookmark
 
 **League**:
-A competition whose Games the sports hub follows, such as the NHL or the Premier League. The Region picks the default Leagues (Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League); the Viewer turns Leagues on and off in Settings. F1 is an event League: its Games are a Grand Prix's Qualifying, Sprint and Race, named after the Grand Prix, with no teams; it is on in no Region until the Viewer turns it on.
+A competition whose Games the sports hub follows, such as the NHL or the Premier League. The Region picks the default Leagues (Canada: NHL, NFL, NBA, MLB, CFL, MLS, Premier League); the Viewer turns Leagues on and off in Settings. F1 and the PGA Tour are event Leagues: their Games have no teams. F1's are a Grand Prix's Qualifying, Sprint and Race, named after the Grand Prix; the PGA Tour's are a tournament's rounds (Round 1 to the Final round, one a day), named after the tournament. Each is on in no Region until the Viewer turns it on.
 _Avoid_: Competition, sport
 
 **Pinned team**:

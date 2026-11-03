@@ -60,6 +60,12 @@
     <string name="game_session_qualifying">Qualifying</string>
     <string name="game_session_sprint">Sprint</string>
     <string name="game_session_race">Race</string>
+    <!-- A golf tournament's round ("World Wide Technology Championship · Round 1"); the last is the final round. -->
+    <string name="game_session_round_1">Round 1</string>
+    <string name="game_session_round_2">Round 2</string>
+    <string name="game_session_round_3">Round 3</string>
+    <string name="game_session_round_4">Round 4</string>
+    <string name="game_session_final_round">Final round</string>
     <plurals name="game_feeds">
         <item quantity="one">%1$d Feed</item>
         <item quantity="other">%1$d Feeds</item>
@@ -282,6 +288,7 @@
     <string name="league_ncaa_mens_basketball">NCAA men\'s basketball</string>
     <string name="league_wnba">WNBA</string>
     <string name="league_f1">F1</string>
+    <string name="league_pga">PGA Tour</string>
     <string name="settings_display">Display</string>
     <string name="settings_text_size">Text size</string>
     <string name="settings_text_size_detail">For your TV and how far you sit from it</string>

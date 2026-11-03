@@ -43,6 +43,7 @@ private fun League.nameResource(): Int = when (this) {
     League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
     League.Wnba -> R.string.league_wnba
     League.F1 -> R.string.league_f1
+    League.Pga -> R.string.league_pga
 }
 
 /** The name of a Game's League as the schedule keys it ("nhl"), or the key itself for one this release doesn't offer. */
@@ -51,10 +52,16 @@ fun Context.leagueName(key: String): String = League.byKey(key)?.let { leagueNam
 /**
  * What a Game's card says at its bottom left, and its page in its header: "Live" while the Game is
  * on, else when it starts in the device's [zone] and clock: the time alone for a Game today
- * ("7:00 PM"), the weekday before it for a later one ("Tue 7:00 PM"). Never a score.
+ * ("7:00 PM"), the weekday before it for a later one ("Tue 7:00 PM"). A Game whose day alone is
+ * known ([Game.dayOnly]: a golf round before its tee times) says "Today" or its weekday. Never a score.
  */
 fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     if (game.state == GameState.Live) return getString(R.string.game_live)
+    if (game.dayOnly) {
+        val day = game.start.atZone(zone)
+        if (day.toLocalDate() == now.atZone(zone).toLocalDate()) return getString(R.string.row_today)
+        return day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(resources.configuration.locales[0], "EEE"), resources.configuration.locales[0]))
+    }
     return startCaption(game.start, now, zone)
 }
 
@@ -84,12 +91,17 @@ fun Context.matchup(game: Game, short: Boolean = true): String {
     return getString(R.string.game_matchup, if (short) away.shortName else away.name, if (short) home.shortName else home.name)
 }
 
-/** An event League's session in the App language ("Race", "Qualifying"). */
+/** An event League's session in the App language ("Race", "Qualifying", "Round 1"). */
 fun Context.sessionName(session: GameSession): String = getString(
     when (session) {
         GameSession.Qualifying -> R.string.game_session_qualifying
         GameSession.Sprint -> R.string.game_session_sprint
         GameSession.Race -> R.string.game_session_race
+        GameSession.Round1 -> R.string.game_session_round_1
+        GameSession.Round2 -> R.string.game_session_round_2
+        GameSession.Round3 -> R.string.game_session_round_3
+        GameSession.Round4 -> R.string.game_session_round_4
+        GameSession.FinalRound -> R.string.game_session_final_round
     },
 )
 
