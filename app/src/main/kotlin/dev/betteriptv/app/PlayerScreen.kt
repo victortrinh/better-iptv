@@ -91,7 +91,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.VersionHeader
@@ -565,12 +564,9 @@ private fun EngineSurface(player: ControlledEngine) {
 private fun Media3Surface(player: Media3Engine) {
     AndroidView(
         factory = { context ->
-            PlayerView(context).apply {
-                useController = false
-                isFocusable = false
+            Media3Picture(context).also(player::showIn).view.apply {
                 setShutterBackgroundColor(Colors.picture.toArgb())
                 setBackgroundColor(Colors.picture.toArgb())
-                player.showIn(this)
             }
         },
         modifier = Modifier.fillMaxSize(),

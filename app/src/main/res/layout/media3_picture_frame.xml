@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Media3's stock exo_player_view.xml cut down to the picture's frame (the surface goes in as its
+     first child) and the shutter. No exo_subtitles: its SubtitleView would sit in the frame, over
+     a picture wider than the screen, instead of in the black bar under it (#292). -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <androidx.media3.ui.AspectRatioFrameLayout
+        android:id="@id/exo_content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center">
+
+        <View
+            android:id="@id/exo_shutter"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/black" />
+
+    </androidx.media3.ui.AspectRatioFrameLayout>
+
+</merge>
