@@ -366,6 +366,29 @@ fun session(
 )
 
 /**
+ * A fight-card League's Game as the cloud's `/v1/games` lists one (cloud/src/espn.ts): a UFC card
+ * from [start], its main card from [mainCard], named after its main event's two [fighters] (full
+ * name to surname, in the card's name's order).
+ */
+fun fightCard(
+    id: String,
+    start: String,
+    mainCard: String,
+    state: String = "upcoming",
+    name: String = "UFC Fight Night: Cortes Acosta vs. Walker",
+    shortName: String = "UFC Fight Night",
+    fighters: List<Pair<String, String>> = listOf("Waldo Cortes Acosta" to "Cortes Acosta", "Johnny Walker" to "Walker"),
+    broadcasters: List<String> = listOf("Paramount+"),
+): Map<String, Any?> = mapOf(
+    "id" to id, "league" to "ufc", "start" to start, "state" to state,
+    "fight" to mapOf(
+        "name" to name, "shortName" to shortName, "mainCard" to mainCard,
+        "fighters" to fighters.map { (full, surname) -> mapOf("name" to full, "shortName" to surname, "aliases" to listOf(full, surname), "headshot" to "https://headshots.example/${surname.replace(" ", "")}.png") },
+    ),
+    "broadcasters" to broadcasters,
+)
+
+/**
  * A Game shaped like the cloud's answer (cloud/src/schedule.ts): [home] against [away] (full
  * names, each with the aliases ESPN gives: the name, the nickname as its short name, a three-letter
  * abbreviation and the location, "Toronto Maple Leafs" being Toronto's "Maple Leafs") at [start]
