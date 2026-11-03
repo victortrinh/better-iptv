@@ -114,6 +114,10 @@
     <string name="sync_failed_empty">Sync failed: %1$s</string>
     <!-- Settings' Checking titles row, under Sync now only while the cloud is asked about the catalog's suspects. -->
     <string name="matching_row">Checking titles</string>
+    <string name="catalog_activity_syncing">Syncing…</string>
+    <string name="catalog_activity_ready">Update ready · shows when you switch tabs</string>
+    <string name="catalog_activity_checking">Checking titles…</string>
+    <string name="catalog_activity_up_to_date">Up to date</string>
     <string name="catalog_work_channel">Catalog updates</string>
     <string name="catalog_work_notification">Updating your catalog</string>
     <string name="matching_finding">Finding the names to check…</string>

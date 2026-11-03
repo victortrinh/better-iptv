@@ -67,6 +67,10 @@
     <string name="sync_just_now">à l\'instant</string>
     <string name="sync_failed_empty">Échec de la synchronisation : %1$s</string>
     <string name="matching_row">Vérification des titres</string>
+    <string name="catalog_activity_syncing">Synchronisation…</string>
+    <string name="catalog_activity_ready">Mise à jour prête · au prochain onglet</string>
+    <string name="catalog_activity_checking">Vérification des titres…</string>
+    <string name="catalog_activity_up_to_date">À jour</string>
     <string name="catalog_work_channel">Mises à jour du catalogue</string>
     <string name="catalog_work_notification">Mise à jour de votre catalogue</string>
     <string name="matching_finding">Recherche des noms à vérifier…</string>
