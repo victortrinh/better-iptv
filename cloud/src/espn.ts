@@ -3,7 +3,7 @@ import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, type GameSes
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup and UFC on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar and UFC on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -23,6 +23,7 @@ const PATHS: Record<League, string> = {
   wnba: "basketball/wnba",
   f1: "racing/f1",
   nascar: "racing/nascar-premier",
+  indycar: "racing/irl",
   ufc: "mma/ufc",
 };
 
@@ -35,9 +36,10 @@ const SESSIONS: Record<string, GameSession> = { "2": "qualifying", "3": "race", 
 /**
  * The event Leagues whose events are each one race, a single competition with no session type
  * (NASCAR Cup: "NASCAR Cup Series at Martinsville", "Daytona 500", "Duel #1"; checked 2026-11-03
- * across the 2026 season). Their events carry no circuit: the name is all there is to match by.
+ * across the 2026 season; IndyCar: "Grand Prix of Mid-Ohio", "Indianapolis 500"). Their events
+ * carry no circuit: the name is all there is to match by.
  */
-const ONE_RACE: readonly League[] = ["nascar"];
+const ONE_RACE: readonly League[] = ["nascar", "indycar"];
 
 /** The series' name an event's name starts with, which the League's logo beside its short name already says. */
 const SERIES = /^NASCAR Cup Series\s+(at\s+)?/i;
@@ -122,9 +124,9 @@ function readGame(league: League, event: EspnEvent): Game | null {
 }
 
 /**
- * [event], a Grand Prix weekend, as a Game per session that is one ({@link SESSIONS}), each with its
- * own start, state and Broadcasters, naming the Grand Prix instead of teams. ESPN answers every day
- * of a weekend with the whole weekend; the same session read on two days is the same Game. The
+ * [event], a Grand Prix weekend or a race ({@link ONE_RACE}), as a Game per session that is one
+ * ({@link SESSIONS}), each with its own start, state and Broadcasters, naming the event instead of
+ * teams. ESPN answers every day of a weekend with the whole weekend; the same session read on two days is the same Game. The
  * drivers ESPN lists, in finishing order, are never read.
  */
 function readSessions(league: League, event: EspnEvent, logo: string | null): Game[] {
@@ -132,7 +134,7 @@ function readSessions(league: League, event: EspnEvent, logo: string | null): Ga
   if (!event.id || name === null) return [];
   const oneRace = ONE_RACE.includes(league);
   const shortName = oneRace ? (text(event.shortName) ?? name).replace(SERIES, "") || name : (text(event.shortName) ?? name);
-  const names = oneRace ? raceAliases(shortName) : eventAliases(name, event.circuit?.address);
+  const names = league === "nascar" ? raceAliases(shortName) : eventAliases(name, event.circuit?.address);
   return (event.competitions ?? []).flatMap((competition) => {
     const session = oneRace ? "race" : SESSIONS[String(competition.type?.id ?? "")];
     const type = competition.status?.type;
@@ -189,13 +191,23 @@ const HEADSHOTS = "https://a.espncdn.com/combiner/i?img=/i/headshots/mma/players
 const fold = (name: string): string => name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 /**
- * What an Event channel may call a Grand Prix named [name]: the words before "Grand Prix", then
- * ever fewer of them, since a sponsor's come first ("MSC Cruises São Paulo", …, "São Paulo",
- * "Paulo"), then the circuit's city and country, each once however it is cased or accented.
+ * What an Event channel may call an event named [name]: its place, the words before "Grand Prix"
+ * (F1's) or after "Grand Prix of" (IndyCar's, the course in brackets and which of a weekend's races
+ * it is left off), then ever fewer of them, since a sponsor's come first ("MSC Cruises São Paulo",
+ * …, "São Paulo", "Paulo"), never a number alone; a race named for its distance is also called by
+ * its place ("Indianapolis 500", "Indianapolis"); then the circuit's city and country, each once
+ * however it is cased or accented.
  */
 function eventAliases(name: string, address: { city?: unknown; country?: unknown } | undefined): string[] {
-  const words = name.replace(/\s+(Grand Prix|GP)\b.*$/i, "").split(/\s+/).filter((w) => w !== "");
-  const found = [...words.map((_, i) => words.slice(i).join(" ")), text(address?.city), text(address?.country)].filter((n): n is string => n !== null);
+  const place = name
+    .replace(/\s*\(.*?\)/g, "")
+    .replace(/^(Grand Prix|GP)\s+(of|at)\s+/i, "")
+    .replace(/\s+Race\s+\d+$/i, "")
+    .replace(/\s+(Grand Prix|GP)\b.*$/i, "");
+  const words = place.split(/\s+/).filter((w) => w !== "");
+  const shorter = words.map((_, i) => words.slice(i).join(" ")).filter((n) => !/^\d+$/.test(n));
+  const distance = words.length > 1 && /^\d+$/.test(words[words.length - 1]) ? [words.slice(0, -1).join(" ")] : [];
+  const found = [...shorter, ...distance, text(address?.city), text(address?.country)].filter((n): n is string => n !== null);
   const seen = new Set<string>();
   return found.filter((n) => {
     const folded = fold(n);
@@ -206,7 +218,7 @@ function eventAliases(name: string, address: { city?: unknown; country?: unknown
 }
 
 /**
- * What an Event channel may call a race whose short name is [shortName] ("Martinsville", "Daytona
+ * What an Event channel may call a NASCAR race whose short name is [shortName] ("Martinsville", "Daytona
  * 500", "Clash at Bowman Gray"): the short name, and the track it is "at" when it names one.
  */
 function raceAliases(shortName: string): string[] {
