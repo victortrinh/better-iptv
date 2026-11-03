@@ -12,7 +12,8 @@ package dev.betteriptv.core
  * sessions or a race ([GameEvent]). [otherSeries] name the same sport's other series, whose Event
  * channels name the League too ("NASCAR Whelen Modified Tour at Martinsville Speedway"): one naming
  * any is none of this League's Games. IndyCar is never "Indy" alone: the Provider's Indy Fuel (ECHL)
- * and Indy NXT (its feeder series) slots say that too.
+ * and Indy NXT (its feeder series) slots say that too. A fight-card League ([fights]: UFC, #316)
+ * has no teams either: its Games are fight cards ([GameFight]).
  */
 enum class League(
     val key: String,
@@ -20,6 +21,7 @@ enum class League(
     val network: String? = null,
     val events: Boolean = false,
     val otherSeries: List<String> = emptyList(),
+    val fights: Boolean = false,
 ) {
     Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
@@ -41,7 +43,8 @@ enum class League(
         "nascar", listOf("NASCAR"), events = true,
         otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
     ),
-    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true, otherSeries = listOf("Indy NXT"));
+    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true, otherSeries = listOf("Indy NXT")),
+    Ufc("ufc", listOf("UFC"), network = "UFC", fights = true);
 
     companion object {
         /**

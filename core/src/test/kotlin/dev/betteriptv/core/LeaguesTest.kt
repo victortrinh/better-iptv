@@ -7,17 +7,17 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `eighteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `nineteen Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
                 "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
-                "ncaa-football", "ncaa-basketball", "wnba", "f1", "nascar", "indycar",
+                "ncaa-football", "ncaa-basketball", "wnba", "f1", "nascar", "indycar", "ufc",
             ),
             League.entries.map { it.key },
         )
         assertEquals(League.entries.toList(), League.entries.map { League.byKey(it.key) })
-        assertNull(League.byKey("ufc"))
+        assertNull(League.byKey("boxing"))
     }
 
     @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {
@@ -40,6 +40,14 @@ class LeaguesTest {
         assertNull(League.IndyCar.network)
         assertEquals(listOf("Indy NXT"), League.IndyCar.otherSeries)
         for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.IndyCar in League.defaults(region))
+    }
+
+    @Test fun `UFC is a fight-card League, its Games fight cards, and on in no Region until the Viewer turns it on`() {
+        assertEquals(listOf(League.Ufc), League.entries.filter { it.fights })
+        assertFalse(League.Ufc.events)
+        assertEquals(listOf("UFC"), League.Ufc.names)
+        assertEquals("UFC", League.Ufc.network)
+        for (region in listOf("CA", "US", "GB", "FR", "DE", "ES", "IT", "MX", "JP")) assertFalse(League.Ufc in League.defaults(region))
     }
 
     @Test fun `a Leagues choice saved under the first release's ESPN slugs still finds its Leagues`() {

@@ -1,9 +1,9 @@
 import type { Env } from "./env";
-import { EVENT_LEAGUES, type Game, type GameSession, type GameState, type GameTeam, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
+import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, type GameSession, type GameState, type GameTeam, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup and IndyCar on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar and UFC on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -24,6 +24,7 @@ const PATHS: Record<League, string> = {
   f1: "racing/f1",
   nascar: "racing/nascar-premier",
   indycar: "racing/irl",
+  ufc: "mma/ufc",
 };
 
 /**
@@ -66,6 +67,12 @@ export class Espn implements ScheduleSource {
       const logo = defaultLogo(scoreboard.leagues?.[0]?.logos);
       return scoreboard.events.flatMap((event) => readSessions(league, event, logo));
     }
+    if (FIGHT_LEAGUES.includes(league)) {
+      return scoreboard.events.flatMap((event) => {
+        const game = readCard(league, event);
+        return game ? [game] : [];
+      });
+    }
     return scoreboard.events.flatMap((event) => {
       const game = readGame(league, event);
       return game ? [game] : [];
@@ -73,7 +80,7 @@ export class Espn implements ScheduleSource {
   }
 
   async teams(league: League): Promise<Team[]> {
-    if (EVENT_LEAGUES.includes(league)) return [];
+    if (EVENT_LEAGUES.includes(league) || FIGHT_LEAGUES.includes(league)) return [];
     const path = `${PATHS[league]}/teams`;
     const listed = (await this.get(path)) as TeamList | null;
     if (!Array.isArray(listed?.sports)) throw new ScheduleUnavailable(`ESPN answered no teams for ${path}`);
@@ -139,6 +146,51 @@ function readSessions(league: League, event: EspnEvent, logo: string | null): Ga
 }
 
 /**
+ * [event], a fight card, as one Game from its first bout's start to its last, named after its main
+ * event: the last bout ESPN lists, whose start is the main card's and whose Broadcasters are the
+ * card's. Of every bout, only the main event's two fighters are read, by name and athlete id
+ * (for a headshot): never a winner, a record, a bout's status or another bout's fighters, which
+ * give a result away.
+ */
+function readCard(league: League, event: EspnEvent): Game | null {
+  const name = text(event.name);
+  const bouts = event.competitions ?? [];
+  const main = bouts[bouts.length - 1];
+  const type = event.status?.type;
+  const state = type?.state === undefined ? undefined : STATES[type.state];
+  if (!event.id || name === null || !main || state === undefined || (type?.name !== undefined && NOT_PLAYED.has(type.name))) return null;
+  const starts = bouts.map((b) => Date.parse(b.date ?? "")).filter((t) => !Number.isNaN(t));
+  const mainCard = Date.parse(main.date ?? "");
+  if (starts.length === 0 || Number.isNaN(mainCard)) return null;
+  // The main event as the card's name gives it ("UFC 334: Gane vs. Hokit"), one surname a side.
+  const sides = name.replace(/^[^:]*:\s*/, "").split(/\s+vs\.?\s+/i).map((side) => side.trim());
+  const fighters = (main.competitors ?? []).flatMap((c) => {
+    const full = text(c.athlete?.displayName);
+    if (!c.id || full === null) return [];
+    const side = sides.length === 2 ? sides.findIndex((s) => fold(full).endsWith(` ${fold(s)}`) || fold(full) === fold(s)) : -1;
+    const shortName = side >= 0 ? sides[side] : full.split(/\s+/).slice(1).join(" ") || full;
+    const fighter: GameFighter = { name: full, shortName, aliases: [...new Set([full, shortName])], headshot: `${HEADSHOTS}${encodeURIComponent(String(c.id))}.png&w=200&h=146` };
+    return [{ fighter, side: side >= 0 ? side : Number.MAX_SAFE_INTEGER }];
+  });
+  if (fighters.length !== 2) return null;
+  fighters.sort((a, b) => a.side - b.side);
+  return {
+    id: String(event.id),
+    league,
+    start: new Date(Math.min(...starts)).toISOString(),
+    state,
+    fight: { name, shortName: text(event.shortName) ?? name, mainCard: new Date(mainCard).toISOString(), fighters: fighters.map((f) => f.fighter) },
+    broadcasters: national(main),
+  };
+}
+
+/** ESPN's headshots of MMA fighters by athlete id, resized to a card's half (not in the scoreboard; checked 2026-11-03, an unknown id answers 404). */
+const HEADSHOTS = "https://a.espncdn.com/combiner/i?img=/i/headshots/mma/players/full/";
+
+/** [name] as names are compared: lower case, accents dropped. */
+const fold = (name: string): string => name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/**
  * What an Event channel may call an event named [name]: its place, the words before "Grand Prix"
  * (F1's) or after "Grand Prix of" (IndyCar's, the course in brackets and which of a weekend's races
  * it is left off), then ever fewer of them, since a sponsor's come first ("MSC Cruises São Paulo",
@@ -158,7 +210,7 @@ function eventAliases(name: string, address: { city?: unknown; country?: unknown
   const found = [...shorter, ...distance, text(address?.city), text(address?.country)].filter((n): n is string => n !== null);
   const seen = new Set<string>();
   return found.filter((n) => {
-    const folded = n.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const folded = fold(n);
     if (seen.has(folded)) return false;
     seen.add(folded);
     return true;
@@ -210,7 +262,7 @@ interface Scoreboard {
   events?: EspnEvent[];
 }
 
-/** One of ESPN's scoreboard events: a team League's Game or a Grand Prix weekend, not the glossary's Event channel. */
+/** One of ESPN's scoreboard events: a team League's Game, a Grand Prix weekend or a fight card, not the glossary's Event channel. */
 interface EspnEvent {
   id?: string | number;
   date?: string;
@@ -221,13 +273,13 @@ interface EspnEvent {
   competitions?: EspnCompetition[];
 }
 
-/** A team League's game, or one session of a Grand Prix weekend. */
+/** A team League's game, one session of a Grand Prix weekend, or one bout of a fight card. */
 interface EspnCompetition {
   id?: string | number;
   date?: string;
   type?: { id?: string | number };
   status?: { type?: { name?: string; state?: string } };
-  competitors?: { homeAway?: string; team?: EspnTeam }[];
+  competitors?: { id?: string | number; homeAway?: string; team?: EspnTeam; athlete?: { displayName?: unknown } }[];
   geoBroadcasts?: { market?: { type?: string }; media?: { shortName?: string } }[];
 }
 
