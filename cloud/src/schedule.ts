@@ -2,7 +2,7 @@
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
  * fifteen team Leagues, whose Games are two teams', the event Leagues (#310), whose Games have
  * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's and IndyCar's their races, the PGA
- * Tour's a tournament's rounds, and UFC, a fight-card League (#316), whose Games are fight cards,
+ * Tour's and the LPGA's a tournament's rounds, and UFC, a fight-card League (#316), whose Games are fight cards,
  * named after their main event's two fighters.
  */
 export const LEAGUES = [
@@ -25,19 +25,20 @@ export const LEAGUES = [
   "nascar",
   "indycar",
   "pga",
+  "lpga",
   "ufc",
 ] as const;
 
 export type League = (typeof LEAGUES)[number];
 
 /** The event Leagues: their Games have no teams, but an event ({@link GameEvent}). */
-export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar", "indycar", "pga"];
+export const EVENT_LEAGUES: readonly League[] = ["f1", "nascar", "indycar", "pga", "lpga"];
 
 /**
  * The golf Leagues: their Games are a tournament's rounds, whose times only ESPN's leaderboard
  * has, so a day of one costs two requests to the source, not one.
  */
-export const GOLF_LEAGUES: readonly League[] = ["pga"];
+export const GOLF_LEAGUES: readonly League[] = ["pga", "lpga"];
 
 /** The fight-card Leagues: their Games have no teams, but a fight card ({@link GameFight}). */
 export const FIGHT_LEAGUES: readonly League[] = ["ufc"];

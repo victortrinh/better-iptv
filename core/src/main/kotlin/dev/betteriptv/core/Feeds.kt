@@ -77,8 +77,9 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * the Game's ([SESSION_WORDS]), so Saturday's qualifying never takes Sunday's race's channel, nor
  * round 1 round 2's; one naming a session that is no Game ([NO_GAME_SESSIONS]: practice, the
  * sprint's qualifying) is none's, nor one naming another series or tour of the sport
- * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend; the LPGA,
- * the Korn Ferry Tour). A name two Leagues share ("Golf") keeps neither out.
+ * ([League.otherSeries]: NASCAR's Truck Series races at the Cup's track the same weekend, the
+ * Korn Ferry Tour). A name two Leagues share ("Golf"), or another League's name the event's own
+ * name holds ("PGA" in the LPGA's KPMG Women's PGA Championship), keeps none out.
  *
  * A fight-card League's Game ([GameFight], UFC's) has no teams either: its Event channels name the
  * League and an alias of both main-event fighters ("UFC event: 1 name: UFC FIGHT NIGHT: MOICANO VS
@@ -105,17 +106,19 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") apart.
-    val notThis = HashMap<League?, Set<Int>>()
-    fun otherLeagues(league: League?): Set<Int> = notThis.getOrPut(league) {
+    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart.
+    val notThis = HashMap<Pair<League?, String?>, Set<Int>>()
+    fun otherLeagues(league: League?, event: GameEvent?): Set<Int> = notThis.getOrPut(league to event?.name) {
         val own = league?.names.orEmpty().map { it.lowercase() }
-        holdingAny(League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own })
+        val eventWords = event?.let { SearchIndex.words(it.name) }.orEmpty()
+        val others = League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own && !containsPhrase(eventWords, SearchIndex.words(it)) }
+        holdingAny(others)
     }
     return games.map { game ->
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
-        val otherLeague = otherLeagues(thisLeague)
         val event = game.event
+        val otherLeague = otherLeagues(thisLeague, event)
         val fight = game.fight
         val named = if (fight != null) {
             // A fight card's: the League and both main-event fighters, or the League and the card's number.

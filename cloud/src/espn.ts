@@ -3,7 +3,7 @@ import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, GOLF_LEAGUES
 
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour and UFC on 2026-11-03.
+ * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour, the LPGA and UFC on 2026-11-03.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -25,11 +25,12 @@ const PATHS: Record<League, string> = {
   nascar: "racing/nascar-premier",
   indycar: "racing/irl",
   pga: "golf/pga",
+  lpga: "golf/lpga",
   ufc: "mma/ufc",
 };
 
 /** Each golf League's tour on ESPN's leaderboard (`golf/leaderboard?league=<tour>`), checked 2026-11-03. */
-const TOURS: Partial<Record<League, string>> = { pga: "pga" };
+const TOURS: Partial<Record<League, string>> = { pga: "pga", lpga: "lpga" };
 
 /** A day, and the hours from a golf tournament's day's local midnight, as ESPN dates it, to noon there: an untimed round's start. */
 const DAY = 86_400_000;

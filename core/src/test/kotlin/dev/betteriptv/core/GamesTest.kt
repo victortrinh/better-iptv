@@ -124,6 +124,21 @@ class GamesTest {
         assertEquals(listOf("Golf Chnl"), games.first().broadcasters)
     }
 
+    @Test fun `an LPGA round comes as a Game naming its tournament and round, a three-round tournament's last its final round`() = runBlocking {
+        val arkansas = listOf("Walmart NW Arkansas Championship", "NW Arkansas Championship", "Arkansas Championship")
+        cloud.games(
+            "lpga",
+            round("401835170-1", "2026-11-01T13:45:00Z", "round-1", name = "Walmart NW Arkansas Championship", aliases = arkansas, league = "lpga"),
+            round("401835170-2", "2026-11-02T17:00:00Z", "round-2", dayOnly = true, name = "Walmart NW Arkansas Championship", aliases = arkansas, league = "lpga"),
+            round("401835170-3", "2026-11-03T17:00:00Z", "final-round", dayOnly = true, name = "Walmart NW Arkansas Championship", aliases = arkansas, league = "lpga"),
+        )
+
+        val games = library.games(listOf("lpga"), now)
+        assertEquals(listOf(GameSession.Round1, GameSession.Round2, GameSession.FinalRound), games.map { it.event?.session })
+        assertEquals(listOf("lpga"), games.map { it.league }.distinct())
+        assertEquals(arkansas, games.first().event?.aliases)
+    }
+
     @Test fun `a UFC card comes as one Game naming its main event's two fighters instead of teams, and one without two fighters is left out`() = runBlocking {
         cloud.games(
             "ufc",

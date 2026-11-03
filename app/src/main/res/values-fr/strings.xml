@@ -246,6 +246,7 @@
     <string name="league_nascar">NASCAR Cup</string>
     <string name="league_indycar">IndyCar</string>
     <string name="league_pga">PGA Tour</string>
+    <string name="league_lpga">LPGA</string>
     <string name="league_ufc">UFC</string>
     <string name="settings_display">Affichage</string>
     <string name="settings_text_size">Taille du texte</string>

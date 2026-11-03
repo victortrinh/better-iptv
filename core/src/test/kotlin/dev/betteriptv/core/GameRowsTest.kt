@@ -441,6 +441,29 @@ class GameRowsTest {
         assertEquals(listOf("CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401850980-4"))
     }
 
+    @Test fun `an LPGA round's Feed is an Event channel naming golf, its tournament and its round, never the PGA Tour's, a senior or an amateur one`() = runBlocking {
+        // Sunday's final rounds of a women's major and of the PGA Tour's tournament, both on now.
+        val kpmg = listOf("KPMG Women's PGA Championship", "Women's PGA Championship", "PGA Championship")
+        cloud.games("lpga", round("401835180-4", "2026-11-01T17:30:00Z", "final-round", state = "live", name = "KPMG Women's PGA Championship", aliases = kpmg, league = "lpga"))
+        cloud.games("pga", round("401850979-4", "2026-11-01T18:00:00Z", "final-round", state = "live"))
+        // As the surveyed Provider names its golf slots (2026-11-03): `Golf:`, the tournament and the round, a time, the slot; no tour.
+        provider.serveChannels(
+            "Golf: KPMG Women's PGA Championship Final Round @ Nov 1 12:30 PM :Golf  01" to "US| GOLF PPV",
+            "Golf: World Wide Technology Championship Final Round @ Nov 1 1:00 PM :Golf  02" to "US| GOLF PPV",
+            // Others that share the major's words.
+            "Golf: Senior PGA Championship Final Round @ Nov 1 1:00 PM :Golf  03" to "US| GOLF PPV",
+            "Golf: Asia Pacific Amateur Championship Final Round @ Nov 1 9:00 PM :Golf  04" to "US| GOLF PPV",
+            "CA EN: GOLF CHANNEL HD" to "CA| SPORTS EN",
+        )
+        library.sync()
+
+        val screen = rows(League.Lpga, League.Pga)
+        // The LPGA's major names the PGA, the PGA Tour's name, and is still the LPGA's: Golf Channel, the Broadcaster ESPN names, beside it.
+        assertEquals(listOf("Golf: KPMG Women's PGA Championship Final Round @ Nov 1 12:30 PM :Golf  01", "CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401835180-4"))
+        // The PGA Tour's round takes its own slot, not the LPGA's.
+        assertEquals(listOf("Golf: World Wide Technology Championship Final Round @ Nov 1 1:00 PM :Golf  02", "CA EN: GOLF CHANNEL HD"), screen.liveNow().feedNames("401850979-4"))
+    }
+
     @Test fun `a UFC card's Feed is an Event channel naming UFC and both main-event fighters, or the numbered event, never another promotion's, else the League's network`() = runBlocking {
         cloud.games(
             "ufc",

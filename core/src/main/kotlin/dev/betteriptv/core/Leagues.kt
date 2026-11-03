@@ -8,7 +8,7 @@ package dev.betteriptv.core
  * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
- * League ([events]: F1, NASCAR Cup, IndyCar and the PGA Tour, #310) has no teams: its Games are a
+ * League ([events]: F1, NASCAR Cup, IndyCar, the PGA Tour and the LPGA, #310) has no teams: its Games are a
  * Grand Prix's sessions, a race or a golf tournament's rounds ([GameEvent]). [otherSeries] name the
  * same sport's other series or tours, whose Event channels name the League too ("NASCAR Whelen
  * Modified Tour at Martinsville Speedway", "Golf: LPGA … Round 1"): one naming any is none of this
@@ -50,6 +50,10 @@ enum class League(
     Pga(
         "pga", listOf("PGA Tour", "PGA", "Golf"), network = "Golf Channel", events = true,
         otherSeries = listOf("LPGA", "Korn Ferry", "PGA Tour Champions", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "European Tour"),
+    ),
+    Lpga(
+        "lpga", listOf("LPGA", "LPGA Tour", "Golf"), network = "Golf Channel", events = true,
+        otherSeries = listOf("Korn Ferry", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "Ladies European Tour", "European Tour", "Epson Tour"),
     ),
     Ufc("ufc", listOf("UFC"), network = "UFC", fights = true);
 
