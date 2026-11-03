@@ -222,8 +222,9 @@
     <string name="subtitle_shadow">Shadow</string>
     <string name="subtitle_box">Dark box</string>
     <string name="subtitle_position">Position</string>
-    <string name="subtitle_bottom">Bottom</string>
-    <string name="subtitle_raised">Raised</string>
+    <string name="subtitle_lower">Lower</string>
+    <string name="subtitle_higher">Higher</string>
+    <string name="subtitle_height">%1$d%%</string>
     <string name="delays">Delays</string>
     <string name="audio_delay">Audio delay</string>
     <string name="subtitle_delay">Subtitle delay</string>

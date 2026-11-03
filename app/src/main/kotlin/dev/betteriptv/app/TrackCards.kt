@@ -105,9 +105,14 @@ internal fun TrackCards(
             StyleChoice(R.string.subtitle_background, listOf(R.string.subtitle_outline, R.string.subtitle_shadow, R.string.subtitle_box), style.background.ordinal) {
                 onStyle(style.copy(background = SubtitleBackground.entries[it]))
             }
-            StyleChoice(R.string.subtitle_position, listOf(R.string.subtitle_bottom, R.string.subtitle_raised), style.position.ordinal) {
-                onStyle(style.copy(position = SubtitlePosition.entries[it]))
-            }
+            StepRow(
+                R.string.subtitle_position,
+                stringResource(R.string.subtitle_height, style.position.percent),
+                R.string.subtitle_lower,
+                { onStyle(style.copy(position = style.position.lower())) },
+                R.string.subtitle_higher,
+                { onStyle(style.copy(position = style.position.higher())) },
+            )
         },
         TrackCard(
             stringResource(R.string.delays),
@@ -245,13 +250,13 @@ private fun TrackRows(options: List<TrackOption>, focus: FocusRequester) {
     }
 }
 
-/** The style in a few words: its size, colour and background, and its position when raised. */
+/** The style in a few words: its size, colour and background, and its height when off the bottom. */
 @Composable
 private fun styleSummary(style: SubtitleStyle): String = listOfNotNull(
     stringResource(listOf(R.string.subtitle_small, R.string.subtitle_medium, R.string.subtitle_large, R.string.subtitle_largest)[style.size.ordinal]),
     stringResource(listOf(R.string.subtitle_white, R.string.subtitle_yellow)[style.colour.ordinal]),
     stringResource(listOf(R.string.subtitle_outline, R.string.subtitle_shadow, R.string.subtitle_box)[style.background.ordinal]),
-    stringResource(R.string.subtitle_raised).takeIf { style.position == SubtitlePosition.Raised },
+    stringResource(R.string.subtitle_height, style.position.percent).takeIf { style.position != SubtitlePosition.Bottom },
 ).joinToString(", ")
 
 /** A subtitle style setting: its label in a column of its own, the choices beside it. */
@@ -265,10 +270,15 @@ private fun StyleChoice(label: Int, options: List<Int>, selected: Int, selectedM
 
 /** An audio or subtitle delay, made earlier or later a step at a time. */
 @Composable
-private fun DelayRow(label: Int, delay: Long, step: Long, shown: String, onChange: (Long) -> Unit, modifier: Modifier = Modifier) {
+private fun DelayRow(label: Int, delay: Long, step: Long, shown: String, onChange: (Long) -> Unit, modifier: Modifier = Modifier) =
+    StepRow(label, shown, R.string.delay_earlier, { onChange(delay - step) }, R.string.delay_later, { onChange(delay + step) }, modifier)
+
+/** A setting moved a step at a time: its label, a button down, what it is [shown] at, a button up. */
+@Composable
+private fun StepRow(label: Int, shown: String, down: Int, onDown: () -> Unit, up: Int, onUp: () -> Unit, modifier: Modifier = Modifier) {
     Row(Modifier.keepsSideFocus(), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(label), style = Type.label, color = Colors.ink, modifier = Modifier.width(STYLE_LABEL))
-        NuageButton(stringResource(R.string.delay_earlier), onClick = { onChange(delay - step) }, modifier)
+        NuageButton(stringResource(down), onClick = onDown, modifier)
         Text(
             shown,
             style = Type.label,
@@ -276,7 +286,7 @@ private fun DelayRow(label: Int, delay: Long, step: Long, shown: String, onChang
             textAlign = TextAlign.Center,
             modifier = Modifier.width(96.dp),
         )
-        NuageButton(stringResource(R.string.delay_later), onClick = { onChange(delay + step) })
+        NuageButton(stringResource(up), onClick = onUp)
     }
 }
 

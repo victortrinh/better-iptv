@@ -57,12 +57,38 @@ enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xF
 enum class SubtitleBackground { Outline, Shadow, Box }
 
 /**
- * How high subtitles sit, as a share of the screen's height from its bottom (Media3 text cues), or
- * of the picture's (VLC). Bottom lands in the black bar under a wide picture (#292). Raised clears
- * the player overlay's scrubber, whose track sits 23% to 24% up a 1080-line screen (#277), on a
- * 16:9 film too, where the screen is the picture: its text ends about 2% above the track.
+ * How high subtitles sit, in [percent] of the screen's height from its bottom (Media3 text cues), or
+ * of the picture's (VLC), a [STEP] at a time from [LOWEST] to [HIGHEST]. [Bottom] lands in the black
+ * bar under a wide picture (#292). [Raised] clears the player overlay's scrubber, whose track sits
+ * 23% to 24% up a 1080-line screen (#277), on a 16:9 film too, where the screen is the picture: its
+ * text ends about 2% above the track. Higher than half the screen, a line sits over faces.
  */
-enum class SubtitlePosition(val fromBottom: Float) { Bottom(0.05f), Raised(0.26f) }
+@JvmInline
+value class SubtitlePosition(val percent: Int) {
+    init {
+        require(percent in LOWEST..HIGHEST && (percent - LOWEST) % STEP == 0) { "No subtitle position at $percent%" }
+    }
+
+    val fromBottom: Float get() = percent / 100f
+
+    /** A step lower, or this one at the lowest. */
+    fun lower(): SubtitlePosition = SubtitlePosition((percent - STEP).coerceAtLeast(LOWEST))
+
+    /** A step higher, or this one at the highest. */
+    fun higher(): SubtitlePosition = SubtitlePosition((percent + STEP).coerceAtMost(HIGHEST))
+
+    companion object {
+        const val LOWEST = 2
+        const val HIGHEST = 50
+        const val STEP = 3
+        val Bottom = SubtitlePosition(5)
+        val Raised = SubtitlePosition(26)
+
+        /** The position [percent] up, or the nearest step to it within the range. */
+        fun nearest(percent: Int): SubtitlePosition =
+            SubtitlePosition(LOWEST + ((percent.coerceIn(LOWEST, HIGHEST) - LOWEST + STEP / 2) / STEP) * STEP)
+    }
+}
 
 /** The app's interface languages: the App language is one of these. */
 val APP_LANGUAGES = listOf("en", "fr")
@@ -86,7 +112,8 @@ class ViewerSettingsStore(context: Context) {
             .putString(SUBTITLE_SIZE, new.subtitleStyle.size.name)
             .putString(SUBTITLE_COLOUR, new.subtitleStyle.colour.name)
             .putString(SUBTITLE_BACKGROUND, new.subtitleStyle.background.name)
-            .putString(SUBTITLE_POSITION, new.subtitleStyle.position.name)
+            .remove(SUBTITLE_POSITION)
+            .putInt(SUBTITLE_HEIGHT, new.subtitleStyle.position.percent)
             .putBoolean(PLAY_NEXT_AUTOMATICALLY, new.playNextAutomatically)
             .putString(BACKGROUND_READING, new.backgroundReading.name)
             .putString(TEXT_SIZE, new.textSize.name)
@@ -112,7 +139,12 @@ class ViewerSettingsStore(context: Context) {
                 size = read(SUBTITLE_SIZE, SubtitleSize.entries) ?: SubtitleSize.Medium,
                 colour = read(SUBTITLE_COLOUR, SubtitleColour.entries) ?: SubtitleColour.White,
                 background = read(SUBTITLE_BACKGROUND, SubtitleBackground.entries) ?: SubtitleBackground.Outline,
-                position = read(SUBTITLE_POSITION, SubtitlePosition.entries) ?: SubtitlePosition.Bottom,
+                position = when {
+                    prefs.contains(SUBTITLE_HEIGHT) -> SubtitlePosition.nearest(prefs.getInt(SUBTITLE_HEIGHT, SubtitlePosition.Bottom.percent))
+                    // Before the height was stepped, it was Bottom or Raised.
+                    prefs.getString(SUBTITLE_POSITION, null) == "Raised" -> SubtitlePosition.Raised
+                    else -> SubtitlePosition.Bottom
+                },
             ),
             playNextAutomatically = prefs.getBoolean(PLAY_NEXT_AUTOMATICALLY, true),
             backgroundReading = read(BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
@@ -133,6 +165,7 @@ class ViewerSettingsStore(context: Context) {
         const val SUBTITLE_COLOUR = "subtitle_colour"
         const val SUBTITLE_BACKGROUND = "subtitle_background"
         const val SUBTITLE_POSITION = "subtitle_position"
+        const val SUBTITLE_HEIGHT = "subtitle_height"
         const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
         const val BACKGROUND_READING = "background_reading"
         const val TEXT_SIZE = "text_size"
