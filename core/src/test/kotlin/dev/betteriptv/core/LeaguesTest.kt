@@ -30,6 +30,25 @@ class LeaguesTest {
         assertEquals(League.entries.size, League.entries.map { it.logo }.toSet().size)
     }
 
+    @Test fun `every League has a sport, which Settings' picker groups it under`() {
+        // League.sport is not nullable, so every League has one; these are the groups the picker shows, in Sport's order.
+        assertEquals(
+            mapOf(
+                Sport.Hockey to listOf(League.Nhl),
+                Sport.Football to listOf(League.Nfl, League.Cfl, League.NcaaFootball),
+                Sport.Basketball to listOf(League.Nba, League.NcaaMensBasketball, League.Wnba),
+                Sport.Baseball to listOf(League.Mlb),
+                Sport.Soccer to listOf(League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1),
+                Sport.Motorsport to listOf(League.F1, League.Nascar, League.IndyCar),
+                Sport.Golf to listOf(League.Pga, League.Lpga),
+                Sport.Fighting to listOf(League.Ufc),
+            ),
+            Sport.entries.associateWith { sport -> League.entries.filter { it.sport == sport } }.filterValues { it.isNotEmpty() },
+        )
+        // Rugby waits for its Leagues (#354).
+        assertTrue(League.entries.none { it.sport == Sport.Rugby })
+    }
+
     @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {
         assertEquals(listOf(League.F1, League.Nascar, League.IndyCar, League.Pga, League.Lpga), League.entries.filter { it.events })
         assertEquals(listOf("F1", "Formula 1", "Formula One"), League.F1.names)

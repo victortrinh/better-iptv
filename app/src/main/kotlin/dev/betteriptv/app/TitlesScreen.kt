@@ -9,6 +9,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.core.FeaturedScreen
+import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.TitleId
@@ -27,7 +29,9 @@ class TitlesState {
  * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Top 10 in the
  * Viewer's [region], its Trending this week, then New movies (or shows). Sync now and how the Sync
  * is going are in Settings; only a first Sync's checklist, or why it failed, shows here, while
- * there are no Titles yet. [restoreFocus] is the card to focus on coming back, the one the
+ * there are no Titles yet. Above the rows, a featured Title from the top of the kind's Top row, a
+ * different one each time the tab is entered ([Library.featured]): its Play plays it ([onPlay]), its
+ * Details opens it ([onOpen]). [restoreFocus] is the card to focus on coming back, the one the
  * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
@@ -42,6 +46,7 @@ fun TitlesScreen(
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (RowCard, TitleId, String?) -> Unit,
+    onPlay: (RowCard, FeaturedTitle) -> Unit,
     onRetry: () -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -59,6 +64,8 @@ fun TitlesScreen(
         placeholder = if (noTitles) {
             { SyncChecklist(status, SyncStep.Movies, onRetry) }
         } else null,
+        feature = { library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, region) },
+        onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(
             if (kind == TitleKind.Movie) Browse.Movies else Browse.Shows, onTab,

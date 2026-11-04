@@ -51,6 +51,26 @@ data class TitleAbout(
     val textlessBackdrop: String? = null,
 )
 
+/** A screen that opens on a featured Title ([Library.featured]): Home, or the Movies or Shows tab. */
+enum class FeaturedScreen { Home, Movies, Shows }
+
+/**
+ * The Title a screen's hero features: its [name], [year], [runtimeMinutes], [genres] and
+ * [description] from TMDB in the App language, its textless [backdrop] at full size and its [logo],
+ * and the [best] Version's attributes in the Viewer's Content languages, for its badges.
+ */
+data class FeaturedTitle(
+    val id: TitleId,
+    val name: String,
+    val year: Int?,
+    val runtimeMinutes: Int?,
+    val genres: List<String>,
+    val description: String?,
+    val backdrop: String,
+    val logo: String,
+    val best: VersionAttributes,
+)
+
 /** A row on Home, on the Movies or Shows tab, or on Live (CONTEXT.md: Row). */
 sealed interface HomeRow {
     /** The Titles the Viewer started and didn't finish, last played first. */
