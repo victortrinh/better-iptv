@@ -1,5 +1,9 @@
 package dev.betteriptv.app.ui.theme
 
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -207,4 +211,13 @@ object FocusScale {
 object Motion {
     /** The focus scale, and a focused poster growing into its backdrop or shrinking back (#216). */
     const val focusMillis = 160
+
+    /** The focus curve's easing: fast out, slow in. */
+    val focusEasing: Easing = FastOutSlowInEasing
+
+    /**
+     * The focus curve: a focused poster growing or shrinking back, and its rail sliding the focused
+     * card to the margin with it (#341), so Left and Right land once, together.
+     */
+    fun <T> focus(): TweenSpec<T> = tween(focusMillis, easing = focusEasing)
 }
