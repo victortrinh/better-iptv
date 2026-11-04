@@ -331,10 +331,10 @@ Motion is short, and it's there so nothing pops, cuts or jumps on the Fire TV St
 - **Focus** (`Motion.focusMillis`, 160 ms, a fast-out, slow-in `tween`): the focus scale, and a focused poster growing into its backdrop or shrinking back.
 - **Image fade** (`Motion.imageFadeMillis`, 150 ms): artwork that arrives from disk or the network fades in from transparent, as alpha on the image alone, so nothing else redraws (`rememberArtwork`, used by every screen's card art, logos, stills and backdrops). Artwork already in the memory cache shows on its first frame with no fade, so going back to a screen, or scrolling back to a card, stays instant. A card's artwork still waits until the card has been on screen 250 ms (`SettleFirst`) before it loads; the fade starts once it arrives.
 - **Page arrival** (`Motion.pageArrivalMillis`, 300 ms): the longest a page waits for its content before it appears, so it arrives whole and fades in together rather than assembling piece by piece.
-- **Screen fade-in** (`Motion.screenFadeMillis`, 150 ms): a new screen fades in over the `ground`. The old screen is gone at once: never a cross-dissolve, which would draw two screens at once on the stick.
+- **Screen fade-in** (`Motion.screenFadeMillis`, 150 ms, a linear-out, slow-in `tween`, #345): every change of screen in the app's navigation (a tab, a Title page, a Game page, a country's Channels, back again) and every Settings list opening or closing under the tabs fades the new screen in over the `ground`. The old screen is gone at once, on the new one's first frame: never a cross-dissolve, which would draw two screens at once on the stick. It's a `ground` veil over the new screen (`ScreenFade`), opaque on its first frame and thinning to nothing, so the screen is never drawn offscreen and only the veil redraws while it fades. The veil takes no focus or keys: focus lands where it always has, on the fade's first frame, and the Viewer can move on before the fade ends. The player opens and closes as a cut, as before: no fade over the picture, and none on the screen it returns to.
 
 ### Named Rules
-**Arrive, Don't Pop.** Anything that appears after the screen is up (an image, a page's content, a screen) fades in over the `ground` or the glass under it, in one of the `Motion` durations above, instead of snapping in. What the Viewer has already seen (artwork in memory, a screen they return to) shows at once: a fade is for arriving, never for coming back. Focus is never delayed by a fade.
+**Arrive, Don't Pop.** Anything that appears after the screen is up (an image, a page's content, a screen) fades in over the `ground` or the glass under it, in one of the `Motion` durations above, instead of snapping in. Artwork the Viewer has already seen (in memory) shows at once: an image's fade is for arriving, never for coming back. A screen changing, Back included, always fades in, in the short screen fade, so a cut never reads as a glitch; only the player cuts. Focus is never delayed by a fade.
 
 ## Components
 
@@ -446,7 +446,7 @@ adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.Prototyp
 ### Known gaps (open, for later screen tickets; not rules)
 - Glass sits on bare black on screens without artwork (search, settings, login, Movies), so it reads as flat grey there.
 - The sheen on a focused card is static.
-- Pages still assemble piece by piece and screens still cut: the page arrival and screen fade-in durations (Motion, above) are set, but no screen uses them yet.
+- Pages still assemble piece by piece: the page arrival duration (Motion, above) is set, but no page uses it yet.
 - The featured Title is a single still.
 
 ## Do's and Don'ts
