@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -100,6 +101,66 @@ fun restoredCard(card: RowCard, before: Map<String, List<String>>, after: Map<St
 }
 
 /**
+ * What the screen shows once [fresh] rows are read while focus is in the row keyed [focusedRow] of
+ * the rows [shown], so no row moves under focus: the fresh rows, except that the focused row stays
+ * as it is when its cards changed (one came, went or moved), in its place among the fresh rows,
+ * after the row it followed. Its cards still take their fresh reading wherever the fresh rows have
+ * them, so a Game going live says "Live" in place. With no focused row, or one whose cards are the
+ * same, the fresh rows show as they are. The caller reads the fresh rows again through this once
+ * focus leaves the row, which then takes its own change.
+ */
+internal fun rowsUnderFocus(shown: List<HomeRow>, fresh: List<HomeRow>, focusedRow: String?): List<HomeRow> {
+    val held = shown.firstOrNull { it.key == focusedRow } ?: return fresh
+    val at = fresh.indexOfFirst { it.key == focusedRow }
+    if (at >= 0 && fresh[at].keys == held.keys) return fresh
+    val kept = held.refreshedFrom(fresh)
+    if (at >= 0) return fresh.toMutableList().apply { set(at, kept) }
+    // The row has gone from the fresh rows: it stays after the nearest row above it that is still there.
+    val above = shown.subList(0, shown.indexOf(held)).asReversed().firstNotNullOfOrNull { row -> fresh.indexOfFirst { it.key == row.key }.takeIf { it >= 0 } }
+    return fresh.toMutableList().apply { add((above ?: -1) + 1, kept) }
+}
+
+/** This row with each of its cards as [fresh] rows have it, where they do: the same cards, read again. */
+private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
+    val freshGames by lazy { fresh.flatMap { it.games.orEmpty() }.associateBy(::gameKey) }
+    val freshTitles by lazy { fresh.flatMap { it.titles }.associateBy { it.id } }
+    val freshChannels by lazy {
+        fresh.flatMap { row ->
+            when (row) {
+                is HomeRow.Favourites -> row.channels
+                is HomeRow.MoreLiveEvents -> row.events.map { it.channel }
+                else -> emptyList()
+            }
+        }.associateBy(::channelKey)
+    }
+    return when (this) {
+        is HomeRow.ContinueWatching -> {
+            val resumes = fresh.filterIsInstance<HomeRow.ContinueWatching>().flatMap { it.titles }.associateBy { it.title.id }
+            copy(titles = titles.map { resumes[it.title.id] ?: it })
+        }
+        is HomeRow.Favourites -> copy(channels = channels.map { freshChannels[channelKey(it)] ?: it })
+        is HomeRow.Channels -> {
+            val freshCountries = fresh.filterIsInstance<HomeRow.Channels>().flatMap { it.countries }.associateBy(::countryKey)
+            copy(countries = countries.map { freshCountries[countryKey(it)] ?: it })
+        }
+        is HomeRow.Chart -> copy(titles = titles.map { freshTitles[it.id] ?: it })
+        is HomeRow.NewOnYourService -> copy(titles = titles.map { freshTitles[it.id] ?: it })
+        is HomeRow.Genre -> copy(titles = titles.map { freshTitles[it.id] ?: it })
+        is HomeRow.LiveNow -> copy(games = games.map { freshGames[gameKey(it)] ?: it })
+        is HomeRow.Today -> copy(games = games.map { freshGames[gameKey(it)] ?: it })
+        is HomeRow.LeagueGames -> copy(games = games.map { freshGames[gameKey(it)] ?: it })
+        is HomeRow.MoreLiveEvents -> {
+            val freshEvents = fresh.filterIsInstance<HomeRow.MoreLiveEvents>().flatMap { it.events }.associateBy { channelKey(it.channel) }
+            copy(events = events.map { freshEvents[channelKey(it.channel)] ?: it })
+        }
+        is HomeRow.Replays -> {
+            val freshReplays = fresh.filterIsInstance<HomeRow.Replays>().flatMap { it.replays }.associateBy(::replayKey)
+            copy(replays = replays.map { freshReplays[replayKey(it)] ?: it })
+        }
+    }
+}
+
+/**
  * What a screen of rows (Home, Movies, Shows) keeps while another screen shows: its scroll position
  * and each rail's, the rows read last, which show until they are read again so coming back doesn't
  * blank the screen, the card the info under its rail tells about, the one focused last, and the row
@@ -117,6 +178,9 @@ class RowsState {
     val list = LazyListState(LazyLayoutCacheWindow(ahead = ROW_CACHE, behind = ROW_CACHE))
     var rows by mutableStateOf<List<HomeRow>?>(null)
     var focused by mutableStateOf<RowCard?>(null)
+
+    /** The rows read last, while the focused row waits to take its change from them ([rowsUnderFocus]). */
+    var held: List<HomeRow>? = null
 
     /** The row whose info shows under it: the focused card's, once that row has come up to the top. */
     var settled by mutableStateOf<String?>(null)
@@ -166,7 +230,57 @@ fun RowsScreen(
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    val synced = status.last
+    RowsLayout(
+        state, restoreFocus, focusTab,
+        reading = listOf(status.last, reading),
+        read = read,
+        empty = empty,
+        setFavourite = { channel, favourite -> library.setFavourite(channel.key, favourite) },
+        onScreen = { OnScreen(library, it) },
+        info = { row, card, modifier -> RailInfo(library, row, card, contentLanguages, appLanguage, modifier) },
+        appLanguage = appLanguage,
+        onOpen = onOpen,
+        onWatch = onWatch,
+        onOpenGame = onOpenGame,
+        onOpenCountry = onOpenCountry,
+        onPlayReplay = onPlayReplay,
+        placeholder = placeholder,
+        trailing = trailing,
+        header = header,
+    )
+}
+
+/**
+ * [RowsScreen]'s rows, with what they ask the Library for stood in: [reading] is what they are read
+ * for (a Sync landing among it), [setFavourite] saves a Favourite, [onScreen] counts a Title's card
+ * as on screen, and [info] draws the info under a rail about its card. Screen tests stand them in.
+ *
+ * Rows never move under focus: rows read again while the Viewer is on one ([rowsUnderFocus]) update
+ * their cards in place and come and go around the focused row, which stays where it is; a change
+ * to the focused row itself waits until focus leaves it. Entering the screen shows the rows as read.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun RowsLayout(
+    state: RowsState,
+    restoreFocus: RowCard?,
+    focusTab: Boolean,
+    reading: Any,
+    read: suspend () -> List<HomeRow>,
+    empty: String,
+    setFavourite: suspend (Channel, Boolean) -> Unit,
+    onScreen: @Composable (TitleId) -> Unit,
+    info: @Composable (HomeRow, RowCard?, Modifier) -> Unit,
+    appLanguage: String,
+    onOpen: (RowCard, TitleId) -> Unit,
+    onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
+    onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
+    onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
+    onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
+    placeholder: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    header: @Composable (tab: FocusRequester) -> Unit,
+) {
     val reader by rememberUpdatedState(read)
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
@@ -177,25 +291,34 @@ fun RowsScreen(
     var checked by remember(restoreFocus) { mutableStateOf(false) }
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
-    LaunchedEffect(synced, reading) {
+    // The row focus is in, while it is in the rows (not up on the tabs): the one row a reading mustn't change.
+    var inRows by remember { mutableStateOf(false) }
+    val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
+    LaunchedEffect(reading) {
         val before = state.rows
-        state.rows = reader()
-        val after = state.rows.orEmpty().cards
+        val fresh = reader()
+        state.held = null
         if (!checked && restoreFocus != null && before != null) {
-            val restored = restoredCard(restoreFocus, before.cards, after)
+            state.rows = fresh
+            val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
             if (restored != restoreFocus) pending = restored
         } else if (checked && before != null) {
-            // Rows read again while the Viewer is on a card (Live's Games every couple of minutes):
-            // a Game that moved to another row keeps focus there, one that has gone leaves it to
-            // the card in its place, the row that takes its place, or the tab, as a removed Favourite does.
-            val focusedCard = state.focused
-            if (focusedCard != null && after[focusedCard.row]?.contains(focusedCard.key) != true && before.cards[focusedCard.row]?.contains(focusedCard.key) == true) {
-                val moved = after.entries.firstOrNull { focusedCard.key in it.value }?.let { RowCard(it.key, focusedCard.key) }
-                val next = moved ?: restoredCard(focusedCard, before.cards, after)
-                if (next == null) tab.requestFocus() else pending = next
-            }
+            // Rows read again while the Viewer is on a card (Live's Games every couple of minutes, a
+            // Sync landing): the focused row stays as it is until focus leaves it.
+            val shown = rowsUnderFocus(before, fresh, focusRow)
+            state.rows = shown
+            if (shown != fresh) state.held = fresh
+        } else {
+            state.rows = fresh
         }
         checked = true
+    }
+    // Once focus leaves the row a reading held back, the row takes it.
+    LaunchedEffect(focusRow) {
+        val fresh = state.held ?: return@LaunchedEffect
+        val shown = rowsUnderFocus(state.rows.orEmpty(), fresh, focusRow)
+        state.rows = shown
+        if (shown == fresh) state.held = null
     }
     val rows = state.rows
     val focusOn = pending ?: rows?.firstOrNull()?.takeIf { !focused && !focusTab }?.let { RowCard(it.key, it.keys.first()) }
@@ -206,9 +329,10 @@ fun RowsScreen(
     val scope = rememberCoroutineScope()
     val onFavourite = { row: HomeRow, channel: Channel, favourite: Boolean ->
         scope.launch {
-            library.setFavourite(channel.key, favourite)
+            setFavourite(channel, favourite)
             val before = state.rows.orEmpty()
             state.rows = reader()
+            state.held = null
             if (!favourite) {
                 // Focus goes to its neighbour, or to the row that takes its place; with no row left
                 // (the last Favourite on Live), to the tab, as Back would, so focus is never nowhere.
@@ -244,7 +368,7 @@ fun RowsScreen(
         if (rows == null) return@Column PlaceholderRows()
         CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
             LazyColumn(
-                Modifier.fillMaxSize().backToTab(tab),
+                Modifier.fillMaxSize().onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
                 state = state.list,
             ) {
                 if (rows?.isEmpty() == true && trailing == null) {
@@ -290,7 +414,10 @@ fun RowsScreen(
                             horizontalArrangement = Arrangement.spacedBy(Cards.gap),
                             modifier = Modifier.rowFocus(entry),
                         ) {
-                            items(loop.count, key = { if (loop.loops) it else keys[it] }, contentType = { row.contentType }) { place ->
+                            // Each card by its Title's (Channel's, Game's…) key and, on a looping rail, which copy
+                            // of it, not by its place: a rail read again with other cards never shows a card
+                            // composed for another, its art and all, in that place.
+                            items(loop.count, key = { if (loop.loops) "${keys[loop.card(it)]}#${it / keys.size}" else keys[it] }, contentType = { row.contentType }) { place ->
                                 val index = loop.card(place)
                                 val focus = remember { FocusRequester() }
                                 val card = RowCard(row.key, keys[index])
@@ -348,7 +475,7 @@ fun RowsScreen(
                                 val title = titles[index]
                                 val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                                 // The info under the rail shows the badges, so the card only counts as on screen.
-                                OnScreen(library, title.id)
+                                onScreen(title.id)
                                 val logo = title.about?.logo
                                 // A poster has its name printed on it, so the logo goes only over a textless one;
                                 // focused, it grows into its textless backdrop (#216).
@@ -377,7 +504,7 @@ fun RowsScreen(
                                 if (ranked) RankedCard(index + 1) { poster() } else poster()
                             }
                         }
-                        SettledInfo(library, row, state, contentLanguages, appLanguage)
+                        SettledInfo(row, state, info)
                         Spacer(Modifier.height(14.dp))
                     }
                 }
@@ -397,9 +524,9 @@ fun RowsScreen(
  * they composed the rows on screen and each of their cards again at every press (#63).
  */
 @Composable
-private fun SettledInfo(library: Library, row: HomeRow, state: RowsState, contentLanguages: List<String>, appLanguage: String) {
+private fun SettledInfo(row: HomeRow, state: RowsState, info: @Composable (HomeRow, RowCard?, Modifier) -> Unit) {
     val card = if (state.settled == row.key) state.focused else null
-    RailInfo(library, row, card, contentLanguages, appLanguage, Modifier.padding(start = Spacing.screenX, top = 12.dp))
+    info(row, card, Modifier.padding(start = Spacing.screenX, top = 12.dp))
 }
 
 /** The info under [row], telling about [card], the card focused last, when it is one of the row's. */
@@ -508,7 +635,7 @@ private val HomeRow.ranked: Boolean
 private val HomeRow.key: String
     get() = when (this) {
         is HomeRow.ContinueWatching -> "continue"
-        is HomeRow.Favourites -> FAVOURITES_ROW
+        is HomeRow.Favourites -> "favourites"
         is HomeRow.Channels -> "channels"
         is HomeRow.Chart -> "chart/$list"
         is HomeRow.NewOnYourService -> "new"
@@ -643,8 +770,6 @@ internal fun PlaceholderRows(caption: String? = null) {
     }
 }
 
-/** The Favourites row's key: the one row under where Home's Title rows land, which a first Sync mustn't move under focus. */
-internal const val FAVOURITES_ROW = "favourites"
 private const val PLACEHOLDER_ROWS = 2
 /** As many posters as the screen shows, the last peeking at the right edge. */
 private const val PLACEHOLDER_POSTERS = 6

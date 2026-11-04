@@ -21,7 +21,7 @@ import java.time.Instant
  * session instead ([EventGameCard]), and a fight card its main event's fighters' headshots, the
  * first-named left, or their surnames. Pressing it opens the Game's page ([onOpen]); an upcoming Game
  * with no Feed left (none, or every one marked "Not this game") is disabled, saying "No stream found", and opens nothing. The caption is read again
- * each minute, so a Game later today drops the weekday at midnight without the rows being read. With
+ * when the Game is read again (it went live) and each minute, so a Game later today drops the weekday at midnight without the rows being read. With
  * [league], in a row that mixes Leagues, a team or fight-card Game's card carries its League's logo
  * small at the top left; an event League's already shows it whole.
  */
@@ -31,6 +31,8 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
     val leagueLogo = if (league && game.event == null) rememberArtwork(League.byKey(game.league)?.logo, card = true) else null
     val context = LocalContext.current
     val caption by produceState(context.gameCaption(game), game) {
+        // Read again for a Game read again: one going live says so in place, its card kept (#342).
+        value = context.gameCaption(game)
         if (game.state == GameState.Live) return@produceState
         while (true) {
             delay(CAPTION_REFRESH.toMillis())
