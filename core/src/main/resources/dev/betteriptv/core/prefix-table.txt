@@ -50,6 +50,12 @@
 # `EX YU| `) that aren't a country: the whole code, as `code | name`. Each gets its own card in the
 # Channel browser, named as written here, after the countries. A code that is neither a country
 # (ISO 3166, with `UK` read as GB) nor listed here keeps its Categories out of the browser.
+#
+# Genre categories order a country's Categories in the Channel browser: a Category whose name has
+# one of these words (matched as Category hints are) comes first, in the order its genre first
+# appears here, as `word | genre`; the rest are the Provider's service buckets (`AT&T`, `PRIME`,
+# `TUBI`, `PEACOCK`, `NETFLIX ON AIR`), which follow by Channel count. A name with words of two
+# genres goes with the earlier genre.
 
 [prefixes]
 
@@ -297,3 +303,82 @@ AR    | Arabic
 LA    | Latin America
 AF    | Africa
 EX YU | Ex-Yugoslavia
+
+[genre categories]
+
+# News
+NEWS            | News
+INFO            | News
+INFORMATION     | News
+ACTUALITÉS      | News
+NACHRICHTEN     | News
+NOTICIAS        | News
+NIEUWS          | News
+NOTIZIE         | News
+HABER           | News
+# Sports
+SPORTS          | Sports
+SPORT           | Sports
+DEPORTES        | Sports
+ESPORTES        | Sports
+# Entertainment
+ENTERTAINMENT   | Entertainment
+DIVERTISSEMENT  | Entertainment
+UNTERHALTUNG    | Entertainment
+ENTRETENIMIENTO | Entertainment
+ENTRETENIMENTO  | Entertainment
+INTRATTENIMENTO | Entertainment
+AMUSEMENT       | Entertainment
+# General
+GENERAL         | General
+GÉNÉRALISTE     | General
+GENERALE        | General
+ALLGEMEIN       | General
+ALGEMEEN        | General
+GENEL           | General
+# Movies
+MOVIES          | Movies
+MOVIE           | Movies
+CINEMA          | Movies
+CINE            | Movies
+FILMS           | Movies
+FILM            | Movies
+KINO            | Movies
+PELÍCULAS       | Movies
+# Series
+SERIES          | Series
+# Kids
+KIDS            | Kids
+KID             | Kids
+CHILDREN        | Kids
+FAMILY          | Kids
+ENFANTS         | Kids
+JEUNESSE        | Kids
+FAMILLE         | Kids
+KINDER          | Kids
+INFANTIL        | Kids
+CARTOONS        | Kids
+# Documentaries
+DOCUMENTARY     | Documentaries
+DOCUMENTARIES   | Documentaries
+DOCUMENTAIRES   | Documentaries
+DOCUMENTAIRE    | Documentaries
+DOKU            | Documentaries
+DOKUMENTATION   | Documentaries
+DOCUMENTALES    | Documentaries
+# Music
+MUSIC           | Music
+MUSIQUE         | Music
+MUSIK           | Music
+MÚSICA          | Music
+MUZIEK          | Music
+# Lifestyle
+LIFESTYLE       | Lifestyle
+# Local
+LOCAL           | Local
+LOCALS          | Local
+REGIONAL        | Local
+RÉGIONAL        | Local
+# Religion
+RELIGIOUS       | Religion
+RELIGION        | Religion
