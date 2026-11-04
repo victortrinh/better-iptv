@@ -226,6 +226,15 @@
     <string name="settings_leagues">Ligues</string>
     <string name="settings_leagues_detail">Dont les matchs s\'affichent dans En direct</string>
     <string name="settings_leagues_none">Aucune</string>
+    <string name="sport_hockey">Hockey</string>
+    <string name="sport_football">Football</string>
+    <string name="sport_basketball">Basketball</string>
+    <string name="sport_baseball">Baseball</string>
+    <string name="sport_soccer">Soccer</string>
+    <string name="sport_motorsport">Sport automobile</string>
+    <string name="sport_golf">Golf</string>
+    <string name="sport_fighting">Combat</string>
+    <string name="sport_rugby">Rugby</string>
     <string name="league_nhl">LNH</string>
     <string name="league_nfl">NFL</string>
     <string name="league_nba">NBA</string>
