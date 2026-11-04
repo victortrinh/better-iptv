@@ -23,11 +23,23 @@ internal class PrefixTable private constructor(
     private val qualityWords: Map<String, Rule>,
     /** The live Category country codes that aren't countries (`AR`, `EX YU`), uppercase, to the name the browser shows for them. */
     private val countryAliases: Map<String, String>,
+    /** Each genre Category word, as a whole-word pattern over the folded name, with its genre's place in the genre list. */
+    private val genreWords: List<Pair<Regex, Int>>,
     /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
     val eventTimeZone: ZoneId,
 ) {
     /** What the Channel browser calls a live Category's country [code] that isn't a country ("Arabic" for `AR`), or null for one not listed. */
     fun countryAlias(code: String): String? = countryAliases[code.uppercase(Locale.ROOT)]
+
+    /**
+     * Where a browsed Category named [name] (`SPORTS · FR`, `ACTUALITÉS`) stands in the table's genre
+     * list, 0 for the first genre, or null when it names no genre: a service bucket (`AT&T`, `PRIME`,
+     * `NETFLIX ON AIR`). A name with words of two genres takes the earlier one.
+     */
+    fun genreRank(name: String): Int? {
+        val folded = fold(name)
+        return genreWords.filter { (word, _) -> word.containsMatchIn(folded) }.minOfOrNull { (_, rank) -> rank }
+    }
 
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -121,7 +133,7 @@ internal class PrefixTable private constructor(
             quality = listOfNotNull(quality, rule.quality).minOrNull()
             hevc = hevc || rule.hevc
         }
-        var rest = Normalizer.normalize(tail, Normalizer.Form.NFKC)
+        var rest = withoutSmallCapitals(Normalizer.normalize(tail, Normalizer.Form.NFKC))
         var country: String? = null
         // The tags before the colons at the start: Tier tags, and a country tag, in either order.
         while (true) {
@@ -265,6 +277,8 @@ internal class PrefixTable private constructor(
             val tierTags = LinkedHashSet<String>()
             val qualityWords = LinkedHashMap<String, Rule>()
             val countryAliases = LinkedHashMap<String, String>()
+            val genres = LinkedHashMap<String, Int>()
+            val genreWords = mutableListOf<Pair<Regex, Int>>()
             var eventTimeZone: ZoneId? = null
             var section: String? = null
             text.lineSequence().forEachIndexed { index, raw ->
@@ -296,17 +310,22 @@ internal class PrefixTable private constructor(
                     if (countryAliases.put(key.uppercase(Locale.ROOT), alias) != null) fail("$key is listed twice")
                     return@forEachIndexed
                 }
+                if (section == "genre categories") {
+                    val genre = line.substringAfter('|', "").trim().ifEmpty { fail("$key has no genre") }
+                    genreWords += wholeWord(key) to genres.getOrPut(genre) { genres.size }
+                    return@forEachIndexed
+                }
                 val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
                 when (section) {
                     "prefixes" -> if (prefixes.put(key, rule) != null) fail("$key is listed twice")
-                    "category hints" -> hints += Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(key))}(?![\p{L}\p{N}-])""") to rule
+                    "category hints" -> hints += wholeWord(key) to rule
                     // The colon is where the tag ends, not part of it.
                     "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
                     "channel quality words" -> if (qualityWords.put(key.uppercase(Locale.ROOT), rule) != null) fail("$key is listed twice")
                     else -> fail("outside a [section]")
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases, eventTimeZone ?: ZoneOffset.UTC)
+            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases, genreWords, eventTimeZone ?: ZoneOffset.UTC)
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =
@@ -331,12 +350,14 @@ internal class PrefixTable private constructor(
                 }
             }
 
-        /** Folds superscripts (`ᴰᴼᴸᴮʸ`), accents and case, so Category hints match however they're styled. */
+        /** [phrase] as whole words of a [fold]ed Category name; a hyphen joins words, so SUBS doesn't match inside MULTI-SUBS. */
+        private fun wholeWord(phrase: String) = Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(phrase))}(?![\p{L}\p{N}-])""")
+
+        /** Folds superscripts (`ᴰᴼᴸᴮʸ`), small capitals (`ɴᴇᴡꜱ`, and the small capital I that NFKC makes of `ᶦ`), accents and case, so Category hints match however they're styled. */
         private fun fold(text: String): String {
-            val compatible = Normalizer.normalize(text, Normalizer.Form.NFKC)
+            val compatible = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC))
             val unaccented = Normalizer.normalize(compatible, Normalizer.Form.NFD).replace(MARKS, "")
-            // ᶦ folds to a small capital I, which has no uppercase of its own.
-            return unaccented.replace('ɪ', 'I').uppercase(Locale.ROOT)
+            return unaccented.uppercase(Locale.ROOT)
         }
     }
 }

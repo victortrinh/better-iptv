@@ -126,10 +126,77 @@ class ChannelBrowserTest {
         )
         library.sync()
 
-        // SPORTS merges the VIP and GOLD Categories, in the first one's place; TNT SPORT 1 is one Channel across them.
-        assertEquals(listOf("SPORTS · 3", "GENERAL · 2", "NEWS · 1"), categories("GB"))
+        // SPORTS merges the VIP and GOLD Categories; TNT SPORT 1 is one Channel across them. Genres come in the genre list's order.
+        assertEquals(listOf("NEWS · 1", "SPORTS · 3", "GENERAL · 2"), categories("GB"))
         assertEquals(listOf("NEWS · 1"), categories("US"))
         assertEquals(emptyList<String>(), categories("FR"))
+    }
+
+    @Test fun `a country's genre Categories come first in the genre list's order, then the Provider's service buckets by Channel count`() = runBlocking {
+        // The surveyed Provider's US Categories, in its order: service buckets and networks between the genres.
+        provider.serveChannels(
+            "US: AT&T SPORTSNET" to "US| AT&T",
+            "US: AT&T ROOT SPORTS" to "US| AT&T",
+            "PRIME: THURSDAY NIGHT FOOTBALL ᴿᴬᵂ" to "US| PRIME ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "US: CNN" to "US| NEWS",
+            "US: FOX NEWS" to "US| NEWS",
+            "TUBI: NASCAR ᴿᴬᵂ" to "US| TUBI ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "TUBI: TMZ ᴿᴬᵂ" to "US| TUBI ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "TUBI: FIFA+ ᴿᴬᵂ" to "US| TUBI ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+            "US: DISNEY CHANNEL" to "US| KIDS",
+            "US: PEACOCK THE OFFICE" to "US| PEACOCK",
+            "US: PEACOCK SNL VAULT" to "US| PEACOCK",
+            "US: AMC" to "US| ENTERTAINMENT",
+            "US: TBS" to "US| ENTERTAINMENT",
+            "US: NETFLIX ON AIR 1" to "US| NETFLIX ON AIR",
+            "US: ESPN" to "US| SPORTS ᴴᴰ",
+            "US: HBO" to "US| MOVIES",
+            "US: HBO 2" to "US| MOVIES",
+        )
+        library.sync()
+
+        assertEquals(
+            listOf(
+                "NEWS · 2", "SPORTS · 1", "ENTERTAINMENT · 2", "MOVIES · 2", "KIDS · 1",
+                "TUBI · 3", "AT&T · 2", "PEACOCK · 2", "PRIME · 1", "NETFLIX ON AIR · 1",
+            ),
+            categories("US"),
+        )
+    }
+
+    @Test fun `a genre is found in any language and however the Provider styles it, and ties keep the Provider's order`() = runBlocking {
+        provider.serveChannels(
+            "CA FR: CANAL D" to "CA FR| ᴅɪᴠᴇʀᴛɪꜱꜱᴇᴍᴇɴᴛ",
+            "CA EN: CBC NEWS" to "CA EN| NEWS",
+            "CA FR: TVA" to "CA FR| GÉNÉRAL",
+            "CA FR: LCN" to "CA FR| ACTUALITÉS",
+            "CA FR: RDI" to "CA FR| ACTUALITÉS",
+            "CA FR: TÉLÉ-QUÉBEC" to "CA FR| JEUNESSE",
+            "CA EN: SPORTSNET" to "CA EN| SPORTS",
+        )
+        library.sync()
+
+        assertEquals(
+            listOf("NEWS · EN · 1", "ACTUALITÉS · FR · 2", "SPORTS · EN · 1", "DIVERTISSEMENT · FR · 1", "GÉNÉRAL · FR · 1", "JEUNESSE · FR · 1"),
+            categories("CA"),
+        )
+    }
+
+    @Test fun `small capitals in Channel and Category names read as plain letters`() = runBlocking {
+        provider.serveChannels(
+            "US: ᴄɪᴛʏ ᴛᴠ" to "US| ʟᴏᴄᴀʟ",
+            "US: Fox cɪty" to "US| ʟᴏᴄᴀʟ",
+            "US: ABC" to "US| Nᴇᴡꜱ",
+            "US: Fox City" to "US| NEWS",
+        )
+        library.sync()
+
+        assertEquals(listOf("News · 1", "NEWS · 1", "LOCAL · 2"), categories("US"))
+        assertEquals(listOf("US: CITY TV", "US: FOX CITY"), channels("US", "LOCAL"))
+        assertEquals(
+            listOf("CITY TV", "Fox city"),
+            library.categoryChannels(library.browsedCategories("US").first { it.name == "LOCAL" }).map { it.name },
+        )
     }
 
     @Test fun `Event Categories and Clutter Categories are absent from a country's Categories`() = runBlocking {
