@@ -300,14 +300,22 @@ private fun BoxScope.Root(app: BetterIptvApp) {
             else -> {
                 BackHandler {
                     byTab = false
-                    returnedTo = title.card
-                    opened = null
+                    if (title.section != null) {
+                        // Back from the Versions screen returns to the Title page, on the action that opened it.
+                        opened = title.copy(section = null, returnedFrom = title.section)
+                    } else {
+                        returnedTo = title.card
+                        opened = null
+                    }
                 }
                 TitleScreen(
                     app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
                     openedOn = title.backdrop,
                     deviceProfile = { readDeviceProfile(context) },
                     onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                    section = title.section,
+                    returnedFrom = title.returnedFrom,
+                    onSection = { opened = title.copy(section = it, returnedFrom = null) },
                 )
             }
         }
@@ -317,18 +325,25 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 now != null -> PlayerShown
                 openedGame != null -> GameShown(openedGame!!.entry.key)
                 country != null -> country
-                opened != null -> opened!!.id
+                opened != null -> TitleShown(opened!!.id, opened!!.section)
                 else -> tab
             },
             // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
-            // content still fades in (TitlePage).
-            asIs = { it == PlayerShown || (it is TitleId && it == opened?.id && opened?.backdrop != null) },
+            // content still fades in (TitlePage). Its Versions screen, and the page again after it, fade in as any screen.
+            asIs = { shown ->
+                val title = opened
+                shown == PlayerShown || (shown is TitleShown && title != null && shown == TitleShown(title.id, null) &&
+                    title.section == null && title.returnedFrom == null && title.backdrop != null)
+            },
         )
     }
 }
 
 /** The player is on screen: it opens and closes with no fade over the picture. */
 private object PlayerShown
+
+/** The Title page of [id] is on screen, or with a [section], that section's screen. */
+private data class TitleShown(val id: TitleId, val section: TitleSection?)
 
 /** The page of the Game with this key is on screen. */
 private data class GameShown(val key: String)
@@ -346,9 +361,16 @@ private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: 
 
 /**
  * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
- * with the textless [backdrop] that card had grown into, which the page opens on.
+ * with the textless [backdrop] that card had grown into, which the page opens on. A [section] is open over the page (its
+ * Versions screen); [returnedFrom] is the one Back just closed, whose action takes focus.
  */
-private data class OpenedTitle(val id: TitleId, val card: RowCard? = null, val backdrop: String? = null)
+private data class OpenedTitle(
+    val id: TitleId,
+    val card: RowCard? = null,
+    val backdrop: String? = null,
+    val section: TitleSection? = null,
+    val returnedFrom: TitleSection? = null,
+)
 
 /** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live or Home opened it. */
 private data class OpenedGame(val entry: GameFeeds, val card: RowCard)

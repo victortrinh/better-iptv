@@ -117,6 +117,7 @@
     <string name="version_backup">Copie de secours</string>
 
     <string name="versions_title">Versions</string>
+    <string name="cast_title">Distribution</string>
     <string name="play">Lecture</string>
     <string name="play_continue">Reprendre à %1$s</string>
     <string name="details">Détails</string>

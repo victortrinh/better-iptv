@@ -3,6 +3,7 @@ package dev.betteriptv.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,11 +54,27 @@ fun PrimaryAction(
 
 /**
  * A row of a details page's action list under the [PrimaryAction]: an icon and a label with no
- * container at rest, a white capsule only while focused.
+ * container at rest, a white capsule only while focused. A [value] after the label, muted, says what
+ * the row leads to ("Versions  English · 1080p · 9 Versions"). Disabled, it keeps focus and ignores
+ * the click, as a disabled [PrimaryAction] does.
  */
 @Composable
-fun ActionRow(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ActionSurface(text, icon, onClick, modifier, container = Color.Transparent)
+fun ActionRow(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, value: String? = null, enabled: Boolean = true) {
+    // The label keeps its room and the value is cut instead: "Versions" stays whole beside "Français (Québec) · …".
+    ActionSurface(text, icon, { if (enabled) onClick() }, modifier, container = Color.Transparent, enabled = enabled, labelShrinks = value == null) { ink ->
+        if (value != null) {
+            Spacer(Modifier.width(12.dp))
+            // Muted beside the label: ink-muted at rest, the focused label's black at 60% on the white fill.
+            Text(
+                value,
+                style = Type.label,
+                color = if (ink == Colors.onFocus) ink.copy(alpha = 0.6f) else Colors.inkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+    }
 }
 
 @Composable
@@ -68,7 +85,8 @@ private fun ActionSurface(
     modifier: Modifier,
     container: Color,
     enabled: Boolean = true,
-    trailing: @Composable (ink: Color) -> Unit = {},
+    labelShrinks: Boolean = true,
+    trailing: @Composable RowScope.(ink: Color) -> Unit = {},
 ) {
     // A disabled action still takes focus, so focus can wait on it (a Show's Play while its Episodes are read).
     FocusSurface(onClick, modifier.fillMaxWidth().height(40.dp).semantics { if (!enabled) disabled() }, weight = FocusWeight.Row, container = container, focusedContainer = Colors.focus) { focused ->
@@ -80,7 +98,7 @@ private fun ActionSurface(
         Row(Modifier.align(Alignment.CenterStart).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(text, style = Type.label, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text(text, style = Type.label, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = if (labelShrinks) Modifier.weight(1f, fill = false) else Modifier)
             trailing(ink)
         }
     }

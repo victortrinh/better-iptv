@@ -15,6 +15,7 @@ import dev.betteriptv.core.Provenance
 import dev.betteriptv.core.Quality
 import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
+import dev.betteriptv.core.VersionTableRow
 import java.util.Locale
 
 /** A card's badges: quality, HDR, then language, as in "4K · HDR · EN". */
@@ -114,4 +115,42 @@ fun Context.versionLine(version: Version, playing: Version? = null, backup: Bool
         },
         noteIsCaution = playingNote == null,
     )
+}
+
+/**
+ * What a row of the Versions screen's table shows ([versionTable]): unknown cells empty, the Audio
+ * cell only when it says more than the language heading, and a Backup's cells in muted type, noted
+ * "Backup" where the bitrate goes.
+ */
+fun Context.versionLine(row: VersionTableRow): VersionLine {
+    val attributes = row.version.attributes
+    return VersionLine(
+        badges = attributes.versionBadges(),
+        source = attributes.source?.value.orEmpty(),
+        audio = row.audio?.let(::languageName).orEmpty(),
+        subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) }.orEmpty(),
+        bitrate = attributes.bitrate?.value?.let { getString(R.string.version_bitrate_value, it / 1e6) },
+        backup = if (row.backup) getString(R.string.version_backup) else null,
+        note = when {
+            attributes.cam -> getString(R.string.version_cam)
+            attributes.audioDescription -> getString(R.string.version_audio_description)
+            else -> null
+        },
+        noteIsCaution = true,
+        muted = row.backup,
+    )
+}
+
+/**
+ * The Versions action's value: what Play starts and how many Versions there are to choose from,
+ * "English · 1080p · 9 Versions"; the count alone when nothing plays, or the plan's Version says
+ * neither. An Untagged Version's language isn't named: the count says enough.
+ */
+fun Context.versionsValue(playing: Version?, count: Int): String {
+    val attributes = playing?.attributes
+    return listOfNotNull(
+        attributes?.language?.value?.let(::languageName),
+        attributes?.quality?.value?.label,
+        resources.getQuantityString(R.plurals.versions_count, count, count),
+    ).joinToString(" · ")
 }

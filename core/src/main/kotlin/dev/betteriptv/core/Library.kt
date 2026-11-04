@@ -1040,12 +1040,9 @@ class Library private constructor(
     /** A Show's Episodes, in order, each with what playing it starts, from the show details kept on the device. */
     private fun episodePlans(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap): SortedMap<EpisodeNumber, () -> PlayPlan?>? {
         if (id.kind != TitleKind.Show) return null
-        val title = store.title(id) ?: return null
-        val kept = store.showDetails(title.listings.map { it.id })
+        val byEpisode = episodeCandidates(id) ?: return null
         val remembered = rememberedTracks()
         val languages = rankingLanguages(remembered, contentLanguages)
-        val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
-        val byEpisode = episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
         val original = originalLanguage(id)
         // The Show's: what the Viewer chose in one Episode carries to the next.
@@ -1061,6 +1058,34 @@ class Library private constructor(
             }
         }
         return plans
+    }
+
+    /** Each of the Show [id]'s Episodes with its Versions' candidates, from the show details kept on the device. */
+    private fun episodeCandidates(id: TitleId): SortedMap<EpisodeNumber, List<Candidate>>? {
+        val title = store.title(id) ?: return null
+        val kept = store.showDetails(title.listings.map { it.id })
+        val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+        return episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+    }
+
+    /**
+     * What choosing the Version [listingId] (a Provider Episode id) of the Show [id]'s [episode] in its
+     * Versions plays, as [chosenPlayPlan] does for a Movie: that Version with its Backups, then the
+     * Episode's other Versions, from where the Viewer stopped in it. Null when the Show doesn't have it.
+     */
+    suspend fun chosenEpisodePlayPlan(id: TitleId, episode: EpisodeNumber, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
+        if (id.kind != TitleKind.Show) return@withContext null
+        val candidates = episodeCandidates(id)?.get(episode) ?: return@withContext null
+        candidates.find { it.listing.id == listingId }?.let { chosen ->
+            val version = withBackups(chosen, candidates)
+            val remembered = rememberedTracks()
+            val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
+            val at = store.episodeProgress(id).firstOrNull { it.episode == episode && !it.watched }
+            PlayPlan(
+                id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
+                remembered, at?.duration, originalLanguage(id), titleChoices(id),
+            )
+        }
     }
 
     /** The language [id] was released in, from TMDB's metadata kept on the device: the details screen has fetched it before Play. */

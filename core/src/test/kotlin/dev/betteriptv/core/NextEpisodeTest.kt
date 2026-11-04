@@ -99,6 +99,19 @@ class NextEpisodeTest {
         assertEquals(EpisodeNumber(1, 2), episodes().next)
     }
 
+    @Test fun `choosing a Version in an Episode's Versions plays that Episode from where the Viewer stopped`() = runBlocking {
+        play(1, 2, minutes = 20)
+        val chosen = episodes().episode(1, 2).languages.single().versions.single()
+
+        val plan = library.chosenEpisodePlayPlan(bureau, EpisodeNumber(1, 2), chosen.listingId, english) ?: throw AssertionError("no plan")
+
+        assertEquals(chosen.listingId, plan.version.listingId)
+        assertEquals(EpisodeNumber(1, 2), plan.episode)
+        assertEquals(20 * 60_000L, plan.from)
+        // Another Episode's Version isn't this Episode's.
+        assertNull(library.chosenEpisodePlayPlan(bureau, EpisodeNumber(1, 3), chosen.listingId, english))
+    }
+
     @Test fun `the first minute of an Episode isn't recorded`() = runBlocking {
         play(2, 1, minutes = 0)
 

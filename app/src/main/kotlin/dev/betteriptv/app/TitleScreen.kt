@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -35,7 +36,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,20 +58,16 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.Backdrop
 import dev.betteriptv.app.ui.components.BadgeRow
-import dev.betteriptv.app.ui.components.CertaintyLegend
 import dev.betteriptv.app.ui.components.ActionRow
 import dev.betteriptv.app.ui.components.PrimaryAction
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.components.TitleName
-import dev.betteriptv.app.ui.components.VersionHeader
-import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.DeviceProfile
-import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
@@ -93,9 +89,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * A Title's details: what it is, a list of actions led by Play with the Version it will start, and
- * every Version grouped by language, the Viewer's languages first and the rest behind "Other
- * languages". A Show lists its seasons and Episodes first, each Episode with the languages it's
+ * A Title's page, in two levels (DESIGN.md, Details). The page itself holds the Title and what to do
+ * with it: the logo, the metadata line with its badges, two lines of description and the actions,
+ * Play first, then Restart, "Remove from Continue watching" and Versions, whose value says what Play
+ * starts ("English · 1080p · 9 Versions"). A Movie's fits on one screen. OK on Versions opens the
+ * [section] [TitleSection.Versions] ([onSection]): the Versions screen, which lists every Version
+ * grouped by language over the same backdrop ([VersionsContent]); on a Show, those of the Episode
+ * Play starts. The caller closes it on Back and reopens the page with [returnedFrom] set, so focus
+ * goes back to the action that opened it.
+ *
+ * A Show lists its seasons and Episodes under the actions, each Episode with the languages it's
  * available in and how far the Viewer got, once the Provider's show details are read, and choosing
  * one plays it. Episodes TMDB lists as not aired yet say when they will be, and can't be played.
  * TMDB's backdrop fills the screen behind them. Without one, the poster sits beside the header
@@ -123,6 +126,9 @@ fun TitleScreen(
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan, String) -> Unit,
     openedOn: String? = null,
+    section: TitleSection? = null,
+    returnedFrom: TitleSection? = null,
+    onSection: (TitleSection) -> Unit = {},
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
@@ -147,9 +153,18 @@ fun TitleScreen(
     TitlePage(
         id, openedOn, loaded, show,
         onPlay = onPlay,
+        section = section,
+        returnedFrom = returnedFrom,
+        onSection = onSection,
         onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
         onChoose = { version, name ->
-            scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { onPlay(it, name) } }
+            scope.launch {
+                // A Show's Versions are those of the Episode its Play starts (versionsOf), else of its next Episode.
+                val episode = show?.second?.episode ?: show?.first?.next
+                val plan = if (id.kind == TitleKind.Show) episode?.let { library.chosenEpisodePlayPlan(id, it, version.listingId, contentLanguages) }
+                else library.chosenPlayPlan(id, version.listingId, contentLanguages)
+                plan?.let { onPlay(it, name) }
+            }
         },
         onEpisode = { episode, name ->
             scope.launch {
@@ -171,6 +186,9 @@ fun TitleScreen(
  * header and actions wait for the details, the plan and a Show's Episodes, up to
  * [Motion.pageArrivalMillis], then fade in together. A Show whose Episodes take longer shows Play
  * disabled, with focus on it, and Play enables where it is once they're read.
+ *
+ * With a [section] open, the page gives way to that screen over the same backdrop, and coming back
+ * ([returnedFrom]) puts focus on the action that opened it.
  */
 @Composable
 internal fun TitlePage(
@@ -179,6 +197,9 @@ internal fun TitlePage(
     loaded: Pair<TitleDetails, PlayPlan?>?,
     show: Pair<ShowEpisodes, PlayPlan?>?,
     onPlay: (PlayPlan, String) -> Unit,
+    section: TitleSection? = null,
+    returnedFrom: TitleSection? = null,
+    onSection: (TitleSection) -> Unit = {},
     onRemove: () -> Unit = {},
     onChoose: (Version, String) -> Unit = { _, _ -> },
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
@@ -198,18 +219,46 @@ internal fun TitlePage(
         val backdrop = rememberArtwork(title?.backdrop)
         if (backdrop != null) Backdrop(backdrop, under = first) else if (first != null) Backdrop(first)
         if (arrived) {
+            val plan = loaded.second ?: show?.second
+            val versions = versionsOf(title!!, plan, show?.first)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
-                TitleContent(
-                    title!!, loaded.second ?: show?.second, show?.first,
-                    hasBackdrop = backdrop != null || first != null,
-                    onPlay = { onPlay(it, title.name) },
-                    onRemove = onRemove,
-                    onChoose = { onChoose(it, title.name) },
-                    onEpisode = { onEpisode(it, title.name) },
-                )
+                when (section) {
+                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) })
+                    null -> TitleContent(
+                        title, plan, show?.first,
+                        versions = versions,
+                        hasBackdrop = backdrop != null || first != null,
+                        returnedFrom = returnedFrom,
+                        onPlay = { onPlay(it, title.name) },
+                        onRemove = onRemove,
+                        onSection = onSection,
+                        onEpisode = { onEpisode(it, title.name) },
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * A screen a Title page's action opens over the Title's backdrop, the page's second level. Back
+ * returns to the page, with focus on the action that opened it. #347 adds the Episode picker.
+ */
+enum class TitleSection { Versions }
+
+/**
+ * What [title]'s Versions screen lists: a Movie's Versions, or on a Show those of the Episode [plan]
+ * starts, named after it, else of its next Episode ([ShowEpisodes.next]). Null on a Show whose
+ * Episodes aren't read yet, or that has none to play.
+ */
+@Composable
+private fun versionsOf(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?): VersionsList? {
+    if (title.id.kind != TitleKind.Show) return VersionsList(title.name, title.languages, title.otherLanguages)
+    val number = plan?.episode ?: episodes?.next ?: return null
+    val episode = episodes?.seasons?.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } ?: return null
+    val named = episode.name?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
+        ?: stringResource(R.string.details_episode, number.season, number.number)
+    return VersionsList("${title.name} · $named", episode.languages, episode.otherLanguages)
 }
 
 @Composable
@@ -217,30 +266,35 @@ private fun TitleContent(
     title: TitleDetails,
     plan: PlayPlan?,
     episodes: ShowEpisodes?,
+    versions: VersionsList?,
     hasBackdrop: Boolean,
+    returnedFrom: TitleSection?,
     onPlay: (PlayPlan) -> Unit,
     onRemove: () -> Unit,
-    onChoose: (Version) -> Unit,
+    onSection: (TitleSection) -> Unit,
     onEpisode: (Episode) -> Unit,
 ) {
     val context = LocalContext.current
     val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
     val logo = rememberArtwork(title.logo)
-    var showOthers by rememberSaveable(title.id) { mutableStateOf(false) }
-    val firstVersion = remember { FocusRequester() }
     val play = remember { FocusRequester() }
+    val versionsAction = remember { FocusRequester() }
     val nextEpisode = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val isShow = title.id.kind == TitleKind.Show
-    // Play takes first focus. On a Movie with nothing to start, the first Version takes it. A Show's
-    // Play is there from the first frame, disabled while its Episodes are read, and enables where it
-    // is once they are, so focus never jumps to it; with no Episode to play, the next Episode takes
-    // focus then, unless the Viewer has moved on.
-    var firstVersionFocused by remember { mutableStateOf(false) }
+    // Play takes first focus. On a Movie with nothing to start, Versions takes it, the way to see why.
+    // A Show's Play is there from the first frame, disabled while its Episodes are read, and enables
+    // where it is once they are, so focus never jumps to it; with no Episode to play, the next Episode
+    // takes focus then, unless the Viewer has moved on. Back from a section lands on its action.
     var playFocused by remember { mutableStateOf(false) }
+    var versionsFocused by remember { mutableStateOf(false) }
     var listHasFocus by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) {
-        (if (plan != null || isShow) play else firstVersion).requestFocus()
+        when {
+            returnedFrom == TitleSection.Versions && versions != null -> versionsAction
+            plan != null || isShow -> play
+            else -> versionsAction
+        }.requestFocus()
     }
     // Removing it from Continue watching takes its row away, so focus goes back to Play.
     val resumable = plan != null && plan.from > 0
@@ -262,8 +316,9 @@ private fun TitleContent(
         withFrameNanos {}
         nextEpisode.requestFocus()
     }
+    // Coming back from a section, the Episodes were already read: focus stays on its action.
     LaunchedEffect(title.id, episodes != null, next, plan != null) {
-        if (episodes == null || (listHasFocus && !playFocused && !firstVersionFocused)) return@LaunchedEffect
+        if (returnedFrom != null || episodes == null || (listHasFocus && !playFocused && !versionsFocused)) return@LaunchedEffect
         if (plan != null) {
             withFrameNanos {}
             play.requestFocus()
@@ -279,8 +334,9 @@ private fun TitleContent(
         true
     }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
-    val shown = title.languages.ifEmpty { title.otherLanguages }
-    val best = shown.firstOrNull()?.versions?.firstOrNull()
+    val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
+    // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
+    val showVersions = versions != null || (isShow && episodes == null)
 
     LazyColumn(
         Modifier.fillMaxSize().onFocusChanged { listHasFocus = it.hasFocus },
@@ -294,16 +350,15 @@ private fun TitleContent(
                     TitleName(title.name, logo)
                     Spacer(Modifier.height(Spacing.s))
                     // The badges go under the line when both don't fit, so a long rank badge ("#1 in movies in
-                    // United States") doesn't cut the genres and Version count off (#208).
+                    // United States") doesn't cut the genres off (#208).
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.m),
                         verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                         itemVerticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val versions = (title.languages + title.otherLanguages).sumOf { it.versionCount }
-                        val count = pluralStringResource(R.plurals.versions_count, versions, versions)
+                        // The Version count is the Versions action's.
                         Text(
-                            listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null }, count)
+                            listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null })
                                 .joinToString(" · "),
                             style = Type.body,
                             color = Colors.inkMuted,
@@ -328,19 +383,10 @@ private fun TitleContent(
                             modifier = Modifier.padding(top = Spacing.s),
                         )
                     }
+                    // Two lines, so a Movie's page fits on one screen; the cast is on the Versions screen.
                     title.description?.let {
                         Spacer(Modifier.height(Spacing.s))
-                        Text(it, style = Type.body, color = Colors.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (title.cast.isNotEmpty()) {
-                        Text(
-                            title.cast.take(4).joinToString(", "),
-                            style = Type.body,
-                            color = Colors.inkMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = Spacing.xs),
-                        )
+                        Text(it, style = Type.body, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     // Play is there from the first frame, on a Show too, where it waits disabled for the Episodes.
                     Spacer(Modifier.height(Spacing.l))
@@ -354,12 +400,20 @@ private fun TitleContent(
                         else -> stringResource(R.string.play)
                     }
                     val showRemove = resumable && !isShow
+                    // Down from the last action goes to the next Episode; from any other, to the action under it.
+                    val last = when {
+                        showVersions -> TitleAction.Versions
+                        showRemove -> TitleAction.Remove
+                        resumable -> TitleAction.Restart
+                        else -> TitleAction.Play
+                    }
+                    fun Modifier.lastAction(action: TitleAction) = if (action == last) then(toNextEpisode) else this
                     Column(Modifier.width(ACTIONS_WIDTH), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         PrimaryAction(
                             text,
                             Icons.Filled.PlayArrow,
                             onClick = { plan?.let(onPlay) },
-                            modifier = Modifier.testTag("play").focusRequester(play).onFocusChanged { playFocused = it.isFocused }.then(if (resumable) Modifier else toNextEpisode),
+                            modifier = Modifier.testTag("play").focusRequester(play).onFocusChanged { playFocused = it.isFocused }.lastAction(TitleAction.Play),
                             progress = plan?.progress,
                             enabled = plan != null,
                         )
@@ -368,18 +422,31 @@ private fun TitleContent(
                                 stringResource(R.string.play_restart),
                                 Icons.Filled.Refresh,
                                 onClick = { plan?.let { onPlay(it.fromStart()) } },
-                                modifier = if (showRemove) Modifier else toNextEpisode,
+                                modifier = Modifier.lastAction(TitleAction.Restart),
                             )
                             // Continue watching holds Movies: an Episode's place is kept with the Show.
-                            if (showRemove) ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
+                            if (showRemove) {
+                                ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove, modifier = Modifier.lastAction(TitleAction.Remove))
+                            }
+                        }
+                        if (showVersions) {
+                            // Its value says what Play starts, and how many Versions there are to choose from instead.
+                            ActionRow(
+                                stringResource(R.string.versions_title),
+                                Icons.AutoMirrored.Filled.List,
+                                onClick = { onSection(TitleSection.Versions) },
+                                modifier = Modifier.testTag("versions action").focusRequester(versionsAction)
+                                    .onFocusChanged { versionsFocused = it.isFocused }.lastAction(TitleAction.Versions),
+                                value = versions?.let { context.versionsValue(plan?.version, it.count) } ?: "",
+                                enabled = versions != null,
+                            )
                         }
                     }
-                    Spacer(Modifier.height(Spacing.s))
-                    // While a Show's Episodes are read, the label's line waits empty.
-                    PlayLabel(
-                        plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged))
-                            ?: if (isShow && episodes == null) "" else stringResource(R.string.play_nothing),
-                    )
+                    // Nothing to play says why under the actions; once a Show's Episodes are read, as their wait is no reason.
+                    if (plan == null && !(isShow && episodes == null)) {
+                        Spacer(Modifier.height(Spacing.s))
+                        PlayLabel(stringResource(R.string.play_nothing))
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 if (image != null) {
@@ -393,39 +460,11 @@ private fun TitleContent(
             }
         }
         if (isShow) episodes(context, episodes, nextEpisode, onEpisode)
-        item {
-            Row(Modifier.padding(top = if (isShow) Spacing.xl else 0.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink)
-                Spacer(Modifier.weight(1f))
-                CertaintyLegend()
-            }
-        }
-        item { VersionHeader(Modifier.padding(bottom = 2.dp)) }
-        shown.forEachIndexed { index, group ->
-            languageGroup(context, group, first = index == 0, firstVersion, onChoose, onFirstFocused = { firstVersionFocused = it })
-        }
-        if (title.languages.isNotEmpty() && title.otherLanguages.isNotEmpty()) {
-            // Other languages open under this row, so it keeps focus where it is.
-            item(key = "other languages") {
-                val others = title.otherLanguages.sumOf { it.versionCount }
-                SettingRow(
-                    stringResource(R.string.other_languages),
-                    if (showOthers) stringResource(R.string.other_languages_hide) else stringResource(R.string.other_languages_show, others),
-                    onClick = { showOthers = !showOthers },
-                    modifier = Modifier.padding(top = Spacing.m),
-                    detail = title.otherLanguages.joinToString(", ") { group -> group.language?.let(::languageName).orEmpty() },
-                )
-            }
-            if (showOthers) title.otherLanguages.forEach { languageGroup(context, it, first = false, firstVersion, onChoose) }
-        }
-        if (title.fromTmdb) {
-            // TMDB's terms ask for this notice wherever its data is shown.
-            item(key = "attribution") {
-                Text(stringResource(R.string.tmdb_attribution), style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.xl))
-            }
-        }
     }
 }
+
+/** The Title page's actions, in their order, to tell which is last. */
+private enum class TitleAction { Play, Restart, Remove, Versions }
 
 /**
  * A Show's seasons, each Episode as a row naming the languages it's available in, the Viewer's
@@ -508,7 +547,7 @@ private val PEEK = Spacing.screenY
 /** The action list's width: rows of one width, sized for "Remove from Continue watching" and a progress bar beside "Reprendre à 1:02:13". */
 private val ACTIONS_WIDTH = 360.dp
 
-/** The muted line naming the Version Play starts. */
+/** The muted line under the actions saying why Play is disabled. */
 @Composable
 private fun PlayLabel(text: String) {
     Text(text, style = Type.label, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -517,36 +556,3 @@ private fun PlayLabel(text: String) {
 /** `2 h 55 min`, or `48 min` under an hour. */
 internal fun Context.runtime(minutes: Int): String =
     if (minutes < 60) getString(R.string.runtime_minutes, minutes) else getString(R.string.runtime_hours, minutes / 60, minutes % 60)
-
-private fun LazyListScope.languageGroup(
-    context: Context,
-    group: LanguageGroup,
-    first: Boolean,
-    firstVersion: FocusRequester,
-    onChoose: (Version) -> Unit,
-    onFirstFocused: (Boolean) -> Unit = {},
-) {
-    item(key = "language ${group.language}") {
-        Text(
-            "${group.language?.let(::languageName) ?: context.getString(R.string.language_untagged)} · ${group.versionCount}",
-            style = Type.title,
-            color = Colors.ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = if (first) 0.dp else Spacing.m, bottom = 2.dp),
-        )
-    }
-    group.versions.forEachIndexed { index, version ->
-        item(key = version.listingId) {
-            VersionRow(
-                context.versionLine(version),
-                onClick = { onChoose(version) },
-                modifier = if (first && index == 0) Modifier.focusRequester(firstVersion).onFocusChanged { onFirstFocused(it.isFocused) } else Modifier,
-            )
-        }
-        // Its Backups follow it, so the Viewer can pick one that looks the same from its name but not on screen.
-        version.backups.forEach { backup ->
-            item(key = backup.listingId) { VersionRow(context.versionLine(backup, backup = true), onClick = { onChoose(backup) }) }
-        }
-    }
-}
