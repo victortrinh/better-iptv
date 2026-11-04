@@ -5,7 +5,9 @@ package dev.betteriptv.core
  * the device and the cloud share (cloud/src/schedule.ts's `LEAGUES`), stable across releases:
  * Settings keeps the Leagues on by key, and the cloud's Games call asks for Leagues by it. [names]
  * are what an Event channel's name calls the League (`NHL: Leafs vs Habs`, `EPL | Arsenal v
- * Chelsea`): a Game matches an Event channel naming one of its teams and one of these. [network]
+ * Chelsea`): a Game matches an Event channel naming one of its teams and one of these, so a team
+ * League's are never its sport's bare word ("Hockey" names any hockey game; an event League's
+ * "Golf" stays, since its slots say nothing else, and [otherSeries] keep the other tours out). [network]
  * is the League network (CONTEXT.md), as a Provider names it (NHL Network, NBA TV): a Game's Feed of last
  * resort when nothing names the Game (CONTEXT.md: Feed), null for a League that has none. An event
  * League ([events]: F1, NASCAR Cup, IndyCar, the PGA Tour and the LPGA, #310) has no teams: its Games are a
@@ -24,10 +26,11 @@ enum class League(
     val otherSeries: List<String> = emptyList(),
     val fights: Boolean = false,
 ) {
-    Nhl("nhl", listOf("NHL", "Hockey"), network = "NHL Network"),
+    // No bare sport word for a team League: the Provider's 593 "hockey:" slots (survey 2026-10-24) are junior, minor, college and European games, none the NHL's.
+    Nhl("nhl", listOf("NHL"), network = "NHL Network"),
     Nfl("nfl", listOf("NFL"), network = "NFL Network"),
     Nba("nba", listOf("NBA"), network = "NBA TV"),
-    Mlb("mlb", listOf("MLB", "Baseball"), network = "MLB Network"),
+    Mlb("mlb", listOf("MLB", "Major League Baseball"), network = "MLB Network"),
     Cfl("cfl", listOf("CFL")),
     Mls("mls", listOf("MLS")),
     PremierLeague("premier-league", listOf("Premier League", "EPL", "PL")),
