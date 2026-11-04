@@ -78,6 +78,8 @@ export interface TeamSpec {
   name: string;
   nickname?: string | null;
   logo?: string;
+  color?: string;
+  alternateColor?: string;
 }
 
 /**
@@ -102,7 +104,7 @@ export function event(
     order: homeAway === "home" ? 0 : 1,
     homeAway,
     score,
-    team: { id: team.id, uid: `s:70~l:90~t:${team.id}`, displayName: team.displayName, shortDisplayName: team.shortDisplayName, abbreviation: team.abbreviation, location: team.location, name: team.name, nickname: team.nickname ?? null, logo: team.logo ?? `https://a.espncdn.com/i/teamlogos/500/scoreboard/${team.abbreviation.toLowerCase()}.png` },
+    team: { id: team.id, uid: `s:70~l:90~t:${team.id}`, displayName: team.displayName, shortDisplayName: team.shortDisplayName, abbreviation: team.abbreviation, location: team.location, name: team.name, nickname: team.nickname ?? null, logo: team.logo ?? `https://a.espncdn.com/i/teamlogos/500/scoreboard/${team.abbreviation.toLowerCase()}.png`, ...(team.color === undefined ? {} : { color: team.color }), ...(team.alternateColor === undefined ? {} : { alternateColor: team.alternateColor }) },
     statistics: [],
     records: [{ name: "overall", summary: "5-3-1" }],
   });

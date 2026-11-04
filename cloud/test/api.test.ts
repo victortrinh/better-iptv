@@ -771,6 +771,27 @@ describe("Games", () => {
     expect(JSON.stringify(leagues)).not.toMatch(/"(score|period|clock|records?|displayClock)"/i);
   });
 
+  it("gives each team ESPN's colour and alternate colour, as six lowercase hex digits, and none it hasn't or can't be read", async () => {
+    // The Leafs have both, the Canadiens a main colour only, written with a hash; the Bruins' alternate is no colour.
+    espn.scoreboard(
+      nhl,
+      "2026-11-01",
+      event("1", "2026-11-01T19:00:00Z", "in", { ...leafs, color: "00205B", alternateColor: "ffffff" }, { ...habs, color: "#AF1E2D" }, [{ name: "ESPN+" }]),
+      event("2", "2026-11-02T00:00:00Z", "pre", { ...bruins, color: "231f20", alternateColor: "gold" }, sens),
+    );
+    const { leagues } = await filled(await registerDevice(), ["nhl"]);
+
+    const colours = (id: string) => {
+      const game = leagues[0].games.find((g) => g.id === id) as { home: Record<string, unknown>; away: Record<string, unknown> };
+      const pick = (t: Record<string, unknown>) => ({ color: t.color, alternateColor: t.alternateColor });
+      return { home: pick(game.home), away: pick(game.away) };
+    };
+    expect(colours("1")).toEqual({ home: { color: "00205b", alternateColor: "ffffff" }, away: { color: "af1e2d", alternateColor: undefined } });
+    expect(colours("2")).toEqual({ home: { color: "231f20", alternateColor: undefined }, away: { color: undefined, alternateColor: undefined } });
+    // A team without colours carries no field for them.
+    expect(Object.keys((leagues[0].games.find((g) => g.id === "2") as { away: object }).away)).not.toContain("color");
+  });
+
   it("gives each team ESPN's logo for dark backgrounds, else its default one, else the scoreboard's", async () => {
     // The Senators have no logo for dark backgrounds; the Bruins aren't in the teams list.
     espn.teams(nhl, team(leafs), team(habs), team(sens, { dark: false }));
