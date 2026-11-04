@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.core.Feed
+import dev.betteriptv.core.FeedBroadcast
 import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
@@ -199,5 +200,21 @@ fun Context.feedNote(feed: Feed, playing: Boolean): String {
     return if (playing) "${getString(R.string.player_playing)} · $note" else note
 }
 
-/** The muted line under Play naming the Feed it starts: its name and its language ("Senators @ Bruins · English"). */
-fun Context.feedLabel(feed: Feed): String = "${feed.name} · ${feed.language?.let(::languageName) ?: getString(R.string.language_untagged)}"
+/**
+ * A Feed's name on the Game page, by what tells it apart ([Feed.label]): its service, then its
+ * broadcast ("ESPN+ · National broadcast", "ESPN+ · Sabres broadcast"), or the Channel's name
+ * without its timestamps when neither is known. The player names Feeds as the Provider does.
+ */
+fun Context.feedName(feed: Feed): String {
+    val label = feed.label
+    val broadcast = when (val kind = label.broadcast) {
+        null -> null
+        FeedBroadcast.National -> getString(R.string.feed_national_broadcast)
+        is FeedBroadcast.Team -> getString(R.string.feed_team_broadcast, kind.shortName)
+        is FeedBroadcast.Other -> kind.text
+    }
+    return listOfNotNull(label.service, broadcast).joinToString(" · ").ifEmpty { label.fallback }
+}
+
+/** The muted line under Play naming the Feed it starts: its name ([feedName]) and its language ("ESPN+ · National broadcast · English"). */
+fun Context.feedLabel(feed: Feed): String = "${feedName(feed)} · ${feed.language?.let(::languageName) ?: getString(R.string.language_untagged)}"

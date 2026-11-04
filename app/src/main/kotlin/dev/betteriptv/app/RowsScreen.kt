@@ -1,7 +1,6 @@
 package dev.betteriptv.app
 
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -34,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -41,23 +41,25 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
+import dev.betteriptv.app.ui.components.RowHeading
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
 import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.app.ui.theme.StayPut
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -70,6 +72,8 @@ import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
 import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.LiveCountry
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -159,6 +163,22 @@ private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
             copy(replays = replays.map { freshReplays[replayKey(it)] ?: it })
         }
     }
+}
+
+/**
+ * The textless backdrops the cards on either side of [card] grow into, in [rows]: what the next Left
+ * or Right grows into. On a rail that [loops] the first card's left is the last card, and the last
+ * card's right is the first. None for a card that doesn't grow (Continue watching's stills,
+ * Channels, Games) or a neighbour with no textless backdrop.
+ */
+internal fun neighbourBackdrops(rows: List<HomeRow>, card: RowCard, loops: (HomeRow) -> Boolean): List<String> {
+    val row = rows.firstOrNull { it.key == card.row } ?: return emptyList()
+    if (row is HomeRow.ContinueWatching) return emptyList()
+    val titles = row.titles
+    val at = titles.indexOfFirst { it.id.toString() == card.key }
+    if (at < 0) return emptyList()
+    val around = if (loops(row)) listOf(at - 1, at + 1).map { it.mod(titles.size) } else listOf(at - 1, at + 1).filter { it in titles.indices }
+    return around.filter { it != at }.distinct().mapNotNull { titles[it].let { title -> cardArt(title.image, title.about, textlessPosters = true).grown?.backdrop } }
 }
 
 /**
@@ -412,6 +432,20 @@ internal fun RowsLayout(
             if (row == HERO_ROW) 0 else state.rows?.indexOfFirst { it.key == row }?.takeIf { it >= 0 }?.plus(heroItems) ?: -1
         }
     }
+    // Once focus rests on a card, the backdrops its neighbours grow into are loaded into memory, so
+    // the next Left or Right grows straight into its art. Nothing while presses come faster than
+    // the settle: each press starts the wait again. Read in a flow, so a press composes nothing.
+    val context = LocalContext.current
+    LaunchedEffect(state) {
+        snapshotFlow { state.focused }.collectLatest { card ->
+            if (card == null) return@collectLatest
+            delay(SETTLE_MILLIS)
+            val rows = state.rows ?: return@collectLatest
+            val backdrops = neighbourBackdrops(rows, card) { row -> RailLoop(row.keys.size, seen.posters, row.ranked).loops }
+            backdrops.forEach { preloadGrownBackdrop(context, it) }
+        }
+    }
+
     LaunchedEffect(focusedItem) {
         if (focusedItem < 0) return@LaunchedEffect
         // Every row keeps the info's slot, so the info moves under the focused row as it slides up,
@@ -453,14 +487,7 @@ internal fun RowsLayout(
                 }
                 rows.orEmpty().forEach { row ->
                     item(key = "row-${row.key}", contentType = "row") {
-                        Text(
-                            row.heading(),
-                            style = Type.headline,
-                            color = Colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
-                        )
+                        row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
                         val wide = row is HomeRow.ContinueWatching
                         // Channels, countries, Games and Replays are wide cards alike.
                         val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
@@ -478,6 +505,7 @@ internal fun RowsLayout(
                             else -> Cards.posterWidth
                         }
                         val rail = state.rail(row.key, loop)
+                        val resting = with(LocalDensity.current) { cardWidth.roundToPx() }
                         // The card a row entered for the first time starts at.
                         val entry = remember { FocusRequester() }
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
@@ -505,7 +533,7 @@ internal fun RowsLayout(
                                 val card = RowCard(row.key, keys[index])
                                 val onFocus = {
                                     state.focused = card
-                                    scope.launch { rail.glideTo(place) }
+                                    scope.launch { rail.glideTo(place, resting) }
                                     Unit
                                 }
                                 // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
@@ -547,7 +575,7 @@ internal fun RowsLayout(
                                 }
                                 val games = row.games
                                 if (games != null) {
-                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus)
+                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus, league = row.mixesLeagues)
                                     return@items
                                 }
                                 if (row is HomeRow.Replays) {
@@ -712,6 +740,10 @@ private val HomeRow.games: List<GameFeeds>?
         else -> null
     }
 
+/** Whether a Game row may hold several Leagues' Games (Live now, Today), whose cards then carry their League's logo; a League's own row names it in its heading. */
+internal val HomeRow.mixesLeagues: Boolean
+    get() = this is HomeRow.LiveNow || this is HomeRow.Today
+
 /** Whether a row is a Top 10, drawn with its ranks and never looping. */
 private val HomeRow.ranked: Boolean
     get() = this is HomeRow.Chart && (list == ChartList.TopMovies || list == ChartList.TopShows)
@@ -766,25 +798,30 @@ private fun replayKey(replay: LeagueReplay) = "replay/${replay.replay.listingId}
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do
- * (#167). The distance left is read again at every frame and covered in proportion to the time
- * left, so the card lands exactly there though the card focused before shrinks and this one grows
- * meanwhile (#216). A card not laid out is jumped to.
+ * (#167), on the focus curve the cards grow and shrink on ([Motion.focus]), so the slide and the
+ * cards move together and the card lands once (#341). It aims at where the card will sit once the
+ * cards before it are back to their [resting] width (the card focused before still shrinking), not
+ * where it is now, which would carry it past the margin and back. That aim is read again at every
+ * frame and covered in proportion to the time left, so the card never passes the margin, whenever
+ * the shrinking started, and ends on it. A card not laid out is jumped to.
  */
-private suspend fun LazyListState.glideTo(place: Int) {
-    fun distance() = layoutInfo.visibleItemsInfo.firstOrNull { it.index == place }?.offset?.toFloat()
+internal suspend fun LazyListState.glideTo(place: Int, resting: Int) {
+    fun distance(): Float? {
+        val cards = layoutInfo.visibleItemsInfo
+        val card = cards.firstOrNull { it.index == place } ?: return null
+        val shrinking = cards.sumOf { if (it.index < place) (it.size - resting).coerceAtLeast(0) else 0 }
+        return (card.offset - shrinking).toFloat()
+    }
     if (distance() == null) return scrollToItem(place)
     scroll {
         var done = 0f
-        animate(0f, 1f, animationSpec = GLIDE) { progress, _ ->
+        animate(0f, 1f, animationSpec = Motion.focus()) { progress, _ ->
             val left = distance() ?: return@animate
             scrollBy(if (progress >= 1f || done >= 1f) left else left * (progress - done) / (1f - done))
             done = progress
         }
     }
 }
-
-/** As bringing a card into view moved a rail before (#167): quick, without overshooting. */
-private val GLIDE = spring<Float>(visibilityThreshold = 0.001f)
 
 private val CANVAS_WIDTH = 960.dp
 
@@ -793,6 +830,12 @@ private val ROW_CACHE = 300.dp
 
 /** How many cards each kind of rail shows at once ([RailLoop.seen]). */
 private class Seen(val posters: Int, val stills: Int, val channels: Int)
+
+/** A row's heading: its name, and on a League's row the League's logo before it ([RowHeading]), the name alone while the logo can't be loaded. */
+@Composable
+internal fun HomeRow.Heading(modifier: Modifier = Modifier) {
+    RowHeading(heading(), modifier, logo = (this as? HomeRow.LeagueGames)?.let { rememberArtwork(it.league.logo) })
+}
 
 @Composable
 private fun HomeRow.heading(): String = when (this) {

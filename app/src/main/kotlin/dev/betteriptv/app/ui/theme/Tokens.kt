@@ -1,5 +1,9 @@
 package dev.betteriptv.app.ui.theme
 
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -213,4 +217,13 @@ object Motion {
     const val pageArrivalMillis = 300
     /** A new screen fades in over the ground; the old one is gone at once, never a cross-dissolve. */
     const val screenFadeMillis = 150
+
+    /** The focus curve's easing: fast out, slow in. */
+    val focusEasing: Easing = FastOutSlowInEasing
+
+    /**
+     * The focus curve: a focused poster growing or shrinking back, and its rail sliding the focused
+     * card to the margin with it (#341), so Left and Right land once, together.
+     */
+    fun <T> focus(): TweenSpec<T> = tween(focusMillis, easing = focusEasing)
 }

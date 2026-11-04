@@ -623,13 +623,17 @@ class Library private constructor(
     private fun browserCountry(country: String) = browserCountry(country, prefixTable::countryAlias)
 
     /**
-     * The Categories the Channels screen lists for the country coded [country] ([LiveCountry.code]),
-     * in the Provider's order: regular ones only (no Clutter or Event Categories), named without the
-     * country code and tags (the code's language kept: `SPORTS · FR`), those sharing a name merged,
-     * each with its Channel count.
+     * The Categories the Channels screen lists for the country coded [country] ([LiveCountry.code]):
+     * regular ones only (no Clutter or Event Categories), named without the country code and tags
+     * (the code's language kept: `SPORTS · FR`), those sharing a name merged, each with its Channel
+     * count. Genre Categories come first, in the order of the Prefix table's genre list (News,
+     * Sports, Entertainment, …), then the Provider's service buckets (`AT&T`, `PRIME`, `TUBI`) by
+     * Channel count; ties keep the Provider's order.
      */
     suspend fun browsedCategories(country: String): List<BrowsedCategory> = withContext(Dispatchers.IO) {
-        store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry)
+        val categories = store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry)
+        val genres = categories.associateWith { prefixTable.genreRank(it.name) }
+        categories.sortedWith(compareBy<BrowsedCategory, Int?>(nullsLast()) { genres[it] }.thenByDescending { if (genres[it] == null) it.channels else 0 })
     }
 
     /**

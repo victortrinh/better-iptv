@@ -343,8 +343,16 @@ function readTeam(team: EspnTeam): GameTeam {
     abbreviation: text(team.abbreviation) ?? "",
     aliases: names,
     logo: text(team.logo) ?? null,
+    ...colour("color", team.color),
+    ...colour("alternateColor", team.alternateColor),
   };
 }
+
+/** [value] as `{[key]: rrggbb}` when it is a hex colour as ESPN writes one (`00205B`, a `#` allowed), else nothing. */
+const colour = <K extends string>(key: K, value: unknown): Partial<Record<K, string>> => {
+  const hex = text(value)?.replace(/^#/, "").toLowerCase();
+  return hex && /^[0-9a-f]{6}$/.test(hex) ? ({ [key]: hex } as Record<K, string>) : {};
+};
 
 /** Every name ESPN gives a team, each once, in the order the device should try them. */
 const aliases = (team: EspnTeam): string[] =>
@@ -401,6 +409,8 @@ interface EspnTeam {
   nickname?: unknown;
   logo?: unknown;
   logos?: { href?: string; rel?: string[] }[];
+  color?: unknown;
+  alternateColor?: unknown;
 }
 
 interface TeamList {

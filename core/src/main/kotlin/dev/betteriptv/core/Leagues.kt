@@ -17,48 +17,55 @@ package dev.betteriptv.core
  * League's Games. IndyCar is never "Indy" alone: the Provider's Indy Fuel (ECHL) and Indy NXT (its
  * feeder series) slots say that too. A fight-card League ([fights]: UFC, #316) has no teams either:
  * its Games are fight cards ([GameFight]).
+ *
+ * [logo] is the League's own logo, independent of any Game (#350): ESPN's dark-background one,
+ * which the League's scoreboard names (`leagues[0].logos`, rel `dark`), for Live's row headings and
+ * the cards of rows that mix Leagues. Where ESPN has none (the CFL) or only its default (UFC), it is
+ * the icon ESPN's own pages show for the League. Fixed here, by League, so a release's list and its
+ * logos never disagree.
  */
 enum class League(
     val key: String,
     val names: List<String>,
+    val logo: String,
     val network: String? = null,
     val events: Boolean = false,
     val otherSeries: List<String> = emptyList(),
     val fights: Boolean = false,
 ) {
     // No bare sport word for a team League: the Provider's 593 "hockey:" slots (survey 2026-10-24) are junior, minor, college and European games, none the NHL's.
-    Nhl("nhl", listOf("NHL"), network = "NHL Network"),
-    Nfl("nfl", listOf("NFL"), network = "NFL Network"),
-    Nba("nba", listOf("NBA"), network = "NBA TV"),
-    Mlb("mlb", listOf("MLB", "Major League Baseball"), network = "MLB Network"),
-    Cfl("cfl", listOf("CFL")),
-    Mls("mls", listOf("MLS")),
-    PremierLeague("premier-league", listOf("Premier League", "EPL", "PL")),
-    ChampionsLeague("champions-league", listOf("Champions League", "UCL", "UEFA CL")),
-    LaLiga("la-liga", listOf("La Liga", "LaLiga")),
-    Bundesliga("bundesliga", listOf("Bundesliga")),
-    SerieA("serie-a", listOf("Serie A")),
-    Ligue1("ligue-1", listOf("Ligue 1")),
-    NcaaFootball("ncaa-football", listOf("NCAA Football", "NCAAF", "College Football", "CFB")),
-    NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB")),
-    Wnba("wnba", listOf("WNBA")),
-    F1("f1", listOf("F1", "Formula 1", "Formula One"), network = "Sky Sports F1", events = true),
+    Nhl("nhl", listOf("NHL"), logo = "${LEAGUES}nhl.png", network = "NHL Network"),
+    Nfl("nfl", listOf("NFL"), logo = "${LEAGUES}nfl.png", network = "NFL Network"),
+    Nba("nba", listOf("NBA"), logo = "${LEAGUES}nba.png", network = "NBA TV"),
+    Mlb("mlb", listOf("MLB", "Major League Baseball"), logo = "${LEAGUES}mlb.png", network = "MLB Network"),
+    Cfl("cfl", listOf("CFL"), logo = "${ICONS}ESPN-icon-football.png"),
+    Mls("mls", listOf("MLS"), logo = "${SOCCER}19.png"),
+    PremierLeague("premier-league", listOf("Premier League", "EPL", "PL"), logo = "${SOCCER}23.png"),
+    ChampionsLeague("champions-league", listOf("Champions League", "UCL", "UEFA CL"), logo = "${SOCCER}2.png"),
+    LaLiga("la-liga", listOf("La Liga", "LaLiga"), logo = "${SOCCER}15.png"),
+    Bundesliga("bundesliga", listOf("Bundesliga"), logo = "${SOCCER}10.png"),
+    SerieA("serie-a", listOf("Serie A"), logo = "${SOCCER}12.png"),
+    Ligue1("ligue-1", listOf("Ligue 1"), logo = "${SOCCER}9.png"),
+    NcaaFootball("ncaa-football", listOf("NCAA Football", "NCAAF", "College Football", "CFB"), logo = "${ICONS}NCAASports_Football.png"),
+    NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB"), logo = "${ICONS}NCAASports_MensBasketball.png"),
+    Wnba("wnba", listOf("WNBA"), logo = "${LEAGUES}wnba.png"),
+    F1("f1", listOf("F1", "Formula 1", "Formula One"), logo = "${LEAGUES}f1.png", network = "Sky Sports F1", events = true),
     Nascar(
-        "nascar", listOf("NASCAR"), events = true,
+        "nascar", listOf("NASCAR"), logo = "${ICONS}ESPN-icon-NASCAR.png", events = true,
         otherSeries = listOf("Xfinity", "O'Reilly", "Truck", "Trucks", "Whelen", "Modified", "ARCA", "Pinty's", "Canada Series", "Mexico Series", "Euro Series"),
     ),
-    IndyCar("indycar", listOf("IndyCar", "Indy Car"), events = true, otherSeries = listOf("Indy NXT")),
+    IndyCar("indycar", listOf("IndyCar", "Indy Car"), logo = "${ESPN}espn/teamlogos/500/indycar_series.png", events = true, otherSeries = listOf("Indy NXT")),
 
     // The Provider's golf slots name no tour, only `Golf:` (catalog 2026-11-03), so the other tours' and the amateurs' are told apart by name.
     Pga(
-        "pga", listOf("PGA Tour", "PGA", "Golf"), network = "Golf Channel", events = true,
+        "pga", listOf("PGA Tour", "PGA", "Golf"), logo = "${LEAGUES}pgatour.png", network = "Golf Channel", events = true,
         otherSeries = listOf("LPGA", "Korn Ferry", "PGA Tour Champions", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "European Tour"),
     ),
     Lpga(
-        "lpga", listOf("LPGA", "LPGA Tour", "Golf"), network = "Golf Channel", events = true,
+        "lpga", listOf("LPGA", "LPGA Tour", "Golf"), logo = "${LEAGUES}lpga.png", network = "Golf Channel", events = true,
         otherSeries = listOf("Korn Ferry", "Champions Tour", "Senior", "Amateur", "DP World", "LIV", "Ladies European Tour", "European Tour", "Epson Tour"),
     ),
-    Ufc("ufc", listOf("UFC"), network = "UFC", fights = true);
+    Ufc("ufc", listOf("UFC"), logo = "${ESPN}teamlogos/leagues/500/ufc.png", network = "UFC", fights = true);
 
     companion object {
         /**
@@ -98,3 +105,9 @@ enum class League(
         fun on(chose: Set<League>?, region: String): Set<League> = chose ?: defaults(region)
     }
 }
+
+/** Where ESPN keeps the [League.logo]s. */
+private const val ESPN = "https://a.espncdn.com/i/"
+private const val LEAGUES = "${ESPN}teamlogos/leagues/500-dark/"
+private const val SOCCER = "${ESPN}leaguelogos/soccer/500-dark/"
+private const val ICONS = "https://a.espncdn.com/redesign/assets/img/icons/"
