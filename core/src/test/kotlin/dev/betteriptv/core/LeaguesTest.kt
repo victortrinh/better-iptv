@@ -8,12 +8,13 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `twenty-one Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `twenty-nine Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
                 "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
-                "ncaa-football", "ncaa-basketball", "wnba", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
+                "efl-championship", "scottish-premiership", "liga-portugal", "2-bundesliga", "super-lig", "wsl",
+                "ncaa-football", "ncaa-basketball", "wnba", "nrl", "afl", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
             ),
             League.entries.map { it.key },
         )
@@ -38,15 +39,44 @@ class LeaguesTest {
                 Sport.Football to listOf(League.Nfl, League.Cfl, League.NcaaFootball),
                 Sport.Basketball to listOf(League.Nba, League.NcaaMensBasketball, League.Wnba),
                 Sport.Baseball to listOf(League.Mlb),
-                Sport.Soccer to listOf(League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1),
+                Sport.Soccer to listOf(
+                    League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1,
+                    League.EflChampionship, League.ScottishPremiership, League.LigaPortugal, League.Bundesliga2, League.SuperLig, League.WomensSuperLeague,
+                ),
                 Sport.Motorsport to listOf(League.F1, League.Nascar, League.IndyCar),
                 Sport.Golf to listOf(League.Pga, League.Lpga),
                 Sport.Fighting to listOf(League.Ufc),
+                Sport.Rugby to listOf(League.Nrl),
+                Sport.AustralianFootball to listOf(League.Afl),
             ),
             Sport.entries.associateWith { sport -> League.entries.filter { it.sport == sport } }.filterValues { it.isNotEmpty() },
         )
-        // Rugby waits for its Leagues (#354).
-        assertTrue(League.entries.none { it.sport == Sport.Rugby })
+    }
+
+    @Test fun `the Leagues #354 added are two-team Leagues named by their own names, never a bare word another sport's slots say, and on in no Region until the Viewer turns them on`() {
+        val added = listOf(League.EflChampionship, League.ScottishPremiership, League.LigaPortugal, League.Bundesliga2, League.SuperLig, League.WomensSuperLeague, League.Nrl, League.Afl)
+        assertEquals(
+            listOf(
+                listOf("EFL Championship", "EFL", "Sky Bet Championship"),
+                listOf("Scottish Premiership", "SPFL", "Scottish Prem"),
+                listOf("Liga Portugal", "Primeira Liga", "Liga Betclic"),
+                listOf("2. Bundesliga", "Bundesliga 2"),
+                listOf("Süper Lig"),
+                listOf("Women's Super League", "Womens Super League", "WSL"),
+                listOf("NRL"),
+                listOf("AFL"),
+            ),
+            added.map { it.names },
+        )
+        for (league in added) {
+            assertFalse(league.name, league.events || league.fights)
+            assertNull(league.name, league.network)
+            for (region in listOf("CA", "US", "GB", "IE", "FR", "DE", "AT", "ES", "IT", "MX", "PT", "TR", "AU", "JP")) assertFalse("${league.name} in $region", league in League.defaults(region))
+        }
+        // ESPN's dark-background logos, but the 2. Bundesliga's: ESPN's only one for it reads "BUNDESLIGA", so it shows ESPN's soccer icon.
+        assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/24.png", League.EflChampionship.logo)
+        assertEquals("https://a.espncdn.com/i/teamlogos/leagues/500-dark/afl.png", League.Afl.logo)
+        assertEquals("https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-soccer.png", League.Bundesliga2.logo)
     }
 
     @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {

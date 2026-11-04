@@ -26,11 +26,11 @@ const ASKED_EVERY = 3600_000;
 const TRIES_FOR = 2 * 24 * 3600_000;
 /**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: twenty-one Leagues' current days every 5 minutes and
- * their coming days hourly need 12 a minute at most, a golf League's day two and its tomorrow
- * read as a current day.
+ * {@link SUBREQUESTS} that the Charts share: twenty-nine Leagues' current days every 5 minutes and
+ * their coming days hourly need 17 a minute at most, a golf League's day two and its tomorrow
+ * read as a current day (12 did for the twenty-one before #354).
  */
-export const GAMES_SUBREQUESTS = 12;
+export const GAMES_SUBREQUESTS = 17;
 
 /** One League's Games in the answer to `/v1/games`: today's and the week ahead's, by start. */
 export interface LeagueGames {

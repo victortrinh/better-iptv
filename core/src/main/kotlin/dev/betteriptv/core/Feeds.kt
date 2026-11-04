@@ -98,7 +98,11 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * Two guards keep a city's other team's Game out: an Event channel naming another offered League
  * ("NBA: Toronto vs Boston" for the Leafs and the Bruins) is never this Game's, and a match resting
  * on the teams' locations alone ([TeamAliases.weak]: no nickname, short name or abbreviation of
- * either) needs the Game's League named too.
+ * either) needs the Game's League named too. A League's name another of its own names holds keeps
+ * none of its Event channels out ("Bundesliga" in "2. Bundesliga"). And an Event channel naming
+ * both teams of one Game is never another Game's for naming one of its teams and the League:
+ * "SPFL: Dundee United vs Motherwell" is not Dundee's, "AFL: North Melbourne vs Carlton" not
+ * Melbourne's, and "NRL: New Zealand Warriors vs Storm" not the Knights', whom ESPN also calls NEW.
  *
  * An event League's Game ([GameEvent], F1's, a NASCAR or IndyCar race, or a golf round) has no teams: its
  * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:
@@ -135,15 +139,34 @@ internal fun matchFeeds(
     }
     fun holdingAny(phrases: Collection<String>): Set<Int> = phrases.flatMapTo(HashSet(), ::holding)
     val byLeague = League.entries.associateWith { holdingAny(it.names) }
-    // Another League's names, those it shares with this one ("Golf") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart.
+    // Another League's names, those it shares with this one ("Golf"), one of its own names holds ("Bundesliga" in "2. Bundesliga") or its event's own name holds ("PGA" in the LPGA's "KPMG Women's PGA Championship") apart.
     val notThis = HashMap<Pair<League?, String?>, Set<Int>>()
     fun otherLeagues(league: League?, event: GameEvent?): Set<Int> = notThis.getOrPut(league to event?.name) {
-        val own = league?.names.orEmpty().map { it.lowercase() }
+        val own = league?.names.orEmpty().map(SearchIndex::words)
         val eventWords = event?.let { SearchIndex.words(it.name) }.orEmpty()
-        val others = League.entries.filter { it != league }.flatMap { it.names }.filter { it.lowercase() !in own && !containsPhrase(eventWords, SearchIndex.words(it)) }
+        val others = League.entries.filter { it != league }.flatMap { it.names }.filter { name ->
+            val words = SearchIndex.words(name)
+            own.none { containsPhrase(it, words) } && !containsPhrase(eventWords, words)
+        }
         holdingAny(others)
     }
-    return games.map { game ->
+    // A team League's Game's Event channels: those naming both teams, and those naming one and the League.
+    class TeamMatch(val both: Set<Int>, val oneAndLeague: Set<Int>)
+    val teamMatches = games.map { game ->
+        val home = game.home?.let(::TeamAliases)
+        val away = game.away?.let(::TeamAliases)
+        if (game.event != null || game.fight != null || home == null || away == null) return@map null
+        val league = League.byKey(game.league)?.let { byLeague[it] }.orEmpty()
+        val homeStrong = holdingAny(home.strong)
+        val awayStrong = holdingAny(away.strong)
+        val homeAny = homeStrong + holdingAny(home.weak)
+        val awayAny = awayStrong + holdingAny(away.weak)
+        TeamMatch((homeAny intersect awayAny) intersect (homeStrong + awayStrong + league), (homeAny + awayAny) intersect league)
+    }
+    // How many Games each Event channel names both teams of.
+    val pairings = HashMap<Int, Int>()
+    teamMatches.forEach { match -> match?.both?.forEach { pairings.merge(it, 1, Int::plus) } }
+    return games.mapIndexed { gameIndex, game ->
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
         val event = game.event
@@ -160,14 +183,10 @@ internal fun matchFeeds(
             val otherSeries = holdingAny(thisLeague?.otherSeries.orEmpty())
             (holdingAny(event.aliases) intersect league) - otherLeague - others - holdingAny(NO_GAME_SESSIONS) - otherSeries
         } else {
-            val home = TeamAliases(game.home ?: return@map GameFeeds(game, emptyList()))
-            val away = TeamAliases(game.away ?: return@map GameFeeds(game, emptyList()))
-            val homeStrong = holdingAny(home.strong)
-            val awayStrong = holdingAny(away.strong)
-            val homeAny = homeStrong + holdingAny(home.weak)
-            val awayAny = awayStrong + holdingAny(away.weak)
-            val both = (homeAny intersect awayAny) intersect (homeStrong + awayStrong + league)
-            (both + ((homeAny + awayAny) intersect league)) - otherLeague
+            val match = teamMatches[gameIndex] ?: return@mapIndexed GameFeeds(game, emptyList())
+            // One team and the League, unless the channel names both teams of another Game.
+            val oneAndLeague = match.oneAndLeague.filterTo(HashSet()) { (pairings[it] ?: 0) - (if (it in match.both) 1 else 0) == 0 }
+            (match.both + oneAndLeague) - otherLeague
         }
         val eventFeeds = named.sorted().map { events[it] }.filter { sameEvent(game, it.start, now) }.map { listing ->
             Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country), label = eventFeedName(listing.channel.name, listing.category, game))

@@ -286,6 +286,7 @@
     <string name="sport_golf">Golf</string>
     <string name="sport_fighting">Fighting</string>
     <string name="sport_rugby">Rugby</string>
+    <string name="sport_australian_football">Australian football</string>
     <string name="league_nhl">NHL</string>
     <string name="league_nfl">NFL</string>
     <string name="league_nba">NBA</string>
@@ -298,9 +299,17 @@
     <string name="league_bundesliga">Bundesliga</string>
     <string name="league_serie_a">Serie A</string>
     <string name="league_ligue_1">Ligue 1</string>
+    <string name="league_efl_championship">EFL Championship</string>
+    <string name="league_scottish_premiership">Scottish Premiership</string>
+    <string name="league_liga_portugal">Liga Portugal</string>
+    <string name="league_2_bundesliga">2. Bundesliga</string>
+    <string name="league_super_lig">Süper Lig</string>
+    <string name="league_wsl">Women\'s Super League</string>
     <string name="league_ncaa_football">NCAA football</string>
     <string name="league_ncaa_mens_basketball">NCAA men\'s basketball</string>
     <string name="league_wnba">WNBA</string>
+    <string name="league_nrl">NRL</string>
+    <string name="league_afl">AFL</string>
     <string name="league_f1">F1</string>
     <string name="league_nascar">NASCAR Cup</string>
     <string name="league_indycar">IndyCar</string>

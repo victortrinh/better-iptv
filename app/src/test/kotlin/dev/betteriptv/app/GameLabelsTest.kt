@@ -14,6 +14,7 @@ import dev.betteriptv.core.GameFighter
 import dev.betteriptv.core.GameSession
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.GameTeam
+import dev.betteriptv.core.League
 import dev.betteriptv.core.Quality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -123,6 +124,25 @@ class GameLabelsTest {
         assertEquals("Gane c. Hokit", context.matchup(card()))
         assertEquals("UFC 334 · Gane c. Hokit", context.gameInfo(GameFeeds(card(), emptyList())).teams)
         assertTrue(context.mainCardCaption(card(), Instant.parse("2026-11-01T22:00:00Z"), ZoneId.of("America/Toronto"))!!.startsWith("Carte principale "))
+    }
+
+    /** #354's Leagues, as Settings' picker and Live's rows name them. */
+    private val added = listOf(League.EflChampionship, League.ScottishPremiership, League.LigaPortugal, League.Bundesliga2, League.SuperLig, League.WomensSuperLeague, League.Nrl, League.Afl)
+
+    @Test fun theLeaguesAddedForMoreLeaguesAreNamedInEnglish() {
+        assertEquals(
+            listOf("EFL Championship", "Scottish Premiership", "Liga Portugal", "2. Bundesliga", "Süper Lig", "Women's Super League", "NRL", "AFL"),
+            added.map { context.leagueName(it) },
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "fr")
+    fun theLeaguesAddedForMoreLeaguesAreNamedInFrench() {
+        assertEquals(
+            listOf("EFL Championship", "Premiership écossaise", "Liga Portugal", "2. Bundesliga", "Süper Lig", "Super League féminine", "NRL", "AFL"),
+            added.map { context.leagueName(it) },
+        )
     }
 
     @Test fun theMatchupPutsTheVisitorsFirst() {

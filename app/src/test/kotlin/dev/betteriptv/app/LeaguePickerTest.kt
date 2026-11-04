@@ -114,7 +114,7 @@ class LeaguePickerTest {
         }
     }
 
-    @Config(qualifiers = "w960dp-h2400dp-mdpi")
+    @Config(qualifiers = "w960dp-h3200dp-mdpi")
     @Test fun theGridGroupsLeaguesBySportInLeaguesOrderWithinEach() {
         picker()
         compose.waitForIdle()
@@ -127,11 +127,13 @@ class LeaguePickerTest {
             .map { it.first }
         val expected = headings.flatMap { sport -> listOf("heading:${sport.name}") + League.entries.filter { it.sport == sport }.map { "league:${it.key}" } }
         assertEquals(expected, seen)
-        // No heading for a sport without Leagues.
-        assertEquals(0, compose.onAllNodesWithTag("heading:Rugby").fetchSemanticsNodes().size)
-        // About six across: Soccer's seven take two lines.
+        // #354's NRL and AFL under the last two headings.
+        assertEquals(listOf(Sport.Rugby, Sport.AustralianFootball), headings.takeLast(2))
+        assertTrue(tile(League.Nrl).getBoundsInRoot().top > compose.onNodeWithTag("heading:Rugby").getBoundsInRoot().top)
+        assertTrue(tile(League.Afl).getBoundsInRoot().top > compose.onNodeWithTag("heading:AustralianFootball").getBoundsInRoot().top)
+        // About six across: Soccer's thirteen take three lines.
         val soccer = League.entries.filter { it.sport == Sport.Soccer }.map { tile(it).getBoundsInRoot().top }
-        assertEquals(6, soccer.count { it == soccer.first() })
+        assertEquals(listOf(6, 6, 1), soccer.groupBy { it }.values.map { it.size })
     }
 
     @Test fun theFirstTileTakesFocusAndItsNameShowsUnderIt() {

@@ -2,8 +2,9 @@ import type { Env } from "./env";
 import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, GOLF_LEAGUES, type GameSession, type GameState, type GameTeam, type League, type ScheduleSource, ScheduleUnavailable, type Team } from "./schedule";
 
 /**
- * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The fifteen team
- * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour, the LPGA and UFC on 2026-11-03.
+ * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The first fifteen team
+ * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour, the LPGA and UFC on 2026-11-03,
+ * and #354's eight on 2026-11-04: each answers two-team Games (`competitors`, home and away) and a teams list.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -18,9 +19,17 @@ const PATHS: Record<League, string> = {
   bundesliga: "soccer/ger.1",
   "serie-a": "soccer/ita.1",
   "ligue-1": "soccer/fra.1",
+  "efl-championship": "soccer/eng.2",
+  "scottish-premiership": "soccer/sco.1",
+  "liga-portugal": "soccer/por.1",
+  "2-bundesliga": "soccer/ger.2",
+  "super-lig": "soccer/tur.1",
+  wsl: "soccer/eng.w.1",
   "ncaa-football": "football/college-football",
   "ncaa-basketball": "basketball/mens-college-basketball",
   wnba: "basketball/wnba",
+  nrl: "rugby-league/3",
+  afl: "australian-football/afl",
   f1: "racing/f1",
   nascar: "racing/nascar-premier",
   indycar: "racing/irl",
