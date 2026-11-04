@@ -82,7 +82,13 @@ import dev.betteriptv.core.ShowEpisodes
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
+import dev.betteriptv.app.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,7 +106,11 @@ import kotlinx.coroutines.withContext
  * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode. Down from the actions goes to that Episode in
- * the list, the one before it peeking above; with nothing to play, focus starts there.
+ * the list, the one before it peeking above; with nothing to play, focus goes there.
+ *
+ * The page arrives whole ([TitlePage]): opened from a card grown into its textless backdrop
+ * ([openedOn]), it opens on that picture and gathers the details, the plan and a Show's Episodes
+ * before its content fades in.
  */
 @Composable
 fun TitleScreen(
@@ -112,6 +122,7 @@ fun TitleScreen(
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan, String, StartingArt) -> Unit,
+    openedOn: String? = null,
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
@@ -129,29 +140,76 @@ fun TitleScreen(
         val device = withContext(Dispatchers.Default) { deviceProfile() }
         value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap) }
     }
-    val episodes = show?.first
     // A Show's reads need its show details, so they start once its Episodes are in.
-    val readable = id.kind == TitleKind.Movie || episodes != null
+    val readable = id.kind == TitleKind.Movie || show != null
     LaunchedEffect(id, contentLanguages, readable) { if (readable) library.readHeaders(id, contentLanguages) { reads++ } }
     val scope = rememberCoroutineScope()
+    // What the player shows while it starts: this page's own backdrop, already in memory.
+    val play = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
+    TitlePage(
+        id, openedOn, loaded, show,
+        onPlay = play,
+        onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
+        onChoose = { version, name ->
+            scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { play(it, name) } }
+        },
+        onEpisode = { episode, name ->
+            scope.launch {
+                val device = withContext(Dispatchers.Default) { deviceProfile() }
+                library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { play(it, name) }
+            }
+        },
+    )
+}
+
+/**
+ * [TitleScreen]'s page, with what it reads from the Library stood in: the details and their plan
+ * ([loaded]), and on a Show its Episodes and their plan ([show]), each null until read. Screen tests
+ * drive it.
+ *
+ * It arrives whole (DESIGN.md, Motion). Opened from a card that had grown into its textless
+ * backdrop ([openedOn]), its first frame is that card's copy of the picture, from memory, and the
+ * screen-sized one fades in over it once read: the same picture, so the swap can't be seen. The
+ * header and actions wait for the details, the plan and a Show's Episodes, up to
+ * [Motion.pageArrivalMillis], then fade in together. A Show whose Episodes take longer shows Play
+ * disabled, with focus on it, and Play enables where it is once they're read.
+ */
+@Composable
+internal fun TitlePage(
+    id: TitleId,
+    openedOn: String?,
+    loaded: Pair<TitleDetails, PlayPlan?>?,
+    show: Pair<ShowEpisodes, PlayPlan?>?,
+    onPlay: (PlayPlan, String) -> Unit,
+    onRemove: () -> Unit = {},
+    onChoose: (Version, String) -> Unit = { _, _ -> },
+    onEpisode: (Episode, String) -> Unit = { _, _ -> },
+) {
+    val title = loaded?.first
+    var waited by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(id) {
+        delay(Motion.pageArrivalMillis.toLong())
+        waited = true
+    }
+    // Neither the details nor the Episodes go back to unread once read, so once arrived it stays.
+    val arrived = title != null && (id.kind != TitleKind.Show || show != null || waited)
+    val fade = remember(id) { Animatable(0f) }
+    LaunchedEffect(arrived) { if (arrived) fade.animateTo(1f, tween(Motion.screenFadeMillis)) }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        loaded?.let { (title, moviePlan) ->
-            // What the player shows while it starts: this page's own backdrop, already in memory.
-            val art = StartingArt.Title(title.backdrop, title.logo)
-            TitleContent(
-                title, moviePlan ?: show?.second, episodes,
-                onPlay = { onPlay(it, title.name, art) },
-                onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
-                onChoose = { version ->
-                    scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { onPlay(it, title.name, art) } }
-                },
-                onEpisode = { episode ->
-                    scope.launch {
-                        val device = withContext(Dispatchers.Default) { deviceProfile() }
-                        library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { onPlay(it, title.name, art) }
-                    }
-                },
-            )
+        val first = rememberArtworkInMemory(openedOn)
+        val backdrop = rememberArtwork(title?.backdrop)
+        if (backdrop != null) Backdrop(backdrop, under = first) else if (first != null) Backdrop(first)
+        if (arrived) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
+                TitleContent(
+                    title!!, loaded.second ?: show?.second, show?.first,
+                    hasBackdrop = backdrop != null || first != null,
+                    onPlay = { onPlay(it, title.name) },
+                    onRemove = onRemove,
+                    onChoose = { onChoose(it, title.name) },
+                    onEpisode = { onEpisode(it, title.name) },
+                )
+            }
         }
     }
 }
@@ -161,14 +219,14 @@ private fun TitleContent(
     title: TitleDetails,
     plan: PlayPlan?,
     episodes: ShowEpisodes?,
+    hasBackdrop: Boolean,
     onPlay: (PlayPlan) -> Unit,
     onRemove: () -> Unit,
     onChoose: (Version) -> Unit,
     onEpisode: (Episode) -> Unit,
 ) {
     val context = LocalContext.current
-    val backdrop = rememberArtwork(title.backdrop)
-    val image = rememberArtwork(title.image).takeIf { backdrop == null }
+    val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
     val logo = rememberArtwork(title.logo)
     var showOthers by rememberSaveable(title.id) { mutableStateOf(false) }
     val firstVersion = remember { FocusRequester() }
@@ -176,13 +234,16 @@ private fun TitleContent(
     val nextEpisode = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val isShow = title.id.kind == TitleKind.Show
-    // Play takes first focus. With nothing to start, the first Version takes it. A Show's Play comes
-    // with its Episodes and takes focus over then, unless the Viewer has moved on; with no Episode to
-    // play, the next Episode does.
+    // Play takes first focus. On a Movie with nothing to start, the first Version takes it. A Show's
+    // Play is there from the first frame, disabled while its Episodes are read, and enables where it
+    // is once they are, so focus never jumps to it; with no Episode to play, the next Episode takes
+    // focus then, unless the Viewer has moved on.
     var firstVersionFocused by remember { mutableStateOf(false) }
-    // When the Episodes come first, the first Version isn't laid out yet and nothing takes focus.
+    var playFocused by remember { mutableStateOf(false) }
     var listHasFocus by remember { mutableStateOf(false) }
-    LaunchedEffect(title.id) { (if (plan != null) play else firstVersion).requestFocus() }
+    LaunchedEffect(title.id) {
+        (if (plan != null || isShow) play else firstVersion).requestFocus()
+    }
     // Removing it from Continue watching takes its row away, so focus goes back to Play.
     val resumable = plan != null && plan.from > 0
     var wasResumable by remember(title.id) { mutableStateOf(resumable) }
@@ -203,8 +264,8 @@ private fun TitleContent(
         withFrameNanos {}
         nextEpisode.requestFocus()
     }
-    LaunchedEffect(title.id, next, plan != null) {
-        if (episodes == null || next == null || (listHasFocus && !firstVersionFocused)) return@LaunchedEffect
+    LaunchedEffect(title.id, episodes != null, next, plan != null) {
+        if (episodes == null || (listHasFocus && !playFocused && !firstVersionFocused)) return@LaunchedEffect
         if (plan != null) {
             withFrameNanos {}
             play.requestFocus()
@@ -223,7 +284,6 @@ private fun TitleContent(
     val shown = title.languages.ifEmpty { title.otherLanguages }
     val best = shown.firstOrNull()?.versions?.firstOrNull()
 
-    if (backdrop != null) Backdrop(backdrop)
     LazyColumn(
         Modifier.fillMaxSize().onFocusChanged { listHasFocus = it.hasFocus },
         state = listState,
@@ -254,12 +314,15 @@ private fun TitleContent(
                         )
                         BadgeRow(listOfNotNull(title.rank?.badge()) + best?.attributes?.cardBadges().orEmpty())
                     }
-                    // A Show's header names the Episode its Play starts.
-                    if (isShow && plan?.episode != null) {
-                        val number = plan.episode!!
+                    // A Show's header names the Episode its Play starts; its line is kept while the Episodes are read.
+                    if (isShow && (plan?.episode != null || episodes == null)) {
+                        val number = plan?.episode
                         Text(
-                            episode?.name?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
-                                ?: stringResource(R.string.details_episode, number.season, number.number),
+                            when {
+                                number == null -> ""
+                                episode?.name != null -> stringResource(R.string.details_episode_named, number.season, number.number, episode.name!!)
+                                else -> stringResource(R.string.details_episode, number.season, number.number)
+                            },
                             style = Type.title,
                             color = Colors.ink,
                             maxLines = 1,
@@ -281,42 +344,44 @@ private fun TitleContent(
                             modifier = Modifier.padding(top = Spacing.xs),
                         )
                     }
-                    // A Show's Play comes with an Episode to play.
-                    if (!isShow || plan != null) {
-                        Spacer(Modifier.height(Spacing.l))
-                        val number = plan?.episode
-                        // Having played any of the Show, the Viewer continues it.
-                        val started = episodes?.seasons.orEmpty().any { season -> season.episodes.any { it.progress != null } }
-                        val text = when {
-                            number != null && (started || resumable) -> stringResource(R.string.play_continue_episode, number.season, number.number)
-                            number != null -> stringResource(R.string.play_episode, number.season, number.number)
-                            resumable -> stringResource(R.string.play_continue, clock(plan!!.from))
-                            else -> stringResource(R.string.play)
-                        }
-                        val showRemove = resumable && !isShow
-                        Column(Modifier.width(ACTIONS_WIDTH), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            PrimaryAction(
-                                text,
-                                Icons.Filled.PlayArrow,
-                                onClick = { plan?.let(onPlay) },
-                                modifier = Modifier.focusRequester(play).then(if (resumable) Modifier else toNextEpisode),
-                                progress = plan?.progress,
-                                enabled = plan != null,
-                            )
-                            if (resumable) {
-                                ActionRow(
-                                    stringResource(R.string.play_restart),
-                                    Icons.Filled.Refresh,
-                                    onClick = { plan?.let { onPlay(it.fromStart()) } },
-                                    modifier = if (showRemove) Modifier else toNextEpisode,
-                                )
-                                // Continue watching holds Movies: an Episode's place is kept with the Show.
-                                if (showRemove) ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.s))
-                        PlayLabel(plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged)) ?: stringResource(R.string.play_nothing))
+                    // Play is there from the first frame, on a Show too, where it waits disabled for the Episodes.
+                    Spacer(Modifier.height(Spacing.l))
+                    val number = plan?.episode
+                    // Having played any of the Show, the Viewer continues it.
+                    val started = episodes?.seasons.orEmpty().any { season -> season.episodes.any { it.progress != null } }
+                    val text = when {
+                        number != null && (started || resumable) -> stringResource(R.string.play_continue_episode, number.season, number.number)
+                        number != null -> stringResource(R.string.play_episode, number.season, number.number)
+                        resumable -> stringResource(R.string.play_continue, clock(plan!!.from))
+                        else -> stringResource(R.string.play)
                     }
+                    val showRemove = resumable && !isShow
+                    Column(Modifier.width(ACTIONS_WIDTH), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        PrimaryAction(
+                            text,
+                            Icons.Filled.PlayArrow,
+                            onClick = { plan?.let(onPlay) },
+                            modifier = Modifier.testTag("play").focusRequester(play).onFocusChanged { playFocused = it.isFocused }.then(if (resumable) Modifier else toNextEpisode),
+                            progress = plan?.progress,
+                            enabled = plan != null,
+                        )
+                        if (resumable) {
+                            ActionRow(
+                                stringResource(R.string.play_restart),
+                                Icons.Filled.Refresh,
+                                onClick = { plan?.let { onPlay(it.fromStart()) } },
+                                modifier = if (showRemove) Modifier else toNextEpisode,
+                            )
+                            // Continue watching holds Movies: an Episode's place is kept with the Show.
+                            if (showRemove) ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.s))
+                    // While a Show's Episodes are read, the label's line waits empty.
+                    PlayLabel(
+                        plan?.version?.attributes?.playLabel(stringResource(R.string.language_untagged))
+                            ?: if (isShow && episodes == null) "" else stringResource(R.string.play_nothing),
+                    )
                 }
                 Spacer(Modifier.weight(1f))
                 if (image != null) {
