@@ -230,6 +230,7 @@ private fun sportName(sport: Sport): String = stringResource(
         Sport.Golf -> R.string.sport_golf
         Sport.Fighting -> R.string.sport_fighting
         Sport.Rugby -> R.string.sport_rugby
+        Sport.AustralianFootball -> R.string.sport_australian_football
     },
 )
 

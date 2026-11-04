@@ -2,7 +2,8 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
-import { argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
+import { GAMES_SUBREQUESTS } from "../src/games";
+import { added, argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -806,6 +807,36 @@ describe("Games", () => {
     });
   });
 
+  it("answers #354's Leagues' Games as two teams', read at each League's ESPN path, with their aliases, colours and Broadcasters", async () => {
+    for (const [league, { path, home, away }] of Object.entries(added)) {
+      espn.scoreboard(path, "2026-11-01", event(`${league}-1`, "2026-11-01T15:00:00Z", "pre", home, away, league === "efl-championship" || league === "wsl" ? [{ name: "Paramount+" }] : []));
+      espn.teams(path, team(home), team(away));
+    }
+    // Eight Leagues' days and teams take a few runs of the budget.
+    const { leagues } = await filled(await registerDevice(), Object.keys(added), 6);
+
+    expect(leagues.map((l) => l.league).sort()).toEqual(Object.keys(added).sort());
+    for (const { league, games } of leagues) {
+      const { path, home, away } = added[league];
+      expect(espn.asked).toContain(`${path}/2026-11-01`);
+      expect(espn.asked).toContain(`${path}/teams`);
+      expect(games).toHaveLength(1);
+      expect(games[0]).toMatchObject({ id: `${league}-1`, league, start: "2026-11-01T15:00:00.000Z", state: "upcoming" });
+      expect((games[0].home as { name: string }).name).toBe(home.displayName);
+      expect((games[0].away as { name: string }).name).toBe(away.displayName);
+    }
+    const game = (league: string) => leagues.find((l) => l.league === league)?.games[0] as { home: Record<string, unknown>; away: Record<string, unknown>; broadcasters: string[] };
+    // A Championship Game: its teams as an Event channel may name them, ESPN's colours, and its national Broadcaster.
+    expect(game("efl-championship").home).toMatchObject({ name: "Cardiff City", shortName: "Cardiff", abbreviation: "CAR", aliases: ["Cardiff City", "Cardiff", "CAR"], color: "0000fa", alternateColor: "c6d4db" });
+    expect(game("efl-championship").broadcasters).toEqual(["Paramount+"]);
+    // ESPN's trailing spaces are trimmed.
+    expect(game("wsl").home).toMatchObject({ shortName: "Chelsea", aliases: ["Chelsea", "CHE"] });
+    // The NRL's and the AFL's teams have no location: their nickname or place is the name.
+    expect(game("nrl").away).toMatchObject({ name: "Knights", shortName: "Knights", abbreviation: "NEW", aliases: ["Knights", "NEW"] });
+    expect(game("afl").away).toMatchObject({ name: "Brisbane Lions", aliases: ["Brisbane Lions", "BL"] });
+    expect(JSON.stringify(leagues)).not.toMatch(/"(score|period|clock|records?|displayClock)"/i);
+  });
+
   it("answers only the Leagues asked for, and reads only the Leagues some device has on", async () => {
     const token = await registerDevice();
     const first = await filled(token, ["nhl"]);
@@ -911,7 +942,7 @@ describe("Games", () => {
     expect((await gamesOf(token, ["nhl"])).leagues.map((l) => l.league)).toEqual(["nhl"]);
   });
 
-  it("reaches each League's schedule source at ESPN's path for it, with no user agent, a dozen requests a run at most", async () => {
+  it("reaches each League's schedule source at ESPN's path for it, with no user agent, at most GAMES_SUBREQUESTS (17) requests a run", async () => {
     const token = await registerDevice();
     await gamesOf(token, [...LEAGUES]);
     const perRun: number[] = [];
@@ -922,7 +953,7 @@ describe("Games", () => {
       perRun.push(espn.requests.length - before);
     }
 
-    expect(Math.max(...perRun)).toBeLessThanOrEqual(12);
+    expect(Math.max(...perRun)).toBeLessThanOrEqual(GAMES_SUBREQUESTS);
     const paths = {
       nhl: "hockey/nhl",
       nfl: "football/nfl",
@@ -936,9 +967,17 @@ describe("Games", () => {
       bundesliga: "soccer/ger.1",
       "serie-a": "soccer/ita.1",
       "ligue-1": "soccer/fra.1",
+      "efl-championship": "soccer/eng.2",
+      "scottish-premiership": "soccer/sco.1",
+      "liga-portugal": "soccer/por.1",
+      "2-bundesliga": "soccer/ger.2",
+      "super-lig": "soccer/tur.1",
+      wsl: "soccer/eng.w.1",
       "ncaa-football": "football/college-football",
       "ncaa-basketball": "basketball/mens-college-basketball",
       wnba: "basketball/wnba",
+      nrl: "rugby-league/3",
+      afl: "australian-football/afl",
       f1: "racing/f1",
       nascar: "racing/nascar-premier",
       indycar: "racing/irl",
@@ -1141,7 +1180,7 @@ describe("Games", () => {
       expect(espn.asked.filter((a) => a.startsWith("golf/leaderboard"))).toEqual([]);
     });
 
-    it("counts the leaderboard against a run's dozen requests", async () => {
+    it("counts the leaderboard against a run's GAMES_SUBREQUESTS requests", async () => {
       // Thursday morning, before the first tee time: the tournament's first day is a current day.
       vi.setSystemTime(new Date("2026-11-05T11:00:00Z"));
       for (const day of wwtDays) espn.scoreboard("golf/pga", day, tournament("401850979", "World Wide Technology Championship", "2026-11-05T05:00Z", "2026-11-08T05:00Z", "pre", 0));
@@ -1155,7 +1194,7 @@ describe("Games", () => {
         await run();
         perRun.push(espn.requests.length - before);
       }
-      expect(Math.max(...perRun)).toBeLessThanOrEqual(12);
+      expect(Math.max(...perRun)).toBeLessThanOrEqual(GAMES_SUBREQUESTS);
       expect(espn.asked).toContain("golf/leaderboard?league=pga");
       expect((await gamesOf(token, ["pga"])).leagues[0].games[0]).toMatchObject({ id: "401850979-1", start: "2026-11-05T13:30:00.000Z" });
     });
