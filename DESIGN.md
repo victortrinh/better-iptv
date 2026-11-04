@@ -324,6 +324,18 @@ The player's Versions lay one `veil` under the whole list instead of one under e
 
 Corners are soft everywhere and there are no sharp rectangles. Every control is a capsule. A 40 dp button with `control` (22 dp) corners reads as a pill, and the tab bar and choices use fully rounded ends. Posters, stills and text fields have `card` (12 dp) corners. Badges are small rounded rectangles (`badge`, 4 dp) so they read as labels, not buttons. Version rows and setting rows take `control` corners, which makes them long pills. Artwork is always clipped to its corner shape, and the focus rim follows the same shape.
 
+## Motion
+
+Motion is short, and it's there so nothing pops, cuts or jumps on the Fire TV Stick. Every duration comes from `Motion` (`ui/theme/Tokens.kt`); screens never hold raw milliseconds.
+
+- **Focus** (`Motion.focusMillis`, 160 ms, a fast-out, slow-in `tween`): the focus scale, and a focused poster growing into its backdrop or shrinking back.
+- **Image fade** (`Motion.imageFadeMillis`, 150 ms): artwork that arrives from disk or the network fades in from transparent, as alpha on the image alone, so nothing else redraws (`rememberArtwork`, used by every screen's card art, logos, stills and backdrops). Artwork already in the memory cache shows on its first frame with no fade, so going back to a screen, or scrolling back to a card, stays instant. A card's artwork still waits until the card has been on screen 250 ms (`SettleFirst`) before it loads; the fade starts once it arrives.
+- **Page arrival** (`Motion.pageArrivalMillis`, 300 ms): the longest a page waits for its content before it appears, so it arrives whole and fades in together rather than assembling piece by piece.
+- **Screen fade-in** (`Motion.screenFadeMillis`, 150 ms): a new screen fades in over the `ground`. The old screen is gone at once: never a cross-dissolve, which would draw two screens at once on the stick.
+
+### Named Rules
+**Arrive, Don't Pop.** Anything that appears after the screen is up (an image, a page's content, a screen) fades in over the `ground` or the glass under it, in one of the `Motion` durations above, instead of snapping in. What the Viewer has already seen (artwork in memory, a screen they return to) shows at once: a fade is for arriving, never for coming back. Focus is never delayed by a fade.
+
 ## Components
 
 All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by hand.
@@ -361,7 +373,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 
 ### Cards (`TitleCard`)
 - **Poster:** 136 dp wide, 2:3: about 5.5 across Home's rows between the margins, `card-gap` apart. **Wide:** 363 dp wide, 16:9, for Continue watching: 204 dp tall, a poster's height, so its rows line up with the poster rows. Its still is TMDB's `w1280` backdrop, decoded at the card's size.
-- **Grown (#216):** as on Netflix, a focused poster on any poster row (Home's, the Movies and Shows tabs', Search's and the Top rows) grows into its Title's horizontal artwork: 363 × 204 dp (`Cards.grownWidth`, a still's size), at the poster's height so its row doesn't move up or down. The artwork is TMDB's most voted backdrop with no language (`textlessBackdropPath`, so with no text on it) at `w780`. It grows at once on focus, its width going from 136 to 363 dp over 160 ms (`Motion.focusMillis`, the focus scale's time and easing, a fast-out, slow-in `tween`), from its left edge, so the cards after it move right; it shrinks back the same way when focus leaves, keeping the backdrop until it is a poster again. It lifts 1.08x, as a still does. Its name sits at the bottom left as on a still (`CardLogo`, `wide`): the logo fitted in 40% × 30% of the card, `s` in, over the `ground` scrim; with no logo, the name in title type. The backdrop loads like any card's artwork, once focus has rested 250 ms: until then the card is glass with the logo or name on it. A Title with no textless backdrop (or no TMDB metadata) keeps its regular poster with its printed name and doesn't grow. In Search, where the name shows under the focused card, a grown card shows only its badges there, since its art names it. Continue watching (already wide) and Favourites (Channels) don't grow. Which art a card shows is `cardArt`: textless backdrop and logo, backdrop and name, or the poster.
+- **Grown (#216):** as on Netflix, a focused poster on any poster row (Home's, the Movies and Shows tabs', Search's and the Top rows) grows into its Title's horizontal artwork: 363 × 204 dp (`Cards.grownWidth`, a still's size), at the poster's height so its row doesn't move up or down. The artwork is TMDB's most voted backdrop with no language (`textlessBackdropPath`, so with no text on it) at `w780`. It grows at once on focus, its width going from 136 to 363 dp over 160 ms (`Motion.focusMillis`, the focus scale's time and easing, a fast-out, slow-in `tween`), from its left edge, so the cards after it move right; it shrinks back the same way when focus leaves, keeping the backdrop until it is a poster again. It lifts 1.08x, as a still does. Its name sits at the bottom left as on a still (`CardLogo`, `wide`): the logo fitted in 40% × 30% of the card, `s` in, over the `ground` scrim; with no logo, the name in title type. The backdrop loads like any card's artwork, once focus has rested 250 ms, and fades in (Motion, above): until then the card is glass with the logo or name on it. A Title with no textless backdrop (or no TMDB metadata) keeps its regular poster with its printed name and doesn't grow. In Search, where the name shows under the focused card, a grown card shows only its badges there, since its art names it. Continue watching (already wide) and Favourites (Channels) don't grow. Which art a card shows is `cardArt`: textless backdrop and logo, backdrop and name, or the poster.
 - **Corner Style:** `card`. **Background:** the artwork itself, cropped to fill.
 - **Progress:** a 6 dp bar along the bottom edge, `ink` over `ground` at 60%.
 - **Focus:** `FocusWeight.Card`. Under the card, after 12 dp, a 44 dp slot shows the Title name (title type, one line) and a compact `BadgeRow` only while the card has focus. The slot is always reserved so rows don't jump.
@@ -434,7 +446,7 @@ adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.Prototyp
 ### Known gaps (open, for later screen tickets; not rules)
 - Glass sits on bare black on screens without artwork (search, settings, login, Movies), so it reads as flat grey there.
 - The sheen on a focused card is static.
-- There is no authored motion moment beyond the 160 ms focus scale and a focused poster growing into its backdrop.
+- Pages still assemble piece by piece and screens still cut: the page arrival and screen fade-in durations (Motion, above) are set, but no screen uses them yet.
 - The featured Title is a single still.
 
 ## Do's and Don'ts
