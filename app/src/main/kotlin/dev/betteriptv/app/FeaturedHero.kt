@@ -1,5 +1,6 @@
 package dev.betteriptv.app
 
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,12 +11,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -50,7 +54,9 @@ internal const val HERO_DETAILS = "details"
  * logo (or name), a metadata line in muted body followed by its badges, two lines of description,
  * then Play and Details 12 dp apart. Its backdrop is drawn behind the whole screen
  * ([featuredBackdrop]). [onFocus] says which button took focus ([HERO_PLAY], [HERO_DETAILS]);
- * focus coming back to the hero returns to the one focused last, the first time to Play.
+ * focus coming into the hero from outside lands on the one focused [last], else on Play: the hero
+ * leaves composition once scrolled away, so a focus restorer would forget it, and Up from the first
+ * row lands on whichever button is nearer.
  */
 @Composable
 internal fun FeaturedHero(
@@ -60,8 +66,11 @@ internal fun FeaturedHero(
     onPlay: () -> Unit,
     onDetails: () -> Unit,
     onFocus: (String) -> Unit,
+    last: String = HERO_PLAY,
 ) {
     val context = LocalContext.current
+    // While focus is on a button, Left and Right move between them; from outside, only [last] takes it.
+    var inside by remember { mutableStateOf(false) }
     // It starts 96 dp under the tabs, which keep 16 dp under them.
     Column(Modifier.padding(start = Spacing.screenX, top = 96.dp - 16.dp, bottom = 28.dp).width(440.dp)) {
         TitleName(title.name, rememberArtwork(title.logo))
@@ -79,15 +88,15 @@ internal fun FeaturedHero(
             Text(it, style = Type.body, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(18.dp))
-        Row(Modifier.focusRestorer(play), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.onFocusChanged { inside = it.hasFocus }.focusGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             NuageButton(
                 stringResource(R.string.play), onPlay,
-                Modifier.focusRequester(play).onFocusChanged { if (it.isFocused) onFocus(HERO_PLAY) },
+                Modifier.focusProperties { canFocus = inside || last != HERO_DETAILS }.focusRequester(play).onFocusChanged { if (it.isFocused) onFocus(HERO_PLAY) },
                 icon = Icons.Filled.PlayArrow,
             )
             NuageButton(
                 stringResource(R.string.details), onDetails,
-                Modifier.focusRequester(details).onFocusChanged { if (it.isFocused) onFocus(HERO_DETAILS) },
+                Modifier.focusProperties { canFocus = inside || last == HERO_DETAILS }.focusRequester(details).onFocusChanged { if (it.isFocused) onFocus(HERO_DETAILS) },
             )
         }
     }

@@ -439,6 +439,7 @@ internal fun RowsLayout(
                         onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
                         onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id) },
                         onFocus = { state.focused = RowCard(HERO_ROW, it) },
+                        last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
                     )
                     if (focusOn?.row == HERO_ROW) LaunchedEffect(focusOn) {
                         (if (focusOn.key == HERO_DETAILS) heroDetails else heroPlay).requestFocus()

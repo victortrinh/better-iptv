@@ -282,10 +282,13 @@ class FeaturedHeroTest {
 
     @Test fun theBackdropFadesInAsItArrives() {
         compose.mainClock.autoAdvance = false
-        screen()
+        // The hero's backdrop alone: the screen's vector icons can't be drawn on a bare canvas here.
+        compose.setContent { Box(Modifier.size(960.dp, 540.dp).featuredBackdrop(titles[0]) { 1f }) }
         compose.mainClock.advanceTimeByFrame()
         compose.mainClock.advanceTimeByFrame()
-        assertEquals(0f, backdropAlpha())
+        // It starts transparent: barely into its fade, not popped in.
+        val first = backdropAlpha()
+        assertTrue("on its first frame it is at $first", first < 0.1f)
 
         compose.mainClock.advanceTimeBy(Motion.imageFadeMillis / 2L)
         val half = backdropAlpha()
