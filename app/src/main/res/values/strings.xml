@@ -277,6 +277,15 @@
     <string name="settings_leagues">Leagues</string>
     <string name="settings_leagues_detail">Whose Games the Live tab shows</string>
     <string name="settings_leagues_none">None</string>
+    <string name="sport_hockey">Hockey</string>
+    <string name="sport_football">Football</string>
+    <string name="sport_basketball">Basketball</string>
+    <string name="sport_baseball">Baseball</string>
+    <string name="sport_soccer">Soccer</string>
+    <string name="sport_motorsport">Motorsport</string>
+    <string name="sport_golf">Golf</string>
+    <string name="sport_fighting">Fighting</string>
+    <string name="sport_rugby">Rugby</string>
     <string name="league_nhl">NHL</string>
     <string name="league_nfl">NFL</string>
     <string name="league_nba">NBA</string>

@@ -54,7 +54,6 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
-import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.SyncStatus
@@ -73,8 +72,8 @@ import java.time.Duration
  * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
  * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
- * App, which offers the [update] when there is one ([onUpdate]). Content languages, Region
- * and Leagues each open a list in place of the column; Back returns to the row that opened it.
+ * App, which offers the [update] when there is one ([onUpdate]). Content languages and Region
+ * each open a list, and Leagues its logo grid ([LeaguePicker]), in place of the column; Back returns to the row that opened it.
  * [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
@@ -114,7 +113,7 @@ fun SettingsScreen(
             }
             Picker.Leagues -> {
                 BackHandler { picking = null }
-                LeaguesList(settings.leaguesOn, onChange = { leagues -> onChange { it.copy(leagues = leagues) } })
+                LeaguePicker(settings.leaguesOn, onChange = { leagues -> onChange { it.copy(leagues = leagues) } })
             }
             null -> LazyColumn(
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
@@ -157,10 +156,9 @@ fun SettingsScreen(
                     )
                 }
                 item {
-                    val on = League.entries.filter { it in settings.leaguesOn }
                     SettingRow(
                         stringResource(R.string.settings_leagues),
-                        if (on.isEmpty()) stringResource(R.string.settings_leagues_none) else on.map { leagueName(it) }.joinToString(", "),
+                        leaguesValue(settings.leaguesOn),
                         onClick = {
                             returnTo = Picker.Leagues
                             picking = Picker.Leagues
@@ -322,32 +320,6 @@ private fun ContentLanguagesList(library: Library, chosen: List<String>, onChang
                     else if (chosen.size > 1) onChange(chosen - language)
                 },
                 if (language == order.first()) Modifier.focusRequester(first) else Modifier,
-            )
-        }
-    }
-}
-
-/**
- * The fifteen Leagues offered, in [League]'s order, the ones [on] marked: OK turns a League on or
- * off. Every one can be off; the Live tab then shows no Games.
- */
-@Composable
-private fun LeaguesList(on: Set<League>, onChange: (Set<League>) -> Unit) {
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.width(COLUMN_WIDTH),
-    ) {
-        item { Heading(stringResource(R.string.settings_leagues)) }
-        items(League.entries, key = { it.key }) { league ->
-            val isOn = league in on
-            SettingRow(
-                leagueName(league),
-                if (isOn) CHOSEN else "",
-                onClick = { onChange(if (isOn) on - league else on + league) },
-                if (league == League.entries.first()) Modifier.focusRequester(first) else Modifier,
             )
         }
     }
