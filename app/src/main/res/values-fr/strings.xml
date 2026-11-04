@@ -46,6 +46,8 @@
     <string name="feed_event_channel">Chaîne d\'événement</string>
     <string name="feed_broadcaster">Diffuseur · %1$s</string>
     <string name="feed_league_network">Chaîne de la ligue · %1$s</string>
+    <string name="feed_national_broadcast">Diffusion nationale</string>
+    <string name="feed_team_broadcast">Diffusion des %1$s</string>
     <string name="feed_not_this_game">Pas ce match</string>
     <string name="feed_not_this_game_next">Écarte ce flux pour ce match et lance le suivant</string>
     <string name="feed_not_this_game_last">Écarte ce flux pour ce match; il n\'en reste aucun autre, la page du match revient</string>

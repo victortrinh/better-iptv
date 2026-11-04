@@ -23,9 +23,38 @@ enum class FeedKind {
  * A Feed the Viewer marked "Not this game" on this device is [dropped]: kept in the list, last and
  * marked, never started by Play ([Library.notThisGame]).
  */
-data class Feed(val channel: Channel, val kind: FeedKind, val language: String?, val broadcaster: String? = null, val dropped: Boolean = false) {
-    /** The Feed's name on the Game page: the Channel's, as the Provider lists it without its tags. */
+data class Feed(
+    val channel: Channel,
+    val kind: FeedKind,
+    val language: String?,
+    val broadcaster: String? = null,
+    val dropped: Boolean = false,
+    /** What tells this Feed apart on the Game page ([FeedName]); a Broadcaster's or League network's is its Channel's name. */
+    val label: FeedName = FeedName(channel.name, null, channel.name),
+) {
+    /** The Feed's name as the Provider lists it, without its tags: the player's Feeds list names it so. */
     val name: String get() = channel.name
+}
+
+/**
+ * A Feed's name on the Game page, by what tells it apart from the Game's other Feeds (#351): the
+ * [service] carrying it ("ESPN+", "TSN", "NHL Network") and the [broadcast] it is ("National
+ * broadcast", "Sabres broadcast"), shown in that order ("ESPN+ · Sabres broadcast"). Channel
+ * numbers, timestamps, the sport word and the matchup, which the page already shows, are left out.
+ * When neither is known the [fallback] stands: the Channel's name without its timestamps.
+ */
+data class FeedName(val service: String?, val broadcast: FeedBroadcast?, val fallback: String)
+
+/** Which broadcast of a Game a Feed is, as an Event channel's name says. */
+sealed interface FeedBroadcast {
+    /** The national broadcast ("(National Broadcast)"). */
+    data object National : FeedBroadcast
+
+    /** A team's own broadcast, by the team's [shortName] ("(Sabres Broadcast)", "(Home)"). */
+    data class Team(val shortName: String) : FeedBroadcast
+
+    /** Anything else the name says in brackets, as written ("French", "Alt cast"). */
+    data class Other(val text: String) : FeedBroadcast
 }
 
 /** A [game] with its [feeds], best first ([rankedFeeds]), the dropped ones last; none for a Game nothing in the catalog carries. */
@@ -141,7 +170,7 @@ internal fun matchFeeds(
             (both + ((homeAny + awayAny) intersect league)) - otherLeague
         }
         val eventFeeds = named.sorted().map { events[it] }.filter { sameEvent(game, it.start, now) }.map { listing ->
-            Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country))
+            Feed(listing.channel, FeedKind.EventChannel, languageOf(listing.channel.country ?: listing.category?.country), label = eventFeedName(listing.channel.name, listing.category, game))
         }
         val gameKey = "${game.league}/${game.id}"
         fun named(broadcaster: String, kind: FeedKind) = broadcasterNames(broadcaster).flatMap { name -> broadcasters[name].orEmpty() }
@@ -331,4 +360,110 @@ private val COUNTRY_LANGUAGES = mapOf(
     "RU" to "ru", "UA" to "uk", "RO" to "ro", "HU" to "hu", "CZ" to "cs", "SK" to "sk", "SE" to "sv", "NO" to "no", "DK" to "da", "FI" to "fi",
     "RS" to "sr", "HR" to "hr", "BG" to "bg", "AL" to "sq", "IL" to "he", "PK" to "ur", "BD" to "bn", "ID" to "id", "MY" to "ms", "TH" to "th",
     "VN" to "vi", "KR" to "ko", "JP" to "ja", "CN" to "zh", "TW" to "zh", "HK" to "zh",
+)
+
+/**
+ * An Event channel's [FeedName], read from its Channel's [name] (#351). The service is the network
+ * in brackets before the name's first bar or colon, its channel number dropped ("US (ESPN+ 335) |
+ * …" is ESPN+, "(FLSP 102) | …" and "Flo (FLSP) 235: …" FloSports), else the one its [category]
+ * names ("US| ESPN+ PPV" is ESPN+; "SPORTS PPV" or "NHL PPV" names none). The broadcast is the
+ * first other bracket that isn't a time or a country: "(National Broadcast)" is the national one,
+ * "(Sabres Broadcast)", "(Home)" or "(Away Feed)" a team's, by the [game]'s team it names; anything
+ * else is kept as written ("(French)"). The sport word and the matchup are never kept.
+ */
+internal fun eventFeedName(name: String, category: LiveCategory?, game: Game): FeedName {
+    val lead = firstSeparator(name)
+    var service: String? = null
+    var broadcast: FeedBroadcast? = null
+    for (group in BRACKETS.findAll(name)) {
+        val text = group.groupValues[1].replace(FEED_SPACES, " ").trim()
+        if (text.isEmpty() || TIME_TEXT.containsMatchIn(text) || text.uppercase() in ZONES) continue
+        if (service == null && group.range.first < lead) {
+            service = networkName(text)
+            if (service != null) continue
+        }
+        if (FEED_COUNTRY.matches(text)) continue
+        if (broadcast == null) broadcast = broadcastOf(text, game)
+    }
+    val fallback = name.replace(BRACKETS) { if (TIME_TEXT.containsMatchIn(it.groupValues[1])) "" else it.value }.replace(FEED_SPACES, " ").trim()
+    return FeedName(service ?: category?.let(::categoryService), broadcast, fallback.ifEmpty { name.trim() })
+}
+
+/** Where a name's first bar or colon outside brackets is, or its length when it has none. */
+private fun firstSeparator(name: String): Int {
+    var depth = 0
+    name.forEachIndexed { i, c ->
+        when {
+            c == '(' -> depth++
+            c == ')' -> depth = maxOf(0, depth - 1)
+            depth == 0 && (c == '|' || c == ':') -> return i
+        }
+    }
+    return name.length
+}
+
+/** A bracketed network's name: "ESPN+ 335" is ESPN+, "FLSP" FloSports; null for text no network is ("Home"). */
+private fun networkName(text: String): String? {
+    val numbered = NUMBERED_NETWORK.matchEntire(text)
+    val rest = numbered?.groupValues?.get(1)?.trim() ?: text
+    SERVICE_SPELLINGS[channelKey(rest)]?.let { return it }
+    return rest.takeIf { numbered != null && it.any(Char::isLetter) && it.lowercase() !in NUMBERED_NOT_NETWORK }
+}
+
+/** The service an Event Category's name gives ("ESPN+ PPV" is ESPN+), or null for a generic or League's one ("SPORTS PPV", "NHL PPV"). */
+private fun categoryService(category: LiveCategory): String? {
+    val rest = category.normalisedName.split(' ').filter { it.isNotEmpty() && it.uppercase() !in GENERIC_CATEGORY_WORDS }.joinToString(" ")
+    if (rest.isEmpty() || League.entries.any { league -> league.names.any { it.equals(rest, ignoreCase = true) } }) return null
+    return SERVICE_SPELLINGS[channelKey(rest)] ?: rest
+}
+
+/** The broadcast a bracket names: the national one, a [game]'s team's ("Sabres Broadcast", "Home"), or as written. */
+private fun broadcastOf(text: String, game: Game): FeedBroadcast? {
+    val words = text.split(' ')
+    val core = words.dropLastWhile { it.lowercase() in BROADCAST_WORDS }
+    val folded = SearchIndex.words(core.joinToString(" "))
+    if (folded.isEmpty()) return null
+    fun team(team: GameTeam?) = team?.let { FeedBroadcast.Team(it.shortName) }
+    when (folded.joinToString(" ")) {
+        "national" -> return FeedBroadcast.National
+        "home" -> return team(game.home)
+        "away", "visitor", "visitors", "road" -> return team(game.away)
+    }
+    listOfNotNull(game.home, game.away).firstOrNull { side ->
+        val aliases = TeamAliases(side)
+        (aliases.strong + aliases.weak).any { SearchIndex.words(it) == folded }
+    }?.let { return team(it) }
+    val tail = words.drop(core.size).joinToString(" ") { it.lowercase() }
+    val head = core.joinToString(" ").let { if (it == it.uppercase()) it.lowercase() else it }.replaceFirstChar { it.titlecase() }
+    return FeedBroadcast.Other(listOf(head, tail).filter { it.isNotEmpty() }.joinToString(" "))
+}
+
+private val BRACKETS = Regex("""\(([^()]*)\)""")
+private val FEED_SPACES = Regex("""\s+""")
+private val NUMBERED_NETWORK = Regex("""(.*?\S)\s*\d{1,4}""")
+/** Words a number follows in brackets that are no network ("(Game 7)", "(Leg 2)"). */
+private val NUMBERED_NOT_NETWORK = setOf("game", "match", "round", "week", "day", "leg", "part", "race", "stage")
+private val FEED_COUNTRY = Regex("""[A-Z]{2}""")
+
+/** A date or a clock time, as Event channel names write them ("2026-11-04 19:30:35", "01/11 10:15", "7:30 PM"). */
+private val TIME_TEXT = Regex("""\d{4}-\d{1,2}-\d{1,2}|\d{1,2}:\d{2}|\d{1,2}/\d{1,2}""")
+
+/** Time zones a name states in brackets ("(GMT)"). */
+private val ZONES = setOf("GMT", "UTC", "ET", "EST", "EDT", "CT", "CST", "CDT", "PT", "PST", "PDT", "BST", "CET", "CEST", "EET", "EEST")
+
+/** Words ending a broadcast's bracket that say only that it is one ("Sabres Broadcast", "Home Feed"). */
+private val BROADCAST_WORDS = setOf("broadcast", "feed", "stream")
+
+/** Words of an Event Category's name that name no service. */
+private val GENERIC_CATEGORY_WORDS = setOf("PPV", "EVENT", "EVENTS", "LIVE", "SPORT", "SPORTS", "ARENA", "VIP")
+
+/** Services' names as Providers abbreviate or shout them, as [channelKey] folds them, to the service's own spelling. */
+private val SERVICE_SPELLINGS: Map<String, String> = mapOf(
+    "flsp" to "FloSports",
+    "flosports" to "FloSports",
+    "espn+" to "ESPN+",
+    "espnplus" to "ESPN+",
+    "peacock" to "Peacock",
+    "paramount+" to "Paramount+",
+    "dazn" to "DAZN",
 )
