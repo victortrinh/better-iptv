@@ -29,6 +29,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
@@ -151,6 +152,19 @@ private fun BoxScope.Root(app: BetterIptvApp) {
             scope.launch { playing = NowPlaying(app.library.replayPlayPlan(replay, contentLanguages), name) }
             Unit
         }
+        // The hero's Play starts what the Title page's Play would; with nothing to play, the Title page
+        // opens to say why. Back from either comes back to the hero's [card].
+        val playFeatured = { card: RowCard, title: FeaturedTitle ->
+            byTab = false
+            returnedTo = card
+            scope.launch {
+                val plan = withContext(Dispatchers.Default) {
+                    app.library.titlePlayPlan(title.id, contentLanguages, appLanguage, readDeviceProfile(context), settings.qualityCap)
+                }
+                if (plan != null) playing = NowPlaying(plan, title.name) else opened = OpenedTitle(title.id, card)
+            }
+            Unit
+        }
         val now = playing
         val country = browsing
         SideEffect { app.playerOpen = now != null }
@@ -229,6 +243,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     },
                     // Back from the Game's page comes back to its card, or to what took its place once it ended.
                     onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
+                    onPlay = playFeatured,
                     onRetry = app::sync,
                 )
                 Browse.Live -> LiveScreen(
@@ -276,6 +291,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                             focusTab = byTab,
                             onTab = onTab,
                             onOpen = { card, id -> opened = OpenedTitle(id, card) },
+                            onPlay = playFeatured,
                             onRetry = app::sync,
                         )
                     }

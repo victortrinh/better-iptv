@@ -27,6 +27,8 @@ internal class TitleMetadata(json: String) {
     val backdrop: String? = image(tree["backdropPath"], BACKDROP_SIZE)
     /** A backdrop with no text on it, sized for a card: what a focused poster grows into (#216); null when TMDB has none. */
     val textlessBackdrop: String? = image(tree["textlessBackdropPath"], CARD_BACKDROP_SIZE)
+    /** The same textless backdrop at full size, for the featured hero, which fills the screen. */
+    val heroBackdrop: String? = image(tree["textlessBackdropPath"], BACKDROP_SIZE)
     /** The Title's logo art in the App language or English, as a PNG with transparency; null when TMDB has none. */
     val logo: String? = image((tree["logoPath"] as? String)?.replace(SVG, ".png"), LOGO_SIZE)
     /** The same logo for a card on Home, where it is about 110 dp wide. */
