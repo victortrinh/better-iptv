@@ -128,6 +128,8 @@ import kotlin.time.Duration.Companion.seconds
  * Feeds instead, the one playing noted, where picking another plays it ([onFeed], a new plan the
  * way the next Episode is) and "Not this game" drops the playing one ([onNotThisGame]). The TV
  * switches to the film's refresh rate where it can.
+ * Until the first file's first frame, the [art] covers the picture: the Title's backdrop and logo,
+ * or a Channel's logo on glass, under the starting label; it then fades to the picture ([StartingCover]).
  * While a [channel] plays, the top scrim names the programme on now, from the Library's guide cache
  * (#261), which is asked for the Channel as it plays.
  * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
@@ -152,6 +154,7 @@ fun PlayerScreen(
     onFeed: (Feed) -> Unit = {},
     onNotThisGame: () -> Unit = {},
     channel: Channel? = null,
+    art: StartingArt? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -197,6 +200,11 @@ fun PlayerScreen(
     } as? ControlledEngine
     val playing = state is PlaybackState.Playing
     val ended = state == PlaybackState.Ended
+    // The art covers the picture until the session's first frame; a later file (another Version, a
+    // Backup) starts over what was on screen, as it always has.
+    val firstFrame by (player?.pictured ?: remember { MutableStateFlow(false) }).collectAsState()
+    var pictured by remember(session) { mutableStateOf(false) }
+    LaunchedEffect(firstFrame) { if (firstFrame) pictured = true }
     LaunchedEffect(state) {
         // Starting between files keeps what was on screen: switching Version in the credits stays in them.
         when (val shown = state) {
@@ -365,6 +373,7 @@ fun PlayerScreen(
         // Beside the picture, not around it: Back would spend a press moving focus up to a focusable parent.
         Box(Modifier.focusRequester(screen).focusable())
         if (player != null) key(player) { EngineSurface(player) }
+        key(session) { StartingCover(art, name, pictured) }
         if (player != null) shownSubtitle?.let { DownloadedSubtitles(player, it, subtitleDelay, settings.subtitleStyle) }
 
         when (val shown = state) {

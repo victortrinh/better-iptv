@@ -121,7 +121,7 @@ fun TitleScreen(
     region: String,
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
-    onPlay: (PlayPlan, String) -> Unit,
+    onPlay: (PlayPlan, String, StartingArt) -> Unit,
     openedOn: String? = null,
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
@@ -144,17 +144,19 @@ fun TitleScreen(
     val readable = id.kind == TitleKind.Movie || show != null
     LaunchedEffect(id, contentLanguages, readable) { if (readable) library.readHeaders(id, contentLanguages) { reads++ } }
     val scope = rememberCoroutineScope()
+    // What the player shows while it starts: this page's own backdrop, already in memory.
+    val play = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
     TitlePage(
         id, openedOn, loaded, show,
-        onPlay = onPlay,
+        onPlay = play,
         onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
         onChoose = { version, name ->
-            scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { onPlay(it, name) } }
+            scope.launch { library.chosenPlayPlan(id, version.listingId, contentLanguages)?.let { play(it, name) } }
         },
         onEpisode = { episode, name ->
             scope.launch {
                 val device = withContext(Dispatchers.Default) { deviceProfile() }
-                library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { onPlay(it, name) }
+                library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { play(it, name) }
             }
         },
     )

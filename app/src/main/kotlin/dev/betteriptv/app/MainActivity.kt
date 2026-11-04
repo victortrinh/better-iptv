@@ -192,6 +192,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 playingFeed = now.game,
                 onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
                 channel = now.channel,
+                art = now.art ?: now.channel?.let { StartingArt.Channel(it.image) },
                 onNotThisGame = {
                     now.game?.let { game ->
                         scope.launch {
@@ -307,7 +308,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
                     openedOn = title.backdrop,
                     deviceProfile = { readDeviceProfile(context) },
-                    onPlay = { plan, name -> playing = NowPlaying(plan, name) },
+                    onPlay = { plan, name, art -> playing = NowPlaying(plan, name, art = art) },
                 )
             }
         }
@@ -340,9 +341,10 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
  * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
  * row to start by itself since a key was pressed; for a Game's Feed, which [game] and Feed, so the
  * player's menu key lists the others; for a Channel (a Favourite's, a Feed's or a browsed one), the
- * [channel], so the player's top scrim names the programme on now.
+ * [channel], so the player's top scrim names the programme on now and its logo shows while it starts;
+ * for a Title, the [art] shown while it starts.
  */
-private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null, val channel: Channel? = null)
+private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null, val channel: Channel? = null, val art: StartingArt? = null)
 
 /**
  * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
