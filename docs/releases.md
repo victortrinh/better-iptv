@@ -47,9 +47,11 @@ If the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the stick has an
 
 ### A stale icon in Your Apps
 
-If **Your Apps & Games** shows an old icon on Zugig's tile (a navy disc, a cloud, a lone z or an earlier wordmark), the Appstore is drawing its own copy of the icon, not the installed one. It saves that copy when a package is first installed, as `/data/securedStorageLocation/com.amazon.venezia/<package>`, and deletes it only when the package is removed. Updates keep the old copy, whether they come from the app's updater or `adb install -r`, and so do reboots. On top of that the Appstore caches the picture on disk and in memory. Nothing in the APK can refresh any of it, and clearing the Appstore's cache alone just reloads the old copy.
+If **Your Apps & Games** shows an old icon on Zugig's tile (a navy disc, a cloud, a lone z or an earlier wordmark), the Appstore is drawing its own copy of the icon, not the installed one. It saves that copy when a package is first installed, as `/data/securedStorageLocation/com.amazon.venezia/<package>`, and deletes it only when the package is removed. Updates keep the old copy, whether they come from the app's updater or `adb install -r`, and so do reboots. On top of that the Appstore caches the picture on disk and in memory, so clearing the Appstore's cache alone just reloads the old copy.
 
-To redraw the tile from the installed APK and keep the app's login and catalog:
+Zugig replaces the copy itself after each update (`AppstoreTileReceiver`, on `MY_PACKAGE_REPLACED`). It tells the Appstore's `AppManagerBroadcastReceiver` that the package was removed, then added, and the Appstore deletes the old copy and saves the installed icon. The tile keeps its place. The Viewer still has to clear the cached picture: in **Settings › Applications › Manage Installed Applications › Appstore**, choose **Force stop**, then **Clear cache** (not Clear data), and open Your Apps again. This was measured on Fire OS 7 with Appstore 8.5103. It relies on an undocumented Appstore receiver, so if a later Appstore drops it, use the adb recipe below.
+
+To redraw the tile with adb, from the installed APK, and keep the app's login and catalog:
 
 1. Pull the installed APK, remove the package but keep its data, and install it again:
 
@@ -73,7 +75,7 @@ To redraw the tile from the installed APK and keep the app's login and catalog:
 
 The debug app is the same with `dev.betteriptv.debug`. Never use a plain `adb uninstall` for this: it deletes the login and the catalog. The tile keeps its place in Your Apps.
 
-Every stick that already has Zugig hits this when the icon changes, because the updater's installs are updates too. Without adb, the only fix there is uninstalling and installing again, which also deletes the login and catalog. So treat a new launcher icon as costly for existing installs.
+Every stick that already has Zugig hits this when the icon changes, because the updater's installs are updates too. Once a build with `AppstoreTileReceiver` is installed, the next update replaces the Appstore's copy. The Viewer still needs Force stop and Clear cache to see it, so treat a new launcher icon as costly for existing installs anyway.
 
 ## Building a release locally
 
