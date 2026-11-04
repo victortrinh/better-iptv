@@ -14,10 +14,12 @@ import dev.betteriptv.app.ui.theme.Colors
 
 /**
  * Artwork filling the screen behind everything. Scrims keep the tabs at the top, the text on the
- * left and the rows at the bottom readable.
+ * left and the rows at the bottom readable. [under], when given, is drawn beneath [image] under the
+ * same scrims: a smaller copy of the same picture, shown until [image] has faded in over it.
  */
 @Composable
-fun Backdrop(image: Painter) {
+fun Backdrop(image: Painter, under: Painter? = null) {
+    if (under != null) Image(under, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     BackdropScrims()
 }

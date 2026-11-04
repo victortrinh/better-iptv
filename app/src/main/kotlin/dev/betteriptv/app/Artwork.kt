@@ -25,6 +25,7 @@ import dev.betteriptv.app.ui.theme.Motion
 import coil3.Extras
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import coil3.compose.asPainter
 import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
@@ -82,6 +83,22 @@ fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) {
 
 /** How long a card is on screen, or focus rests on one, before artwork loads for it ([SettleFirst], the rows' preloading). */
 const val SETTLE_MILLIS = 250L
+
+/**
+ * The artwork at [url] as it already is in the memory cache, at whatever size it was decoded for
+ * there, on this very frame; null when it isn't there (or [url] is null). Nothing is loaded: a
+ * screen opened from a card draws the card's own copy of a picture while the larger one it asks
+ * [rememberArtwork] for arrives, so its first frame is that picture, not bare ground.
+ */
+@Composable
+fun rememberArtworkInMemory(url: String?): Painter? {
+    if (url == null) return null
+    val context = LocalPlatformContext.current
+    return remember(url) {
+        val cache = SingletonImageLoader.get(context).memoryCache ?: return@remember null
+        cache.keys.firstOrNull { it.key == url }?.let { cache[it]?.image?.asPainter(context) }
+    }
+}
 
 /**
  * Draws [image] at the [fade]'s alpha, or at full alpha at once when it came from the memory cache.

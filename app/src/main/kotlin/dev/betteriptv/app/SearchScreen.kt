@@ -63,7 +63,7 @@ import kotlinx.coroutines.delay
  * their Titles the Provider has). Each key [onEdit]s the query as it is when the key lands, so keys
  * pressed faster than the stick redraws aren't lost. Under the keyboard, completions replace the
  * query in one press and move focus to the first result; before anything is typed they are genre
- * shortcuts. A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu
+ * shortcuts. A Title's card opens it ([onOpen]), with the textless backdrop it had grown into, if it had; a Channel's watches it ([onWatch]), and its menu
  * key adds or removes the Favourite; a Sports replay's plays it ([onPlayReplay]). The tabs switch to the other browsing screens ([onTab]). The
  * keyboard takes focus on arrival, unless the screen was reached by picking its tab ([focusTab]).
  */
@@ -77,7 +77,7 @@ fun SearchScreen(
     region: String,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
-    onOpen: (TitleId) -> Unit,
+    onOpen: (TitleId, String?) -> Unit,
     onWatch: (Channel) -> Unit,
     onPlayReplay: (Replay) -> Unit = {},
 ) {
@@ -172,7 +172,7 @@ private fun Results(
     searching: Boolean,
     tab: FocusRequester,
     firstResult: FocusRequester,
-    onOpen: (TitleId) -> Unit,
+    onOpen: (TitleId, String?) -> Unit,
     onWatch: (Channel) -> Unit,
     onPlayReplay: (Replay) -> Unit,
     onFavourite: (Channel, Boolean) -> Unit,
@@ -239,7 +239,7 @@ private val SearchGroup.key: String
 
 /** A headline over a row of cards; [first] modifies the first card. */
 @Composable
-private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId) -> Unit, first: Modifier?) {
+private fun Group(library: Library, contentLanguages: List<String>, heading: String, titles: List<TitleSummary>, onOpen: (TitleId, String?) -> Unit, first: Modifier?) {
     Column {
         Text(heading, style = Type.headline, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         // A focused card grows past the column's edge: the row starts that much further left, as
@@ -252,7 +252,7 @@ private fun Group(library: Library, contentLanguages: List<String>, heading: Str
                 title.name,
                 // A Top 10 rank fills a poster's width, so it stands alone; the details show the rest.
                 title.rank?.let { listOf(it.badge()) } ?: cardBest(library, title, contentLanguages).cardBadges(),
-                onClick = { onOpen(title.id) },
+                onClick = { onOpen(title.id, grown?.backdrop) },
                 modifier = modifier,
                 grown = grown?.let { { GrownArtwork(it, title.name) } },
             )

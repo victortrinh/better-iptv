@@ -29,6 +29,12 @@ internal class TitleMetadata(json: String) {
     val textlessBackdrop: String? = image(tree["textlessBackdropPath"], CARD_BACKDROP_SIZE)
     /** The same textless backdrop at full size, for the featured hero, which fills the screen. */
     val heroBackdrop: String? = image(tree["textlessBackdropPath"], BACKDROP_SIZE)
+    /**
+     * What fills the screen behind the Title page: the textless backdrop at the screen's size, the
+     * same picture a focused card grew into, so the page can open on the card's copy and swap in this
+     * one unseen; else the regular backdrop.
+     */
+    val pageBackdrop: String? = heroBackdrop ?: backdrop
     /** The Title's logo art in the App language or English, as a PNG with transparency; null when TMDB has none. */
     val logo: String? = image((tree["logoPath"] as? String)?.replace(SVG, ".png"), LOGO_SIZE)
     /** The same logo for a card on Home, where it is about 110 dp wide. */

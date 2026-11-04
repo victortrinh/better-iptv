@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,7 +70,8 @@ private fun ActionSurface(
     enabled: Boolean = true,
     trailing: @Composable (ink: Color) -> Unit = {},
 ) {
-    FocusSurface(onClick, modifier.fillMaxWidth().height(40.dp), weight = FocusWeight.Row, container = container, focusedContainer = Colors.focus) { focused ->
+    // A disabled action still takes focus, so focus can wait on it (a Show's Play while its Episodes are read).
+    FocusSurface(onClick, modifier.fillMaxWidth().height(40.dp).semantics { if (!enabled) disabled() }, weight = FocusWeight.Row, container = container, focusedContainer = Colors.focus) { focused ->
         val ink = when {
             !enabled -> Colors.inkMuted
             focused -> Colors.onFocus

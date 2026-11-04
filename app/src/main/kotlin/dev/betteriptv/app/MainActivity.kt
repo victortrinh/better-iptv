@@ -235,7 +235,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     restoreFocus = returnedTo,
                     focusTab = byTab,
                     onTab = onTab,
-                    onOpen = { card, id -> opened = OpenedTitle(id, card) },
+                    onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
                     onWatch = { card, channel ->
                         // Back from the Channel comes back to its card.
                         returnedTo = card
@@ -275,7 +275,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
                         focusTab = byTab,
                         onTab = onTab,
-                        onOpen = { opened = OpenedTitle(it) },
+                        onOpen = { id, backdrop -> opened = OpenedTitle(id, backdrop = backdrop) },
                         onWatch = watch,
                         onPlayReplay = { playReplay(it, it.heading) },
                     )
@@ -290,7 +290,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                             restoreFocus = returnedTo,
                             focusTab = byTab,
                             onTab = onTab,
-                            onOpen = { card, id -> opened = OpenedTitle(id, card) },
+                            onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
                             onPlay = playFeatured,
                             onRetry = app::sync,
                         )
@@ -305,6 +305,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 }
                 TitleScreen(
                     app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
+                    openedOn = title.backdrop,
                     deviceProfile = { readDeviceProfile(context) },
                     onPlay = { plan, name -> playing = NowPlaying(plan, name) },
                 )
@@ -319,7 +320,9 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 opened != null -> opened!!.id
                 else -> tab
             },
-            asIs = { it == PlayerShown },
+            // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
+            // content still fades in (TitlePage).
+            asIs = { it == PlayerShown || (it is TitleId && it == opened?.id && opened?.backdrop != null) },
         )
     }
 }
@@ -341,8 +344,11 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
  */
 private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null, val channel: Channel? = null)
 
-/** The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search). */
-private data class OpenedTitle(val id: TitleId, val card: RowCard? = null)
+/**
+ * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
+ * with the textless [backdrop] that card had grown into, which the page opens on.
+ */
+private data class OpenedTitle(val id: TitleId, val card: RowCard? = null, val backdrop: String? = null)
 
 /** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live or Home opened it. */
 private data class OpenedGame(val entry: GameFeeds, val card: RowCard)
