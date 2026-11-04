@@ -128,7 +128,7 @@ class LeagueLogosTest {
         val away = compose.onNodeWithTag("away", useUnmergedTree = true).getBoundsInRoot()
         // At the card's top left, smaller than a team's logo.
         assertTrue(badge.left <= away.left && badge.top <= away.top)
-        assertTrue(badge.height < away.height)
+        assertTrue(badge.bottom - badge.top < away.bottom - away.top)
     }
 
     @Test fun aCardInALeaguesOwnRowHasNoLeagueLogo() {
