@@ -924,7 +924,7 @@ class Library private constructor(
             description = metadata?.description(appLanguage),
             genres = metadata?.genres.orEmpty(),
             runtimeMinutes = metadata?.runtimeMinutes,
-            backdrop = metadata?.backdrop,
+            backdrop = metadata?.pageBackdrop,
             logo = metadata?.logo,
             cast = metadata?.cast.orEmpty(),
             rank = topRanks(region, contentLanguages, appLanguage)[id],

@@ -66,7 +66,7 @@ fun LiveScreen(
         read = { library.liveRows(leagues, region, contentLanguages) },
         // Before a Sync there are no Channels to save; after one, the Viewer saves them from Search.
         empty = stringResource(if (noChannels) R.string.home_empty else R.string.live_empty),
-        onOpen = { _, _ -> },
+        onOpen = { _, _, _ -> },
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         onOpenCountry = onOpenCountry,

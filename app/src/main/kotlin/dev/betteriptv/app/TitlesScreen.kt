@@ -41,7 +41,7 @@ fun TitlesScreen(
     restoreFocus: RowCard?,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
-    onOpen: (RowCard, TitleId) -> Unit,
+    onOpen: (RowCard, TitleId, String?) -> Unit,
     onRetry: () -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()

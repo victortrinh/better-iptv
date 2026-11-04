@@ -153,6 +153,15 @@ class MetadataTest {
         assertEquals("https://image.tmdb.org/t/p/w300/parrain-logo.png", found.logo)
     }
 
+    @Test fun `the details fill the screen with the picture a card grew into, at the screen's size`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather", backdropPath = "/godfather-titled.jpg", textlessBackdropPath = "/godfather-wide.jpg"))
+        cloud.title("fr", tmdbTitle(541671, "Ballerina", backdropPath = "/ballerina-titled.jpg"))
+
+        assertEquals("https://image.tmdb.org/t/p/w1280/godfather-wide.jpg", details(godfather, "fr").backdrop)
+        // Without a textless one, the regular backdrop.
+        assertEquals("https://image.tmdb.org/t/p/w1280/ballerina-titled.jpg", details(ballerina, "fr").backdrop)
+    }
+
     @Test fun `metadata kept from before the cloud gave textless backdrops is asked again`() = runBlocking {
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png") - "textlessBackdropPath")
         card(godfather, "fr")

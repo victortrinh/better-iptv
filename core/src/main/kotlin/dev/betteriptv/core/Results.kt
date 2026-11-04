@@ -136,7 +136,7 @@ data class TitleDetails(
     val description: String? = null,
     val genres: List<String> = emptyList(),
     val runtimeMinutes: Int? = null,
-    /** A landscape still URL, to fill the screen behind the details. */
+    /** A landscape still URL, to fill the screen behind the details: the textless backdrop a focused card grows into, at full size, else the regular one. */
     val backdrop: String? = null,
     /** The Title's logo art URL, drawn in place of its name; null when TMDB has none in the App language or English. */
     val logo: String? = null,

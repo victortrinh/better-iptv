@@ -23,6 +23,8 @@ import androidx.compose.ui.semantics.semantics
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.theme.Motion
 import coil3.Extras
+import coil3.SingletonImageLoader
+import coil3.compose.asPainter
 import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
@@ -64,6 +66,22 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? {
     }
     val painter = remember(image, fade) { FadeIn(image, fade) }
     return if (failed) null else painter
+}
+
+/**
+ * The artwork at [url] as it already is in the memory cache, at whatever size it was decoded for
+ * there, on this very frame; null when it isn't there (or [url] is null). Nothing is loaded: a
+ * screen opened from a card draws the card's own copy of a picture while the larger one it asks
+ * [rememberArtwork] for arrives, so its first frame is that picture, not bare ground.
+ */
+@Composable
+fun rememberArtworkInMemory(url: String?): Painter? {
+    if (url == null) return null
+    val context = LocalPlatformContext.current
+    return remember(url) {
+        val cache = SingletonImageLoader.get(context).memoryCache ?: return@remember null
+        cache.keys.firstOrNull { it.key == url }?.let { cache[it]?.image?.asPainter(context) }
+    }
 }
 
 /**
