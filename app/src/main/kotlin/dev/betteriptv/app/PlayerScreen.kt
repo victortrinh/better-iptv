@@ -658,9 +658,9 @@ private fun BufferingSuggestion(lower: Version, onSwitch: () -> Unit, onDismiss:
 
 /**
  * What the Menu key opens over the bottom of the picture: the player playing and "Try other player",
- * then the Title's Versions, or a Channel's variants, named as the Provider lists them; picking one
- * switches to it. The one [playing], or the one whose Backup is playing, is marked, and picking it
- * just closes the list. With an [engine] playing, "Try other player" takes first focus; without
+ * then the Title's Versions, each followed by its Backups, or a Channel's variants, named as the
+ * Provider lists them; picking one switches to it, a Backup with its Version and the other Backups
+ * behind it. The one [playing] is marked, and picking it just closes the list. With an [engine] playing, "Try other player" takes first focus; without
  * one, the first Version does.
  */
 @Composable
@@ -700,20 +700,25 @@ private fun VersionsPanel(
                 verticalArrangement = Arrangement.spacedBy(Spacing.s),
                 contentPadding = PaddingValues(bottom = Spacing.screenY),
             ) {
-                items(versions, key = { it.listingId }) { version ->
-                    // A Channel variant's Backups go on to the next variants: only its own stream, as TS or HLS, is it playing.
-                    val isPlaying = playing != null &&
-                        (version.listingId == playing.listingId || (version.liveFormat == null && version.backups.any { it.listingId == playing.listingId }))
+                items(versions.rows(), key = { it.version.listingId }) { row ->
+                    val isPlaying = row.version.listingId == playing?.listingId
                     VersionRow(
-                        context.versionLine(version, playing = playing.takeIf { isPlaying }),
-                        onClick = { if (isPlaying) onClose() else onPick(version) },
-                        modifier = if (version == versions.first()) Modifier.focusRequester(first) else Modifier,
+                        context.versionLine(row.version, playing = playing.takeIf { isPlaying }, backup = row.backupOf != null),
+                        onClick = { if (isPlaying) onClose() else onPick(row.backupOf?.ledBy(row.version) ?: row.version) },
+                        modifier = if (row.version == versions.first()) Modifier.focusRequester(first) else Modifier,
                     )
                 }
             }
         }
     }
 }
+
+/** A row of the Versions list: a Version, or a Backup of [backupOf]. */
+private data class VersionsRow(val version: Version, val backupOf: Version? = null)
+
+/** Each Version then its Backups; a Channel variant's Backups are the next variants, already listed. */
+private fun List<Version>.rows(): List<VersionsRow> =
+    flatMap { version -> listOf(VersionsRow(version)) + if (version.liveFormat == null) version.backups.map { VersionsRow(it, version) } else emptyList() }
 
 @Composable
 private fun Failed(onTryOtherPlayer: () -> Unit) {
@@ -780,7 +785,7 @@ internal fun FeedsPanel(
                 items(entry.feeds, key = { it.channel.key }) { feed ->
                     val isPlaying = feed.channel.key == playing.channel.key
                     VersionRow(
-                        VersionLine(emptyList(), "", "", "", bitrate = null, backups = null, note = context.feedNote(feed, isPlaying), live = feed.name),
+                        VersionLine(emptyList(), "", "", "", bitrate = null, backup = null, note = context.feedNote(feed, isPlaying), live = feed.name),
                         onClick = { if (isPlaying) onClose() else onPick(feed) },
                         modifier = (if (feed == entry.feeds.first()) Modifier.focusRequester(first) else Modifier).testTag("feed ${feed.channel.key}"),
                     )
@@ -789,7 +794,7 @@ internal fun FeedsPanel(
                     val next = entry.next(playing)
                     VersionRow(
                         VersionLine(
-                            emptyList(), "", "", "", bitrate = null, backups = null,
+                            emptyList(), "", "", "", bitrate = null, backup = null,
                             note = stringResource(if (next != null) R.string.feed_not_this_game_next else R.string.feed_not_this_game_last),
                             live = stringResource(R.string.feed_not_this_game),
                         ),

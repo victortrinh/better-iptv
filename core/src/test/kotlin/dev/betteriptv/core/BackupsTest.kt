@@ -370,6 +370,30 @@ class BackupsTest {
         job.cancelAndJoin()
     }
 
+    @Test fun `switching to a Backup plays it, and falls back to its Version, then the other Backup`() = runBlocking {
+        syncWithBackups()
+        val (session, job) = play()
+        session.awaitPlaying(1)
+        player.position = 7.minutes.ms
+        provider.deadStreams += listOf(1L, 3L)
+        val version = session.plan.versions.single { it.listingId == 1L }
+
+        session.switchTo(version.ledBy(version.backups.single { it.listingId == 3L }))
+
+        session.awaitPlaying(2)
+        assertEquals(listOf(1L, 3L, 1L, 2L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
+    @Test fun `choosing a Backup on the Title page plays it first, with its Version and the other Backup behind it`() = runBlocking {
+        syncWithBackups()
+
+        val chosen = library.chosenPlayPlan(movie, listingId = 3, listOf("en"))!!
+
+        assertEquals(3L, chosen.version.listingId)
+        assertEquals(listOf(1L, 2L), chosen.version.backups.map { it.listingId })
+    }
+
     @Test fun `the play plan offers every Version of the Title to switch to, the Viewer's languages first`() = runBlocking {
         provider.serveMovies(
             "FR - Le Film (2025)" to "FR - FILMS",

@@ -159,10 +159,7 @@
     <string name="version_audio_description">Audio description</string>
     <string name="subtitles_many">Many languages</string>
     <string name="language_untagged">Language not named</string>
-    <plurals name="backups_count">
-        <item quantity="one">%1$d Backup</item>
-        <item quantity="other">%1$d Backups</item>
-    </plurals>
+    <string name="version_backup">Backup</string>
 
     <string name="versions_title">Versions</string>
     <string name="play">Play</string>

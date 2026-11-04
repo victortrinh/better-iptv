@@ -76,7 +76,7 @@ One playable copy of a Movie or Episode, coming from one Listing (for an Episode
 _Avoid_: Duplicate, copy, variant, stream
 
 **Backup**:
-A Version equivalent to another (same language and quality), tried automatically when the preferred one fails to start.
+A Version equivalent to another (same language and quality), tried automatically when the preferred one fails to start. The Viewer can also choose one, as equivalent copies can still differ on screen (burned-in subtitles).
 _Avoid_: Mirror, fallback
 
 **Match**:
