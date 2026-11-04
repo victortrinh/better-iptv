@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.height
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.app.ui.components.TeamTint
 import dev.betteriptv.core.Channel

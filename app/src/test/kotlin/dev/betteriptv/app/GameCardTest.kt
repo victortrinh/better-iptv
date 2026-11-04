@@ -32,6 +32,7 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import androidx.compose.ui.unit.width
 import java.time.Instant
 
 /** A Game's card: two logos or the short names over the teams' colours, "Live" or the start, and a disabled card for a Game with no Feed. */
