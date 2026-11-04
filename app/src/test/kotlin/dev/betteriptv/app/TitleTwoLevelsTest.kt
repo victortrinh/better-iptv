@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
@@ -60,6 +61,7 @@ import org.robolectric.annotation.Config
  * Library is stood in for by the states [TitlePage] is given, and the navigation by a host that
  * does what the main activity does.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w960dp-h540dp-mdpi")
 class TitleTwoLevelsTest {
@@ -97,7 +99,7 @@ class TitleTwoLevelsTest {
         genres = listOf("Crime", "Drama", "Action"),
         runtimeMinutes = 170,
         cast = listOf("Al Pacino", "Robert De Niro", "Val Kilmer", "Jon Voight", "Tom Sizemore"),
-        rank = ChartRank(ChartList.TopMovies, 1, "US"),
+        rank = ChartRank(1, ChartList.TopMovies, "US"),
         fromTmdb = true,
     )
 
@@ -108,6 +110,8 @@ class TitleTwoLevelsTest {
 
     /** The page as the main activity shows it: OK on an action opens its section, and Back closes it onto the page. */
     private fun open(id: TitleId = movie, loaded: Pair<TitleDetails, PlayPlan?> = details() to stopped, episodes: Pair<ShowEpisodes, PlayPlan?>? = null) {
+        // Read after the page's first frame, as the Library's answers are.
+        var read by mutableStateOf(false)
         compose.setContent {
             var section by remember { mutableStateOf<TitleSection?>(null) }
             var returnedFrom by remember { mutableStateOf<TitleSection?>(null) }
@@ -116,7 +120,7 @@ class TitleTwoLevelsTest {
                 section = null
             }
             TitlePage(
-                id, null, loaded, episodes, onPlay = { _, _ -> },
+                id, null, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> },
                 section = section,
                 returnedFrom = returnedFrom,
                 onSection = {
@@ -126,6 +130,8 @@ class TitleTwoLevelsTest {
                 onChoose = { version, _ -> chosen = version },
             )
         }
+        compose.waitForIdle()
+        read = true
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
     }
@@ -179,15 +185,16 @@ class TitleTwoLevelsTest {
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
 
-        // The Versions screen: the legend, the table, Other languages, the cast and TMDB's notice.
+        // The Versions screen: the legend and the table, focus on the first Version, which plays when chosen.
         assertTrue(shows("read from the file"))
         assertTrue(shows("Netflix"))
-        assertTrue(shows("Other languages"))
-        assertTrue(shows("Al Pacino"))
-        assertTrue(shows("TMDB API"))
-        // Focus opens on the first Version, which plays when chosen.
         press(Key.DirectionCenter)
         assertEquals(1L, chosen?.listingId)
+        // Further down, Other languages, then the cast and TMDB's notice, which the last row brings into view.
+        repeat(10) { press(Key.DirectionDown) }
+        focusedOn("Other languages")
+        assertTrue(shows("Al Pacino"))
+        assertTrue(shows("TMDB API"))
 
         back()
         compose.onNodeWithTag("versions action").assertIsFocused()

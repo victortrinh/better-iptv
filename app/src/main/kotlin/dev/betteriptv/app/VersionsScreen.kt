@@ -20,6 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -42,6 +45,7 @@ import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionColumn
 import dev.betteriptv.core.VersionTableGroup
 import dev.betteriptv.core.versionTable
+import kotlinx.coroutines.launch
 
 /**
  * What a Versions screen lists: the Versions of a Movie, or of the Episode a Show's Play starts,
@@ -74,10 +78,21 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
     val table = remember(versions) { versionTable(shown + hidden) }
     val firstVersion = remember { FocusRequester() }
     LaunchedEffect(versions.heading) { runCatching { firstVersion.requestFocus() } }
+    // The cast and TMDB's notice take no focus, so the last row brings them into view when it's focused.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val lastKey: Any? = when {
+        hidden.isNotEmpty() && !showOthers -> OTHER_LANGUAGES
+        else -> table.groups.take(if (showOthers) table.groups.size else shown.size).lastOrNull()?.rows?.lastOrNull()?.version?.listingId
+    }
+    val toEnd = Modifier.onFocusChanged { focus ->
+        if (focus.isFocused) scope.launch { listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1) }
+    }
 
     Box(Modifier.fillMaxSize().background(Colors.veilDeep)) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("versions"),
+            state = listState,
             contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = Spacing.screenY),
             verticalArrangement = Arrangement.spacedBy(Spacing.s),
         ) {
@@ -93,20 +108,20 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
             }
             item(key = "columns") { VersionHeader(Modifier.padding(bottom = 2.dp), columns = table.columns) }
             table.groups.take(shown.size).forEachIndexed { index, group ->
-                languageGroup(context, group, table.columns, first = index == 0, firstVersion, onChoose)
+                languageGroup(context, group, table.columns, first = index == 0, firstVersion, onChoose, lastKey, toEnd)
             }
             if (hidden.isNotEmpty()) {
                 // Other languages open under this row, so it keeps focus where it is.
-                item(key = "other languages") {
+                item(key = OTHER_LANGUAGES) {
                     SettingRow(
                         stringResource(R.string.other_languages),
                         if (showOthers) stringResource(R.string.other_languages_hide) else stringResource(R.string.other_languages_show, hidden.sumOf { it.versionCount }),
                         onClick = { showOthers = !showOthers },
-                        modifier = Modifier.padding(top = Spacing.m),
+                        modifier = Modifier.padding(top = Spacing.m).then(if (lastKey == OTHER_LANGUAGES) toEnd else Modifier),
                         detail = hidden.joinToString(", ") { group -> group.language?.let(::languageName).orEmpty() },
                     )
                 }
-                if (showOthers) table.groups.drop(shown.size).forEach { languageGroup(context, it, table.columns, first = false, firstVersion, onChoose) }
+                if (showOthers) table.groups.drop(shown.size).forEach { languageGroup(context, it, table.columns, first = false, firstVersion, onChoose, lastKey, toEnd) }
             }
             if (cast.isNotEmpty()) {
                 item(key = "cast") {
@@ -126,6 +141,9 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
     }
 }
 
+/** The Other languages row's key in the list. */
+private const val OTHER_LANGUAGES = "other languages"
+
 /** A language's heading ("English · 3"), then its rows: each Version, its Backups under it. */
 private fun LazyListScope.languageGroup(
     context: Context,
@@ -134,6 +152,8 @@ private fun LazyListScope.languageGroup(
     first: Boolean,
     firstVersion: FocusRequester,
     onChoose: (Version) -> Unit,
+    lastKey: Any?,
+    toEnd: Modifier,
 ) {
     item(key = "language ${group.language}") {
         Text(
@@ -151,7 +171,8 @@ private fun LazyListScope.languageGroup(
                 context.versionLine(row),
                 // A Backup plays itself first: the Viewer chose it for what its name doesn't say (burned-in subtitles).
                 onClick = { onChoose(row.version) },
-                modifier = if (first && index == 0) Modifier.focusRequester(firstVersion) else Modifier,
+                modifier = (if (first && index == 0) Modifier.focusRequester(firstVersion) else Modifier)
+                    .then(if (row.version.listingId == lastKey) toEnd else Modifier),
                 columns = columns,
             )
         }
