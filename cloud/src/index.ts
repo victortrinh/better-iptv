@@ -59,7 +59,8 @@ import { upcoming } from "./upcoming";
  *   `{"leagues": [{"league": "nhl", "games": [{"id": "401892633", "league": "nhl", "start":
  *   "2026-11-04T00:00:00.000Z", "state": "upcoming", "home": {"id": "21", "name": "Toronto Maple
  *   Leafs", "shortName": "Maple Leafs", "abbreviation": "TOR", "aliases": ["Toronto Maple Leafs",
- *   "Maple Leafs", "TOR", "Toronto"], "logo": "https://…/tor.png"}, "away": {…}, "broadcasters":
+ *   "Maple Leafs", "TOR", "Toronto"], "logo": "https://…/tor.png", "color": "00205b",
+ *   "alternateColor": "ffffff"}, "away": {…}, "broadcasters":
  *   ["ESPN+"]}]}]}`, by start; state is upcoming, live or over, and broadcasters names the
  *   national Broadcasters the schedule knows (US-market). Never a score or a period. Only what the
  *   cloud keeps is answered: the Cron Trigger reads each League's schedule source (ESPN) while a

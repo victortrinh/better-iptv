@@ -28,6 +28,22 @@ class GamesTest {
         cloud.close()
     }
 
+    @Test fun `a Game's teams carry the colour and alternate colour the cloud gives, and none when it gives none`() = runBlocking {
+        cloud.games(
+            "nhl",
+            game("1", "2026-11-01T19:00:00Z", colours = mapOf("Toronto Maple Leafs" to ("00205b" to "ffffff"), "Montreal Canadiens" to ("af1e2d" to null))),
+            game("2", "2026-11-02T00:00:00Z", home = "Boston Bruins", away = "Ottawa Senators"),
+        )
+
+        val (coloured, plain) = library.games(listOf("nhl"), now)
+        assertEquals(0xFF00205B.toInt(), coloured.home?.color)
+        assertEquals(0xFFFFFFFF.toInt(), coloured.home?.alternateColor)
+        assertEquals(0xFFAF1E2D.toInt(), coloured.away?.color)
+        assertNull(coloured.away?.alternateColor)
+        assertNull(plain.home?.color)
+        assertNull(plain.away?.alternateColor)
+    }
+
     @Test fun `the Games of the Leagues on come from the cloud, by start, and the answer is kept a minute`() = runBlocking {
         cloud.games(
             "nhl",

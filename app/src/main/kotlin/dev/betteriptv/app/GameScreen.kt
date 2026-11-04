@@ -37,7 +37,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.BackdropScrims
 import dev.betteriptv.app.ui.components.PrimaryAction
+import dev.betteriptv.app.ui.components.TeamField
+import dev.betteriptv.app.ui.components.teamTint
 import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Colors
@@ -68,7 +71,9 @@ import kotlinx.coroutines.withContext
  * variant row starts the Feed from that variant; either way [onPlay] gets the plan, the Game's name
  * and the Feed, so the player's menu key can list the others. With no Feed, or none left, Play is
  * disabled and says "No stream found". The Game's state is the schedule's: the page never reads a
- * clock off an Event channel's name, and never shows a score.
+ * clock off an Event channel's name, and never shows a score. Behind it, the teams' colours fill the
+ * screen, away left and home right ([TeamField]), under the [BackdropScrims]; a Game without them
+ * keeps the bare ground.
  * A finished Game's Replay ([replayFor]: [Library.gameReplay], the Sports replay naming both teams on
  * the Game's day, for a Game that is over), once the Provider has one, shows under the header as a
  * "Replay" row: its name, its date and its Version ([replayPlanFor]: [Library.replayPlayPlan]), which
@@ -104,6 +109,13 @@ fun GameScreen(
         Unit
     }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
+        // The teams' colours, away left and home right, are the page's backdrop, under the usual scrims; without them, the bare ground.
+        val awayTint = remember(entry) { entry.game.away?.let { teamTint(it.color, it.alternateColor) } }
+        val homeTint = remember(entry) { entry.game.home?.let { teamTint(it.color, it.alternateColor) } }
+        if (awayTint != null || homeTint != null) {
+            TeamField(awayTint, homeTint, Modifier.fillMaxSize())
+            BackdropScrims()
+        }
         GameContent(entry, plans, replay, onPlay = { play(it, null) }, onChoose = play, onPlayReplay = { plan -> onPlayReplay(plan, name) })
     }
 }

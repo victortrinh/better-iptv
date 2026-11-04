@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -36,7 +37,9 @@ import dev.betteriptv.app.ui.theme.Type
  * team's short name in its place instead, so a card is never blank. With [disabled] set (an
  * upcoming Game with no Feed), the card dims and says why at the bottom right; it still takes
  * focus, so the info under the rail can tell about it, but pressing it does nothing. Never a score.
- * The card carries no name slot: on Live the info under the rail names the Game.
+ * The card carries no name slot: on Live the info under the rail names the Game. The glass carries
+ * the teams' colours ([awayTint] on the left half, [homeTint] on the right, [TeamField]) under the
+ * logos; without them it is plain glass. Focus stays white.
  */
 @Composable
 fun GameCard(
@@ -49,8 +52,10 @@ fun GameCard(
     modifier: Modifier = Modifier,
     disabled: String? = null,
     onFocus: () -> Unit = {},
+    awayTint: Color? = null,
+    homeTint: Color? = null,
 ) {
-    GameCardFrame(caption, onClick, modifier, disabled, onFocus) {
+    GameCardFrame(caption, onClick, modifier, disabled, onFocus, awayTint, homeTint) {
         TeamLogo(away, awayName, Modifier.weight(1f).fillMaxHeight().testTag("away"))
         TeamLogo(home, homeName, Modifier.weight(1f).fillMaxHeight().testTag("home"))
     }
@@ -82,7 +87,7 @@ fun EventGameCard(
     }
 }
 
-/** A Game card's glass, its [caption] at the bottom left and its [disabled] state, around the [sides] it lays out in a row. */
+/** A Game card's glass, tinted with the teams' colours when given, its [caption] at the bottom left and its [disabled] state, around the [sides] it lays out in a row. */
 @Composable
 private fun GameCardFrame(
     caption: String,
@@ -90,6 +95,8 @@ private fun GameCardFrame(
     modifier: Modifier,
     disabled: String?,
     onFocus: () -> Unit,
+    awayTint: Color? = null,
+    homeTint: Color? = null,
     sides: @Composable RowScope.() -> Unit,
 ) {
     FocusSurface(
@@ -99,6 +106,7 @@ private fun GameCardFrame(
         container = Colors.surface,
         onFocus = onFocus,
     ) {
+        TeamField(awayTint, homeTint, Modifier.matchParentSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA))
         Row(Modifier.fillMaxSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA).padding(horizontal = Spacing.m, vertical = Spacing.s), content = sides)
         Text(
             caption,
