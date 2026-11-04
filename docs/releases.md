@@ -71,7 +71,9 @@ To redraw the tile from the installed APK and keep the app's login and catalog:
 
 3. Open Your Apps again.
 
-The debug app is the same with `dev.betteriptv.debug`. Never use a plain `adb uninstall` for this: it deletes the login and the catalog.
+The debug app is the same with `dev.betteriptv.debug`. Never use a plain `adb uninstall` for this: it deletes the login and the catalog. The tile keeps its place in Your Apps.
+
+Every stick that already has Zugig hits this when the icon changes, because the updater's installs are updates too. Without adb, the only fix there is uninstalling and installing again, which also deletes the login and catalog. So treat a new launcher icon as costly for existing installs.
 
 ## Building a release locally
 
