@@ -1,6 +1,6 @@
 # Roadmap
 
-Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled; on 2026-11-01 live and sports' details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
+Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled; on 2026-11-01 live and sports' details were settled; on 2026-11-03 polish's details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
 
 Priorities, in order: a fast catalog with the best Version in the Viewer's language, subtitles and smooth playback of every format on a nice interface; then trending, so Home is worth opening every day; then live sports; then visual polish.
 
@@ -115,7 +115,15 @@ Settled 2026-11-01 in a grilling session against the 2026-10-24 survey, ESPN's s
 
 ## M4: Polish
 
-Animations, backdrops, trailers.
+Settled 2026-11-03 in a grilling session against the code, the real catalog on the emulator and the stick, and the 2026-10-24 survey. The spec is [#339](https://github.com/victortrinh/better-iptv/issues/339), its tickets [#340](https://github.com/victortrinh/better-iptv/issues/340)–[#357](https://github.com/victortrinh/better-iptv/issues/357). The goal: nothing pops, cuts or jumps on the stick. Every image, page and row arrives on purpose, and focus still keeps up. A stick recording before and after lists every pop.
+
+- **Motion.** Images fade in unless they're already in memory. A Title or Game page waits until it's read, then fades in whole. A new screen fades in over the ground while the old one disappears at once (no cross-dissolve). The info under a row stays instant. A row's slide runs on the cards' grow curve and aims at where the focused card will land: the old spring overshot the margin by about 16 dp and settled back. No row moves under focus: captions update in place, other rows come and go around it, and changes to the focused row wait until focus leaves it. Once focus rests, the backdrops of the cards on either side load ahead.
+- **The Title page in two levels.** The page holds the logo, the metadata line with its badges, two lines of description and the actions, among them Versions, which names what Play starts. The Versions get their own screen (the legend, a calmer table, Other languages, the cast). A Show's Episodes get a two-pane Episode picker that opens on the next Episode, with stills. Both screens sit on the backdrop under a dark veil.
+- **The featured hero** on Home, Movies and Shows: a different top Chart Title each time the screen is entered, never one in Continue watching, never changing while the Viewer is there, no carousel.
+- **Live.** Team colours on Game cards and Game pages, League logos on League rows and on mixed rows' cards, Feeds named by service and broadcast, and genre Categories first in the Channel browser. Team colours count as the teams' artwork, so the interface still adds no hue of its own.
+- **Leagues.** About 30–35: two-team Leagues ESPN serves and the Provider carries (EFL Championship, Scottish Premiership, Liga Portugal and others the survey showed), picked from a grid of League logo tiles grouped by sport, with no search.
+- **Trailers** open in the YouTube app ([ADR 0012](adr/0012-trailers-open-in-the-youtube-app.md)). **While a stream starts**, the player shows the Title's art instead of black.
+- The Top row numerals become custom digits, and a focused Top row poster scales from its left edge so it never covers its numeral. Both were settled in a separate session.
 
 ## M5: For everyone
 
