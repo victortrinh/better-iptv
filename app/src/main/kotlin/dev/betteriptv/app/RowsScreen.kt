@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -41,7 +42,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
+import dev.betteriptv.app.ui.components.RowHeading
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
 import dev.betteriptv.app.ui.components.RankedCard
@@ -69,6 +70,8 @@ import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
 import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.LiveCountry
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -158,6 +161,22 @@ private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
             copy(replays = replays.map { freshReplays[replayKey(it)] ?: it })
         }
     }
+}
+
+/**
+ * The textless backdrops the cards on either side of [card] grow into, in [rows]: what the next Left
+ * or Right grows into. On a rail that [loops] the first card's left is the last card, and the last
+ * card's right is the first. None for a card that doesn't grow (Continue watching's stills,
+ * Channels, Games) or a neighbour with no textless backdrop.
+ */
+internal fun neighbourBackdrops(rows: List<HomeRow>, card: RowCard, loops: (HomeRow) -> Boolean): List<String> {
+    val row = rows.firstOrNull { it.key == card.row } ?: return emptyList()
+    if (row is HomeRow.ContinueWatching) return emptyList()
+    val titles = row.titles
+    val at = titles.indexOfFirst { it.id.toString() == card.key }
+    if (at < 0) return emptyList()
+    val around = if (loops(row)) listOf(at - 1, at + 1).map { it.mod(titles.size) } else listOf(at - 1, at + 1).filter { it in titles.indices }
+    return around.filter { it != at }.distinct().mapNotNull { titles[it].let { title -> cardArt(title.image, title.about, textlessPosters = true).grown?.backdrop } }
 }
 
 /**
@@ -354,6 +373,19 @@ internal fun RowsLayout(
     // Only the focused row's place is read here, so a press along a row doesn't compose the screen
     // again (#63).
     val focusedRow by remember(state) { derivedStateOf { state.rows?.indexOfFirst { it.key == state.focused?.row } ?: -1 } }
+    // Once focus rests on a card, the backdrops its neighbours grow into are loaded into memory, so
+    // the next Left or Right grows straight into its art. Nothing while presses come faster than
+    // the settle: each press starts the wait again. Read in a flow, so a press composes nothing.
+    val context = LocalContext.current
+    LaunchedEffect(state) {
+        snapshotFlow { state.focused }.collectLatest { card ->
+            if (card == null) return@collectLatest
+            delay(SETTLE_MILLIS)
+            val rows = state.rows ?: return@collectLatest
+            val backdrops = neighbourBackdrops(rows, card) { row -> RailLoop(row.keys.size, seen.posters, row.ranked).loops }
+            backdrops.forEach { preloadGrownBackdrop(context, it) }
+        }
+    }
     LaunchedEffect(focusedRow) {
         if (focusedRow < 0) return@LaunchedEffect
         // Every row keeps the info's slot, so the info moves under the focused row as it slides up,
@@ -379,14 +411,7 @@ internal fun RowsLayout(
                 }
                 rows.orEmpty().forEach { row ->
                     item(key = "row-${row.key}", contentType = "row") {
-                        Text(
-                            row.heading(),
-                            style = Type.headline,
-                            color = Colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
-                        )
+                        row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
                         val wide = row is HomeRow.ContinueWatching
                         // Channels, countries, Games and Replays are wide cards alike.
                         val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
@@ -473,7 +498,7 @@ internal fun RowsLayout(
                                 }
                                 val games = row.games
                                 if (games != null) {
-                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus)
+                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus, league = row.mixesLeagues)
                                     return@items
                                 }
                                 if (row is HomeRow.Replays) {
@@ -631,6 +656,10 @@ private val HomeRow.games: List<GameFeeds>?
         else -> null
     }
 
+/** Whether a Game row may hold several Leagues' Games (Live now, Today), whose cards then carry their League's logo; a League's own row names it in its heading. */
+internal val HomeRow.mixesLeagues: Boolean
+    get() = this is HomeRow.LiveNow || this is HomeRow.Today
+
 /** Whether a row is a Top 10, drawn with its ranks and never looping. */
 private val HomeRow.ranked: Boolean
     get() = this is HomeRow.Chart && (list == ChartList.TopMovies || list == ChartList.TopShows)
@@ -712,6 +741,12 @@ private val ROW_CACHE = 300.dp
 
 /** How many cards each kind of rail shows at once ([RailLoop.seen]). */
 private class Seen(val posters: Int, val stills: Int, val channels: Int)
+
+/** A row's heading: its name, and on a League's row the League's logo before it ([RowHeading]), the name alone while the logo can't be loaded. */
+@Composable
+internal fun HomeRow.Heading(modifier: Modifier = Modifier) {
+    RowHeading(heading(), modifier, logo = (this as? HomeRow.LeagueGames)?.let { rememberArtwork(it.league.logo) })
+}
 
 @Composable
 private fun HomeRow.heading(): String = when (this) {

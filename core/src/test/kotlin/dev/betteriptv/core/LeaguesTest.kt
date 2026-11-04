@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
@@ -18,6 +19,15 @@ class LeaguesTest {
         )
         assertEquals(League.entries.toList(), League.entries.map { League.byKey(it.key) })
         assertNull(League.byKey("boxing"))
+    }
+
+    @Test fun `every League has its own logo, ESPN's dark-background one, without a Game`() {
+        // Live's League rows and mixed rows' cards show it before any Game is read (#350).
+        for (league in League.entries) assertTrue(league.name, league.logo.startsWith("https://a.espncdn.com/") && league.logo.endsWith(".png"))
+        assertEquals("https://a.espncdn.com/i/teamlogos/leagues/500-dark/nhl.png", League.Nhl.logo)
+        assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/23.png", League.PremierLeague.logo)
+        // No two Leagues share a logo, so a mixed row's cards tell them apart.
+        assertEquals(League.entries.size, League.entries.map { it.logo }.toSet().size)
     }
 
     @Test fun `F1 is an event League, its Games a Grand Prix's sessions, and on in no Region until the Viewer turns it on`() {
