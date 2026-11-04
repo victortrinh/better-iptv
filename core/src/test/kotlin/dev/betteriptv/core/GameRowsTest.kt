@@ -165,6 +165,35 @@ class GameRowsTest {
         assertEquals(listOf("NHL: Senators @ Sabres (2026-11-04 19:30:00)"), rows(at = Instant.parse("2026-11-04T16:00:00Z")).today().feedNames("7"))
     }
 
+    @Test fun `a Feed is named by its service and broadcast, without the channel number, the time, the sport word or the matchup`() = runBlocking {
+        // Senators at Sabres, 7:30 PM in Toronto on Wednesday, as the surveyed Provider names its Feeds (#339's review, 2026-11-04).
+        cloud.games("nhl", game("7", "2026-11-05T00:30:00Z", home = "Buffalo Sabres", away = "Ottawa Senators", broadcasters = listOf("TSN")))
+        provider.serveChannels(
+            "US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast) (2026-11-04 19:30:35)" to "US| ESPN+ PPV",
+            "US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) (2026-11-04 19:30:35)" to "US| ESPN+ PPV",
+            "(FLSP 102) | hockey: Ottawa Senators vs Buffalo Sabres (Away) (2026-11-04 19:30:00)" to "US| FLOSPORTS",
+            "NHL: Senators @ Sabres (2026-11-04 19:30:00)" to "US| ESPN+ PPV",
+            "Senators vs Sabres (French) (2026-11-04 19:30:00)" to "CA| SPORTS PPV",
+            "Senators vs Sabres (2026-11-04 19:30:00)" to "UK| PPV",
+            "CA: TSN" to "CA| SPORT",
+        )
+        library.sync()
+
+        val feeds = rows(at = Instant.parse("2026-11-04T16:00:00Z")).today()!!.single { it.game.id == "7" }.feeds
+        val labels = feeds.associate { it.channel.variants.first().name to it.label }
+        assertEquals(FeedName("ESPN+", FeedBroadcast.National, "US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast)"), labels.getValue("US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast) (2026-11-04 19:30:35)"))
+        assertEquals(FeedName("ESPN+", FeedBroadcast.Team("Sabres"), "US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast)"), labels.getValue("US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) (2026-11-04 19:30:35)"))
+        // Flo's code is spelled out, and "Away" is the away team's broadcast.
+        assertEquals(FeedName("FloSports", FeedBroadcast.Team("Senators"), "(FLSP 102) | hockey: Ottawa Senators vs Buffalo Sabres (Away)"), labels.getValue("(FLSP 102) | hockey: Ottawa Senators vs Buffalo Sabres (Away) (2026-11-04 19:30:00)"))
+        // No network in brackets: the Category names the service, unless it names none.
+        assertEquals(FeedName("ESPN+", null, "NHL: Senators @ Sabres"), labels.getValue("NHL: Senators @ Sabres (2026-11-04 19:30:00)"))
+        assertEquals(FeedName(null, FeedBroadcast.Other("French"), "Senators vs Sabres (French)"), labels.getValue("Senators vs Sabres (French) (2026-11-04 19:30:00)"))
+        assertEquals(FeedName(null, null, "Senators vs Sabres"), labels.getValue("Senators vs Sabres (2026-11-04 19:30:00)"))
+        // A Broadcaster's Feed is named by its Channel; the Provider's name stays the Feed's name for the player.
+        assertEquals(FeedName("TSN", null, "TSN"), labels.getValue("CA: TSN"))
+        assertEquals("US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast) (2026-11-04 19:30:35)", feeds.first { it.label.broadcast == FeedBroadcast.National }.name)
+    }
+
     @Test fun `an Event channel's time counts as the Game's read in any zone, but not the day before or after`() = runBlocking {
         // 7 PM in Toronto on Sunday, midnight UTC on Monday.
         cloud.games("nhl", game("2", "2026-11-02T00:00:00Z", home = "Boston Bruins", away = "Ottawa Senators"))

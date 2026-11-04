@@ -92,15 +92,43 @@ enum class CategoryKind {
 /**
  * A live Category's name without the Provider's dressing: the country code before a bar (`US| `,
  * `CA FR| `) and the superscript tags (`ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ`, `ⱽᴵᴾ`, `ᴳᴼᴸᴰ`) are dropped, the rest is
- * NFKC-normalised (fullwidth letters and ligatures become plain ones), spaces collapsed and trimmed.
+ * NFKC-normalised (fullwidth letters and ligatures become plain ones) with its small capitals read as
+ * plain letters ([withoutSmallCapitals]), spaces collapsed and trimmed.
  * `US| NBC ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ` is "NBC". A name that is nothing but tags (`ᴬᴿᴱᴺᴬ`) keeps them as plain
  * letters ("ARENA") rather than vanish.
  */
 internal fun normalisedCategoryName(name: String): String {
     val rest = name.replace(COUNTRY_CODE, "")
-    fun plain(text: String) = Normalizer.normalize(text, Normalizer.Form.NFKC).replace(SPACES, " ").trim()
+    fun plain(text: String) = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC)).replace(SPACES, " ").trim()
     return plain(rest.replace(SUPERSCRIPT_TAGS, " ")).ifEmpty { plain(rest) }.ifEmpty { name.trim() }
 }
+
+/**
+ * [text] with its small-capital letters (`ᴀ`, `ʙ`, `ɪ`, … `ᴢ`, which NFKC leaves alone) as plain
+ * ones, as superscripts are read as plain letters: a word of small capitals alone reads in capitals
+ * (`ʙʙᴄ ɴᴇᴡꜱ` reads "BBC NEWS"), and small capitals among other letters read lowercase (`cɪty`
+ * reads "city", `Nᴇᴡꜱ` "News").
+ */
+internal fun withoutSmallCapitals(text: String): String {
+    if (text.none { it in SMALL_CAPITALS }) return text
+    return LETTERS.replace(text) { word ->
+        val capitals = word.value.all { it in SMALL_CAPITALS }
+        word.value.map { letter ->
+            val plain = SMALL_CAPITALS[letter] ?: return@map letter
+            if (capitals) plain.uppercaseChar() else plain
+        }.joinToString("")
+    }
+}
+
+/** Each small-capital letter and the plain lowercase letter it stands for. */
+private val SMALL_CAPITALS: Map<Char, Char> = mapOf(
+    'ᴀ' to 'a', 'ʙ' to 'b', 'ᴄ' to 'c', 'ᴅ' to 'd', 'ᴇ' to 'e', 'ꜰ' to 'f', 'ɢ' to 'g', 'ʜ' to 'h', 'ɪ' to 'i',
+    'ᴊ' to 'j', 'ᴋ' to 'k', 'ʟ' to 'l', 'ᴍ' to 'm', 'ɴ' to 'n', 'ᴏ' to 'o', 'ᴘ' to 'p', 'ꞯ' to 'q', 'ʀ' to 'r',
+    'ꜱ' to 's', 'ᴛ' to 't', 'ᴜ' to 'u', 'ᴠ' to 'v', 'ᴡ' to 'w', 'ʏ' to 'y', 'ᴢ' to 'z',
+)
+
+/** A run of letters: a word, for [withoutSmallCapitals]. */
+private val LETTERS = Regex("""\p{L}+""")
 
 /** The country code a live Category's name starts with (`US` in `US| NBC`), or null. */
 internal fun categoryCountry(name: String): String? = COUNTRY_CODE.find(name)?.groupValues?.get(1)?.replace(SPACES, " ")

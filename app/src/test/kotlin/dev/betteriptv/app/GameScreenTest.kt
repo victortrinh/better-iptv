@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -19,7 +21,9 @@ import dev.betteriptv.core.Channel
 import dev.betteriptv.core.ChannelVariant
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Feed
+import dev.betteriptv.core.FeedBroadcast
 import dev.betteriptv.core.FeedKind
+import dev.betteriptv.core.FeedName
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameEvent
@@ -120,6 +124,45 @@ class GameScreenTest {
         compose.onNodeWithTag("variant 11").performClick()
         compose.waitUntil { played != null }
         assertEquals(11L, played!!.version.listingId)
+    }
+
+    @Test fun aFeedIsNamedByItsServiceAndBroadcastAsOneRowWithOneVariantAndItsVariantsUnderItWithSeveral() {
+        val national = Channel(
+            "us (espn+ 335) | hockey: senators vs. sabres (national broadcast) (2026-11-04 19:30:35)",
+            "US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast) (2026-11-04 19:30:35)", null, null, false,
+            listOf(ChannelVariant(41, "US (ESPN+ 335) | Hockey: Senators vs. Sabres (National Broadcast) (2026-11-04 19:30:35)", null, false)),
+        )
+        val sabres = Channel(
+            "us (espn+ 336) | hockey: senators vs. sabres (sabres broadcast) (2026-11-04 19:30:35)",
+            "US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) (2026-11-04 19:30:35)", null, null, false,
+            listOf(51L to Quality.SD, 52L to Quality.HD, 53L to Quality.UHD).map { (id, quality) -> ChannelVariant(id, "US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) $id", quality, false) },
+        )
+        var played: PlayPlan? = null
+        open(
+            GameFeeds(
+                game,
+                listOf(
+                    Feed(national, FeedKind.EventChannel, "en", label = FeedName("ESPN+", FeedBroadcast.National, "")),
+                    Feed(sabres, FeedKind.EventChannel, "en", label = FeedName("ESPN+", FeedBroadcast.Team("Sabres"), "")),
+                ),
+            ),
+            onPlay = { plan, _, _ -> played = plan },
+        )
+
+        compose.onNodeWithTag("play-label").assertTextContains("ESPN+ · National broadcast · English")
+        compose.waitUntil { compose.onAllNodesWithTag("variant 53").fetchSemanticsNodes().isNotEmpty() }
+        // One variant: one row, named by the Feed, never by the Provider's name.
+        compose.onNodeWithTag("variant 41").assert(hasText("ESPN+ · National broadcast")).assert(hasText("Event channel"))
+        assertTrue(compose.onAllNodesWithText("National Broadcast", substring = true).fetchSemanticsNodes().isEmpty())
+        // Three variants: the Feed's name over them, each named as the Provider lists it, best first.
+        compose.onNodeWithTag("feed ${sabres.key}").assert(hasAnyChild(hasText("ESPN+ · Sabres broadcast")))
+        compose.onAllNodesWithText("ESPN+ · Sabres broadcast").assertCountEquals(1)
+        val rows = listOf(53L, 52L, 51L).map { compose.onNodeWithTag("variant $it").assert(hasText("US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) $it")).fetchSemanticsNode().positionInRoot.y }
+        assertEquals(rows, rows.sorted())
+        assertTrue(compose.onNodeWithTag("feed ${sabres.key}").fetchSemanticsNode().positionInRoot.y < rows.first())
+        compose.onNodeWithTag("variant 41").performClick()
+        compose.waitUntil { played != null }
+        assertEquals(41L, played!!.version.listingId)
     }
 
     @Test fun aFinishedGamesReplayShowsAsARowNamedAndDatedWhichPlaysItsListingsVersion() {
