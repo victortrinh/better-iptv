@@ -5,11 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -89,15 +85,12 @@ fun HomeScreen(
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
-    // Rows never move under focus: while a Favourite has it, the one row under where the Title rows land, a
-    // catalog that lands waits to be read until focus leaves the row or Home is entered again.
-    val focusedRow = state.focused?.row
-    var read by remember { mutableIntStateOf(catalog) }
-    LaunchedEffect(catalog, focusedRow) { if (focusedRow != FAVOURITES_ROW) read = catalog }
+    // A catalog that lands is read at once: the rows around the focused one may come and go, but the
+    // focused row itself waits for focus to leave it ([RowsLayout]).
     val caption = stringResource(R.string.home_titles_pending)
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
-        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage, read),
+        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage, catalog),
         read = { library.homeRows(contentLanguages, appLanguage, region, leagues) },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,

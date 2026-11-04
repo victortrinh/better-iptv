@@ -207,10 +207,16 @@ object FocusScale {
     const val control = 1.06f
 }
 
-/** How long things move. */
+/** How long things move. Things arrive, they don't pop (DESIGN.md, Motion). */
 object Motion {
     /** The focus scale, and a focused poster growing into its backdrop or shrinking back (#216). */
     const val focusMillis = 160
+    /** An image arriving from disk or the network fades in over this long; one from memory shows at once. */
+    const val imageFadeMillis = 150
+    /** A page waits up to this long for its content, so it can appear whole, then fades in together. */
+    const val pageArrivalMillis = 300
+    /** A new screen fades in over the ground; the old one is gone at once, never a cross-dissolve. */
+    const val screenFadeMillis = 150
 
     /** The focus curve's easing: fast out, slow in. */
     val focusEasing: Easing = FastOutSlowInEasing
