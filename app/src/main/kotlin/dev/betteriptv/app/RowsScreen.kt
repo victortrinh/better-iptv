@@ -66,6 +66,7 @@ import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.ChartList
+import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
@@ -204,6 +205,13 @@ class RowsState {
 
     /** The row whose info shows under it: the focused card's, once that row has come up to the top. */
     var settled by mutableStateOf<String?>(null)
+
+    /** The Title the hero features, chosen as the screen was entered ([RowsLayout]'s `feature`). */
+    var featured by mutableStateOf<FeaturedTitle?>(null)
+
+    /** The Title the hero features at the next entry, read during this one so it shows at once then, and whether it was. */
+    var upNext: FeaturedTitle? = null
+    var upNextRead = false
     private val rails = HashMap<String, Pair<Int, LazyListState>>()
 
     /** Row [key]'s scroll, as its [loop] lays it out: from its start again when its count changes. */
@@ -226,7 +234,9 @@ class RowsState {
  * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a Replay's
  * (Live's Replays row) plays it ([onPlayReplay]); a country's (Live's Channels row, named in the
- * [appLanguage]) opens its Channels screen ([onOpenCountry]).
+ * [appLanguage]) opens its Channels screen ([onOpenCountry]). With [feature], the screen opens on the
+ * featured Title it reads ([FeaturedHero]): its Play plays it ([onPlayFeatured]), its Details opens it
+ * ([onOpen]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -247,6 +257,8 @@ fun RowsScreen(
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    feature: (suspend () -> FeaturedTitle?)? = null,
+    onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -266,6 +278,8 @@ fun RowsScreen(
         onPlayReplay = onPlayReplay,
         placeholder = placeholder,
         trailing = trailing,
+        feature = feature,
+        onPlayFeatured = onPlayFeatured,
         header = header,
     )
 }
@@ -278,6 +292,14 @@ fun RowsScreen(
  * Rows never move under focus: rows read again while the Viewer is on one ([rowsUnderFocus]) update
  * their cards in place and come and go around the focused row, which stays where it is; a change
  * to the focused row itself waits until focus leaves it. Entering the screen shows the rows as read.
+ *
+ * With [feature], the screen opens on a featured Title above its rows ([FeaturedHero]), which takes
+ * first focus. [feature] picks the next one each time it's asked ([dev.betteriptv.core.Library.featured]):
+ * it is asked as the screen is entered (by its tab, or as the app starts; not when coming back to
+ * [restoreFocus] from a page the screen opened), and the hero then never changes until the screen is
+ * entered again. The Title for the next entry is read during this one, so it shows at once with
+ * the rows kept from last time; the first time, it is read with the rows. The first Down scrolls the
+ * hero away under the tabs, and Up from the first row brings it back whole.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -299,9 +321,25 @@ internal fun RowsLayout(
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    feature: (suspend () -> FeaturedTitle?)? = null,
+    onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val reader by rememberUpdatedState(read)
+    val featurer by rememberUpdatedState(feature)
+    // Entered (by its tab, or as the app starts), not come back to from a page it opened.
+    val entering = remember { restoreFocus == null }
+    // Each entry features the Title read for it during the last one; the hero shows from the top,
+    // and focus starts on it, not on the card focused last time.
+    remember {
+        if (feature != null && entering && state.upNextRead) {
+            state.featured = state.upNext
+            state.focused = null
+            state.settled = null
+            if (state.featured != null) state.list.requestScrollToItem(0)
+        }
+    }
+    val hero = if (feature != null) state.featured else null
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
     // so the card is checked again once they are read: the Title opened may have left Continue
@@ -316,9 +354,13 @@ internal fun RowsLayout(
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
     LaunchedEffect(reading) {
         val before = state.rows
+        // The first entry's hero is read with the rows, and shows with them.
+        val choose = !checked && entering && !state.upNextRead
+        val chosen = if (choose) featurer?.invoke() else null
         val fresh = reader()
         state.held = null
-        if (!checked && restoreFocus != null && before != null) {
+        if (choose) state.featured = chosen
+        if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
             if (restored != restoreFocus) pending = restored
@@ -331,7 +373,13 @@ internal fun RowsLayout(
         } else {
             state.rows = fresh
         }
+        val first = !checked
         checked = true
+        // The next entry's hero, read now so it shows at once then.
+        if (first && entering) featurer?.let { next ->
+            state.upNext = next()
+            state.upNextRead = true
+        }
     }
     // Once focus leaves the row a reading held back, the row takes it.
     LaunchedEffect(focusRow) {
@@ -341,7 +389,12 @@ internal fun RowsLayout(
         if (shown == fresh) state.held = null
     }
     val rows = state.rows
-    val focusOn = pending ?: rows?.firstOrNull()?.takeIf { !focused && !focusTab }?.let { RowCard(it.key, it.keys.first()) }
+    // First focus goes to the hero's Play when there is a hero, else to the first card.
+    val focusOn = pending?.takeUnless { it.row == HERO_ROW && hero == null } ?: when {
+        focused || focusTab -> null
+        hero != null -> RowCard(HERO_ROW, HERO_PLAY)
+        else -> rows?.firstOrNull()?.let { RowCard(it.key, it.keys.first()) }
+    }
     val onFocused = {
         pending = null
         focused = true
@@ -371,8 +424,14 @@ internal fun RowsLayout(
         Seen(posters = seen(Cards.posterWidth), stills = seen(Cards.continueWidth), channels = seen(Cards.wideWidth))
     }
     // Only the focused row's place is read here, so a press along a row doesn't compose the screen
-    // again (#63).
-    val focusedRow by remember(state) { derivedStateOf { state.rows?.indexOfFirst { it.key == state.focused?.row } ?: -1 } }
+    // again (#63). The hero, when there is one, is the list's first item, before the rows.
+    val heroItems = if (hero != null) 1 else 0
+    val focusedItem by remember(state, heroItems) {
+        derivedStateOf {
+            val row = state.focused?.row
+            if (row == HERO_ROW) 0 else state.rows?.indexOfFirst { it.key == row }?.takeIf { it >= 0 }?.plus(heroItems) ?: -1
+        }
+    }
     // Once focus rests on a card, the backdrops its neighbours grow into are loaded into memory, so
     // the next Left or Right grows straight into its art. Nothing while presses come faster than
     // the settle: each press starts the wait again. Read in a flow, so a press composes nothing.
@@ -386,16 +445,19 @@ internal fun RowsLayout(
             backdrops.forEach { preloadGrownBackdrop(context, it) }
         }
     }
-    LaunchedEffect(focusedRow) {
-        if (focusedRow < 0) return@LaunchedEffect
+
+    LaunchedEffect(focusedItem) {
+        if (focusedItem < 0) return@LaunchedEffect
         // Every row keeps the info's slot, so the info moves under the focused row as it slides up,
-        // and nothing below it makes way.
-        state.settled = state.focused?.row
-        state.list.animateScrollToItem(focusedRow)
+        // and nothing below it makes way. On the hero, no row's info shows.
+        state.settled = state.focused?.row?.takeUnless { it == HERO_ROW }
+        state.list.animateScrollToItem(focusedItem)
     }
+    val heroPlay = remember { FocusRequester() }
+    val heroDetails = remember { FocusRequester() }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
-    Column(Modifier.fillMaxSize().background(Colors.ground)) {
+    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() }) {
         header(tab)
         if (placeholder != null) return@Column placeholder()
         if (rows == null) return@Column PlaceholderRows()
@@ -404,6 +466,20 @@ internal fun RowsLayout(
                 Modifier.fillMaxSize().onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
                 state = state.list,
             ) {
+                if (hero != null) item(key = HERO_ROW, contentType = HERO_ROW) {
+                    onScreen(hero.id)
+                    FeaturedHero(
+                        hero, heroPlay, heroDetails,
+                        onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
+                        onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id) },
+                        onFocus = { state.focused = RowCard(HERO_ROW, it) },
+                        last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
+                    )
+                    if (focusOn?.row == HERO_ROW) LaunchedEffect(focusOn) {
+                        (if (focusOn.key == HERO_DETAILS) heroDetails else heroPlay).requestFocus()
+                        onFocused()
+                    }
+                }
                 if (rows?.isEmpty() == true && trailing == null) {
                     item(key = "empty") {
                         Text(empty, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
@@ -549,6 +625,13 @@ internal fun RowsLayout(
             }
         }
     }
+}
+
+/** How much of the hero, the list's first item, is on screen: 1 at the top, 0 once scrolled away. */
+private fun LazyListState.heroShown(): Float {
+    if (firstVisibleItemIndex > 0) return 0f
+    val hero = layoutInfo.visibleItemsInfo.firstOrNull()?.takeIf { it.index == 0 && it.size > 0 } ?: return 1f
+    return (1f - firstVisibleItemScrollOffset / hero.size.toFloat()).coerceIn(0f, 1f)
 }
 
 /**
