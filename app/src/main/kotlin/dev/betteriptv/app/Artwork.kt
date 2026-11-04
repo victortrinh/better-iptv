@@ -23,6 +23,8 @@ import androidx.compose.ui.semantics.semantics
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.theme.Motion
 import coil3.Extras
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
 import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
@@ -31,6 +33,7 @@ import coil3.intercept.Interceptor
 import coil3.request.ImageRequest
 import coil3.request.ImageResult
 import coil3.size.Precision
+import coil3.size.Size
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
@@ -52,9 +55,7 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? {
     if (url == null) return null
     var failed by remember(url) { mutableStateOf(false) }
     val context = LocalPlatformContext.current
-    val request = remember(url, card) {
-        ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply { if (card) extras[SettleFirst.Key] = true }.build()
-    }
+    val request = remember(url, card) { artworkRequest(context, url, card) }
     val image = rememberAsyncImagePainter(request, onError = { failed = true })
     val fade = remember(url) { Animatable(0f) }
     LaunchedEffect(image, fade) {
@@ -65,6 +66,23 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? {
     val painter = remember(image, fade) { FadeIn(image, fade) }
     return if (failed) null else painter
 }
+
+/** The request for the artwork at [url]; a [card]'s waits to settle first ([SettleFirst]). Its memory cache key is the url alone. */
+private fun artworkRequest(context: PlatformContext, url: String, card: Boolean): ImageRequest =
+    ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply { if (card) extras[SettleFirst.Key] = true }.build()
+
+/**
+ * Loads the [backdrop] a poster card grows into ([GrownArtwork]) into the memory cache, so the card
+ * grows straight into its art when it is focused next, instead of growing as glass and fading it
+ * in. It is the image [rememberArtwork] asks for, at the original size its painter loads it at, so
+ * the grown card finds it there on its first grown frame.
+ */
+fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) {
+    SingletonImageLoader.get(context).enqueue(artworkRequest(context, backdrop, card = false).newBuilder().size(Size.ORIGINAL).build())
+}
+
+/** How long a card is on screen, or focus rests on one, before artwork loads for it ([SettleFirst], the rows' preloading). */
+const val SETTLE_MILLIS = 250L
 
 /**
  * Draws [image] at the [fade]'s alpha, or at full alpha at once when it came from the memory cache.
@@ -97,7 +115,7 @@ private class FadeIn(private val image: AsyncImagePainter, private val fade: Ani
  * scrolled away before then cancels it without decoding anything. Images [inMemory] show at once,
  * so cards scrolled back to, or returned to from a Title, don't blink.
  */
-class SettleFirst(private val inMemory: (data: String) -> Boolean, private val settle: Long = 250) : Interceptor {
+class SettleFirst(private val inMemory: (data: String) -> Boolean, private val settle: Long = SETTLE_MILLIS) : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         if (chain.request.extras[Key] == true && !inMemory(chain.request.data.toString())) delay(settle)
         return chain.proceed()
@@ -111,8 +129,10 @@ class SettleFirst(private val inMemory: (data: String) -> Boolean, private val s
 /**
  * What a focused poster card grows into ([TitleCard]'s `grown`): its Title's textless backdrop,
  * cropped to the card, with the logo at its bottom left as on a still, or the [name] in title type
- * when TMDB has no logo. The backdrop is loaded only while the card is grown, and like any card's
- * artwork once focus has rested on it a moment; the glass and the name show until then.
+ * when TMDB has no logo. The backdrop is loaded while the card is grown, like any card's artwork
+ * once focus has rested on it a moment, unless it is in memory already: the rows load the backdrops
+ * of the cards beside the one focus rests on ahead ([preloadGrownBackdrop]). Until it arrives the
+ * glass and the name show, and it fades in.
  */
 @Composable
 fun BoxScope.GrownArtwork(art: GrownArt, name: String) {
