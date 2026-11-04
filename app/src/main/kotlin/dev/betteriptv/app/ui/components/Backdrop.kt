@@ -18,8 +18,14 @@ import dev.betteriptv.app.ui.theme.Colors
  */
 @Composable
 fun Backdrop(image: Painter) {
-    val ground = Colors.ground
     Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    BackdropScrims()
+}
+
+/** The [Backdrop]'s two scrims of ground, over whatever fills the screen behind them: artwork, or a Game page's team colours. */
+@Composable
+fun BackdropScrims() {
+    val ground = Colors.ground
     Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to ground.copy(alpha = 0.85f), 0.55f to ground.copy(alpha = 0.25f), 1f to Color.Transparent)))
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to ground.copy(alpha = 0.85f), 0.2f to Color.Transparent, 0.35f to Color.Transparent, 0.75f to ground.copy(alpha = 0.85f), 1f to ground)))
 }

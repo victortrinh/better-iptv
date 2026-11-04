@@ -52,7 +52,8 @@ export type GameState = "upcoming" | "live" | "over";
  * A team as a Game names it: its [name] (Toronto Maple Leafs), [shortName] (Maple Leafs) and
  * [abbreviation] (TOR), every name it goes by in [aliases] (those three, its location and nickname,
  * no two alike), its [logo] URL, and its [id] at the source, which its entry in the League's teams
- * ({@link Team}) carries too.
+ * ({@link Team}) carries too. Its [color] and [alternateColor] are the source's, as six lowercase
+ * hex digits (`00205b`, no `#`), each absent when the source gives none (#349).
  */
 export interface GameTeam {
   id: string;
@@ -61,6 +62,8 @@ export interface GameTeam {
   abbreviation: string;
   aliases: string[];
   logo: string | null;
+  color?: string;
+  alternateColor?: string;
 }
 
 /**
