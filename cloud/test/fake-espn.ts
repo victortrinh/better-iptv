@@ -74,7 +74,8 @@ export interface TeamSpec {
   displayName: string;
   shortDisplayName: string;
   abbreviation: string;
-  location: string;
+  /** None for the NRL's and the AFL's teams, which ESPN names by nickname or place alone. */
+  location: string | null;
   name: string;
   nickname?: string | null;
   logo?: string;
@@ -166,6 +167,51 @@ export const bombers: TeamSpec = { id: "3", displayName: "Winnipeg Blue Bombers"
 export const argos: TeamSpec = { id: "7", displayName: "Toronto Argonauts", shortDisplayName: "Argonauts", abbreviation: "TOR", location: "Toronto", name: "Argonauts" };
 export const broncos: TeamSpec = { id: "7", displayName: "Denver Broncos", shortDisplayName: "Broncos", abbreviation: "DEN", location: "Denver", name: "Broncos" };
 export const texans: TeamSpec = { id: "34", displayName: "Houston Texans", shortDisplayName: "Texans", abbreviation: "HOU", location: "Houston", name: "Texans" };
+
+/** One Game's two teams in each League #354 added, as ESPN's scoreboards named them on 2026-11-04 (the NRL's and the AFL's from their grand finals). */
+export const added: Record<string, { path: string; home: TeamSpec; away: TeamSpec }> = {
+  "efl-championship": {
+    path: "soccer/eng.2",
+    home: { id: "347", displayName: "Cardiff City", shortDisplayName: "Cardiff", abbreviation: "CAR", location: "Cardiff City", name: "Cardiff City", color: "0000fa", alternateColor: "c6d4db" },
+    away: { id: "371", displayName: "West Ham United", shortDisplayName: "West Ham", abbreviation: "WHU", location: "West Ham United", name: "West Ham United", color: "7c2c3b", alternateColor: "F1E7E0" },
+  },
+  "scottish-premiership": {
+    path: "soccer/sco.1",
+    home: { id: "260", displayName: "Dundee United", shortDisplayName: "Dundee Utd", abbreviation: "DUN", location: "Dundee United", name: "Dundee United" },
+    away: { id: "263", displayName: "Motherwell", shortDisplayName: "Motherwell", abbreviation: "MOT", location: "Motherwell", name: "Motherwell" },
+  },
+  "liga-portugal": {
+    path: "soccer/por.1",
+    home: { id: "5297", displayName: "FC Famalicao", shortDisplayName: "FC Famalicao", abbreviation: "FCF", location: "FC Famalicao", name: "FC Famalicao" },
+    away: { id: "15784", displayName: "Arouca", shortDisplayName: "Arouca", abbreviation: "FCA", location: "Arouca", name: "Arouca" },
+  },
+  "2-bundesliga": {
+    path: "soccer/ger.2",
+    home: { id: "3536", displayName: "Dynamo Dresden", shortDisplayName: "D Dresden", abbreviation: "SGD", location: "Dynamo Dresden", name: "Dynamo Dresden" },
+    away: { id: "3428", displayName: "SpVgg Greuther Fürth", shortDisplayName: "Greuther Furth", abbreviation: "SGF", location: "SpVgg Greuther Fürth", name: "SpVgg Greuther Fürth" },
+  },
+  "super-lig": {
+    path: "soccer/tur.1",
+    home: { id: "11250", displayName: "Gaziantep FK", shortDisplayName: "Gaziantep", abbreviation: "GAZ", location: "Gaziantep FK", name: "Gaziantep FK" },
+    away: { id: "6010", displayName: "Kasimpasa", shortDisplayName: "Kasimpasa", abbreviation: "KAS", location: "Kasimpasa", name: "Kasimpasa" },
+  },
+  wsl: {
+    path: "soccer/eng.w.1",
+    // ESPN writes their short names with a trailing space.
+    home: { id: "18244", displayName: "Chelsea", shortDisplayName: "Chelsea ", abbreviation: "CHE", location: "Chelsea", name: "Chelsea" },
+    away: { id: "18245", displayName: "Everton", shortDisplayName: "Everton ", abbreviation: "EVE", location: "Everton", name: "Everton" },
+  },
+  nrl: {
+    path: "rugby-league/3",
+    home: { id: "13", displayName: "Roosters", shortDisplayName: "Roosters", abbreviation: "SYD", location: null, name: "Roosters" },
+    away: { id: "6", displayName: "Knights", shortDisplayName: "Knights", abbreviation: "NEW", location: null, name: "Knights" },
+  },
+  afl: {
+    path: "australian-football/afl",
+    home: { id: "6", displayName: "Fremantle", shortDisplayName: "Fremantle", abbreviation: "FRE", location: null, name: "Fremantle" },
+    away: { id: "2", displayName: "Brisbane Lions", shortDisplayName: "Brisbane Lions", abbreviation: "BL", location: null, name: "Brisbane Lions" },
+  },
+};
 
 /** A driver as ESPN's racing scoreboard lists one among a session's competitors. */
 const driver = (id: string, name: string, order: number) => ({ id, type: "athlete", order, winner: order === 1, athlete: { displayName: name, shortName: name, flag: { alt: "Netherlands" } } });
