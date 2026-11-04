@@ -164,6 +164,7 @@
     <string name="versions_title">Versions</string>
     <string name="play">Play</string>
     <string name="play_continue">Continue from %1$s</string>
+    <string name="details">Details</string>
     <string name="play_restart">Restart</string>
     <string name="continue_watching_remove">Remove from Continue watching</string>
     <string name="play_nothing">No Version this TV can display</string>

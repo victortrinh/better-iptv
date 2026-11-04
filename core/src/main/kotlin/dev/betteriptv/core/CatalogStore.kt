@@ -1070,6 +1070,18 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** The Title featured last on [screen]'s hero ([Library.featured]), or null before the first. */
+    fun lastFeatured(screen: String): TitleId? = meta(LAST_FEATURED + screen)?.let(::titleId)
+
+    fun saveLastFeatured(screen: String, id: TitleId) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+            it.bindText(1, LAST_FEATURED + screen)
+            it.bindText(2, key(id))
+            it.step()
+        }
+        Unit
+    }
+
     /** The file extension of movie Listing [id] (`mkv`), a Sports replay's included, or null when the Provider didn't say or the catalog doesn't have it. */
     fun container(id: Long): String? = synchronized(reader) {
         reader.prepare("SELECT container FROM listing WHERE kind = 'movie' AND id = ? UNION ALL SELECT container FROM replay WHERE id = ?").use {
@@ -1554,6 +1566,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val DEVICE_TOKEN = "cloud_device_token"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
+        const val LAST_FEATURED = "last_featured_"
         const val GUIDE_DAY = "guide_day"
     }
 }

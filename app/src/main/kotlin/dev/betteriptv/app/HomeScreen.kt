@@ -16,6 +16,8 @@ import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.FeaturedScreen
+import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
@@ -57,7 +59,9 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
  * service, Trending this week, the Viewer's Favourites, then a row per genre. The Games are asked
  * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live, but
  * never hold the other rows: the kept Games show first, and the rows are read again once fresh ones
- * land ([Library.catalogChanges]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
+ * land ([Library.catalogChanges]). Above the rows, a featured Title from the top of the Charts, a
+ * different one each time Home is entered ([Library.featured]): its Play plays it ([onPlay]), its
+ * Details opens it ([onOpen]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
  * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite.
  */
@@ -75,6 +79,7 @@ fun HomeScreen(
     onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit,
     onOpenGame: (RowCard, GameFeeds) -> Unit,
+    onPlay: (RowCard, FeaturedTitle) -> Unit,
     onRetry: () -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -102,6 +107,8 @@ fun HomeScreen(
         trailing = if (titlesComing) {
             { PlaceholderRows(caption) }
         } else null,
+        feature = { library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region) },
+        onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
     }

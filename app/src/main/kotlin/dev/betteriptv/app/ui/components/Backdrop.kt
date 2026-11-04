@@ -18,8 +18,16 @@ import dev.betteriptv.app.ui.theme.Colors
  */
 @Composable
 fun Backdrop(image: Painter) {
-    val ground = Colors.ground
     Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to ground.copy(alpha = 0.85f), 0.55f to ground.copy(alpha = 0.25f), 1f to Color.Transparent)))
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to ground.copy(alpha = 0.85f), 0.2f to Color.Transparent, 0.35f to Color.Transparent, 0.75f to ground.copy(alpha = 0.85f), 1f to ground)))
+    backdropScrims(Colors.ground).forEach { Box(Modifier.fillMaxSize().background(it)) }
 }
+
+/**
+ * The scrims over a full-screen backdrop, in drawing order, fading to [ground]: 85% at the left, 25%
+ * at 55% of the width, transparent at the right; and down the screen, 85% under the tabs, clear in
+ * the middle, the ground at the bottom.
+ */
+fun backdropScrims(ground: Color): List<Brush> = listOf(
+    Brush.horizontalGradient(0f to ground.copy(alpha = 0.85f), 0.55f to ground.copy(alpha = 0.25f), 1f to Color.Transparent),
+    Brush.verticalGradient(0f to ground.copy(alpha = 0.85f), 0.2f to Color.Transparent, 0.35f to Color.Transparent, 0.75f to ground.copy(alpha = 0.85f), 1f to ground),
+)

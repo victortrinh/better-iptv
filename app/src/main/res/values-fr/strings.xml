@@ -117,6 +117,7 @@
     <string name="versions_title">Versions</string>
     <string name="play">Lecture</string>
     <string name="play_continue">Reprendre à %1$s</string>
+    <string name="details">Détails</string>
     <string name="play_restart">Recommencer</string>
     <string name="continue_watching_remove">Retirer de « Reprendre »</string>
     <string name="play_nothing">Aucune version que ce téléviseur peut afficher</string>

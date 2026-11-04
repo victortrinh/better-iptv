@@ -1206,12 +1206,7 @@ class Library private constructor(
         // Home gets one Games row, Live now, while a Game with a Feed is on (docs/roadmap.md, M3): the same Games and Feeds as the
         // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
         val liveNow = matchedGames(leagues, contentLanguages, region, now, waitForCloud = false).current.filter { it.game.state == GameState.Live && it.best != null }
-        val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
-        // Movies by how far the Viewer got, Shows by the Episode they're at; a Show they Watched to its end is left out.
-        val resumes = store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
-            val title = store.title(id) ?: return@mapNotNull null
-            if (id.kind == TitleKind.Show) showInProgress(title, contentLanguages)?.let { title to it } else progress[id]?.let { title to it }
-        }
+        val resumes = continueWatching(contentLanguages)
         val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
@@ -1266,6 +1261,70 @@ class Library private constructor(
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
             wantGuide(favourites = favourites)
         }
+    }
+
+    /**
+     * Continue watching's Titles, last played first, each with where the Viewer is in it: Movies by
+     * how far they got ([StoredProgress]), Shows by the Episode they're at ([ShowInProgress]); a Show
+     * they Watched to its end is left out.
+     */
+    private fun continueWatching(contentLanguages: List<String>): List<Pair<StoredTitle, Any>> {
+        val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
+        return store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
+            val title = store.title(id) ?: return@mapNotNull null
+            if (id.kind == TitleKind.Show) showInProgress(title, contentLanguages)?.let { title to it } else progress[id]?.let { title to it }
+        }
+    }
+
+    /**
+     * The Title [screen]'s hero features, chosen each time the screen is entered: one of the top
+     * [FEATURED_FROM] of its Charts as its Top rows show them (Top movies and Top shows on Home,
+     * taken in turn, a movie first; the kind's Top row on Movies and Shows), skipping the Titles in
+     * Continue watching and those without a textless backdrop or a logo, which the hero needs to
+     * look right. It rotates: each call features the one after the Title featured last on that
+     * screen, kept on the device, so the same Title doesn't come back on the next entry, and from
+     * the first again past the last. Null when no Title qualifies: the screen opens on its rows.
+     */
+    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): FeaturedTitle? =
+        featured(screen, contentLanguages, appLanguage, region, Instant.now())
+
+    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): FeaturedTitle? = withContext(Dispatchers.IO) {
+        val charts = charts(region, appLanguage, now)
+        val lists = when (screen) {
+            FeaturedScreen.Home -> listOf(charts.topMovies, charts.topShows)
+            FeaturedScreen.Movies -> listOf(charts.topMovies)
+            FeaturedScreen.Shows -> listOf(charts.topShows)
+        }.map { it.mapNotNull(store::title) }
+        val metadata = metadata(lists.flatten().map { it.id }.distinct(), appLanguage)
+        // Each Top row as it shows, none under [MIN_CHART_SIZE], then its top few.
+        val tops = lists.map { titles -> watchable(titles, contentLanguages, metadata).takeIf { it.size >= MIN_CHART_SIZE }.orEmpty().take(FEATURED_FROM) }
+        val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
+        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }.filter {
+            val about = metadata[it.id]
+            it.id !in started && about?.heroBackdrop != null && about.logo != null
+        }
+        if (candidates.isEmpty()) return@withContext null
+        val key = screen.name.lowercase()
+        val last = lastFeatured[screen] ?: store.lastFeatured(key)
+        val title = candidates[(candidates.indexOfFirst { it.id == last } + 1) % candidates.size]
+        lastFeatured[screen] = title.id
+        saveLater { store.saveLastFeatured(key, title.id) }
+        val about = metadata.getValue(title.id)
+        val shown = shown(candidates(title), contentLanguages, about, appLanguage)
+        FeaturedTitle(title.id, shown.name, shown.year, about.runtimeMinutes, about.genres, about.description(appLanguage), about.heroBackdrop!!, about.logo!!, shown.best.attributes)
+    }
+
+    /** The Title featured last on each screen, as [featured] keeps it, so it needn't be read from the device again. */
+    private val lastFeatured = ConcurrentHashMap<FeaturedScreen, TitleId>()
+
+    /**
+     * What a Title's Play starts, as its details' Play does: for a Movie, its [playPlan]; for a Show,
+     * the plan of its Episode to watch next ([episodes], [episodePlayPlan]). Null when there is
+     * nothing to play.
+     */
+    suspend fun titlePlayPlan(id: TitleId, contentLanguages: List<String>, appLanguage: String, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = when (id.kind) {
+        TitleKind.Movie -> playPlan(id, contentLanguages, device, qualityCap)
+        TitleKind.Show -> episodes(id, contentLanguages, appLanguage)?.next?.let { episodePlayPlan(id, it, contentLanguages, device, qualityCap) }
     }
 
     /**
@@ -2031,6 +2090,9 @@ class Library private constructor(
 
         /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
         private const val MIN_CHART_SIZE = 3
+
+        /** How far down each Chart the hero picks its Title from ([featured]). */
+        private const val FEATURED_FROM = 5
 
         /** A League row shows the week ahead: the cloud answers today and the next seven days. */
         private val WEEK_AHEAD: Duration = Duration.ofDays(7)
