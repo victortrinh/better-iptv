@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -154,7 +155,7 @@ class GameScreenTest {
         compose.onNodeWithTag("variant 41").assert(hasText("ESPN+ · National broadcast")).assert(hasText("Event channel"))
         assertTrue(compose.onAllNodesWithText("National Broadcast", substring = true).fetchSemanticsNodes().isEmpty())
         // Three variants: the Feed's name over them, each named as the Provider lists it, best first.
-        compose.onNodeWithTag("feed ${sabres.key}").assert(hasText("ESPN+ · Sabres broadcast"))
+        compose.onNodeWithTag("feed ${sabres.key}").assert(hasAnyChild(hasText("ESPN+ · Sabres broadcast")))
         compose.onAllNodesWithText("ESPN+ · Sabres broadcast").assertCountEquals(1)
         val rows = listOf(53L, 52L, 51L).map { compose.onNodeWithTag("variant $it").assert(hasText("US (ESPN+ 336) | Hockey: Senators vs. Sabres (Sabres Broadcast) $it")).fetchSemanticsNode().positionInRoot.y }
         assertEquals(rows, rows.sorted())
