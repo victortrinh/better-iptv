@@ -3,6 +3,8 @@ package dev.betteriptv.app
 import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
@@ -15,8 +17,11 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.height
 import androidx.test.core.app.ApplicationProvider
+import dev.betteriptv.app.ui.components.TeamTint
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.ChannelVariant
 import dev.betteriptv.core.DeviceProfile
@@ -183,6 +188,34 @@ class GameScreenTest {
         compose.waitUntil { played != null }
         assertEquals(77L, played!!.first.version.listingId)
         assertEquals("Canadiens at Maple Leafs", played!!.second)
+    }
+
+    @Test fun thePageLiesOnTheTeamsColoursFullScreenAwayLeftAndHomeRight() {
+        val coloured = Game(
+            "nhl", "1", Instant.parse("2026-11-01T18:00:00Z"), GameState.Live,
+            home = GameTeam("Toronto Maple Leafs", "Maple Leafs", "TOR", listOf("Toronto Maple Leafs"), null, color = 0xFF00205B.toInt()),
+            away = GameTeam("Montreal Canadiens", "Canadiens", "MTL", listOf("Montreal Canadiens"), null, color = 0xFFAF1E2D.toInt()),
+            broadcasters = emptyList(),
+        )
+        open(GameFeeds(coloured, listOf(Feed(event, FeedKind.EventChannel, "en"))))
+
+        val root = compose.onRoot().getBoundsInRoot()
+        val away = compose.onNodeWithTag("away-colour", useUnmergedTree = true).assert(SemanticsMatcher.expectValue(TeamTint, Color(0xFFAF1E2D))).getBoundsInRoot()
+        val home = compose.onNodeWithTag("home-colour", useUnmergedTree = true).assert(SemanticsMatcher.expectValue(TeamTint, Color(0xFF00205B))).getBoundsInRoot()
+        assertEquals(root.left, away.left)
+        assertEquals(away.right, home.left)
+        assertEquals(root.right, home.right)
+        assertEquals(root.height, away.height)
+        // Focus stays on Play, white as ever.
+        compose.onNodeWithTag("play").assertIsFocused()
+    }
+
+    @Test fun aGameWhoseTeamsHaveNoColoursKeepsTheBareGround() {
+        open(GameFeeds(game, listOf(Feed(event, FeedKind.EventChannel, "en"))))
+
+        compose.onNodeWithTag("play").assertIsFocused()
+        compose.onNodeWithTag("away-colour", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("home-colour", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test fun anF1SessionsPageNamesItsGrandPrixAndSessionWithTheLeaguesLogoInPlaceOfTheTeams() {

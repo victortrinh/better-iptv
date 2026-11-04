@@ -11,9 +11,18 @@ enum class GameState { Upcoming, Live, Over }
 /**
  * A team as a Game names it: its [name] (Toronto Maple Leafs), [shortName] (Maple Leafs) and
  * [abbreviation] (TOR), every name it goes by in [aliases] (those three, its location and its
- * nickname, no two alike), and its [logo] URL when the schedule has one.
+ * nickname, no two alike), and its [logo] URL when the schedule has one. Its [color] and
+ * [alternateColor] are the schedule's, as opaque ARGB (0xFF00205B), each null when it has none (#349).
  */
-class GameTeam(val name: String, val shortName: String, val abbreviation: String, val aliases: List<String>, val logo: String?)
+class GameTeam(
+    val name: String,
+    val shortName: String,
+    val abbreviation: String,
+    val aliases: List<String>,
+    val logo: String?,
+    val color: Int? = null,
+    val alternateColor: Int? = null,
+)
 
 /**
  * Which part of its event an event League's Game is: a Grand Prix weekend's session (practice and
@@ -166,7 +175,15 @@ internal object Games {
             abbreviation = team["abbreviation"] as? String ?: "",
             aliases = (team["aliases"] as? List<*>).orEmpty().filterIsInstance<String>().ifEmpty { listOf(name) },
             logo = team["logo"] as? String,
+            color = colour(team["color"]),
+            alternateColor = colour(team["alternateColor"]),
         )
+    }
+
+    /** [json], six hex digits as the cloud writes a colour (`00205b`), as opaque ARGB; null when it is none. */
+    private fun colour(json: Any?): Int? {
+        val hex = (json as? String)?.takeIf { it.length == 6 } ?: return null
+        return hex.toIntOrNull(16)?.let { it or 0xFF000000.toInt() }
     }
 
     private fun read(json: String): Any? = JsonReader.of(Buffer().writeUtf8(json)).use { it.readJsonValue() }
