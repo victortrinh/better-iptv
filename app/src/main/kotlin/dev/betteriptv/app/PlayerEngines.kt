@@ -121,6 +121,9 @@ sealed interface ControlledEngine : PlayerEngine {
 
     /** The plan's Track choice for the file, once the engine has read its Tracks: it says when downloaded subtitles show. */
     val chosen: StateFlow<TrackChoice?>
+
+    /** Whether the engine has drawn the file's first frame: until then the player covers the picture with the Title's art. */
+    val pictured: StateFlow<Boolean>
 }
 
 /** How long after a seek filling the buffer is taken for the seek's doing. */
@@ -133,7 +136,16 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
     private val requests = OpenRequests()
     private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
     override val chosen = MutableStateFlow<TrackChoice?>(null)
-    val player: ExoPlayer = playing.player.apply { addListener(TrackChooser(this, plan, device, remembered, choices, { seen = it }) { chosen.value = it }) }
+    override val pictured = MutableStateFlow(false)
+    val player: ExoPlayer = playing.player.apply {
+        addListener(TrackChooser(this, plan, device, remembered, choices, { seen = it }) { chosen.value = it })
+        // On the main thread, when the picture's first frame is on the surface.
+        addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                pictured.value = true
+            }
+        })
+    }
     /** The presentation times of the frames shown since playback started or the Viewer last seeked, on the playback thread. */
     private val frameTimes = ArrayList<Long>(MIN_FRAMES_FOR_RATE)
     @Volatile private var measuredFrameRate: Float? = null
@@ -541,6 +553,7 @@ class VlcEngine(
     override fun style(style: SubtitleStyle) = Unit
 
     override val chosen = MutableStateFlow<TrackChoice?>(null)
+    override val pictured = MutableStateFlow(false)
 
     override val frameRate: Float?
         get() = known.filterIsInstance<IMedia.VideoTrack>().firstOrNull()
@@ -570,6 +583,7 @@ class VlcEngine(
                     MediaPlayer.Event.Vout -> if (event.voutCount > 0 && !shown) {
                         Log.i(PLAYER_TAG, "VLC shows its picture")
                         shown = true
+                        pictured.value = true
                         // A pause asked for before the picture showed.
                         onVlcThread(::applyPause)
                     }
