@@ -109,6 +109,8 @@ class GameRowsTest {
             // Both teams, by their full names, shouted and accented.
             "LIVE | MONTRÉAL CANADIENS VS TORONTO MAPLE LEAFS | 13:00 EST" to "US| ARENA",
             // One team and a name of the League: "Leafs" is the last word of the nickname ESPN gives, "Habs" is no alias it knows.
+            "NHL: Leafs vs Habs @ Nov 1 1:00 PM" to "CA| SPORTS PPV",
+            // The sport's word is no League's name: a junior or minor league game says it too.
             "Hockey: Leafs vs Habs @ Nov 1 1:00 PM" to "CA| SPORTS PPV",
             // "Leafs" alone is one team without a League.
             "Habs vs Leafs | 2026-11-01 | 18:00 (GMT)" to "UK| PPV",
@@ -123,7 +125,7 @@ class GameRowsTest {
 
         val live = rows().liveNow()
         assertEquals(
-            listOf("LIVE | MONTRÉAL CANADIENS VS TORONTO MAPLE LEAFS | 13:00 EST", "Hockey: Leafs vs Habs @ Nov 1 1:00 PM"),
+            listOf("LIVE | MONTRÉAL CANADIENS VS TORONTO MAPLE LEAFS | 13:00 EST", "NHL: Leafs vs Habs @ Nov 1 1:00 PM"),
             live.feedNames("1"),
         )
         assertEquals(listOf("NHL: Bruins vs Senators (2026-11-01 19:00:00)"), rows().today().feedNames("2"))
@@ -149,6 +151,18 @@ class GameRowsTest {
             listOf("NHL: Toronto vs Boston (2026-11-01 19:00:00)", "Leafs @ Bruins (2026-11-01 19:00:00)", "Toronto vs Bruins (2026-11-01 19:00:00)"),
             rows().today().feedNames("2"),
         )
+    }
+
+    @Test fun `a junior game naming one team's city and the sport is not a Feed`() = runBlocking {
+        // Senators at Sabres, 7:30 PM in Toronto on Wednesday; the Provider's OHL slot the same day names "Ottawa" and "hockey" (seen 2026-11-03).
+        cloud.games("nhl", game("7", "2026-11-05T00:30:00Z", home = "Buffalo Sabres", away = "Ottawa Senators"))
+        provider.serveChannels(
+            "(FLSP 102) | hockey: Kingston Frontenacs vs Ottawa 67`s (Home) (2026-11-04 10:30:00)" to "US| FLOSPORTS",
+            "NHL: Senators @ Sabres (2026-11-04 19:30:00)" to "US| ESPN+ PPV",
+        )
+        library.sync()
+
+        assertEquals(listOf("NHL: Senators @ Sabres (2026-11-04 19:30:00)"), rows(at = Instant.parse("2026-11-04T16:00:00Z")).today().feedNames("7"))
     }
 
     @Test fun `an Event channel's time counts as the Game's read in any zone, but not the day before or after`() = runBlocking {
