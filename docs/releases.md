@@ -45,7 +45,35 @@ The release app, `dev.betteriptv`, is a separate package from the debug app, `de
 
 If the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the stick has an old debug-signed build under `dev.betteriptv`, from before debug builds became their own package. Uninstall that one first (`adb uninstall dev.betteriptv`, which deletes its catalog and login), then install again.
 
-If **Your Apps & Games** then shows an old icon on Zugig's tile (a navy disc, a cloud or a lone z) instead of the wordmark, that's the Appstore's record of an earlier build under the same package. Fire OS keeps it through updates, uninstalls and reboots, and nothing in the APK can refresh it. Clear the Appstore's cache: **Settings › Applications › Manage Installed Applications › Appstore › Clear cache** (not Clear data), then open Your Apps again.
+### A stale icon in Your Apps
+
+If **Your Apps & Games** shows an old icon on Zugig's tile (a navy disc, a cloud, a lone z or an earlier wordmark), the Appstore is drawing its own copy of the icon, not the installed one. It saves that copy when a package is first installed, as `/data/securedStorageLocation/com.amazon.venezia/<package>`, and deletes it only when the package is removed. Updates keep the old copy, whether they come from the app's updater or `adb install -r`, and so do reboots. On top of that the Appstore caches the picture on disk and in memory. Nothing in the APK can refresh any of it, and clearing the Appstore's cache alone just reloads the old copy.
+
+To redraw the tile from the installed APK and keep the app's login and catalog:
+
+1. Pull the installed APK, remove the package but keep its data, and install it again:
+
+   ```bash
+   adb pull "$(adb shell pm path dev.betteriptv | sed 's/^package://')" zugig.apk
+   ```
+
+   ```bash
+   adb shell pm uninstall -k dev.betteriptv
+   ```
+
+   ```bash
+   adb install zugig.apk
+   ```
+
+   `-k` keeps the app's files and its Keystore key, so the login still opens. The uninstall deletes the Appstore's copy and the install saves the current icon.
+
+2. In **Settings › Applications › Manage Installed Applications › Appstore**, choose **Force stop**, then **Clear cache** (not Clear data). You need both: Clear cache leaves the old picture in the running Appstore's memory, and Force stop leaves it on disk.
+
+3. Open Your Apps again.
+
+The debug app is the same with `dev.betteriptv.debug`. Never use a plain `adb uninstall` for this: it deletes the login and the catalog. The tile keeps its place in Your Apps.
+
+Every stick that already has Zugig hits this when the icon changes, because the updater's installs are updates too. Without adb, the only fix there is uninstalling and installing again, which also deletes the login and catalog. So treat a new launcher icon as costly for existing installs.
 
 ## Building a release locally
 
