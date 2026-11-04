@@ -117,7 +117,7 @@ class RowsUnderFocusTest {
                 },
                 info = { _, _, _ -> },
                 appLanguage = "en",
-                onOpen = { _, _ -> },
+                onOpen = { _, _, _ -> },
             ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
         }
     }

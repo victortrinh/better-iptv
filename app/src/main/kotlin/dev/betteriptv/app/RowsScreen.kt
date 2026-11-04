@@ -231,7 +231,8 @@ class RowsState {
  * unless the screen was reached by picking its tab ([focusTab]), which keeps focus. [placeholder],
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
- * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
+ * A Title's card opens it ([onOpen]), with the textless backdrop it had grown into, if it had,
+ * so the Title page can open on that picture; a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a Replay's
  * (Live's Replays row) plays it ([onPlayReplay]); a country's (Live's Channels row, named in the
  * [appLanguage]) opens its Channels screen ([onOpenCountry]). With [feature], the screen opens on the
@@ -250,7 +251,7 @@ fun RowsScreen(
     reading: Any,
     read: suspend () -> List<HomeRow>,
     empty: String,
-    onOpen: (RowCard, TitleId) -> Unit,
+    onOpen: (RowCard, TitleId, String?) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
@@ -314,7 +315,7 @@ internal fun RowsLayout(
     onScreen: @Composable (TitleId) -> Unit,
     info: @Composable (HomeRow, RowCard?, Modifier) -> Unit,
     appLanguage: String,
-    onOpen: (RowCard, TitleId) -> Unit,
+    onOpen: (RowCard, TitleId, String?) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
@@ -471,7 +472,7 @@ internal fun RowsLayout(
                     FeaturedHero(
                         hero, heroPlay, heroDetails,
                         onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
-                        onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id) },
+                        onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id, hero.backdrop) },
                         onFocus = { state.focused = RowCard(HERO_ROW, it) },
                         last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
                     )
@@ -596,7 +597,7 @@ internal fun RowsLayout(
                                         image = rememberArtwork(if (wide) resume?.still ?: title.image else art.poster, card = true),
                                         name = title.name,
                                         badges = emptyList(),
-                                        onClick = { onOpen(card, title.id) },
+                                        onClick = { onOpen(card, title.id, grown?.backdrop.takeIf { !wide }) },
                                         modifier = ends,
                                         wide = wide,
                                         progress = resume?.progress,

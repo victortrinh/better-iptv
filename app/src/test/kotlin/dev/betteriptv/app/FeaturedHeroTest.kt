@@ -147,7 +147,7 @@ class FeaturedHeroTest {
                     onScreen = {},
                     info = { _, _, _ -> },
                     appLanguage = "en",
-                    onOpen = { card, id -> opened += card to id },
+                    onOpen = { card, id, _ -> opened += card to id },
                     feature = feature,
                     onPlayFeatured = { card, title -> played += card to title },
                 ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
