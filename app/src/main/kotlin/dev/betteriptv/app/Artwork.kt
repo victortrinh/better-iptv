@@ -33,7 +33,6 @@ import coil3.intercept.Interceptor
 import coil3.request.ImageRequest
 import coil3.request.ImageResult
 import coil3.size.Precision
-import coil3.size.Size
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
@@ -78,7 +77,7 @@ private fun artworkRequest(context: PlatformContext, url: String, card: Boolean)
  * the grown card finds it there on its first grown frame.
  */
 fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) {
-    SingletonImageLoader.get(context).enqueue(artworkRequest(context, backdrop, card = false).newBuilder().size(Size.ORIGINAL).build())
+    SingletonImageLoader.get(context).enqueue(artworkRequest(context, backdrop, card = false).newBuilder().size(coil3.size.Size.ORIGINAL).build())
 }
 
 /** How long a card is on screen, or focus rests on one, before artwork loads for it ([SettleFirst], the rows' preloading). */
