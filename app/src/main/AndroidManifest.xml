@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- The Amazon Appstore, told after an update to redraw Zugig's tile (AppstoreTileReceiver). -->
+    <queries>
+        <package android:name="com.amazon.venezia" />
+    </queries>
+
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
@@ -42,5 +47,14 @@
         <receiver
             android:name=".UpdateInstallReceiver"
             android:exported="false" />
+
+        <!-- After each update, asks the Amazon Appstore to save the new icon for Your Apps. -->
+        <receiver
+            android:name=".AppstoreTileReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
