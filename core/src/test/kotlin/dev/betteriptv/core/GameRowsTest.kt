@@ -32,7 +32,9 @@ class GameRowsTest {
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
         library.logIn(provider.login)
+        provider.movieCategoriesOverride = "[]"
         provider.movieListOverride = "[]"
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         Unit
     }

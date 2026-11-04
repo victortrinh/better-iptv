@@ -149,6 +149,7 @@ class MatchingTest {
 
     @Test fun `a batch the cloud fails doesn't stop the batches after it`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         // Thirty Listings without an ID ask the cloud two batches.
         provider.movieListOverride = (1..30).joinToString(",", "[", "]") { n ->
@@ -166,6 +167,7 @@ class MatchingTest {
 
     @Test fun `the Sync stops asking the cloud after a few batches fail in a row`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         provider.movieListOverride = (1..200).joinToString(",", "[", "]") { n ->
             """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""

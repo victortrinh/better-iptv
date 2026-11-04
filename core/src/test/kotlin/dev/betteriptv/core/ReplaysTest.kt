@@ -34,6 +34,7 @@ class ReplaysTest {
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
         library.logIn(provider.login)
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         provider.liveListOverride = "[]"
         Unit

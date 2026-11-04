@@ -37,6 +37,7 @@ class BackgroundReadingTest {
     @Before fun logIn() = runBlocking {
         library = open()
         library.logIn(provider.login)
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         Unit
     }

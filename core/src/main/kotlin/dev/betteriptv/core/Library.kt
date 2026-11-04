@@ -225,6 +225,7 @@ class Library private constructor(
                             running()
                         }
                     }
+                    if (tallies.isEmpty()) requireListings(liveCategories, "live")
                     liveCategories.forEach { (id, name) ->
                         val tally = tallies[id]
                         val kind = when {
@@ -268,18 +269,24 @@ class Library private constructor(
                             movieCategories[id] = name
                             staging.category(TitleKind.Movie, id, name)
                         }
+                        var movieListings = 0
                         client.movieListings { id, name, categoryId, added, tmdbId, image, container ->
+                            movieListings++
                             listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container)
                         }
+                        if (movieListings == 0) requireListings(movieCategories, "movie")
                         step = SyncStep.Shows
                         running()
                         client.showCategories { id, name ->
                             showCategories[id] = name
                             staging.category(TitleKind.Show, id, name)
                         }
+                        var showListings = 0
                         client.showListings { id, name, categoryId, modified, tmdbId, image ->
+                            showListings++
                             listing(TitleKind.Show, id, name, showCategories[categoryId].orEmpty(), categoryId, modified, tmdbId, image, null)
                         }
+                        if (showListings == 0) requireListings(showCategories, "show")
                     },
                     onFilled = {
                         step = SyncStep.Saving
@@ -321,6 +328,15 @@ class Library private constructor(
         _syncStatus.value = finished
         if (finished is SyncStatus.Synced) prepareSearchInBackground()
         return finished
+    }
+
+    /**
+     * Fails the Sync when the Provider sent an empty [kind] list beside [categories] of that kind: it once
+     * answered both title lists with `[]`, and the empty catalog stood as a finished Sync that nothing
+     * retried. A Provider with no Categories of a kind has none of it, and its empty list is right.
+     */
+    private fun requireListings(categories: Map<String, String>, kind: String) {
+        if (categories.isNotEmpty()) throw ProviderException(Unreachable("It sent an empty $kind list. Try again in a moment."))
     }
 
     /**

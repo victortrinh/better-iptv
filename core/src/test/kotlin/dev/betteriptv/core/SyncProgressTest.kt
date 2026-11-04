@@ -266,6 +266,7 @@ class SyncProgressTest {
     @Test fun `Matching ends even when the unknown-Prefix report fails`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"XB - MOVIES"}]"""
         provider.movieListOverride = """[{"stream_id":1,"name":"XB - Cold Pursuit (2019)","tmdb":"","category_id":"1","added":"1700000000"}]"""
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         cloud.failingPrefixReports = true
 
@@ -380,6 +381,7 @@ class SyncProgressTest {
         provider.movieListOverride = (1..count).joinToString(",", "[", "]") {
             """{"stream_id":$it,"name":"Lost Film $it","tmdb":"","category_id":"1","added":"${1_700_000_000 - it}"}"""
         }
+        provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
     }
 }
