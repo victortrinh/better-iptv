@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,9 +38,11 @@ import dev.betteriptv.app.ui.theme.Type
  * team's short name in its place instead, so a card is never blank. With [disabled] set (an
  * upcoming Game with no Feed), the card dims and says why at the bottom right; it still takes
  * focus, so the info under the rail can tell about it, but pressing it does nothing. Never a score.
- * The card carries no name slot: on Live the info under the rail names the Game. The glass carries
- * the teams' colours ([awayTint] on the left half, [homeTint] on the right, [TeamField]) under the
- * logos; without them it is plain glass. Focus stays white.
+ * The card carries no name slot: on Live the info under the rail names the Game. In a row that mixes
+ * Leagues (Live now, Today), the Game's [league] logo sits small at the top left, so the Viewer knows
+ * whose Game it is; it is left out while it hasn't loaded or can't be.
+ * The glass carries the teams' colours ([awayTint] on the left half, [homeTint] on the right,
+ * [TeamField]) under the logos; without them it is plain glass. Focus stays white.
  */
 @Composable
 fun GameCard(
@@ -54,8 +57,9 @@ fun GameCard(
     onFocus: () -> Unit = {},
     awayTint: Color? = null,
     homeTint: Color? = null,
+    league: Painter? = null,
 ) {
-    GameCardFrame(caption, onClick, modifier, disabled, onFocus, awayTint, homeTint) {
+    GameCardFrame(caption, onClick, modifier, disabled, onFocus, awayTint, homeTint, league) {
         TeamLogo(away, awayName, Modifier.weight(1f).fillMaxHeight().testTag("away"))
         TeamLogo(home, homeName, Modifier.weight(1f).fillMaxHeight().testTag("home"))
     }
@@ -87,7 +91,7 @@ fun EventGameCard(
     }
 }
 
-/** A Game card's glass, tinted with the teams' colours when given, its [caption] at the bottom left and its [disabled] state, around the [sides] it lays out in a row. */
+/** A Game card's glass, tinted with the teams' colours when given, its [caption] at the bottom left, its [league] badge at the top left and its [disabled] state, around the [sides] it lays out in a row. */
 @Composable
 private fun GameCardFrame(
     caption: String,
@@ -97,6 +101,7 @@ private fun GameCardFrame(
     onFocus: () -> Unit,
     awayTint: Color? = null,
     homeTint: Color? = null,
+    league: Painter? = null,
     sides: @Composable RowScope.() -> Unit,
 ) {
     FocusSurface(
@@ -108,6 +113,15 @@ private fun GameCardFrame(
     ) {
         TeamField(awayTint, homeTint, Modifier.matchParentSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA))
         Row(Modifier.fillMaxSize().alpha(if (disabled == null) 1f else DISABLED_ALPHA).padding(horizontal = Spacing.m, vertical = Spacing.s), content = sides)
+        if (league != null) {
+            Image(
+                league,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = Spacing.s, top = CAPTION_BOTTOM).size(LEAGUE_BADGE)
+                    .alpha(if (disabled == null) 1f else DISABLED_ALPHA).testTag("league-badge"),
+            )
+        }
         Text(
             caption,
             style = Type.caption,
@@ -152,4 +166,7 @@ private fun TeamLogo(logo: Painter?, name: String, modifier: Modifier) {
 /** The caption's line and the margin under it, kept clear under the logos. */
 private val LOGO_ROOM_FOR_CAPTION = 14.dp
 private val CAPTION_BOTTOM = 6.dp
+
+/** The League's logo at a mixed row's card's top left: about a caption line tall. */
+private val LEAGUE_BADGE = 18.dp
 private const val DISABLED_ALPHA = 0.45f

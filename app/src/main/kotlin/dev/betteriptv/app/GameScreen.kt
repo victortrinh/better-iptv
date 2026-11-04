@@ -42,6 +42,7 @@ import dev.betteriptv.app.ui.components.PrimaryAction
 import dev.betteriptv.app.ui.components.TeamField
 import dev.betteriptv.app.ui.components.teamTint
 import dev.betteriptv.app.ui.components.TitleName
+import dev.betteriptv.app.ui.components.VersionLine
 import dev.betteriptv.app.ui.components.VersionRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
@@ -64,8 +65,9 @@ import kotlinx.coroutines.withContext
  * A Game's page, built from the Title page's parts: a header naming the League, both teams and
  * "Live" or the start time, Play with the best Feed named under it, then every Feed grouped by
  * language, the Viewer's Content languages first, each Feed a heading naming its Event channel,
- * Broadcaster or League network with its variants listed under it as a Channel's Versions are, best
- * first for this stick and TV ([deviceProfile], read when the screen opens); the Feeds marked "Not
+ * Broadcaster or League network by its service and broadcast ([feedName]), with its variants listed
+ * under it as a Channel's Versions are, best first for this stick and TV ([deviceProfile], read when
+ * the screen opens), or as one row when it has one variant; the Feeds marked "Not
  * this game" on this device come last, in a group of their own, each marked. Play starts the best
  * Feed's play plan ([planFor]: [Library.channelPlayPlan], its variants as Backups); choosing a
  * variant row starts the Feed from that variant; either way [onPlay] gets the plan, the Game's name
@@ -253,16 +255,29 @@ private fun LazyListScope.feedGroup(
         )
     }
     feeds.forEachIndexed { feedIndex, feed ->
-        item(key = "feed ${feed.channel.key}") {
-            Column(Modifier.padding(top = if (feedIndex == 0) 0.dp else Spacing.s, bottom = 2.dp)) {
-                Text(feed.name, style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(context.feedKind(feed), style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
         // Until the plans are in, the Provider's order stands in for the ranked one.
         val versions = plans?.get(feed.channel.key)?.versions
             ?: feed.channel.variants.map { Version(it.id, it.name, VersionAttributes(), liveFormat = "ts") }
-        versions.forEachIndexed { index, version ->
+        val top = if (feedIndex == 0) 0.dp else Spacing.s
+        // A Feed with one variant is one row, named by the Feed; only several nest under it, each named as the Provider lists it.
+        val single = versions.singleOrNull()
+        if (single != null) {
+            item(key = "feed ${feed.channel.key}") {
+                VersionRow(
+                    VersionLine(emptyList(), "", "", "", bitrate = null, backup = null, note = context.feedKind(feed), live = context.feedName(feed)),
+                    onClick = { onChoose(feed, single) },
+                    modifier = Modifier.padding(top = top).testTag("variant ${single.listingId}"),
+                )
+            }
+            return@forEachIndexed
+        }
+        item(key = "feed ${feed.channel.key}") {
+            Column(Modifier.padding(top = top, bottom = 2.dp).testTag("feed ${feed.channel.key}")) {
+                Text(context.feedName(feed), style = Type.label, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(context.feedKind(feed), style = Type.caption, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        versions.forEach { version ->
             item(key = "variant ${feed.channel.key} ${version.listingId}") {
                 VersionRow(
                     context.versionLine(version),
