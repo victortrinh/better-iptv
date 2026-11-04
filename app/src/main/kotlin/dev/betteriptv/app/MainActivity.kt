@@ -6,6 +6,10 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -16,11 +20,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Feed
@@ -76,13 +82,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val textSize by remember { app.settings.settings.map { it.textSize }.distinctUntilChanged() }
                 .collectAsStateWithLifecycle(app.settings.settings.value.textSize)
-            NuageTheme(textSize) { Root(app) }
+            // A Box, so the screen fade (in [Root], after the screens) is drawn over them.
+            NuageTheme(textSize) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
         }
     }
 }
 
 @Composable
-private fun Root(app: BetterIptvApp) {
+private fun BoxScope.Root(app: BetterIptvApp) {
     var loggedIn by remember { mutableStateOf(app.library.isLoggedIn) }
     val update by (app.updates?.state ?: NO_UPDATES).collectAsStateWithLifecycle()
     // "Later" puts the offered update away until the next launch, or until it's asked for in Settings.
@@ -288,8 +295,27 @@ private fun Root(app: BetterIptvApp) {
                 )
             }
         }
+        // Each screen change fades the new screen in over the ground; the player opens and closes as a cut.
+        ScreenFade(
+            when {
+                now != null -> PlayerShown
+                openedGame != null -> GameShown(openedGame!!.entry.key)
+                country != null -> country
+                opened != null -> opened!!.id
+                else -> tab
+            },
+            // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
+            // content still fades in (TitlePage).
+            asIs = { it == PlayerShown || (it is TitleId && it == opened?.id && opened?.backdrop != null) },
+        )
     }
 }
+
+/** The player is on screen: it opens and closes with no fade over the picture. */
+private object PlayerShown
+
+/** The page of the Game with this key is on screen. */
+private data class GameShown(val key: String)
 
 /** What builds without the in-app updater show: nothing to offer. */
 private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)

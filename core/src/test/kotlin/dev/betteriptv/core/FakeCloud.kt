@@ -413,7 +413,8 @@ fun fightCard(
  * A Game shaped like the cloud's answer (cloud/src/schedule.ts): [home] against [away] (full
  * names, each with the aliases ESPN gives: the name, the nickname as its short name, a three-letter
  * abbreviation and the location, "Toronto Maple Leafs" being Toronto's "Maple Leafs") at [start]
- * (UTC ISO 8601) in [state] (`upcoming`, `live`, `over`), carried by [broadcasters].
+ * (UTC ISO 8601) in [state] (`upcoming`, `live`, `over`), carried by [broadcasters]. [colours]
+ * gives a team, by full name, its colour and alternate colour as the cloud writes them (`00205b`).
  */
 fun game(
     id: String,
@@ -423,6 +424,7 @@ fun game(
     away: String = "Montreal Canadiens",
     broadcasters: List<String> = emptyList(),
     league: String = "nhl",
+    colours: Map<String, Pair<String, String?>> = emptyMap(),
 ): Map<String, Any?> {
     val team = { name: String ->
         // ESPN's nickname is the name's last word, or its last two for the few that have them.
@@ -433,7 +435,7 @@ fun game(
             "id" to abbreviation, "name" to name, "shortName" to nickname, "abbreviation" to abbreviation,
             // As cloud/src/espn.ts lists them: display name, short display name, abbreviation, location, nickname, each once.
             "aliases" to listOf(name, nickname, abbreviation, location).distinct(), "logo" to "https://logos.example/$abbreviation.png",
-        )
+        ) + colours[name]?.let { (color, alternate) -> listOfNotNull("color" to color, alternate?.let { "alternateColor" to it }) }.orEmpty()
     }
     return mapOf("id" to id, "league" to league, "start" to start, "state" to state, "home" to team(home), "away" to team(away), "broadcasters" to broadcasters)
 }

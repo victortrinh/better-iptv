@@ -1,7 +1,6 @@
 package dev.betteriptv.app
 
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -48,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
@@ -59,6 +59,7 @@ import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
+import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.app.ui.theme.StayPut
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -429,6 +430,7 @@ internal fun RowsLayout(
                             else -> Cards.posterWidth
                         }
                         val rail = state.rail(row.key, loop)
+                        val resting = with(LocalDensity.current) { cardWidth.roundToPx() }
                         // The card a row entered for the first time starts at.
                         val entry = remember { FocusRequester() }
                         // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
@@ -456,7 +458,7 @@ internal fun RowsLayout(
                                 val card = RowCard(row.key, keys[index])
                                 val onFocus = {
                                     state.focused = card
-                                    scope.launch { rail.glideTo(place) }
+                                    scope.launch { rail.glideTo(place, resting) }
                                     Unit
                                 }
                                 // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
@@ -714,25 +716,30 @@ private fun replayKey(replay: LeagueReplay) = "replay/${replay.replay.listingId}
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do
- * (#167). The distance left is read again at every frame and covered in proportion to the time
- * left, so the card lands exactly there though the card focused before shrinks and this one grows
- * meanwhile (#216). A card not laid out is jumped to.
+ * (#167), on the focus curve the cards grow and shrink on ([Motion.focus]), so the slide and the
+ * cards move together and the card lands once (#341). It aims at where the card will sit once the
+ * cards before it are back to their [resting] width (the card focused before still shrinking), not
+ * where it is now, which would carry it past the margin and back. That aim is read again at every
+ * frame and covered in proportion to the time left, so the card never passes the margin, whenever
+ * the shrinking started, and ends on it. A card not laid out is jumped to.
  */
-private suspend fun LazyListState.glideTo(place: Int) {
-    fun distance() = layoutInfo.visibleItemsInfo.firstOrNull { it.index == place }?.offset?.toFloat()
+internal suspend fun LazyListState.glideTo(place: Int, resting: Int) {
+    fun distance(): Float? {
+        val cards = layoutInfo.visibleItemsInfo
+        val card = cards.firstOrNull { it.index == place } ?: return null
+        val shrinking = cards.sumOf { if (it.index < place) (it.size - resting).coerceAtLeast(0) else 0 }
+        return (card.offset - shrinking).toFloat()
+    }
     if (distance() == null) return scrollToItem(place)
     scroll {
         var done = 0f
-        animate(0f, 1f, animationSpec = GLIDE) { progress, _ ->
+        animate(0f, 1f, animationSpec = Motion.focus()) { progress, _ ->
             val left = distance() ?: return@animate
             scrollBy(if (progress >= 1f || done >= 1f) left else left * (progress - done) / (1f - done))
             done = progress
         }
     }
 }
-
-/** As bringing a card into view moved a rail before (#167): quick, without overshooting. */
-private val GLIDE = spring<Float>(visibilityThreshold = 0.001f)
 
 private val CANVAS_WIDTH = 960.dp
 

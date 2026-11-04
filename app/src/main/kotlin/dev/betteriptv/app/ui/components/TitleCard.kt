@@ -1,7 +1,6 @@
 package dev.betteriptv.app.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -114,13 +113,13 @@ fun TitleCard(
                             if (it.isFocused) {
                                 spread = true
                                 scope.launch {
-                                    growth.animateTo(1f, tween(Motion.focusMillis))
+                                    growth.animateTo(1f, Motion.focus())
                                     // Grown, it may reach past the edge of a list that scrolls only near its edges, as in Search.
                                     bring?.bringIntoView()
                                 }
                             } else {
                                 scope.launch {
-                                    growth.animateTo(0f, tween(Motion.focusMillis))
+                                    growth.animateTo(0f, Motion.focus())
                                     spread = false
                                 }
                             }
