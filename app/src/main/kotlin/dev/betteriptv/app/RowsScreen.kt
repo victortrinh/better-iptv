@@ -41,7 +41,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,6 +51,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
+import dev.betteriptv.app.ui.components.RowHeading
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
 import dev.betteriptv.app.ui.components.RankedCard
@@ -378,14 +378,7 @@ internal fun RowsLayout(
                 }
                 rows.orEmpty().forEach { row ->
                     item(key = "row-${row.key}", contentType = "row") {
-                        Text(
-                            row.heading(),
-                            style = Type.headline,
-                            color = Colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp),
-                        )
+                        row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
                         val wide = row is HomeRow.ContinueWatching
                         // Channels, countries, Games and Replays are wide cards alike.
                         val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
@@ -472,7 +465,7 @@ internal fun RowsLayout(
                                 }
                                 val games = row.games
                                 if (games != null) {
-                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus)
+                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus, league = row.mixesLeagues)
                                     return@items
                                 }
                                 if (row is HomeRow.Replays) {
@@ -630,6 +623,10 @@ private val HomeRow.games: List<GameFeeds>?
         else -> null
     }
 
+/** Whether a Game row may hold several Leagues' Games (Live now, Today), whose cards then carry their League's logo; a League's own row names it in its heading. */
+internal val HomeRow.mixesLeagues: Boolean
+    get() = this is HomeRow.LiveNow || this is HomeRow.Today
+
 /** Whether a row is a Top 10, drawn with its ranks and never looping. */
 private val HomeRow.ranked: Boolean
     get() = this is HomeRow.Chart && (list == ChartList.TopMovies || list == ChartList.TopShows)
@@ -711,6 +708,12 @@ private val ROW_CACHE = 300.dp
 
 /** How many cards each kind of rail shows at once ([RailLoop.seen]). */
 private class Seen(val posters: Int, val stills: Int, val channels: Int)
+
+/** A row's heading: its name, and on a League's row the League's logo before it ([RowHeading]), the name alone while the logo can't be loaded. */
+@Composable
+internal fun HomeRow.Heading(modifier: Modifier = Modifier) {
+    RowHeading(heading(), modifier, logo = (this as? HomeRow.LeagueGames)?.let { rememberArtwork(it.league.logo) })
+}
 
 @Composable
 private fun HomeRow.heading(): String = when (this) {
