@@ -12,6 +12,7 @@ import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
+import { season } from "./season";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves only data that is the same for every Viewer;
@@ -45,6 +46,10 @@ import { upcoming } from "./upcoming";
  *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
  *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
  *   when TMDB can't answer right now and the Show was never asked about.
+ * - `POST /v1/season`, with `{"tmdbId": 1399, "season": 2, "language": "fr"}`: that season's
+ *   Episodes as TMDB lists them, for the Episode picker, `{"episodes": [{"episode": 1, "name": "…",
+ *   "stillPath": "/abc.jpg", "runtimeMinutes": 52}]}` (each null when TMDB has none). `503` when
+ *   TMDB can't answer right now and the season was never asked about.
  * - `POST /v1/charts`, with `{"region": "CA", "language": "fr"}`: the Charts for that Region,
  *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]},
  *   "trending": {"all": […], "movies": […], "shows": […]}, "genres": [{"kind": "movie", "name":
@@ -125,6 +130,22 @@ export default {
       }
       try {
         return json({ episodes: await upcoming(env, tmdbId as number, language) });
+      } catch (e) {
+        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
+        throw e;
+      }
+    }
+    if (request.method === "POST" && pathname === "/v1/season") {
+      const asked = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; season?: unknown; language?: unknown };
+      const { tmdbId, language } = asked;
+      if (
+        !Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || !Number.isSafeInteger(asked.season) || (asked.season as number) < 0 ||
+        typeof language !== "string" || !/^[a-z]{2}$/.test(language)
+      ) {
+        return problem(400, "tmdbId must be a Show's positive TMDB ID, season a season number (0 for specials), and language an ISO 639-1 code, such as \"fr\".");
+      }
+      try {
+        return json({ episodes: await season(env, tmdbId as number, asked.season as number, language) });
       } catch (e) {
         if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
         throw e;

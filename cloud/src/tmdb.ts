@@ -96,6 +96,27 @@ export async function fetchUpcoming(env: Env, tmdbId: number, language: string):
     .map((e) => ({ season: next.season_number, episode: e.episode_number, airDate: e.air_date!, name: e.name?.trim() || null }));
 }
 
+/** One Episode of a season as TMDB lists it: its number, its name, its still (a TMDB path) and its runtime, each null when TMDB has none. */
+export interface SeasonEpisode {
+  episode: number;
+  name: string | null;
+  stillPath: string | null;
+  runtimeMinutes: number | null;
+}
+
+/** Season [season] of Show [tmdbId], with names in [language] (ISO 639-1); NOT_FOUND when TMDB has no such season. */
+export async function fetchSeason(env: Env, tmdbId: number, season: number, language: string): Promise<SeasonEpisode[] | typeof NOT_FOUND> {
+  const response = await get(env, `tv/${tmdbId}/season/${season}`, { language });
+  if (response === NOT_FOUND) return NOT_FOUND;
+  const episodes = ((await response.json()) as { episodes?: TmdbEpisode[] }).episodes ?? [];
+  return episodes.map((e) => ({
+    episode: e.episode_number,
+    name: e.name?.trim() || null,
+    stillPath: e.still_path || null,
+    runtimeMinutes: e.runtime && e.runtime > 0 ? e.runtime : null,
+  }));
+}
+
 /** One result of TMDB's search: its name in the requested language, as released, and its year. */
 export interface Found {
   tmdbId: number;
@@ -330,6 +351,8 @@ interface TmdbEpisode {
   episode_number: number;
   air_date?: string | null;
   name?: string;
+  still_path?: string | null;
+  runtime?: number | null;
 }
 
 /** The parts of TMDB's movie and TV details responses the app uses. */
