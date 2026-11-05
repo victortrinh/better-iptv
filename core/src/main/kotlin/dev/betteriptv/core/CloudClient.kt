@@ -153,6 +153,22 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
+     * Season [season] of Show [tmdbId] as TMDB lists it, each Episode with its name in [language]
+     * (ISO 639-1), its still (a TMDB path) and its runtime, for the Episode picker.
+     */
+    fun season(tmdbId: Long, season: Int, language: String): List<SeasonEpisode> {
+        val answer = authorized { token -> post("v1/season", json.toJson(mapOf("tmdbId" to tmdbId, "season" to season, "language" to language)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return (answer["episodes"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { episode ->
+            SeasonEpisode(
+                (episode["episode"] as? Number)?.toInt() ?: return@mapNotNull null,
+                still = (episode["stillPath"] as? String)?.takeIf { it.startsWith("/") },
+                runtimeMinutes = (episode["runtimeMinutes"] as? Number)?.toInt()?.takeIf { it > 0 },
+            )
+        }
+    }
+
+    /**
      * The Charts for [region] (ISO 3166, `CA`) in [language] (ISO 639-1), as the cloud's JSON, which
      * [Charts] reads; kept whole, so parts a later app reads are already there.
      */
@@ -285,3 +301,6 @@ internal fun providerKey(login: ProviderLogin): String =
 
 /** An Episode TMDB lists as not aired yet: it airs on [airDate], and TMDB may know its [name]. */
 internal class UpcomingEpisode(val episode: EpisodeNumber, val airDate: LocalDate, val name: String?)
+
+/** An Episode of a season as TMDB lists it: its [number], its [still] (a TMDB path) and its runtime, each null when TMDB has none. */
+internal class SeasonEpisode(val number: Int, val still: String?, val runtimeMinutes: Int?)

@@ -11,7 +11,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -321,6 +321,59 @@ describe("upcoming Episodes", () => {
     const token = await registerDevice();
     expect((await call("POST", "/v1/upcoming", { tmdbId: "1399", language: "en" }, token)).status).toBe(400);
     expect((await call("POST", "/v1/upcoming", { tmdbId: 1399, language: "eng" }, token)).status).toBe(400);
+  });
+});
+
+describe("a season's Episodes", () => {
+  // Love is Blind's second season: stills and runtimes for the Episode picker.
+  beforeEach(() => {
+    tmdb.season(123250, 2, (language) => ({
+      season_number: 2,
+      episodes: [
+        { season_number: 2, episode_number: 1, air_date: "2022-02-11", name: language === "fr" ? "Le retour" : "Are We Ready?", still_path: "/one.jpg", runtime: 52 },
+        { season_number: 2, episode_number: 2, air_date: "2022-02-11", name: " ", still_path: null, runtime: 0 },
+      ],
+    }));
+  });
+
+  const season = async (token: string, tmdbId: number, number: number, language = "en") => {
+    const response = await call("POST", "/v1/season", { tmdbId, season: number, language }, token);
+    return { status: response.status, body: (await response.json()) as { episodes: unknown[] } };
+  };
+
+  it("lists each Episode with its name in the language asked, its still and its runtime", async () => {
+    const token = await registerDevice();
+    const { status, body } = await season(token, 123250, 2, "fr");
+    expect(status).toBe(200);
+    expect(body.episodes).toEqual([
+      { episode: 1, name: "Le retour", stillPath: "/one.jpg", runtimeMinutes: 52 },
+      { episode: 2, name: null, stillPath: null, runtimeMinutes: null },
+    ]);
+  });
+
+  it("has none for a season TMDB doesn't have", async () => {
+    const token = await registerDevice();
+    expect((await season(token, 123250, 9)).body.episodes).toEqual([]);
+  });
+
+  it("answers from its cache, and while TMDB is down after that", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T08:00:00Z"));
+    const token = await registerDevice();
+    await season(token, 123250, 2);
+    await season(token, 123250, 2);
+    expect(tmdb.requests).toHaveLength(1);
+
+    vi.setSystemTime(new Date("2026-11-05T08:00:00Z"));
+    tmdb.failWith = 503;
+    expect((await season(token, 123250, 2)).body.episodes).toHaveLength(2);
+    expect((await season(token, 123250, 3)).status).toBe(503);
+  });
+
+  it("rejects a malformed request", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/season", { tmdbId: 1399, season: "2", language: "en" }, token)).status).toBe(400);
+    expect((await call("POST", "/v1/season", { tmdbId: 1399, season: -1, language: "en" }, token)).status).toBe(400);
   });
 });
 

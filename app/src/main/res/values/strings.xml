@@ -249,6 +249,7 @@
     </plurals>
     <string name="season_title">Season %1$d</string>
     <string name="season_specials">Specials</string>
+    <string name="episodes_at">%1$s · E%2$d</string>
     <plurals name="episodes_count">
         <item quantity="one">%1$d Episode</item>
         <item quantity="other">%1$d Episodes</item>

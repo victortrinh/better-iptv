@@ -302,7 +302,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 BackHandler {
                     byTab = false
                     if (title.section != null) {
-                        // Back from the Versions screen returns to the Title page, on the action that opened it.
+                        // Back from the Versions screen or the Episode picker returns to the Title page, on the action that opened it.
                         opened = title.copy(section = null, returnedFrom = title.section)
                     } else {
                         returnedTo = title.card
@@ -330,7 +330,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 else -> tab
             },
             // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
-            // content still fades in (TitlePage). Its Versions screen, and the page again after it, fade in as any screen.
+            // content still fades in (TitlePage). Its Versions screen and Episode picker, and the page again after them, fade in as any screen.
             asIs = { shown ->
                 val title = opened
                 shown == PlayerShown || (shown is TitleShown && title != null && shown == TitleShown(title.id, null) &&
@@ -364,7 +364,7 @@ private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: 
 /**
  * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
  * with the textless [backdrop] that card had grown into, which the page opens on. A [section] is open over the page (its
- * Versions screen); [returnedFrom] is the one Back just closed, whose action takes focus.
+ * Versions screen or Episode picker); [returnedFrom] is the one Back just closed, whose action takes focus.
  */
 private data class OpenedTitle(
     val id: TitleId,

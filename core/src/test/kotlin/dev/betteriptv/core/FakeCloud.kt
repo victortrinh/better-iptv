@@ -42,6 +42,7 @@ class FakeCloud : Closeable {
 
     private val metadata = HashMap<String, Map<String, Any?>>()
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
+    private val seasons = HashMap<String, List<Map<String, Any?>>>()
     private val searches = HashMap<String, Map<String, Any?>>()
     private val charts = HashMap<String, Map<String, Any?>>()
     private val games = HashMap<String, List<Map<String, Any?>>>()
@@ -135,6 +136,20 @@ class FakeCloud : Closeable {
             }
         }
     }
+
+    /** Answers `/v1/season` for season [season] of Show [tmdbId] in [language] with [episodes]: number, still path and runtime. */
+    fun season(tmdbId: Long, season: Int, language: String, vararg episodes: Triple<Int, String?, Int?>) {
+        synchronized(seasons) {
+            seasons["$tmdbId/$season/$language"] = episodes.map { (number, still, runtime) -> mapOf("episode" to number, "name" to null, "stillPath" to still, "runtimeMinutes" to runtime) }
+        }
+    }
+
+    /** The seasons the device asked `/v1/season` for, as `tmdbId/season/language`. */
+    val seasonsAsked: List<String>
+        get() = received.filter { it.path == "/v1/season" }.map { request ->
+            val asked = read(request.body) as Map<*, *>
+            "${(asked["tmdbId"] as Number).toLong()}/${(asked["season"] as Number).toInt()}/${asked["language"]}"
+        }
 
     /**
      * Answers `/v1/charts` for [region] with Netflix's Top 10 [movies] and [shows] (TMDB IDs in rank
@@ -257,6 +272,13 @@ class FakeCloud : Closeable {
                 val asked = read(body) as Map<*, *>
                 val key = "${(asked["tmdbId"] as Number).toLong()}/${asked["language"]}"
                 respond(exchange, 200, mapOf("episodes" to synchronized(upcoming) { upcoming[key] }.orEmpty()))
+            }
+            "/v1/season" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val asked = read(body) as Map<*, *>
+                val key = "${(asked["tmdbId"] as Number).toLong()}/${(asked["season"] as Number).toInt()}/${asked["language"]}"
+                respond(exchange, 200, mapOf("episodes" to synchronized(seasons) { seasons[key] }.orEmpty()))
             }
             "/v1/subtitles", "/v1/subtitles/download" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
