@@ -182,8 +182,46 @@ data class LanguageGroup(val language: String?, val versions: List<Version>) {
  * so it has every season any Version has, and the ones TMDB lists as not aired yet. [unreadVersions]
  * counts the Versions whose details the Provider couldn't give (and that weren't kept from before):
  * their Episodes are missing. [next] is the Episode to watch next ([nextEpisode]), null when there are none.
+ *
+ * [usualLanguages] is the Show's usual language set: the named languages (primary subtags) most of
+ * its Episodes are available in ([usualLanguages]). An Episode names its languages only when they
+ * differ from it ([languagesNamed]).
  */
-data class ShowEpisodes(val seasons: List<Season>, val unreadVersions: Int, val next: EpisodeNumber? = null)
+data class ShowEpisodes(
+    val seasons: List<Season>,
+    val unreadVersions: Int,
+    val next: EpisodeNumber? = null,
+    val usualLanguages: Set<String> = usualLanguages(seasons),
+) {
+    /**
+     * The languages [episode] is available in, the Viewer's first, when they differ from the Show's
+     * [usualLanguages]; empty when they are the usual set, or when it has no Version yet. A Version
+     * whose language isn't named is never shown as one.
+     */
+    fun languagesNamed(episode: Episode): List<String> {
+        val named = episode.namedLanguages()
+        return if (named.toSet() == usualLanguages) emptyList() else named
+    }
+}
+
+/** [Episode]'s named languages, the Viewer's first, each once. */
+private fun Episode.namedLanguages(): List<String> = (languages + otherLanguages).mapNotNull { it.language }.distinct()
+
+/**
+ * The named languages more than half of [seasons]' Episodes that have a Version are available in:
+ * what an Episode of the Show usually offers, so an Episode that offers just that needn't say so.
+ */
+fun usualLanguages(seasons: List<Season>): Set<String> {
+    val offered = seasons.flatMap { it.episodes }.filter { it.availableOn == null }.map { it.namedLanguages() }
+    if (offered.isEmpty()) return emptySet()
+    return offered.flatten().groupingBy { it }.eachCount().filterValues { it * 2 > offered.size }.keys
+}
+
+/**
+ * What TMDB knows of Episode [number] of a season for the Episode picker: its [still], a 16:9 image
+ * URL, and its runtime, each null when TMDB has none.
+ */
+data class EpisodeStill(val number: Int, val still: String?, val runtimeMinutes: Int?)
 
 /** One season of a Show, its Episodes in order. Specials (season 0) come after the others. */
 data class Season(val number: Int, val episodes: List<Episode>)

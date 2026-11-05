@@ -235,6 +235,9 @@ class TitleTwoLevelsTest {
         open(show, details(show, "Breaking Bad") to null, episodes to plan)
 
         compose.onNodeWithTag("versions action").assert(showing("English · 1 Version"))
+        // Past Episodes, which comes first on a Show.
+        press(Key.DirectionDown)
+        focusedOn("Episodes")
         press(Key.DirectionDown)
         focusedOn("Versions")
         press(Key.DirectionCenter)

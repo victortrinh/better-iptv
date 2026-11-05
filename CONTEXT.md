@@ -65,7 +65,7 @@ A Title made of seasons of Episodes.
 _Avoid_: Series, TV show
 
 **Episode**:
-One episode of a Show, identified by season and episode number. A Show's next Episode is the one the Viewer stopped in, else the one after the one they last Watched, else the first: its details' Play plays it ("Continue S1 E6"), and Down from Play lands on it. An Episode TMDB lists as airing later that no Version has yet is shown with its air date and can't be played.
+One episode of a Show, identified by season and episode number. A Show's next Episode is the one the Viewer stopped in, else the one after the one they last Watched, else the first: its details' Play plays it ("Continue S1 E6"), and the Episode picker opens on it. An Episode names its languages only where they differ from the Show's usual set, the languages most of its Episodes have. An Episode TMDB lists as airing later that no Version has yet is shown with its air date and can't be played.
 
 **Credits**:
 The end of a Movie's or Episode's file: its last 10%, or its last 10 minutes when that is less (ADR 0008). Providers mark none, so this rule stands in: from here a Movie is Watched, and an Episode offers the next one.

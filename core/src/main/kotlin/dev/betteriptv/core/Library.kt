@@ -987,6 +987,28 @@ class Library private constructor(
     }
 
     /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
+    /**
+     * What TMDB knows of each Episode of season [season] of Show [id] for the Episode picker: its
+     * still and runtime, by episode number, in the [appLanguage]. Asked of the cloud once a season
+     * per run of the app; empty for a Show TMDB doesn't know, or while the cloud can't answer.
+     */
+    suspend fun seasonStills(id: TitleId, season: Int, appLanguage: String = "en"): Map<Int, EpisodeStill> = withContext(Dispatchers.IO) {
+        if (cloud == null || id !is TitleId.Tmdb || id.kind != TitleKind.Show) return@withContext emptyMap()
+        val key = Triple(id.tmdbId, season, primaryLanguage(appLanguage))
+        seasonStillsCache[key]?.let { return@withContext it }
+        if (!canAskCloud()) return@withContext emptyMap()
+        val stills = try {
+            cloud.season(id.tmdbId, season, key.third).associate { it.number to EpisodeStill(it.number, it.still?.let { path -> "https://image.tmdb.org/t/p/$STILL_SIZE$path" }, it.runtimeMinutes) }
+        } catch (e: CloudException) {
+            return@withContext emptyMap()
+        }
+        seasonStillsCache[key] = stills
+        stills
+    }
+
+    /** The seasons' stills asked this run ([seasonStills]), by TMDB ID, season and language. */
+    private val seasonStillsCache = ConcurrentHashMap<Triple<Long, Int, String>, Map<Int, EpisodeStill>>()
+
     private fun upcoming(id: TitleId, appLanguage: String): List<UpcomingEpisode> {
         if (cloud == null || id !is TitleId.Tmdb || !canAskCloud()) return emptyList()
         return try {
@@ -2100,6 +2122,8 @@ class Library private constructor(
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         private const val SHOW_DETAILS_AT_ONCE = 4
+        /** TMDB's still size for an Episode row's 16:9 thumbnail (about 200 px wide on the stick). */
+        private const val STILL_SIZE = "w300"
         private const val MIN_RESUME_POSITION = 60_000L
         /** How many cards a home row holds. */
         private const val ROW_SIZE = 20
