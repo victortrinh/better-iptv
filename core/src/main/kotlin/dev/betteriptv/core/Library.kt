@@ -933,6 +933,7 @@ class Library private constructor(
             cast = metadata?.cast.orEmpty(),
             rank = topRanks(region, contentLanguages, appLanguage)[id],
             fromTmdb = metadata != null,
+            trailer = metadata?.trailer(appLanguage),
         )
     }
 

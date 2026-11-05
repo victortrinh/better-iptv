@@ -166,6 +166,8 @@ data class TitleDetails(
     val rank: ChartRank? = null,
     /** Whether the metadata came from TMDB, whose terms ask for attribution where it is shown. */
     val fromTmdb: Boolean = false,
+    /** The YouTube video ID of its trailer, in the App language, else English, else the first TMDB lists (ADR 0012); null when it has none. */
+    val trailer: String? = null,
 )
 
 /**

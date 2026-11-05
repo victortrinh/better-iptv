@@ -104,6 +104,26 @@ class MetadataTest {
         assertEquals("fr", details(godfather, "fr").languages.first().language)
     }
 
+    @Test fun `a Title's trailer is the first listed in the App language, else in English, else the first listed`() = runBlocking {
+        // As the cloud lists them: official ones first.
+        val trailers = listOf(trailer("en-official", "en"), trailer("fr-official", "fr"), trailer("fr-fan", "fr", official = false), trailer("de", "de", official = false))
+        cloud.title("fr", tmdbTitle(238, "The Godfather", trailers = trailers))
+        cloud.title("de", tmdbTitle(238, "The Godfather", trailers = trailers.filter { it["language"] != "de" }))
+        cloud.title("it", tmdbTitle(238, "The Godfather", trailers = listOf(trailer("unnamed", null), trailer("es", "es"))))
+
+        assertEquals("fr-official", details(godfather, "fr-CA").trailer)
+        assertEquals("en-official", details(godfather, "de").trailer)
+        assertEquals("unnamed", details(godfather, "it").trailer)
+    }
+
+    @Test fun `a Title with no trailer has none, and one cached before trailers had languages gets the first listed`() = runBlocking {
+        cloud.title("fr", tmdbTitle(238, "The Godfather"))
+        cloud.title("en", tmdbTitle(238, "The Godfather", trailers = listOf("official", "fan")))
+
+        assertNull(details(godfather, "fr").trailer)
+        assertEquals("official", details(godfather, "en").trailer)
+    }
+
     @Test fun `without a translation in the App language, the name and description are in English`() = runBlocking {
         cloud.title(
             "fr",

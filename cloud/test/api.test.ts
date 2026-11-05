@@ -108,7 +108,10 @@ describe("Title metadata", () => {
           { name: "Al Pacino", character: "Michael Corleone", profilePath: "/pacino.jpg" },
         ],
         imdbId: "tt0068646",
-        trailers: ["official-trailer", "fan-trailer"],
+        trailers: [
+          { key: "official-trailer", language: "fr", official: true },
+          { key: "fan-trailer", language: "en", official: false },
+        ],
       },
     ]);
     expect(tmdb.requests.map((url) => url.pathname)).toEqual(["/3/movie/238"]);

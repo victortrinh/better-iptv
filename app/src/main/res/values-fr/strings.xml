@@ -122,6 +122,7 @@
     <string name="play_continue">Reprendre à %1$s</string>
     <string name="details">Détails</string>
     <string name="play_restart">Recommencer</string>
+    <string name="title_trailer">Bande-annonce</string>
     <string name="continue_watching_remove">Retirer de « Reprendre »</string>
     <string name="play_nothing">Aucune version que ce téléviseur peut afficher</string>
     <string name="play_episode">Lecture S%1$d É%2$d</string>

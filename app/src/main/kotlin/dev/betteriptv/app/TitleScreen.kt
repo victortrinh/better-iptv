@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -91,7 +92,7 @@ import kotlinx.coroutines.withContext
 /**
  * A Title's page, in two levels (DESIGN.md, Details). The page itself holds the Title and what to do
  * with it: the logo, the metadata line with its badges, two lines of description and the actions,
- * Play first, then Restart, "Remove from Continue watching" and Versions, whose value says what Play
+ * Play first, then Restart, "Remove from Continue watching", Trailer and Versions, whose value says what Play
  * starts ("English · 1080p · 9 Versions"). A Movie's fits on one screen. OK on Versions opens the
  * [section] [TitleSection.Versions] ([onSection]): the Versions screen, which lists every Version
  * grouped by language over the same backdrop ([VersionsContent]); on a Show, those of the Episode
@@ -107,6 +108,8 @@ import kotlinx.coroutines.withContext
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
  * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
+ * Trailer opens the Title's trailer in the device's YouTube app ([trailerIntent], ADR 0012), and is
+ * left out when it has none or no YouTube app can take it.
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode. Down from the actions goes to that Episode in
  * the list, the one before it peeking above; with nothing to play, focus goes there.
@@ -339,6 +342,8 @@ private fun TitleContent(
     val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
     // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
     val showVersions = versions != null || (isShow && episodes == null)
+    // Left out when there's no trailer, or no YouTube app to open it in (ADR 0012).
+    val trailer = remember(title.trailer) { title.trailer?.let { trailerIntent(context.packageManager, it) } }
 
     LazyColumn(
         Modifier.fillMaxSize().onFocusChanged { listHasFocus = it.hasFocus },
@@ -405,6 +410,7 @@ private fun TitleContent(
                     // Down from the last action goes to the next Episode; from any other, to the action under it.
                     val last = when {
                         showVersions -> TitleAction.Versions
+                        trailer != null -> TitleAction.Trailer
                         showRemove -> TitleAction.Remove
                         resumable -> TitleAction.Restart
                         else -> TitleAction.Play
@@ -430,6 +436,14 @@ private fun TitleContent(
                             if (showRemove) {
                                 ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove, modifier = Modifier.lastAction(TitleAction.Remove))
                             }
+                        }
+                        if (trailer != null) {
+                            ActionRow(
+                                stringResource(R.string.title_trailer),
+                                Icons.AutoMirrored.Filled.ExitToApp,
+                                onClick = { context.openTrailer(trailer) },
+                                modifier = Modifier.testTag("trailer action").lastAction(TitleAction.Trailer),
+                            )
                         }
                         if (showVersions) {
                             // Its value says what Play starts, and how many Versions there are to choose from instead.
@@ -466,7 +480,7 @@ private fun TitleContent(
 }
 
 /** The Title page's actions, in their order, to tell which is last. */
-private enum class TitleAction { Play, Restart, Remove, Versions }
+private enum class TitleAction { Play, Restart, Remove, Trailer, Versions }
 
 /**
  * A Show's seasons, each Episode as a row naming the languages it's available in, the Viewer's
