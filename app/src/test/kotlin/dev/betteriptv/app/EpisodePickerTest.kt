@@ -157,7 +157,7 @@ class EpisodePickerTest {
     private fun openPicker() {
         compose.onNodeWithTag("play").assertIsFocused()
         repeat(2) { press(Key.DirectionDown) }
-        focusedOn("Episodes")
+        compose.onNodeWithTag("episodes action").assertIsFocused()
         press(Key.DirectionCenter)
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
@@ -167,8 +167,10 @@ class EpisodePickerTest {
         open()
 
         compose.onNodeWithTag("episodes action").assert(showing("Season 2 · E4"))
-        assertFalse(shows("The Reveal"))
+        // The header names the Episode Play starts; no Episode row is on the page.
+        assertTrue(shows("S2 E4 · The Reveal"))
         assertFalse(shows("Pods"))
+        assertFalse(shows("Episode name"))
     }
 
     @Test fun neverPlayedTheActionNamesTheFirstSeasonAndItsEpisodeCount() {
