@@ -49,7 +49,12 @@ class ChannelVariantsTest {
     /** A stick without an HEVC decoder, on a 1080p TV. */
     private val oldStick = DeviceProfile(maxHeight = 1080, hdr = emptySet(), videoDecoders = setOf("video/avc"))
 
-    private suspend fun channels(query: String) = library.search(query, english, "en").last().channels
+    // Against the catalog as it stands: after a Sync, search keeps the last index until a background rebuild
+    // lands, and a renumbered stream id could find another Channel in it meanwhile.
+    private suspend fun channels(query: String): List<Channel> {
+        library.prepareSearch()
+        return library.search(query, english, "en").last().channels
+    }
 
     private suspend fun channel(query: String) = channels(query).single()
 

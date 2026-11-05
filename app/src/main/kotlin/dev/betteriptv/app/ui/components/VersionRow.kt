@@ -25,6 +25,7 @@ import dev.betteriptv.app.R
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.VersionColumn
 
 /** What a Version row shows. Strings arrive formatted; the row only lays them out. */
 data class VersionLine(
@@ -40,14 +41,18 @@ data class VersionLine(
     val noteIsCaution: Boolean = false,
     /** A Channel's label, which stands in for the columns: "Live · MPEG-TS". */
     val live: String? = null,
+    /** Every cell in muted type, for a Backup under its Version on the Versions screen. */
+    val muted: Boolean = false,
 )
 
 /**
  * One Version in a Title's list. Columns have fixed widths so the Versions of a language line up
- * like a table and can be compared at a glance.
+ * like a table and can be compared at a glance. Only [columns] are drawn, the room of the others
+ * shared among them ([VersionHeader] takes the same [columns]).
  */
 @Composable
-fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modifier, columns: List<VersionColumn> = VersionColumn.entries) {
+    val widths = columnWidths(columns)
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = RoundedCornerShape(Corners.control)
@@ -68,24 +73,28 @@ fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modi
             }
         } else {
             Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.width(QUALITY)) {
-                    BadgeRow(line.badges)
-                    if (line.note != null) {
-                        Text(
-                            line.note,
-                            style = Type.caption,
-                            color = if (line.noteIsCaution) Colors.caution else Colors.inkMuted,
-                            modifier = Modifier.padding(top = 4.dp),
-                            maxLines = 1,
-                        )
+                widths[VersionColumn.Quality]?.let { width ->
+                    Column(Modifier.width(width)) {
+                        BadgeRow(line.badges)
+                        if (line.note != null) {
+                            Text(
+                                line.note,
+                                style = Type.caption,
+                                color = if (line.noteIsCaution) Colors.caution else Colors.inkMuted,
+                                modifier = Modifier.padding(top = 4.dp),
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
-                Cell(line.source, SOURCE, emphasis = true)
-                Cell(line.audio, AUDIO)
-                Cell(line.subtitles, SUBTITLES)
+                widths[VersionColumn.Source]?.let { Cell(line.source, it, emphasis = !line.muted) }
+                widths[VersionColumn.Audio]?.let { Cell(line.audio, it) }
+                widths[VersionColumn.Subtitles]?.let { Cell(line.subtitles, it) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                     Column(horizontalAlignment = Alignment.End) {
-                        line.bitrate?.let { Text(it, style = Type.detail, color = Colors.ink, textAlign = TextAlign.End) }
+                        line.bitrate?.takeIf { VersionColumn.Bitrate in columns }?.let {
+                            Text(it, style = Type.detail, color = if (line.muted) Colors.inkMuted else Colors.ink, textAlign = TextAlign.End)
+                        }
                         line.backup?.let { Text(it, style = Type.caption, color = Colors.inkMuted) }
                     }
                 }
@@ -94,23 +103,30 @@ fun VersionRow(line: VersionLine, onClick: () -> Unit, modifier: Modifier = Modi
     }
 }
 
-/** Names the columns of the [VersionRow]s under it. */
+/** Names the [columns] of the [VersionRow]s under it. */
 @Composable
-fun VersionHeader(modifier: Modifier = Modifier) {
+fun VersionHeader(modifier: Modifier = Modifier, columns: List<VersionColumn> = VersionColumn.entries) {
+    val widths = columnWidths(columns)
     Row(modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
-        Heading(stringResource(R.string.version_quality), QUALITY)
-        Heading(stringResource(R.string.version_source), SOURCE)
-        Heading(stringResource(R.string.version_audio), AUDIO)
-        Heading(stringResource(R.string.version_subtitles), SUBTITLES)
-        Text(stringResource(R.string.version_bitrate), style = Type.caption, color = Colors.inkMuted, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        widths[VersionColumn.Quality]?.let { Heading(stringResource(R.string.version_quality), it) }
+        widths[VersionColumn.Source]?.let { Heading(stringResource(R.string.version_source), it) }
+        widths[VersionColumn.Audio]?.let { Heading(stringResource(R.string.version_audio), it) }
+        widths[VersionColumn.Subtitles]?.let { Heading(stringResource(R.string.version_subtitles), it) }
+        val bitrate = if (VersionColumn.Bitrate in columns) stringResource(R.string.version_bitrate) else ""
+        Text(bitrate, style = Type.caption, color = Colors.inkMuted, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
     }
 }
 
-// Fixed column widths, sized for French labels about 20% longer than English.
-private val QUALITY = 188.dp
-private val SOURCE = 124.dp
-private val AUDIO = 188.dp
-private val SUBTITLES = 120.dp
+// Fixed column widths, sized for French labels about 20% longer than English. Bitrate takes the rest of the row.
+private val WIDTHS = mapOf(VersionColumn.Quality to 188.dp, VersionColumn.Source to 124.dp, VersionColumn.Audio to 188.dp, VersionColumn.Subtitles to 120.dp)
+
+/** The width of each of [columns] but Bitrate: its own, plus an even share of the hidden columns'. */
+private fun columnWidths(columns: List<VersionColumn>): Map<VersionColumn, Dp> {
+    val shown = WIDTHS.filterKeys { it in columns }
+    if (shown.isEmpty()) return shown
+    val share = WIDTHS.filterKeys { it !in columns }.values.fold(0.dp) { sum, width -> sum + width } / shown.size
+    return shown.mapValues { (_, width) -> width + share }
+}
 
 @Composable
 private fun Heading(text: String, width: Dp) {
