@@ -37,8 +37,12 @@ export interface TitleMetadata extends TitleKey {
   textlessBackdropPath: string | null;
   cast: { name: string; character: string; profilePath: string | null }[];
   imdbId: string | null;
-  /** YouTube video IDs, official trailers first. */
-  trailers: string[];
+  /**
+   * YouTube trailers in the requested language and English (and any TMDB gives no language), official
+   * ones first: each one's video ID and language (ISO 639-1, null when TMDB doesn't say). Answers
+   * cached before #355 hold bare video IDs instead.
+   */
+  trailers: { key: string; language: string | null; official: boolean }[];
 }
 
 /** TMDB has no Title with this kind and ID. */
@@ -285,7 +289,7 @@ function read(key: TitleKey, language: string, t: TmdbTitle): TitleMetadata {
     trailers: (t.videos?.results ?? [])
       .filter((v) => v.site === "YouTube" && v.type === "Trailer")
       .sort((a, b) => Number(b.official ?? false) - Number(a.official ?? false))
-      .map((v) => v.key),
+      .map((v) => ({ key: v.key, language: v.iso_639_1 || null, official: v.official ?? false })),
   };
 }
 
@@ -370,7 +374,7 @@ interface TmdbTitle {
   translations?: { translations: { iso_639_1: string; iso_3166_1: string; data?: { title?: string; name?: string; overview?: string } }[] };
   alternative_titles?: { titles?: { title: string }[]; results?: { title: string }[] };
   credits?: { cast?: { name: string; character?: string; profile_path?: string | null; order?: number }[] };
-  videos?: { results?: { key: string; site: string; type: string; official?: boolean }[] };
+  videos?: { results?: { key: string; site: string; type: string; official?: boolean; iso_639_1?: string | null }[] };
   external_ids?: { imdb_id?: string | null };
   images?: { logos?: TmdbImage[]; posters?: TmdbImage[]; backdrops?: TmdbImage[] };
 }

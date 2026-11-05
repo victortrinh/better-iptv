@@ -49,6 +49,26 @@ internal class TitleMetadata(json: String) {
             pick(titles, language) ?: originalTitle.takeIf { originalLanguage == primaryLanguage(language) && it.isNotEmpty() }
         } ?: originalTitle
 
+    /**
+     * The trailer to show (ADR 0012), as a YouTube video ID: the first listed in [appLanguage], so its
+     * official one when it has one, else in English, else the first listed; null when TMDB lists none.
+     * Answers cached before #355 list bare IDs, without their language: the first of those.
+     */
+    fun trailer(appLanguage: String): String? = sequenceOf(primaryLanguage(appLanguage), "en").firstNotNullOfOrNull { language ->
+        trailers.firstOrNull { it.language == language }
+    }?.key ?: trailers.firstOrNull()?.key
+
+    private class Trailer(val key: String, val language: String?)
+
+    /** Official trailers first, as the cloud lists them. */
+    private val trailers: List<Trailer> = (tree["trailers"] as? List<*>).orEmpty().mapNotNull {
+        when (it) {
+            is String -> Trailer(it, null)
+            is Map<*, *> -> (it["key"] as? String)?.let { key -> Trailer(key, it["language"] as? String) }
+            else -> null
+        }?.takeIf { trailer -> trailer.key.isNotBlank() }
+    }
+
     /** The description in [appLanguage], else in English; null when TMDB has neither. */
     fun description(appLanguage: String): String? = pick(descriptions, appLanguage) ?: pick(descriptions, "en")
 

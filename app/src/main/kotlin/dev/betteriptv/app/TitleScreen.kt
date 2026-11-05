@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
@@ -94,6 +95,8 @@ import kotlinx.coroutines.withContext
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
  * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
+ * Trailer, before Versions, opens the Title's trailer in the device's YouTube app ([trailerIntent],
+ * ADR 0012), and is left out when it has none or no YouTube app can take it.
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode; with nothing to play, focus goes to the Episodes action.
  *
@@ -304,6 +307,8 @@ private fun TitleContent(
     val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
     // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
     val showVersions = versions != null || (isShow && episodes == null)
+    // Left out when there's no trailer, or no YouTube app to open it in (ADR 0012).
+    val trailer = remember(title.trailer) { title.trailer?.let { trailerIntent(context.packageManager, it) } }
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {
@@ -383,6 +388,14 @@ private fun TitleContent(
                         modifier = Modifier.testTag("episodes action").focusRequester(episodesAction),
                         value = episodes?.let { context.episodesValue(it) } ?: "",
                         enabled = next != null,
+                    )
+                }
+                if (trailer != null) {
+                    ActionRow(
+                        stringResource(R.string.title_trailer),
+                        Icons.AutoMirrored.Filled.ExitToApp,
+                        onClick = { context.openTrailer(trailer) },
+                        modifier = Modifier.testTag("trailer action"),
                     )
                 }
                 if (showVersions) {

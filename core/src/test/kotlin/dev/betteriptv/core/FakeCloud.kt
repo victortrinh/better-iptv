@@ -344,6 +344,8 @@ fun tmdbTitle(
     cast: List<String> = emptyList(),
     popularity: Double = 10.0,
     alternativeTitles: List<String> = emptyList(),
+    /** YouTube trailers as the cloud lists them, official first: [trailer]s, or bare video IDs as cached before #355. */
+    trailers: List<Any> = emptyList(),
 ): Map<String, Any?> = mapOf(
     "kind" to kind,
     "tmdbId" to tmdbId,
@@ -363,8 +365,12 @@ fun tmdbTitle(
     "textlessBackdropPath" to textlessBackdropPath,
     "cast" to cast.map { mapOf("name" to it, "character" to "", "profilePath" to null) },
     "imdbId" to null,
-    "trailers" to emptyList<String>(),
+    "trailers" to trailers,
 )
+
+/** One YouTube trailer in [tmdbTitle]'s list, in [language] (null when TMDB doesn't say). */
+fun trailer(key: String, language: String?, official: Boolean = true): Map<String, Any?> =
+    mapOf("key" to key, "language" to language, "official" to official)
 
 /**
  * An event League's Game as the cloud's `/v1/games` lists one (cloud/src/espn.ts): a Grand Prix's

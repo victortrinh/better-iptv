@@ -202,8 +202,8 @@ export const godfather = (language: string) => ({
   videos: {
     results: [
       { key: "teaser1", site: "YouTube", type: "Teaser", official: true },
-      { key: "fan-trailer", site: "YouTube", type: "Trailer", official: false },
-      { key: "official-trailer", site: "YouTube", type: "Trailer", official: true },
+      { key: "fan-trailer", site: "YouTube", type: "Trailer", official: false, iso_639_1: "en" },
+      { key: "official-trailer", site: "YouTube", type: "Trailer", official: true, iso_639_1: "fr" },
       { key: "vimeo1", site: "Vimeo", type: "Trailer", official: true },
     ],
   },
