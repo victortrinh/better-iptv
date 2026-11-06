@@ -10,9 +10,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -33,6 +35,12 @@ internal val START_TIMEOUT = 8.seconds
  * While the Provider keeps answering, it may.
  */
 private const val ANSWERED_START_TIMEOUTS = 4
+
+/**
+ * How long an engine may make its picture by itself before the Version counts as not starting. VLC
+ * builds its list of fonts the first time it plays after an install: 41 s on the stick (#400).
+ */
+private val PREPARING_LIMIT = 2.minutes
 
 /** Buffering this many times within [BUFFERING_WINDOW] brings the suggestion of a lower Version. */
 private const val BUFFERING_REPEATS = 3
@@ -86,12 +94,21 @@ interface PlayerEngine {
      */
     val answeredAt: TimeSource.Monotonic.ValueTimeMark? get() = null
 
+    /**
+     * Whether the engine is making its picture by itself, having read what it needs of the file, as
+     * VLC does while it builds its list of fonts the first time it plays: the Provider owes it
+     * nothing meanwhile, so its time to start doesn't run out.
+     */
+    val preparing: StateFlow<Boolean> get() = NOT_PREPARING
+
     /** What the engine found in the file once it opened it, so Playback Confirms the Version; null until then. */
     val seen: FileContents? get() = null
 
     /** Stops and lets go of the file; returns once the engine's request to the Provider is closed. */
     suspend fun release()
 }
+
+private val NOT_PREPARING: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
 
 enum class PlayerEvent {
     /** The picture is playing for the first time since [PlayerEngine.play]. */
@@ -269,12 +286,20 @@ class PlaybackSession internal constructor(
     /**
      * Returns once [player], given the file at [opened], has had its time to start: the start timeout
      * since the Provider last answered it (through a [relay], answered the relay), up to the limit.
+     * While the engine is [PlayerEngine.preparing] its picture, its time doesn't run out.
      */
     private suspend fun startDeadline(player: PlayerEngine, opened: TimeSource.Monotonic.ValueTimeMark, relay: StreamRelay?) {
-        val limit = opened + startTimeout * ANSWERED_START_TIMEOUTS
+        var limit = opened + startTimeout * ANSWERED_START_TIMEOUTS
         var from = opened
         while (true) {
             delay(minOf(from + startTimeout, limit) - TimeSource.Monotonic.markNow())
+            if (player.preparing.value) {
+                // The engine's own work, which the Provider has no part in: its time runs again once it's done.
+                withTimeoutOrNull(PREPARING_LIMIT) { player.preparing.first { !it } } ?: return
+                from = TimeSource.Monotonic.markNow()
+                limit = maxOf(limit, from + startTimeout)
+                continue
+            }
             val answered = if (relay != null) relay.answeredAt else player.answeredAt
             if (answered == null || answered <= from || limit.hasPassedNow()) return
             from = answered

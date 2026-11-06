@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.IOException
@@ -11,6 +12,7 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
+import kotlin.time.Duration
 import kotlin.time.TimeSource
 
 /**
@@ -45,6 +47,12 @@ class ScriptedPlayer(private val provider: FakeProvider) {
      * picture starts, closing each before the next, as it reads an MP4 whose index is at its end.
      */
     @Volatile var media3Reads = 1
+
+    /**
+     * How long the VLC engine then makes its picture by itself, asking the Provider nothing, as VLC
+     * does while it first builds its list of fonts on the stick.
+     */
+    @Volatile var vlcPreparing = Duration.ZERO
 
     /** Set when the session asked an engine to play while another still held a file. */
     @Volatile var playedOverAnother = false
@@ -81,6 +89,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         @Volatile private var released = false
         @Volatile override var seen: FileContents? = null
         @Volatile override var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
+        override val preparing = MutableStateFlow(false)
         /** Completes with how playing stops: a failure, or null for the file's end. */
         val failure = CompletableDeferred<Throwable?>()
 
@@ -120,6 +129,11 @@ class ScriptedPlayer(private val provider: FakeProvider) {
                 }
             }
             opened.await()
+            if (engine == Engine.Vlc && vlcPreparing > Duration.ZERO) {
+                preparing.value = true
+                delay(vlcPreparing)
+                preparing.value = false
+            }
             if (listingId in undecodable) throw CantOpen("scripted: $engine can't decode the file")
             this.events = events
             seen = files[listingId]
