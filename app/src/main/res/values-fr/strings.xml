@@ -114,6 +114,8 @@
     <string name="version_audio_description">Audiodescription</string>
     <string name="subtitles_many">Plusieurs langues</string>
     <string name="language_untagged">Langue non précisée</string>
+    <!-- The Versions screen's heading over the Versions whose language no Prefix, Category or TMDB names (#388). -->
+    <string name="versions_untagged">Autres versions</string>
     <string name="version_backup">Copie de secours</string>
 
     <string name="versions_title">Versions</string>

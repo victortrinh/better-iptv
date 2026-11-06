@@ -943,7 +943,7 @@ class Library private constructor(
         }
         val candidates = candidates(title)
         val shown = shown(candidates, contentLanguages, metadata, appLanguage)
-        val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
+        val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, metadata?.originalLanguage), contentLanguages)
         TitleDetails(
             id, shown.name, shown.year, shown.image, languages, otherLanguages,
             description = metadata?.description(appLanguage),
@@ -1001,7 +1001,8 @@ class Library private constructor(
                 read[listing.id] = episodes
             }
         }
-        val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id) }
+        val original = originalLanguage(id)
+        val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id) }
         val played = store.episodeProgress(id)
         val merged = mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
         val seasons = withUpcomingAndProgress(merged, upcoming.await(), played, LocalDate.now())
