@@ -32,6 +32,7 @@ import java.time.ZoneId
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
@@ -91,6 +92,8 @@ class Library private constructor(
      * read from [unsavedCharts] or [unsavedMetadata] as if it were stored.
      */
     private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
+    /** The thread asking the cloud for other devices' file reads of a Movie whose details are read ([title]). */
+    private val fileReadLookUps = Executors.newSingleThreadExecutor { Thread(it, "library-file-reads").apply { isDaemon = true } }
     /** The thread asking the cloud for Games behind a read that doesn't wait for them ([games]). */
     private val gamesFetches = Executors.newSingleThreadExecutor { Thread(it, "library-games").apply { isDaemon = true } }
     private val gamesFetching = AtomicBoolean()
@@ -916,11 +919,29 @@ class Library private constructor(
         return titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
     }
 
-    /** A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when the catalog doesn't have it. */
+    /**
+     * A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when
+     * the catalog doesn't have it. A Movie's Versions come with what other devices on the Provider
+     * read of them (from the cloud), waited for up to [SHARED_READS_WAIT].
+     */
     suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): TitleDetails? = withContext(Dispatchers.IO) {
         val title = store.title(id) ?: return@withContext null
-        val candidates = candidates(title)
+        // What other Viewers of the Provider read is asked beside TMDB's details, so a Movie's page
+        // arrives with its badges and plan Confirmed and they don't change once it shows (#387). A
+        // slow cloud is waited for no longer than a page waits to arrive; its answer is kept anyway.
+        val asked = System.nanoTime()
+        val shared = if (id.kind != TitleKind.Movie) null else credentials.load()?.let { login ->
+            fileReadLookUps.submit { lookUpFileReads(providerKey(login), title.listings.map { it.id }) }
+        }
         val metadata = metadata(listOf(id), appLanguage)[id]
+        try {
+            shared?.get((SHARED_READS_WAIT.toNanos() - (System.nanoTime() - asked)).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+        } catch (e: TimeoutException) {
+            // Kept once it comes: the page shows it the next time it reads its details.
+        } catch (e: ExecutionException) {
+            // The details stand without it, as without a cloud.
+        }
+        val candidates = candidates(title)
         val shown = shown(candidates, contentLanguages, metadata, appLanguage)
         val (languages, otherLanguages) = groupByLanguage(candidates, contentLanguages)
         TitleDetails(
@@ -2091,6 +2112,7 @@ class Library private constructor(
 
     override fun close() {
         gamesFetches.shutdownNow()
+        fileReadLookUps.shutdownNow()
         guideFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.
         saves.shutdown()
@@ -2162,6 +2184,8 @@ class Library private constructor(
         private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
+        /** How long a Movie's details wait for the cloud's file reads of its Versions: the page-arrival time (DESIGN.md, Motion). */
+        private val SHARED_READS_WAIT: Duration = Duration.ofMillis(300)
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
         private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
         /** How many programmes of a guide call are kept: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
