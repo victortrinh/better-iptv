@@ -330,6 +330,54 @@ class FeaturedHeroTest {
         focusedOn("Play")
     }
 
+    /** The screen as it is drawn at this frame. */
+    private fun drawn(): Bitmap {
+        compose.waitForIdle()
+        val screen = compose.activity.window.decorView
+        return Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888).also { screen.draw(Canvas(it)) }
+    }
+
+    // It draws the screen, whose vector icons need real bitmaps.
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theRowsAndTheHeroFadeInTogetherOverThePlaceholders() {
+        val held = CompletableDeferred<Unit>()
+        artHeld = held
+        compose.mainClock.autoAdvance = false
+        screen()
+        repeat(4) { frame() }
+        val placeholders = drawn()
+        compose.onNodeWithTag(PLACEHOLDERS).assertExists()
+
+        held.complete(Unit)
+        while (!exists("About Dune.")) frame()
+        // On their first frame, the rows and the hero are there (focus is on Play) but not yet seen:
+        // the screen is still the placeholders, rather than the rows over an empty hero (#398).
+        assertTrue(exists("Action"))
+        focusedOn("Play")
+        assertTrue("the rows' first frame shows the placeholders as they were", drawn().sameAs(placeholders))
+
+        // Then they fade in as one over the placeholders, which go once they have.
+        frame()
+        frame()
+        assertTrue(!drawn().sameAs(placeholders))
+        compose.onNodeWithTag(PLACEHOLDERS).assertExists()
+        compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + 100L)
+        compose.onNodeWithTag(PLACEHOLDERS).assertDoesNotExist()
+        assertEquals(1f, backdropAlpha())
+    }
+
+    @Test fun rowsKeptFromTheLastEntryShowAtOnce() {
+        screen()
+        heroShows("Dune")
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { entry++ }
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        // Coming back to the screen, its rows are there on the first frame, with no placeholders under them.
+        compose.onNodeWithTag(PLACEHOLDERS).assertDoesNotExist()
+        compose.onNodeWithText("Action").assertExists()
+    }
+
     // It draws the screen, whose vector icons need real bitmaps.
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test fun artSlowerThanThePageArrivalTimeDoesNotHoldTheHero() {
