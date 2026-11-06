@@ -70,6 +70,7 @@ class BrowseBenchmarks(private val compilation: CompilationMode) {
     private fun MacrobenchmarkScope.startHome() {
         startActivityAndWait(freshActivity())
         waitForRows()
+        toFirstCard()
     }
 
     companion object {

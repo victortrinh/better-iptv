@@ -7,8 +7,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The app's own Baseline Profile rules (#63): app start to Home's rows, Right along a row and Down
- * through the rows, then the Movies tab's rows. `./gradlew :app:generateBaselineProfile` runs it
+ * The app's own Baseline Profile rules (#63): app start to Home's rows, Down off the featured
+ * hero, Right along a row and Down through the rows, then the Movies tab's rows. `./gradlew :app:generateBaselineProfile` runs it
  * on the connected device (Android 13+, or rooted) and writes the rules to
  * `app/src/main/generated/baselineProfiles/baseline-prof.txt`, which release builds ship, in the
  * APK and in the `.dm` the updater installs beside it.
@@ -23,11 +23,13 @@ class BaselineProfileGenerator {
         pressHome()
         startActivityAndWait(freshActivity())
         waitForRows()
+        toFirstCard()
         scrollHome(right = 12, down = 8)
         // Home again from its first card, then the Movies tab.
         pressHome()
         startActivityAndWait(freshActivity())
         waitForRows()
+        toFirstCard()
         openMovies()
         scrollMovies(down = 20)
     }
