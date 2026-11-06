@@ -161,7 +161,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 val plan = withContext(Dispatchers.Default) {
                     app.library.titlePlayPlan(title.id, contentLanguages, appLanguage, readDeviceProfile(context), settings.qualityCap)
                 }
-                if (plan != null) playing = NowPlaying(plan, title.name) else opened = OpenedTitle(title.id, card)
+                if (plan != null) playing = NowPlaying(plan, title.name, art = title.startingArt) else opened = OpenedTitle(title.id, card)
             }
             Unit
         }

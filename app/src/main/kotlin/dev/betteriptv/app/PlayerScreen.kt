@@ -373,7 +373,7 @@ fun PlayerScreen(
         // Beside the picture, not around it: Back would spend a press moving focus up to a focusable parent.
         Box(Modifier.focusRequester(screen).focusable())
         if (player != null) key(player) { EngineSurface(player) }
-        key(session) { StartingCover(art, name, pictured) }
+        key(session) { StartingCover(art, name, pictured, failed = state == PlaybackState.Failed) }
         if (player != null) shownSubtitle?.let { DownloadedSubtitles(player, it, subtitleDelay, settings.subtitleStyle) }
 
         when (val shown = state) {
