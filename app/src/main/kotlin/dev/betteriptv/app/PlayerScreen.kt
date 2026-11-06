@@ -579,12 +579,18 @@ private val FRAME_RATE_WAIT = 20.seconds
 private fun EngineSurface(player: ControlledEngine) {
     when (player) {
         is Media3Engine -> Media3Surface(player)
-        is VlcEngine -> AndroidView(
-            factory = { context ->
-                VLCVideoLayout(context).apply { setBackgroundColor(Colors.picture.toArgb()) }.also(player::attach)
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        is VlcEngine -> Box(Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { context ->
+                    VLCVideoLayout(context).apply { setBackgroundColor(Colors.picture.toArgb()) }.also(player::attach)
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Like Media3's shutter: black over VLC's unsteady first frames (#408), which a file
+            // started after another (Try other player) has no starting cover over.
+            val pictured by player.pictured.collectAsState()
+            if (!pictured) Box(Modifier.fillMaxSize().background(Colors.picture))
+        }
     }
 }
 

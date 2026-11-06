@@ -554,6 +554,7 @@ class VlcEngine(
 
     override val chosen = MutableStateFlow<TrackChoice?>(null)
     override val pictured = MutableStateFlow(false)
+    private val picture = VlcPictureWatch()
 
     // From its picture's Track being chosen until the picture shows, VLC makes its video output,
     // which first builds its list of fonts: 41 s on the stick the first time after an install (#400).
@@ -584,15 +585,19 @@ class VlcEngine(
                     MediaPlayer.Event.TimeChanged -> {
                         time = event.timeChanged
                         timeAt = TimeSource.Monotonic.markNow()
+                        if (!pictured.value && picture.time(event.timeChanged)) {
+                            Log.i(PLAYER_TAG, "VLC's picture shows")
+                            pictured.value = true
+                        }
                     }
                     MediaPlayer.Event.LengthChanged -> length = event.lengthChanged.takeIf { it > 0 }
                     MediaPlayer.Event.PausableChanged -> pausable = event.pausable
                     MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> playing = false
                     MediaPlayer.Event.Vout -> if (event.voutCount > 0 && !shown) {
-                        Log.i(PLAYER_TAG, "VLC shows its picture")
+                        Log.i(PLAYER_TAG, "VLC has its video output")
                         shown = true
                         preparing.value = false
-                        pictured.value = true
+                        picture.vout()
                         // A pause asked for before the picture showed.
                         onVlcThread(::applyPause)
                     }
@@ -690,6 +695,35 @@ class VlcEngine(
 
 /** A Track VLC plays, by the id its player knows it by. */
 private class VlcTrack(val id: Int, val track: Track)
+
+/**
+ * When VLC's picture is worth showing, from what it reports on its main thread. Its `Vout` comes when
+ * it has made its video output, 1.5–2.4 s before the decoder's first frame on the stick (#409). And
+ * its first half-second of picture isn't steady: the first frame shows early, its clock catches up,
+ * and it drops a run of late pictures. A green block or a smear has shown in that time (#408). So its
+ * picture counts as shown once its time has moved [SETTLE_MILLIS] past the first time it reported
+ * after its video output: about 0.6 s after the first frame on the stick, past the dropped pictures.
+ */
+internal class VlcPictureWatch {
+    private var out = false
+    private var first: Long? = null
+
+    /** VLC made its video output, which isn't a picture yet. */
+    fun vout() {
+        out = true
+    }
+
+    /** VLC reported its [time]; whether its picture now shows. */
+    fun time(time: Long): Boolean {
+        if (!out) return false
+        val from = first ?: time.also { first = it }
+        return time - from >= SETTLE_MILLIS
+    }
+
+    private companion object {
+        const val SETTLE_MILLIS = 500L
+    }
+}
 
 /**
  * The Track choice for a file VLC lists the Tracks of one by one as it opens it, made with [choose]:
