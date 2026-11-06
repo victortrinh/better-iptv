@@ -16,12 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,8 +95,8 @@ import kotlinx.coroutines.withContext
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
  * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
- * Trailer, before Versions, opens the Title's trailer in the device's YouTube app ([trailerIntent],
- * ADR 0012), and is left out when it has none or no YouTube app can take it.
+ * Trailer, before Versions, plays the Title's trailer in YouTube's player inside Zugig ([TrailerContent],
+ * ADR 0012), and is left out when it has none.
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode; with nothing to play, focus goes to the Episodes action.
  *
@@ -118,6 +118,7 @@ fun TitleScreen(
     section: TitleSection? = null,
     returnedFrom: TitleSection? = null,
     onSection: (TitleSection) -> Unit = {},
+    onCloseSection: () -> Unit = {},
 ) {
     // Each Header read that Confirms something reloads the details and the plan, in place.
     var reads by remember(id) { mutableIntStateOf(0) }
@@ -147,6 +148,7 @@ fun TitleScreen(
         section = section,
         returnedFrom = returnedFrom,
         onSection = onSection,
+        onCloseSection = onCloseSection,
         onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
         onChoose = { version, name ->
             scope.launch {
@@ -192,6 +194,7 @@ internal fun TitlePage(
     section: TitleSection? = null,
     returnedFrom: TitleSection? = null,
     onSection: (TitleSection) -> Unit = {},
+    onCloseSection: () -> Unit = {},
     onRemove: () -> Unit = {},
     onChoose: (Version, String) -> Unit = { _, _ -> },
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
@@ -217,6 +220,7 @@ internal fun TitlePage(
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
                     TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) })
+                    TitleSection.Trailer -> title.trailer?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }, stillsOf = stillsOf) }
                     null -> TitleContent(
                         title, plan, show?.first,
@@ -235,9 +239,10 @@ internal fun TitlePage(
 
 /**
  * A screen a Title page's action opens over the Title's backdrop, the page's second level: the
- * Versions screen, or a Show's Episode picker. Back returns to the page, with focus on the action that opened it.
+ * Versions screen, a Show's Episode picker, or the Trailer screen. Back returns to the page, with focus
+ * on the action that opened it, as does the Trailer screen once its trailer ends ([TitlePage]'s onCloseSection).
  */
-enum class TitleSection { Versions, Episodes }
+enum class TitleSection { Versions, Episodes, Trailer }
 
 /**
  * What [title]'s Versions screen lists: a Movie's Versions, or on a Show those of the Episode [plan]
@@ -272,6 +277,7 @@ private fun TitleContent(
     val play = remember { FocusRequester() }
     val versionsAction = remember { FocusRequester() }
     val episodesAction = remember { FocusRequester() }
+    val trailerAction = remember { FocusRequester() }
     val isShow = title.id.kind == TitleKind.Show
     val next = episodes?.next
     // A Show's Episodes action is there from the first frame, disabled while they're read, and left out of a Show with none.
@@ -285,6 +291,7 @@ private fun TitleContent(
         when {
             returnedFrom == TitleSection.Versions && versions != null -> versionsAction
             returnedFrom == TitleSection.Episodes && next != null -> episodesAction
+            returnedFrom == TitleSection.Trailer && title.trailer != null -> trailerAction
             plan != null || isShow -> play
             else -> versionsAction
         }.requestFocus()
@@ -307,8 +314,6 @@ private fun TitleContent(
     val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
     // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
     val showVersions = versions != null || (isShow && episodes == null)
-    // Left out when there's no trailer, or no YouTube app to open it in (ADR 0012).
-    val trailer = remember(title.trailer) { title.trailer?.let { trailerIntent(context.packageManager, it) } }
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {
@@ -390,12 +395,13 @@ private fun TitleContent(
                         enabled = next != null,
                     )
                 }
-                if (trailer != null) {
+                // Plays inside Zugig, so Back comes back here (ADR 0012); left out when the Title has no trailer.
+                if (title.trailer != null) {
                     ActionRow(
                         stringResource(R.string.title_trailer),
-                        Icons.AutoMirrored.Filled.ExitToApp,
-                        onClick = { context.openTrailer(trailer) },
-                        modifier = Modifier.testTag("trailer action"),
+                        Icons.Outlined.PlayArrow,
+                        onClick = { onSection(TitleSection.Trailer) },
+                        modifier = Modifier.testTag("trailer action").focusRequester(trailerAction),
                     )
                 }
                 if (showVersions) {

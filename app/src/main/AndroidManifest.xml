@@ -11,7 +11,7 @@
     <!-- The Amazon Appstore, told after an update to redraw Zugig's tile (AppstoreTileReceiver). -->
     <queries>
         <package android:name="com.amazon.venezia" />
-        <!-- YouTube's apps, which a Title page's Trailer row opens (Trailers.kt, ADR 0012). -->
+        <!-- YouTube's apps, where a trailer that can't be embedded opens (Trailers.kt, ADR 0012). -->
         <package android:name="com.amazon.firetv.youtube" />
         <package android:name="com.google.android.youtube.tv" />
         <package android:name="com.google.android.youtube.googletv" />

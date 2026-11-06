@@ -299,11 +299,12 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 }
             }
             else -> {
+                // Back from the Versions screen, the Episode picker or the Trailer screen returns to the Title page, on the action that opened it.
+                val closeSection = { opened = title.copy(section = null, returnedFrom = title.section) }
                 BackHandler {
                     byTab = false
                     if (title.section != null) {
-                        // Back from the Versions screen or the Episode picker returns to the Title page, on the action that opened it.
-                        opened = title.copy(section = null, returnedFrom = title.section)
+                        closeSection()
                     } else {
                         returnedTo = title.card
                         opened = null
@@ -317,6 +318,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     section = title.section,
                     returnedFrom = title.returnedFrom,
                     onSection = { opened = title.copy(section = it, returnedFrom = null) },
+                    // A trailer that ends, or opens in the YouTube app instead, closes its screen too.
+                    onCloseSection = closeSection,
                 )
             }
         }
@@ -364,7 +367,7 @@ private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: 
 /**
  * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
  * with the textless [backdrop] that card had grown into, which the page opens on. A [section] is open over the page (its
- * Versions screen or Episode picker); [returnedFrom] is the one Back just closed, whose action takes focus.
+ * Versions screen, Episode picker or Trailer screen); [returnedFrom] is the one Back just closed, whose action takes focus.
  */
 private data class OpenedTitle(
     val id: TitleId,
