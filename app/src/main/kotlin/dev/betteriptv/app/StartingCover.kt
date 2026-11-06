@@ -31,6 +31,7 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.FeaturedTitle
 
 /** The art the player shows while a Version starts, until its first frame. */
 sealed interface StartingArt {
@@ -41,6 +42,9 @@ sealed interface StartingArt {
     data class Channel(val logo: String?) : StartingArt
 }
 
+/** What the featured hero's Play starts on: the very backdrop and logo the hero drew, so they come from memory. */
+internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Title(backdrop, logo)
+
 /**
  * What covers the picture while a Version starts, so waiting isn't a black screen: a Title's
  * backdrop dimmed by a `veil`, with its logo (its [name] without one) in the middle, or a Channel's
@@ -48,10 +52,14 @@ sealed interface StartingArt {
  * frame ([pictured]), it fades away over [Motion.screenFadeMillis] to the picture under it, and
  * leaves the screen. Without [art] (a Sports replay) it is the bare `ground`.
  *
+ * Once the session has [failed], the cover is back at full strength whether or not a frame showed (VLC
+ * can show its picture and still fail), without its logo or glass card, so the failure's message reads
+ * in the centre over the dimmed backdrop instead of on black.
+ *
  * The backdrop is the one the Title page drew, so it comes from memory and shows on the first frame.
  */
 @Composable
-internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean) {
+internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, failed: Boolean = false) {
     var gone by remember { mutableStateOf(false) }
     val alpha = remember { Animatable(1f) }
     LaunchedEffect(pictured) {
@@ -59,8 +67,8 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean) {
         alpha.animateTo(0f, tween(Motion.screenFadeMillis))
         gone = true
     }
-    if (gone) return
-    Box(Modifier.fillMaxSize().testTag(STARTING_COVER).graphicsLayer { this.alpha = alpha.value }.background(Colors.ground)) {
+    if (gone && !failed) return
+    Box(Modifier.fillMaxSize().testTag(STARTING_COVER).graphicsLayer { this.alpha = if (failed) 1f else alpha.value }.background(Colors.ground)) {
         when (art) {
             is StartingArt.Title -> {
                 rememberArtwork(art.backdrop)?.let { backdrop ->
@@ -68,9 +76,9 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean) {
                 }
                 // Dimmed, so the logo and the starting label read over any backdrop.
                 Box(Modifier.fillMaxSize().background(Colors.veil))
-                TitleName(name, rememberArtwork(art.logo), Modifier.align(Alignment.Center))
+                if (!failed) TitleName(name, rememberArtwork(art.logo), Modifier.align(Alignment.Center))
             }
-            is StartingArt.Channel -> Box(
+            is StartingArt.Channel -> if (!failed) Box(
                 Modifier.align(Alignment.Center).width(Cards.continueWidth).aspectRatio(16f / 9f)
                     .background(Colors.surface, RoundedCornerShape(Corners.card))
                     .testTag(STARTING_GLASS),

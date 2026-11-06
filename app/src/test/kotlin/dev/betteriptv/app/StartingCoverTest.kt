@@ -29,6 +29,10 @@ import coil3.intercept.Interceptor
 import coil3.request.ImageResult
 import coil3.request.SuccessResult
 import dev.betteriptv.app.ui.theme.Motion
+import dev.betteriptv.core.FeaturedTitle
+import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.TitleKind
+import dev.betteriptv.core.VersionAttributes
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -78,14 +82,22 @@ class StartingCoverTest {
     @After fun forgetTheArt() = SingletonImageLoader.reset()
 
     private var pictured by mutableStateOf(false)
+    private var failed by mutableStateOf(false)
 
     private fun start(art: StartingArt?, name: String = "Heat") {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             Box(Modifier.fillMaxSize().background(Color.White).testTag("picture")) {
-                StartingCover(art, name, pictured)
+                StartingCover(art, name, pictured, failed)
             }
         }
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+    }
+
+    /** Lets a change of state reach the screen. */
+    private fun settle() {
+        androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
         compose.mainClock.advanceTimeByFrame()
         compose.waitForIdle()
     }
@@ -175,5 +187,52 @@ class StartingCoverTest {
 
         compose.onNodeWithTag(STARTING_COVER).assertExists()
         assertEquals(0f, pictureShowing(), 0.05f)
+    }
+
+    @Test fun aFailureBeforeTheFirstFrameReadsOverTheDimmedBackdrop() {
+        start(StartingArt.Title(backdrop = "https://image.tmdb.org/t/p/w1280/heat.jpg", logo = "https://image.tmdb.org/t/p/w500/heat-logo.png"))
+
+        failed = true
+        settle()
+
+        // The backdrop stays, dimmed, under the failure's message, which takes the centre from the logo.
+        compose.onNodeWithTag(STARTING_BACKDROP).assertExists()
+        compose.onNodeWithContentDescription("Heat").assertDoesNotExist()
+        val corner = corner()
+        assertTrue("red shows, dimmed: $corner", corner.red > 0.1f && corner.red < 0.5f)
+        assertEquals(0f, corner.green, 0.05f)
+    }
+
+    @Test fun aChannelsFailureLeavesTheCentreToItsMessage() {
+        start(StartingArt.Channel(logo = "http://provider.example/tsn.png"), name = "TSN")
+
+        failed = true
+        settle()
+
+        compose.onNodeWithTag(STARTING_COVER).assertExists()
+        compose.onNodeWithTag(STARTING_GLASS).assertDoesNotExist()
+    }
+
+    @Test fun aFailureAfterThePictureShowedStillReadsOverTheBackdrop() {
+        start(StartingArt.Title(backdrop = "https://image.tmdb.org/t/p/w1280/heat.jpg", logo = null))
+        pictured = true
+        repeat(Motion.screenFadeMillis / 16 + 8) { settle() }
+        compose.onNodeWithTag(STARTING_COVER).assertDoesNotExist()
+
+        // VLC can show its picture and still fail: the message isn't left on black.
+        failed = true
+        settle()
+        compose.onNodeWithTag(STARTING_BACKDROP).assertExists()
+        assertEquals(0f, pictureShowing(), 0.05f)
+    }
+
+    @Test fun theHerosPlayStartsOnTheFeaturedTitlesArt() {
+        val featured = FeaturedTitle(
+            TitleId.Tmdb(TitleKind.Show, 1), "The Fall", 2025, null, emptyList(), null,
+            backdrop = "https://image.tmdb.org/t/p/w1280/fall.jpg", logo = "https://image.tmdb.org/t/p/w500/fall-logo.png",
+            best = VersionAttributes(),
+        )
+
+        assertEquals(StartingArt.Title(featured.backdrop, featured.logo), featured.startingArt)
     }
 }
