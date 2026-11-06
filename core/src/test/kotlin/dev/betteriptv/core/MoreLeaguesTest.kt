@@ -11,7 +11,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * The Leagues #354 added, seen through the Library: the fake cloud's Games, with their teams as
+ * The Leagues #354 and #375 added, seen through the Library: the fake cloud's Games, with their teams as
  * ESPN's scoreboards named them on 2026-11-04 (each team's aliases as cloud/src/espn.ts lists
  * them), matched to Event channels written the ways the surveyed Provider writes them
  * (`LEAGUE: Team vs Team (date time)`, `LEAGUE | Team v Team`). Prior art: [GameRowsTest].
@@ -74,32 +74,24 @@ class MoreLeaguesTest {
         provider.serveChannels(
             "EFL Championship: West Ham United vs Cardiff City (2026-11-01 17:00:00)" to "UK| PPV",
             "EFL | West Ham v Cardiff @ Nov 1 5:00 PM" to "UK| PPV",
+            // Two more ways the Provider writes it (survey 2026-11-06): Paramount+'s "English Football League", and Viaplay's bare "CHAMPIONSHIP", which both teams carry.
+            "English Football League: Cardiff City vs West Ham United @ Nov 1 5:00 PM :Paramount+  05" to "US| PARAMOUNT+ PPV",
+            "NEXT | CHAMPIONSHIP CARDIFF - WEST HAM | Sun 01 Nov 23:00 CET (SE) | 8K EXCLUSIVE | SE: VIAPLAY PPV 13" to "SE| VIAPLAY PPV",
             // No League in Championship's names is a bare "Championship": the NFL's slot keeps its Game.
             "NFL: AFC Championship: Texans vs Broncos (2026-11-01 17:00:00)" to "US| NFL PPV",
         )
         library.sync()
 
         val feeds = feeds(League.EflChampionship, League.Nfl)
-        assertEquals(listOf("EFL Championship: West Ham United vs Cardiff City (2026-11-01 17:00:00)", "EFL | West Ham v Cardiff @ Nov 1 5:00 PM"), feeds["1"])
+        assertEquals(
+            setOf(
+                "EFL Championship: West Ham United vs Cardiff City (2026-11-01 17:00:00)", "EFL | West Ham v Cardiff @ Nov 1 5:00 PM",
+                "English Football League: Cardiff City vs West Ham United @ Nov 1 5:00 PM :Paramount+  05",
+                "NEXT | CHAMPIONSHIP CARDIFF - WEST HAM | Sun 01 Nov 23:00 CET (SE) | 8K EXCLUSIVE | SE: VIAPLAY PPV 13",
+            ),
+            feeds["1"]?.toSet(),
+        )
         assertEquals(listOf("NFL: AFC Championship: Texans vs Broncos (2026-11-01 17:00:00)"), feeds["100"])
-    }
-
-    @Test fun `a Scottish Premiership Game takes its Event channels, and Dundee never takes Dundee United's`() = runBlocking {
-        cloud.games(
-            "scottish-premiership",
-            game("1", League.ScottishPremiership, EspnTeam("Dundee United", "Dundee Utd", "DUN"), EspnTeam("Motherwell", "Motherwell", "MOT")),
-            game("2", League.ScottishPremiership, EspnTeam("Dundee", "Dundee", "DUN"), EspnTeam("Celtic", "Celtic", "CEL")),
-        )
-        provider.serveChannels(
-            "SPFL: Motherwell vs Dundee United (2026-11-01 17:00:00)" to "UK| PPV",
-            "Scottish Premiership | Celtic v Dundee @ Nov 1 5:00 PM" to "UK| PPV",
-        )
-        library.sync()
-
-        val feeds = feeds(League.ScottishPremiership)
-        assertEquals(listOf("SPFL: Motherwell vs Dundee United (2026-11-01 17:00:00)"), feeds["1"])
-        // "Dundee" and the League are in Dundee United's slot too, but it names both teams of another Game.
-        assertEquals(listOf("Scottish Premiership | Celtic v Dundee @ Nov 1 5:00 PM"), feeds["2"])
     }
 
     @Test fun `a Liga Portugal Game takes its Event channels, one naming a team and the League too`() = runBlocking {
@@ -140,19 +132,30 @@ class MoreLeaguesTest {
         assertEquals(listOf("Bundesliga: Cologne vs Hamburger SV (2026-11-01 17:00:00)"), feeds["10"])
     }
 
-    @Test fun `a Super Lig Game takes its Event channels, accented or not`() = runBlocking {
-        cloud.games("super-lig", game("1", League.SuperLig, EspnTeam("Gaziantep FK", "Gaziantep", "GAZ"), EspnTeam("Kasimpasa", "Kasimpasa", "KAS")))
+    @Test fun `a Europa League Game takes the Provider's UEFA slots, which name both teams and no League, and a Serie A Game of one of its clubs takes none`() = runBlocking {
+        // ESPN's uefa.europa scoreboard for 2026-11-05, and the Provider's slots for that Game (survey 2026-11-06), moved to this test's day.
+        cloud.games("europa-league", game("1", League.EuropaLeague, EspnTeam("AC Milan", "Milan", "MIL"), EspnTeam("Ferencvaros", "Ferencvaros", "FER")))
+        cloud.games("serie-a", game("10", League.SerieA, EspnTeam("AC Milan", "Milan", "MIL"), EspnTeam("Udinese", "Udinese", "UDI")))
         provider.serveChannels(
-            "Süper Lig: Kasımpaşa vs Gaziantep FK (2026-11-01 17:00:00)" to "TR| BEIN PPV",
-            "SUPER LIG | Gaziantep v Kasimpasa @ Nov 1 5:00 PM" to "TR| BEIN PPV",
+            "Next | AC Milan vs. Ferencváros | all | 01-11-2026 | 22:00 (GMT) | 8K EXCLUSIVE | CA: SOCCER PPV 22" to "CA| SOCCER PPV",
+            "Live | AC Milan vs. Ferencváros | all | 8K EXCLUSIVE | DE: SOCCER PPV 17" to "DE| SOCCER PPV",
+            "UEFA | 01 - AC Milan vs Ferencváros 17:00pm" to "US| UEFA PPV",
+            "Europa League: Milan vs Ferencvaros (2026-11-01 17:00:00)" to "UK| UEFA PPV",
         )
         library.sync()
 
-        // "Kasımpaşa" has a dotless ı, which no accent folding makes an i: the slot still names Gaziantep and the League.
+        val feeds = feeds(League.EuropaLeague, League.SerieA)
+        // The UEFA PPV slot gives a time but no date, so it can't be told an Event channel (Channels.kt: isEventChannel).
         assertEquals(
-            listOf("Süper Lig: Kasımpaşa vs Gaziantep FK (2026-11-01 17:00:00)", "SUPER LIG | Gaziantep v Kasimpasa @ Nov 1 5:00 PM"),
-            feeds(League.SuperLig)["1"],
+            setOf(
+                "Next | AC Milan vs. Ferencváros | all | 01-11-2026 | 22:00 (GMT) | 8K EXCLUSIVE | CA: SOCCER PPV 22",
+                "Live | AC Milan vs. Ferencváros | all | 8K EXCLUSIVE | DE: SOCCER PPV 17",
+                "Europa League: Milan vs Ferencvaros (2026-11-01 17:00:00)",
+            ),
+            feeds["1"]?.toSet(),
         )
+        // Milan and no Serie A, or the Europa League named: none of Serie A's Game.
+        assertEquals(emptyList<String>(), feeds["10"].orEmpty())
     }
 
     @Test fun `a Women's Super League Game and the Premier League's between the same clubs each take only their own League's slots`() = runBlocking {

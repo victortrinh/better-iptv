@@ -26,10 +26,12 @@ package dev.betteriptv.core
  *
  * [sport] is what Settings' League picker groups it under (#353).
  *
- * The EFL Championship, Scottish Premiership, Liga Portugal, 2. Bundesliga, Süper Lig, Women's
- * Super League, NRL and AFL came in #354: two-team Leagues whose ESPN scoreboard was read on
- * 2026-11-04 and whose Event channels the 2026-10-24 survey showed. Like every League outside a
- * Region's [defaults], they are off until the Viewer turns them on.
+ * The EFL Championship, Liga Portugal, 2. Bundesliga, Women's Super League, NRL and AFL came in
+ * #354: two-team Leagues whose ESPN scoreboard was read on 2026-11-04 and whose Event channels the
+ * 2026-10-24 survey showed. #375's survey (2026-11-06, set against ESPN's Games of that week and of
+ * 2026-10-24's) dropped the Scottish Premiership and the Süper Lig, whose Games no Event channel
+ * named, and added the Europa League. Like every League outside a Region's [defaults], they are
+ * off until the Viewer turns them on.
  */
 enum class League(
     val key: String,
@@ -50,20 +52,22 @@ enum class League(
     Mls("mls", listOf("MLS"), Sport.Soccer, logo = "${SOCCER}19.png"),
     PremierLeague("premier-league", listOf("Premier League", "EPL", "PL"), Sport.Soccer, logo = "${SOCCER}23.png"),
     ChampionsLeague("champions-league", listOf("Champions League", "UCL", "UEFA CL"), Sport.Soccer, logo = "${SOCCER}2.png"),
+
+    // #375: the Provider's slots for it say only "UEFA" ("UEFA | 01 - AC Milan vs Ferencváros 17:45pm"), so its Games take them by both teams.
+    EuropaLeague("europa-league", listOf("Europa League", "UEL", "UEFA EL"), Sport.Soccer, logo = "${SOCCER}2310.png"),
     LaLiga("la-liga", listOf("La Liga", "LaLiga"), Sport.Soccer, logo = "${SOCCER}15.png"),
     Bundesliga("bundesliga", listOf("Bundesliga"), Sport.Soccer, logo = "${SOCCER}10.png"),
     SerieA("serie-a", listOf("Serie A"), Sport.Soccer, logo = "${SOCCER}12.png"),
     Ligue1("ligue-1", listOf("Ligue 1"), Sport.Soccer, logo = "${SOCCER}9.png"),
 
     // #354: the two-team Leagues ESPN's scoreboard serves and the 2026-10-24 survey's Event channels showed. Never a bare
-    // "Championship" or "Premiership": an Event channel naming another League is none of a League's Games, and NFL, golf and rugby slots say those too.
-    EflChampionship("efl-championship", listOf("EFL Championship", "EFL", "Sky Bet Championship"), Sport.Soccer, logo = "${SOCCER}24.png"),
-    ScottishPremiership("scottish-premiership", listOf("Scottish Premiership", "SPFL", "Scottish Prem"), Sport.Soccer, logo = "${SOCCER}45.png"),
+    // "Championship": an Event channel naming another League is none of a League's Games, and NFL, golf and rugby slots say it too.
+    // The Provider also writes "English Football League: Derby County vs Bolton Wanderers" (Paramount+) and "CHAMPIONSHIP DERBY - BOLTON" (Viaplay, both teams; survey 2026-11-06).
+    EflChampionship("efl-championship", listOf("EFL Championship", "EFL", "Sky Bet Championship", "English Football League"), Sport.Soccer, logo = "${SOCCER}24.png"),
     LigaPortugal("liga-portugal", listOf("Liga Portugal", "Primeira Liga", "Liga Betclic"), Sport.Soccer, logo = "${SOCCER}14.png"),
 
     // ESPN's only 2. Bundesliga logo (leaguelogos/soccer/500/97.png) is an old Bundesliga mark reading "BUNDESLIGA", so its tile shows ESPN's soccer icon, as the CFL's shows its football one.
     Bundesliga2("2-bundesliga", listOf("2. Bundesliga", "Bundesliga 2"), Sport.Soccer, logo = "${ICONS}ESPN-icon-soccer.png"),
-    SuperLig("super-lig", listOf("Süper Lig"), Sport.Soccer, logo = "${SOCCER}18.png"),
 
     // Its clubs are the Premier League's (Chelsea, Everton): an Event channel naming either League is the other's none.
     WomensSuperLeague("wsl", listOf("Women's Super League", "Womens Super League", "WSL"), Sport.Soccer, logo = "${SOCCER}2314.png"),

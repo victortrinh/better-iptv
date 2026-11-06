@@ -4,7 +4,7 @@ import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, GOLF_LEAGUES
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The first fifteen team
  * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour, the LPGA and UFC on 2026-11-03,
- * and #354's eight on 2026-11-04: each answers two-team Games (`competitors`, home and away) and a teams list.
+ * #354's on 2026-11-04 and the Europa League on 2026-11-06: each answers two-team Games (`competitors`, home and away) and a teams list.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -15,15 +15,14 @@ const PATHS: Record<League, string> = {
   mls: "soccer/usa.1",
   "premier-league": "soccer/eng.1",
   "champions-league": "soccer/uefa.champions",
+  "europa-league": "soccer/uefa.europa",
   "la-liga": "soccer/esp.1",
   bundesliga: "soccer/ger.1",
   "serie-a": "soccer/ita.1",
   "ligue-1": "soccer/fra.1",
   "efl-championship": "soccer/eng.2",
-  "scottish-premiership": "soccer/sco.1",
   "liga-portugal": "soccer/por.1",
   "2-bundesliga": "soccer/ger.2",
-  "super-lig": "soccer/tur.1",
   wsl: "soccer/eng.w.1",
   "ncaa-football": "football/college-football",
   "ncaa-basketball": "basketball/mens-college-basketball",

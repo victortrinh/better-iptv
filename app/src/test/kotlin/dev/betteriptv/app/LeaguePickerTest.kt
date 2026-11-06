@@ -131,9 +131,9 @@ class LeaguePickerTest {
         assertEquals(listOf(Sport.Rugby, Sport.AustralianFootball), headings.takeLast(2))
         assertTrue(tile(League.Nrl).getBoundsInRoot().top > compose.onNodeWithTag("heading:Rugby").getBoundsInRoot().top)
         assertTrue(tile(League.Afl).getBoundsInRoot().top > compose.onNodeWithTag("heading:AustralianFootball").getBoundsInRoot().top)
-        // About six across: Soccer's thirteen take three lines.
+        // About six across: Soccer's twelve take two lines.
         val soccer = League.entries.filter { it.sport == Sport.Soccer }.map { tile(it).getBoundsInRoot().top }
-        assertEquals(listOf(6, 6, 1), soccer.groupBy { it }.values.map { it.size })
+        assertEquals(listOf(6, 6), soccer.groupBy { it }.values.map { it.size })
     }
 
     @Test fun theFirstTileTakesFocusAndItsNameShowsUnderIt() {

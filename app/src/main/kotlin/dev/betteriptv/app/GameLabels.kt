@@ -36,15 +36,14 @@ private fun League.nameResource(): Int = when (this) {
     League.Mls -> R.string.league_mls
     League.PremierLeague -> R.string.league_premier_league
     League.ChampionsLeague -> R.string.league_champions_league
+    League.EuropaLeague -> R.string.league_europa_league
     League.LaLiga -> R.string.league_la_liga
     League.Bundesliga -> R.string.league_bundesliga
     League.SerieA -> R.string.league_serie_a
     League.Ligue1 -> R.string.league_ligue_1
     League.EflChampionship -> R.string.league_efl_championship
-    League.ScottishPremiership -> R.string.league_scottish_premiership
     League.LigaPortugal -> R.string.league_liga_portugal
     League.Bundesliga2 -> R.string.league_2_bundesliga
-    League.SuperLig -> R.string.league_super_lig
     League.WomensSuperLeague -> R.string.league_wsl
     League.NcaaFootball -> R.string.league_ncaa_football
     League.NcaaMensBasketball -> R.string.league_ncaa_mens_basketball
