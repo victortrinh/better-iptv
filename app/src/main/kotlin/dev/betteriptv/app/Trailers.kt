@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -86,9 +87,9 @@ internal val YOUTUBE_APPS = listOf(
  * YouTube's IFrame player, inside Zugig, so Back returns to the page with focus on Trailer. OK on
  * Trailer shows the Title's [art] and [name] at once, as when a Version starts ([StartingCover]). The
  * player is built behind that cover, once it's on screen: the first WebView of a session holds the
- * main thread for seconds (#399). The cover stays over the player until it plays, then fades away to
+ * main thread for seconds (#399). The cover stays over the player until its frames are on screen, then fades away to
  * the picture. OK (or Play/Pause) pauses and resumes, with a pause sign while paused; Left and Right
- * (or Rewind and Fast-forward) go back and forward 10 s. Leaving the app pauses it. Back mutes the
+ * (or Rewind and Fast-forward) go back and forward 10 s. Leaving the app pauses it. Back covers and mutes the
  * trailer at once and the page comes back ([onClose]), as it does when the trailer ends.
  *
  * A trailer YouTube won't let others embed (player errors 101, 150, 153) opens in the device's YouTube
@@ -105,13 +106,20 @@ internal fun TrailerContent(videoId: String, name: String, art: StartingArt.Titl
     val language = LocalConfiguration.current.locales[0].language
     val parent = rememberCompositionContext()
     var web by remember(videoId) { mutableStateOf<WebView?>(null) }
+    // Back was pressed: the cover is back over the player at once, before the app closes the screen on
+    // Back's release, so nothing of YouTube's shows as the WebView goes (#407).
+    val closing = remember(videoId) { mutableStateOf(false) }
     LaunchedEffect(videoId) {
         // The cover fades in first; building the WebView can hold the main thread, so it waits behind a still cover.
         val shown = withFrameNanos { it }
         while (withFrameNanos { it } - shown < COVER_SETTLE_MILLIS * 1_000_000L) continue
         web = trailerWebView(
             context, videoId, language,
-            onPlaying = { pictured.value = true },
+            onPictured = { pictured.value = true },
+            onBack = {
+                closing.value = true
+                web?.evaluateJavascript("mute()", null)
+            },
             onEnded = { close() },
             onError = { code ->
                 val app = if (code in UNEMBEDDABLE) trailerIntent(context.packageManager, videoId) else null
@@ -124,7 +132,7 @@ internal fun TrailerContent(videoId: String, name: String, art: StartingArt.Titl
             },
         )
     }
-    // The cover over the player fades once it plays and the main thread draws steadily again: starting
+    // The cover over the player fades once the trailer's frames are on screen and the main thread draws steadily again: starting
     // the picture can hold it for half a second, and a fade run through that is a cut (#399).
     val faded = remember(videoId) { mutableStateOf(false) }
     LaunchedEffect(pictured.value) {
@@ -141,7 +149,11 @@ internal fun TrailerContent(videoId: String, name: String, art: StartingArt.Titl
         val content = host.rootView.findViewById<ViewGroup>(android.R.id.content)
         val cover = ComposeView(context).apply {
             setParentCompositionContext(parent)
-            setContent { TrailerCover(art, name, faded.value, failed.value) }
+            setContent {
+                // Closing starts a fresh cover, at full strength from its first frame.
+                val shut = closing.value
+                key(shut) { TrailerCover(art, name, faded.value && !shut, failed.value) }
+            }
             isFocusable = false
             descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         }
@@ -201,10 +213,11 @@ private fun trailerWebView(
     context: Context,
     videoId: String,
     language: String,
-    onPlaying: () -> Unit,
+    onPictured: () -> Unit,
     onEnded: () -> Unit,
     onError: (Int) -> Unit,
-): WebView = TrailerWebView(context).apply {
+    onBack: () -> Unit,
+): WebView = TrailerWebView(context, onBack).apply {
     val main = Handler(Looper.getMainLooper())
     setBackgroundColor(android.graphics.Color.BLACK)
     settings.javaScriptEnabled = true
@@ -217,14 +230,10 @@ private fun trailerWebView(
     addJavascriptInterface(
         TrailerEvents(
             onState = { state ->
-                main.post {
-                    when (state) {
-                        TrailerEvents.PLAYING -> onPlaying()
-                        TrailerEvents.ENDED -> onEnded()
-                    }
-                }
+                if (state == TrailerEvents.ENDED) main.post { onEnded() }
             },
             onError = { code -> main.post { onError(code) } },
+            onPictured = { main.post { onPictured() } },
         ),
         TRAILER_BRIDGE,
     )
@@ -263,12 +272,17 @@ private const val DESTROY_DELAY_MILLIS = 1_000L
  * The Trailer screen's WebView, which hands the remote's keys to the player's page: OK and Play/Pause
  * to `toggle()`, Left/Right and Rewind/Fast-forward to `seek()`. They're taken here, before the WebView,
  * which would otherwise eat them. Back never reaches the WebView: on the stick, a Back it saw closed
- * the Trailer screen and the Title page at once (#385). The app's own Back handling closes the screen.
+ * the Trailer screen and the Title page at once (#385). The app's own Back handling closes the screen,
+ * on Back's release; its press tells the screen first ([onBack]), so the cover is back over the player
+ * by then.
  */
-private class TrailerWebView(context: android.content.Context) : WebView(context) {
+private class TrailerWebView(context: android.content.Context, private val onBack: () -> Unit) : WebView(context) {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val script = when (event.keyCode) {
-            KeyEvent.KEYCODE_BACK -> return false
+            KeyEvent.KEYCODE_BACK -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onBack()
+                return false
+            }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> "toggle()"
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> "seek(-$SEEK_SECONDS)"
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> "seek($SEEK_SECONDS)"
@@ -284,14 +298,23 @@ private val UNEMBEDDABLE = setOf(101, 150, 153)
 
 private const val SEEK_SECONDS = 10
 
+/** How far the trailer's time moves on after YouTube says it plays before its frames count as on screen. */
+private const val PICTURED_SECONDS = 0.2
+
 /** The name the trailer's page calls [TrailerEvents] by. */
 internal const val TRAILER_BRIDGE = "Zugig"
 
-/** What YouTube's IFrame player tells the Trailer screen: its [state] changes and its [error]s, by YouTube's codes. */
-internal class TrailerEvents(private val onState: (Int) -> Unit, private val onError: (Int) -> Unit) {
+/**
+ * What YouTube's IFrame player tells the Trailer screen: its [state] changes and its [error]s, by
+ * YouTube's codes, and when the trailer is [pictured]: its time has moved on since it said it plays.
+ * YouTube says it plays before the stick draws its first frame (#407).
+ */
+internal class TrailerEvents(private val onState: (Int) -> Unit, private val onError: (Int) -> Unit, private val onPictured: () -> Unit = {}) {
     @JavascriptInterface fun state(code: Int) = onState(code)
 
     @JavascriptInterface fun error(code: Int) = onError(code)
+
+    @JavascriptInterface fun pictured() = onPictured()
 
     companion object {
         const val ENDED = 0
@@ -305,6 +328,8 @@ internal class TrailerEvents(private val onState: (Int) -> Unit, private val onE
  * YouTube's controls are off (#399). Its keyboard is off too, so the remote's keys reach it once,
  * through `toggle()`, `seek()`, `pause()` and `mute()`.
  * Paused that way, YouTube's player shows nothing, so the page shows a pause sign in the middle.
+ * Once it plays, it says it's pictured when the trailer's time has moved on [PICTURED_SECONDS]: then
+ * its frames are being drawn, where "playing" can come before the first (#407).
  * Only a YouTube id's characters are kept, so nothing TMDB sends can break out of the script.
  */
 internal fun trailerPage(videoId: String, language: String, origin: String): String {
@@ -326,10 +351,19 @@ function onYouTubeIframeAPIReady() {
     playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3, playsinline: 1, hl: "${plain(language)}", origin: "${origin.filter { it != '"' && it != '<' }}" },
     events: {
       onReady: function (e) { e.target.playVideo(); },
-      onStateChange: function (e) { document.getElementById('paused').style.display = e.data == 2 ? 'block' : 'none'; $TRAILER_BRIDGE.state(e.data); },
+      onStateChange: function (e) { document.getElementById('paused').style.display = e.data == 2 ? 'block' : 'none'; $TRAILER_BRIDGE.state(e.data); if (e.data == 1) watch(); },
       onError: function (e) { $TRAILER_BRIDGE.error(e.data); }
     }
   });
+}
+var watching = false;
+function watch() {
+  if (watching) return;
+  watching = true;
+  var from = player.getCurrentTime();
+  var tick = setInterval(function () {
+    if (player.getCurrentTime() - from >= $PICTURED_SECONDS) { clearInterval(tick); $TRAILER_BRIDGE.pictured(); }
+  }, 50);
 }
 function ready() { return player && player.getPlayerState; }
 function toggle() { if (ready()) { if (player.getPlayerState() == 1) player.pauseVideo(); else player.playVideo(); } }

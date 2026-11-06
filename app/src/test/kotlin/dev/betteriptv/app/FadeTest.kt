@@ -15,8 +15,8 @@ import org.junit.Test
  */
 class FadeTest {
     /** Frames at these times, in ms; the value the fade had after each. */
-    private fun fadeOver(millis: Int, vararg frames: Long): List<Float> {
-        val fade = Fade(0f)
+    private fun fadeOver(millis: Int, vararg frames: Long, out: Boolean = false): List<Float> {
+        val fade = Fade(if (out) 1f else 0f)
         val seen = ArrayList<Float>()
         val times = frames.iterator()
         val clock = object : MonotonicFrameClock {
@@ -27,7 +27,7 @@ class FadeTest {
                 return result
             }
         }
-        runBlocking { withContext(clock) { fade.fadeIn(millis, LinearEasing) } }
+        runBlocking { withContext(clock) { if (out) fade.fadeOut(millis, LinearEasing) else fade.fadeIn(millis, LinearEasing) } }
         return seen
     }
 
@@ -47,6 +47,25 @@ class FadeTest {
         assertEquals(1f, seen.last())
         // Shown over several frames, not one.
         assertTrue(seen.count { it > 0f && it < 1f } >= 4)
+    }
+
+    @Test fun aFadeOutShowsOverFramesHoweverSlowTheyCome() {
+        // The stick while a trailer starts: a frame every 120 ms (#407). Timed by the clock, a 150 ms fade
+        // was at full strength on one frame and gone on the next.
+        val seen = fadeOver(150, 0, 120, 240, 360, 480, 600, 720, 840, out = true)
+        assertEquals(1f, seen[0])
+        assertTrue("it never jumps more than a fifth at a time: $seen", seen.zipWithNext().all { (a, b) -> b <= a && a - b <= 0.25f })
+        assertEquals(0f, seen.last())
+        assertTrue(seen.count { it > 0f && it < 1f } >= 4)
+    }
+
+    @Test fun aFadeAlreadyThereStaysThere() {
+        val shown = Fade(1f)
+        runBlocking { shown.fadeIn(150) }
+        assertEquals(1f, shown.value)
+        val gone = Fade(0f)
+        runBlocking { gone.fadeOut(150) }
+        assertEquals(0f, gone.value)
     }
 
     @Test fun showSkipsTheFade() {

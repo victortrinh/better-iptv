@@ -227,10 +227,37 @@ class TrailerRowTest {
         assertEquals(View.VISIBLE, web.visibility)
         assertEquals(2, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
 
+        // YouTube says it's playing before the stick draws its first frame (#407): the cover stays.
         player { state(TrailerEvents.PLAYING) }
+        assertEquals(2, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+
+        // Once the trailer's time has moved on, its frames are on screen, and the cover fades.
+        player { pictured() }
 
         // Only the cover under the player, which nothing sees, is left.
         assertEquals(1, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+    }
+
+    @Test fun thePageSaysItsPicturedOnlyOnceTheTrailersTimeMovesOn() {
+        val page = trailerPage("KzSm2Q9h3nM", "en", "https://dev.betteriptv")
+        assertTrue(page, page.contains("getCurrentTime()"))
+        assertTrue(page, page.contains("$TRAILER_BRIDGE.pictured()"))
+    }
+
+    @Test fun backCoversThePlayerAtOnceSoNothingOfYouTubesShows() {
+        open(details(trailer = "KzSm2Q9h3nM"))
+        openTrailer()
+        player { state(TrailerEvents.PLAYING) }
+        player { pictured() }
+        val web = webView()!!
+        assertEquals(1, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+
+        // Back's press, before the app closes the screen on its release: the cover is back over the player,
+        // so YouTube's bar never shows on black as the WebView goes (#407).
+        web.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+        compose.waitForIdle()
+        assertEquals(2, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+        assertEquals("mute()", shadowOf(web).lastEvaluatedJavascript)
     }
 
     @Test fun youTubesOwnControlsAreHidden() {
@@ -243,6 +270,7 @@ class TrailerRowTest {
         open(details(trailer = "KzSm2Q9h3nM"))
         openTrailer()
         player { state(TrailerEvents.PLAYING) }
+        player { pictured() }
         val web = webView()!!
 
         fun key(code: Int): Boolean = web.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code)).also {
