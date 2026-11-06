@@ -19,7 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.shadow.Shadow
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.betteriptv.app.ui.theme.Corners
@@ -70,6 +74,10 @@ fun FocusSurface(
     val scope = rememberCoroutineScope()
     val shape = remember(corner) { RoundedCornerShape(corner) }
     val lifted = focused && weight == FocusWeight.Card
+    // A Top row's poster grows from its left edge, beside its numeral, and casts its shadow down
+    // and to the right, away from it (#379). Its own layer draws the shadow under the clipped one,
+    // so only these cards pay for a second layer.
+    val fromLeft = LocalFocusFromLeft.current && weight == FocusWeight.Card
 
     Box(
         modifier
@@ -81,13 +89,28 @@ fun FocusSurface(
                     if (focused) onFocus()
                 }
             }
+            .then(
+                if (fromLeft) {
+                    Modifier
+                        .graphicsLayer {
+                            scaleX = scale.value
+                            scaleY = scale.value
+                            transformOrigin = LEFT_EDGE
+                        }
+                        .then(if (lifted) Modifier.dropShadow(shape, fallingRight) else Modifier)
+                } else {
+                    Modifier
+                },
+            )
             // One layer scales, clips and casts the shadow: a second one per card costs a frame on the stick.
             .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
+                if (!fromLeft) {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                }
                 this.shape = shape
                 clip = true
-                if (lifted) {
+                if (lifted && !fromLeft) {
                     shadowElevation = 28.dp.toPx()
                     ambientShadowColor = Color.Black
                     spotShadowColor = Color.Black
@@ -104,6 +127,12 @@ fun FocusSurface(
         }
     }
 }
+
+/** A card growing from the middle of its left edge. */
+private val LEFT_EDGE = TransformOrigin(0f, 0.5f)
+
+/** A lifted Top row poster's shadow, cast down and to the right, away from its numeral. */
+private val fallingRight = Shadow(radius = 24.dp, color = Color.Black, offset = DpOffset(14.dp, 16.dp), alpha = 0.8f)
 
 private val sheen = Brush.linearGradient(0f to Color.White.copy(alpha = 0.3f), 0.45f to Color.Transparent)
 private val rim = Color.White.copy(alpha = 0.6f)

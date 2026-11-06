@@ -153,12 +153,6 @@ object Type {
     val detail: TextStyle @Composable @ReadOnlyComposable get() = LocalTypeScale.current.detail
     val label: TextStyle @Composable @ReadOnlyComposable get() = LocalTypeScale.current.label
     val caption: TextStyle @Composable @ReadOnlyComposable get() = LocalTypeScale.current.caption
-
-    /**
-     * A Top row's rank beside its poster, drawn as an outline (`RankedCard`): about as tall as the
-     * poster, as on Netflix. Sized to the poster, so it doesn't follow the Text size.
-     */
-    val numeral = TextStyle(fontFamily = inter, fontWeight = FontWeight.Bold, fontSize = 200.sp, lineHeight = 200.sp, fontFeatureSettings = "pnum")
 }
 
 /** Corner radii. Controls are capsules at their 40 dp height. */
@@ -200,6 +194,8 @@ object Cards {
     val numeralWidth = 72.dp
     /** ...and runs on this far under the poster, which overlaps its right edge. */
     val numeralOverlap = 12.dp
+    /** A Top row's numeral is drawn this tall, about three quarters of the poster's height, centred on it. */
+    val numeralHeight = 152.dp
     /** A Top row's card: the numeral, then the poster. */
     val rankedWidth = numeralWidth + posterWidth
 }

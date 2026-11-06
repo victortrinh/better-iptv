@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import dev.betteriptv.app.ui.components.NumeralStyle
+import dev.betteriptv.app.ui.components.Numerals
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -38,6 +40,8 @@ class PrototypeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val screen = intent.getStringExtra("screen") ?: "home"
         val focus = intent.getBooleanExtra("focus", false)
+        // Which face the Top row's numerals are cut from, to compare them (#379): barlow, bebas or bigshoulders.
+        val numerals = intent.getStringExtra("numerals")?.let { name -> NumeralStyle.entries.first { it.name.equals(name, ignoreCase = true) } } ?: Numerals.style
         setContent {
             NuageTheme((application as BetterIptvApp).settings.settings.value.textSize) {
                 Box(Modifier.fillMaxSize()) {
@@ -46,7 +50,7 @@ class PrototypeActivity : ComponentActivity() {
                         "player" -> PlayerPrototype(tracks = intent.getBooleanExtra("tracks", false))
                         "search" -> SearchPrototype()
                         "settings" -> SettingsPrototype()
-                        else -> HomePrototype(focusCard = focus)
+                        else -> HomePrototype(focusCard = focus, numerals = numerals)
                     }
                     // So nobody mistakes the made-up Versions for real ones. It sits in the top band, where
                     // nothing scrolls under it; the player's top right holds the buffering suggestion.

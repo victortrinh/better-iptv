@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cut by scripts/numerals/numerals.py from Big Shoulders Display Black (SIL Open Font License 1.1, see scripts/numerals): edit that, not this. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="84.82dp"
+    android:height="156dp"
+    android:viewportWidth="84.82"
+    android:viewportHeight="156">
+    <path
+        android:fillColor="#80000000"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M42.87,154Q56.4,154 64.56,150.25Q72.72,146.49 76.8,138.29Q80.87,130.09 82.17,116.74Q82.54,112.85 82.68,108.17Q82.82,103.49 82.73,98.53Q82.63,93.57 82.36,88.75Q81.52,74.11 75.27,65.49Q69.01,56.87 56.59,56.87Q49.27,56.87 43.99,60.02Q38.7,63.17 36.2,67.62L32.12,67.62L32.12,28.32L79.76,28.32L79.76,3.85L4.32,3.85L4.32,89.31L30.64,89.31Q30.73,86.34 32.31,84.21Q33.88,82.08 36.66,80.97Q39.44,79.85 43.24,79.85Q48.43,79.85 51.31,82.26Q54.18,84.67 54.55,89.31Q55.29,96.26 55.2,104.23Q55.11,112.2 54.37,120.45Q54,125.73 50.98,128.56Q47.97,131.39 42.13,131.39Q36.29,131.39 33.37,128.56Q30.45,125.73 29.9,120.45Q29.71,118.6 29.67,115.4Q29.62,112.2 29.71,108.82Q29.8,105.43 30.08,103.02L2.28,103.02Q2,106.45 2,109.37Q2,112.29 2.09,116.74Q2.65,136.76 12.15,145.38Q21.65,154 42.87,154Z" />
+</vector>

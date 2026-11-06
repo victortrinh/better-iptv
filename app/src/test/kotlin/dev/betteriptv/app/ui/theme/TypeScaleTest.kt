@@ -62,10 +62,4 @@ class TypeScaleTest {
         assertEquals(FontWeight.Bold, TypeScale.of(TextSize.Medium).railStrong.fontWeight)
         assertEquals(FontWeight.SemiBold, TypeScale.of(TextSize.Medium).rail.fontWeight)
     }
-
-    @Test
-    fun theTopRowNumeralDoesNotScale() {
-        assertEquals(200f, Type.numeral.fontSize.value)
-        assertEquals(200f, Type.numeral.lineHeight.value)
-    }
 }

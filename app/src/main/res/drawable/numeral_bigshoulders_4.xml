@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cut by scripts/numerals/numerals.py from Big Shoulders Display Black (SIL Open Font License 1.1, see scripts/numerals): edit that, not this. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="91.31dp"
+    android:height="156dp"
+    android:viewportWidth="91.31"
+    android:viewportHeight="156">
+    <path
+        android:fillColor="#80000000"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M47.41,152.15L73.55,152.15L73.55,114.89L89.31,114.89L89.31,90.6L73.55,90.6L73.55,3.85L37.22,3.85L2,91.72L2,114.89L47.41,114.89ZM28.51,90.6L40.37,56.5L49.08,28.32L54.27,28.32L51.12,56.5L47.41,90.6Z" />
+</vector>

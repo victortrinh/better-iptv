@@ -80,6 +80,7 @@ fun TitleCard(
     val scope = rememberCoroutineScope()
     val bring = remember(grows) { if (grows) BringIntoViewRequester() else null }
     val showsGrown = spread && growth != null
+    val fromLeft = LocalFocusFromLeft.current
 
     // As few nodes as the card can be: a grid brings in a whole row of them at each press (#63).
     // The bottom padding is the name area, reserved so rows don't jump when focus moves.
@@ -92,7 +93,10 @@ fun TitleCard(
                     Modifier.layout { measurable, constraints ->
                         val width = lerp(Cards.posterWidth, Cards.grownWidth, growth.value).roundToPx()
                         val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
-                        layout(width, placeable.height) { placeable.place(0, 0) }
+                        // Lifted from its left edge, it reaches twice as far right as from its centre: it
+                        // takes the extra room, so it stays as clear of the next card as any grown card (#379).
+                        val reach = if (fromLeft) (Cards.grownWidth * ((FocusScale.wideCard - 1f) / 2f * growth.value)).roundToPx() else 0
+                        layout(width + reach, placeable.height) { placeable.place(0, 0) }
                     }
                 },
             )
