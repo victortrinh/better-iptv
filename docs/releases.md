@@ -99,7 +99,7 @@ The versionCode is the commit count, so build N, commit, then build N+1. `AppUpd
 
 The `.dm` holds the libraries' Baseline Profiles and the app's own rules, `app/src/main/generated/baselineProfiles/baseline-prof.txt`: app start to Home's rows, Right along a row, Down through the rows, and the Movies tab's rows (#63). The `:baselineprofile` module generates them and holds Macrobenchmarks for the runs in the roadmap's Measurements table. Both run on a device or emulator, never in CI.
 
-They drive the debug app, `dev.betteriptv.debug`, which the `nonMinifiedRelease` and `benchmarkRelease` builds install over: log it in, let it sync, set it to English and leave it on Home first. Nothing presses OK on a card, so no stream opens. With more than one device connected, set `ANDROID_SERIAL`.
+They drive the debug app, `dev.betteriptv.debug`, which the `nonMinifiedRelease` and `benchmarkRelease` builds install over: log it in, let it sync, set it to English and leave it on Home first. Each run starts from the first row's first card, a Down below the featured hero the screen opens on. Nothing presses OK on a card or on the hero, so no stream opens. The app stays installed when a run ends (`android.injected.androidTest.leaveApksInstalledAfterRun` in `gradle.properties`): without it, AGP uninstalls `dev.betteriptv.debug` afterwards, and its login and catalog with it. With more than one device connected, set `ANDROID_SERIAL`.
 
 - Regenerate the rules (Android 13 or later, or a rooted device; the stick's Fire OS 7 can't), then commit the file:
 

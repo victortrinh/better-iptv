@@ -39,6 +39,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -188,7 +192,9 @@ fun TopTabs(
                     // One fixed height for every tab: sized by its content, an icon tab came out taller
                     // than a word tab, whose text renders shorter than the label's line height.
                     modifier = (if (tab.icon != null) Modifier.size(TAB_HEIGHT) else Modifier.height(TAB_HEIGHT))
-                        .then(if (index == selected && selectedFocus != null) Modifier.focusRequester(selectedFocus) else Modifier),
+                        .then(if (index == selected && selectedFocus != null) Modifier.focusRequester(selectedFocus) else Modifier)
+                        // Says which screen is shown, to accessibility services and the browse benchmarks.
+                        .semantics { role = Role.Tab; this.selected = index == selected },
                     weight = FocusWeight.Control,
                     corner = TAB_HEIGHT / 2,
                     container = if (index == selected) Colors.surfaceHigh else Color.Transparent,
