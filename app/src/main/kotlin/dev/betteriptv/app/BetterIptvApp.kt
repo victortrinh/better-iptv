@@ -56,6 +56,13 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             delay(SEARCH_INDEX_AFTER)
             library.prepareSearchInBackground()
         }
+        // VLC's first picture after an install mustn't wait 41 s for its font list (#410).
+        scope.launch {
+            delay(VLC_FONTS_AFTER)
+            // Not under a picture that plays: it would take the decoders' share of the stick.
+            while (playerOpen) delay(VLC_FONTS_AFTER)
+            VlcFonts.buildIfMissing(this@BetterIptvApp)
+        }
         if (BuildConfig.UPDATE_URL.isNotEmpty()) {
             updates = AppUpdates(
                 BuildConfig.UPDATE_URL,
@@ -155,5 +162,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         const val TAG = "Sync"
         val STALE_AFTER: Duration = Duration.ofHours(6)
         const val SEARCH_INDEX_AFTER = 5_000L
+        // After Home's cold start and the search index have had the stick to themselves.
+        const val VLC_FONTS_AFTER = 20_000L
     }
 }
