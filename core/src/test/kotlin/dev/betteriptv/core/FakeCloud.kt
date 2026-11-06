@@ -31,6 +31,9 @@ class FakeCloud : Closeable {
     /** While set, a `/v1/games` request isn't answered until the latch opens, as a hanging network would leave it. */
     @Volatile var hangingGames: CountDownLatch? = null
 
+    /** While set, a `/v1/file-reads/lookup` request isn't answered until the latch opens. */
+    @Volatile var hangingFileReadLookUps: CountDownLatch? = null
+
     /** How many of the next `/v1/match` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
     @Volatile var failingMatches = 0
 
@@ -217,6 +220,7 @@ class FakeCloud : Closeable {
                     (asked["files"] as List<*>).forEach { (it as Map<*, *>).let { file -> fileReads["$provider/${(file["listingId"] as Number).toLong()}"] = file["file"]!! } }
                     return exchange.sendResponseHeaders(204, -1)
                 }
+                hangingFileReadLookUps?.await()
                 val files = (asked["listings"] as List<*>).mapNotNull { id ->
                     val listing = (id as Number).toLong()
                     fileReads["$provider/$listing"]?.let { mapOf("listingId" to listing, "file" to it) }

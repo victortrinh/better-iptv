@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.concurrent.CountDownLatch
 import kotlin.time.TimeSource
 
 /** Header reads on a Movie's details page: Confirming Versions from their files, and giving way to Play. */
@@ -150,6 +151,45 @@ class HeaderReadTest {
         assertEquals(1, provider.ranges.size)
         // The cloud keys reads by a hash of the Provider's host, never the host itself.
         assertTrue(cloud.received.none { "127.0.0.1" in it.body })
+    }
+
+    @Test fun `a Movie's details come with what other devices on the Provider read, so its badges don't change after the page arrives`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv")
+        provider.movieFiles[1] = matroskaFile(englishAndFrench, width = 3840, height = 2160)
+        readHeaders()
+
+        Library.open(folder.root.resolve("other.db").path, InMemoryCredentials(), cloud.url).use { other ->
+            other.logIn(provider.login)
+            other.sync()
+            // The page reads the details and the plan before it fades in, and its Header reads only after.
+            val details = other.title(movie, listOf("en"), "en")!!
+            assertEquals(Known(Quality.UHD, Provenance.Confirmed), details.languages.single().versions.single().attributes.quality)
+            val plan = other.playPlan(movie, listOf("en"), DeviceProfile(maxHeight = 2160, hdr = emptySet()))!!
+            assertEquals(Known(Quality.UHD, Provenance.Confirmed), plan.version.attributes.quality)
+        }
+        assertEquals(1, provider.ranges.size)
+    }
+
+    @Test fun `a slow cloud holds a Movie's details no longer than a page waits to arrive, and its answer is kept`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv")
+        provider.movieFiles[1] = matroskaFile(englishAndFrench, width = 3840, height = 2160)
+        readHeaders()
+
+        Library.open(folder.root.resolve("other.db").path, InMemoryCredentials(), cloud.url).use { other ->
+            other.logIn(provider.login)
+            other.sync()
+            val hanging = CountDownLatch(1)
+            cloud.hangingFileReadLookUps = hanging
+            val asked = TimeSource.Monotonic.markNow()
+            val details = other.title(movie, listOf("en"), "en")!!
+            assertTrue(asked.elapsedNow().inWholeMilliseconds < 1_000)
+            assertNull(details.languages.single().versions.single().attributes.quality)
+            hanging.countDown()
+            cloud.hangingFileReadLookUps = null
+            withTimeout(5_000) {
+                while (other.title(movie, listOf("en"), "en")!!.languages.single().versions.single().attributes.quality == null) delay(20)
+            }
+        }
     }
 
     @Test fun `pressing Play stops a read in progress at once`() = runBlocking {
