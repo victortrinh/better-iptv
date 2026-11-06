@@ -29,6 +29,7 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -53,6 +54,7 @@ import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
 import dev.betteriptv.core.VersionAttributes
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -65,6 +67,7 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * The featured hero on Home, Movies and Shows (#348), on the rows they share ([RowsLayout]), the
@@ -101,10 +104,18 @@ class FeaturedHeroTest {
 
     private val backdrop = Art()
 
-    /** Every image is served at once, as from disk: the backdrops as [backdrop], the logos as plain colour. */
+    /** Every image asked for, in order. */
+    private val asked = java.util.Collections.synchronizedList(ArrayList<String>())
+
+    /** While set, every image waits for it, as on a slow network. */
+    @Volatile private var artHeld: CompletableDeferred<Unit>? = null
+
+    /** Every image is served as from disk, at once unless [artHeld]: the backdrops as [backdrop], the logos as plain colour. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain ->
+            asked += chain.request.data.toString()
+            artHeld?.await()
             val art = if ("backdrop" in chain.request.data.toString()) backdrop else ColorDrawable(0xFFFFFFFF.toInt())
             SuccessResult(art.asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult
         }
@@ -120,8 +131,8 @@ class FeaturedHeroTest {
 
     /** The Titles [feature] hands out, one per ask, in turn, as the Library's rotation does. */
     private val titles = listOf(featured("Dune"), featured("Arrival"), featured("Sicario"))
-    private var asked = 0
-    private val feature: suspend () -> FeaturedTitle? = { titles[asked++ % titles.size] }
+    private var featuredCount = 0
+    private val feature: suspend () -> FeaturedTitle? = { titles[featuredCount++ % titles.size] }
 
     private fun title(name: String) = TitleSummary(TitleId.Unmatched(TitleKind.Movie, name.hashCode().toLong()), name, 2024, null, VersionAttributes())
     private fun genre(name: String) = HomeRow.Genre(name, List(10) { title("$name$it") })
@@ -278,6 +289,94 @@ class FeaturedHeroTest {
 
         focusedOn("Action0")
         compose.onNodeWithText("Play").assertDoesNotExist()
+    }
+
+    /** Advances the test clock a frame, giving the image loader's own threads a moment to answer. */
+    private fun frame() {
+        compose.mainClock.advanceTimeByFrame()
+        Thread.sleep(2)
+        compose.waitForIdle()
+    }
+
+    private fun exists(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+
+    // It draws the screen, whose vector icons need real bitmaps.
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun onTheFirstEntryTheHeroWaitsForItsArtThenArrivesWholeWithTheRows() {
+        val held = CompletableDeferred<Unit>()
+        artHeld = held
+        compose.mainClock.autoAdvance = false
+        screen()
+
+        // The Title and the rows are read, but not the backdrop and the logo: nothing of the hero shows,
+        // and the placeholder rows stay, rather than its text alone on the ground.
+        repeat(Motion.pageArrivalMillis / 16 / 2) {
+            frame()
+            assertTrue("frame $it", !exists("About Dune.") && !exists("Action"))
+        }
+        held.complete(Unit)
+        var frames = 0
+        while (!exists("About Dune.")) {
+            assertTrue("waited $frames frames past the art", frames++ < 10)
+            assertTrue(!exists("Action"))
+            frame()
+        }
+        // The text, the rows and the backdrop arrive together, and the hero fades in as one.
+        assertTrue(exists("Action"))
+        val first = backdropAlpha()
+        assertTrue("on the hero's first frame its backdrop is at $first", first < 0.5f)
+        compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + Motion.imageFadeMillis + 100L)
+        assertEquals(1f, backdropAlpha())
+        focusedOn("Play")
+    }
+
+    // It draws the screen, whose vector icons need real bitmaps.
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun artSlowerThanThePageArrivalTimeDoesNotHoldTheHero() {
+        val held = CompletableDeferred<Unit>()
+        artHeld = held
+        compose.mainClock.autoAdvance = false
+        screen()
+
+        var waitedMillis = 0L
+        while (!exists("About Dune.")) {
+            assertTrue("waited $waitedMillis ms", waitedMillis <= Motion.pageArrivalMillis + 64)
+            frame()
+            waitedMillis += 16
+        }
+        assertTrue("it waited for the art", waitedMillis >= Motion.pageArrivalMillis - 32)
+        assertTrue(exists("Action"))
+        assertEquals(0f, backdropAlpha())
+
+        // The art fades in once it comes.
+        held.complete(Unit)
+        repeat(4) { frame() }
+        compose.mainClock.advanceTimeBy(Motion.imageFadeMillis + 100L)
+        assertEquals(1f, backdropAlpha())
+    }
+
+    @Test fun theNextEntrysArtIsLoadedDuringThisOne() {
+        screen()
+        heroShows("Dune")
+        compose.waitUntil(2_000) { asked.any { "backdrop-Arrival" in it } && asked.any { "logo-Arrival" in it } }
+    }
+
+    @Test fun aTitleReadAfterTheRowsIsLeftForTheNextEntry() {
+        val late = CompletableDeferred<Unit>()
+        screen(feature = { late.await(); feature() })
+
+        // The rows don't wait for it past the arrival time: the screen opens on its first card.
+        compose.mainClock.advanceTimeBy(Motion.pageArrivalMillis + 100L)
+        focusedOn("Action0")
+        compose.onNodeWithText("Play").assertDoesNotExist()
+
+        late.complete(Unit)
+        compose.waitForIdle()
+        compose.onNodeWithText("Play").assertDoesNotExist()
+        entry++
+        compose.waitForIdle()
+        heroShows("Dune")
+        focusedOn("Play")
     }
 
     @Test fun theBackdropFadesInAsItArrives() {

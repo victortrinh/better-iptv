@@ -75,6 +75,12 @@ import dev.betteriptv.core.LiveCountry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.withTimeoutOrNull
+import coil3.compose.LocalPlatformContext
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
@@ -328,6 +334,7 @@ internal fun RowsLayout(
 ) {
     val reader by rememberUpdatedState(read)
     val featurer by rememberUpdatedState(feature)
+    val context = LocalPlatformContext.current
     // Entered (by its tab, or as the app starts), not come back to from a page it opened.
     val entering = remember { restoreFocus == null }
     // Each entry features the Title read for it during the last one; the hero shows from the top,
@@ -341,6 +348,10 @@ internal fun RowsLayout(
         }
     }
     val hero = if (feature != null) state.featured else null
+    // A hero that arrives after the screen is up (the first entry's, read with the rows) fades in as
+    // one, its text and its backdrop together; one there from the first frame shows at once.
+    val heroFade = remember { Animatable(if (hero != null) 1f else 0f) }
+    LaunchedEffect(hero != null) { if (hero != null) heroFade.animateTo(1f, tween(Motion.screenFadeMillis)) }
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
     // so the card is checked again once they are read: the Title opened may have left Continue
@@ -355,12 +366,18 @@ internal fun RowsLayout(
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
     LaunchedEffect(reading) {
         val before = state.rows
-        // The first entry's hero is read with the rows, and shows with them.
+        // The first entry's hero is read beside the rows, its backdrop and logo as soon as it is, and
+        // they show together (#386): the rows wait up to the page arrival time for the Title and its
+        // art, so the hero arrives whole instead of its text first. A Title read later than that is
+        // kept for the next entry; art that arrives later fades in as it comes.
         val choose = !checked && entering && !state.upNextRead
-        val chosen = if (choose) featurer?.invoke() else null
+        val chosen = if (choose) featurer?.let { feature -> async { feature() } } else null
+        val art = chosen?.let { async { it.await()?.let { title -> awaitAll(async { loadArtwork(context, title.backdrop) }, async { loadArtwork(context, title.logo) }) } } }
         val fresh = reader()
+        if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await() }
+        val late = chosen != null && !chosen.isCompleted
         state.held = null
-        if (choose) state.featured = chosen
+        if (chosen != null) state.featured = if (late) null else chosen.await()
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
@@ -376,10 +393,11 @@ internal fun RowsLayout(
         }
         val first = !checked
         checked = true
-        // The next entry's hero, read now so it shows at once then.
+        // The next entry's hero, read now with its art so it shows at once then.
         if (first && entering) featurer?.let { next ->
-            state.upNext = next()
+            state.upNext = if (late) chosen!!.await() else next()
             state.upNextRead = true
+            state.upNext?.let { preloadArtwork(context, it.backdrop); preloadArtwork(context, it.logo) }
         }
     }
     // Once focus leaves the row a reading held back, the row takes it.
@@ -436,7 +454,6 @@ internal fun RowsLayout(
     // Once focus rests on a card, the backdrops its neighbours grow into are loaded into memory, so
     // the next Left or Right grows straight into its art. Nothing while presses come faster than
     // the settle: each press starts the wait again. Read in a flow, so a press composes nothing.
-    val context = LocalContext.current
     LaunchedEffect(state) {
         snapshotFlow { state.focused }.collectLatest { card ->
             if (card == null) return@collectLatest
@@ -458,7 +475,7 @@ internal fun RowsLayout(
     val heroDetails = remember { FocusRequester() }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
-    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() }) {
+    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * heroFade.value }) {
         header(tab)
         if (placeholder != null) return@Column placeholder()
         if (rows == null) return@Column PlaceholderRows()
@@ -475,6 +492,7 @@ internal fun RowsLayout(
                         onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id, hero.backdrop) },
                         onFocus = { state.focused = RowCard(HERO_ROW, it) },
                         last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
+                        alpha = { heroFade.value },
                     )
                     if (focusOn?.row == HERO_ROW) LaunchedEffect(focusOn) {
                         (if (focusOn.key == HERO_DETAILS) heroDetails else heroPlay).requestFocus()
