@@ -13,6 +13,19 @@ kotlin {
     compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
 }
 
+// The app runs this code on Fire OS 7 (Android 9), whose Java library is about Java 8's: a JDK 9+
+// method compiles here and then crashes the app on the stick (URLEncoder.encode(String, Charset) did,
+// #378). So the main code compiles against the Java 8 API; the tests run on the JDK and may use more.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_1_8)
+        freeCompilerArgs.add("-Xjdk-release=1.8")
+    }
+}
+tasks.named<JavaCompile>("compileJava") {
+    options.release.set(8)
+}
+
 dependencies {
     api(libs.coroutines.core)
     implementation(libs.okhttp)
