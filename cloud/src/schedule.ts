@@ -1,6 +1,6 @@
 /**
  * The Leagues the sports hub offers (CONTEXT.md: League), by the id devices and the cloud share:
- * twenty-two team Leagues (six of them added in #354, the Europa League in #375), whose Games are two teams', the event Leagues (#310), whose Games have
+ * twenty-three team Leagues (six of them added in #354, the Europa League in #375, Top 14 in #383), whose Games are two teams', the event Leagues (#310), whose Games have
  * no teams: F1's are a Grand Prix's sessions, NASCAR Cup's and IndyCar's their races, the PGA
  * Tour's and the LPGA's a tournament's rounds, and UFC, a fight-card League (#316), whose Games are fight cards,
  * named after their main event's two fighters.
@@ -27,6 +27,7 @@ export const LEAGUES = [
   "ncaa-basketball",
   "wnba",
   "nrl",
+  "top-14",
   "afl",
   "f1",
   "nascar",
