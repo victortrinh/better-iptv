@@ -555,6 +555,10 @@ class VlcEngine(
     override val chosen = MutableStateFlow<TrackChoice?>(null)
     override val pictured = MutableStateFlow(false)
 
+    // From its picture's Track being chosen until the picture shows, VLC makes its video output,
+    // which first builds its list of fonts: 41 s on the stick the first time after an install (#400).
+    override val preparing = MutableStateFlow(false)
+
     override val frameRate: Float?
         get() = known.filterIsInstance<IMedia.VideoTrack>().firstOrNull()
             ?.let { if (it.frameRateDen > 0) it.frameRateNum.toFloat() / it.frameRateDen else null }?.takeIf { it > 0 }
@@ -567,8 +571,12 @@ class VlcEngine(
             // On the main thread: it only notes what LibVLC reports, and leaves calls into it to its thread.
             val listener = MediaPlayer.EventListener { event ->
                 when (event.type) {
-                    MediaPlayer.Event.EndReached -> if (continuation.isActive) continuation.resume(Unit)
+                    MediaPlayer.Event.EndReached -> {
+                        preparing.value = false
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
                     MediaPlayer.Event.EncounteredError -> if (continuation.isActive) {
+                        preparing.value = false
                         if (atTheEnd(position, length)) continuation.resume(Unit)
                         // VLC doesn't say whether the file or the stream failed; it's the last resort either way.
                         else continuation.resumeWithException(CantOpen("VLC can't play the file"))
@@ -583,11 +591,19 @@ class VlcEngine(
                     MediaPlayer.Event.Vout -> if (event.voutCount > 0 && !shown) {
                         Log.i(PLAYER_TAG, "VLC shows its picture")
                         shown = true
+                        preparing.value = false
                         pictured.value = true
                         // A pause asked for before the picture showed.
                         onVlcThread(::applyPause)
                     }
-                    MediaPlayer.Event.ESSelected, MediaPlayer.Event.ESDeleted -> onVlcThread(::readTracks)
+                    MediaPlayer.Event.ESSelected -> {
+                        if (event.esChangedType == IMedia.Track.Type.Video && !shown) {
+                            Log.i(PLAYER_TAG, "VLC makes its picture")
+                            preparing.value = true
+                        }
+                        onVlcThread(::readTracks)
+                    }
+                    MediaPlayer.Event.ESDeleted -> onVlcThread(::readTracks)
                 }
                 if (event.type == MediaPlayer.Event.Playing) {
                     playing = true
@@ -657,6 +673,7 @@ class VlcEngine(
     override suspend fun release() {
         from = position
         released = true
+        preparing.value = false
         // Stopping waits for LibVLC's threads, which can take as long as a stalled stream.
         withContext(onVlc) {
             player.setEventListener(null)

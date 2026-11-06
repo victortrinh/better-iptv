@@ -109,6 +109,22 @@ class BackupsTest {
         job.cancelAndJoin()
     }
 
+    @Test fun `VLC making its picture by itself for longer than the start timeout still plays the Version`() = runBlocking {
+        syncWithBackups()
+        // Having read the file, VLC builds its list of fonts the first time it plays, which can outlast the start timeout, and even its limit (#400).
+        player.vlcReads = 1
+        player.vlcPreparing = 1_500.milliseconds
+        val (session, job) = play(startTimeout = 300.milliseconds)
+        session.awaitPlaying(1)
+
+        session.tryOtherPlayer()
+
+        val vlc = session.awaitState { it is PlaybackState.Playing && it.player.engine == Engine.Vlc }
+        assertEquals(1L, vlc.version!!.listingId)
+        assertEquals(listOf(1L, 0L), player.played.map { it.first })
+        job.cancelAndJoin()
+    }
+
     @Test fun `Media3 reading an MP4's index from its end for longer than the start timeout still plays the Version`() = runBlocking {
         syncWithBackups()
         // The start, the index at the end, then the picture: each request waits 400 ms for its first bytes.
