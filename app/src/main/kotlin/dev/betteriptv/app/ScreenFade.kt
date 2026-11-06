@@ -1,8 +1,6 @@
 package dev.betteriptv.app
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
@@ -34,12 +32,14 @@ fun BoxScope.ScreenFade(screen: Any?, asIs: (Any?) -> Boolean = { false }, first
     key(screen) {
         // Read on the new screen's first composition, while [last] still names the screen it replaces.
         val cut = asIs(screen) || asIs(last.screen) || (!firstFades && !last.shown)
-        val shown = remember { Animatable(if (cut) 1f else 0f) }
+        // Over frames, not by the clock: closing the Trailer screen can hold the main thread, and a veil
+        // timed by the clock went from opaque to gone in one frame, so the page popped in (#407).
+        val shown = remember { Fade(if (cut) 1f else 0f) }
         SideEffect {
             last.screen = screen
             last.shown = true
         }
-        LaunchedEffect(Unit) { shown.animateTo(1f, tween(Motion.screenFadeMillis, easing = LinearOutSlowInEasing)) }
+        LaunchedEffect(Unit) { shown.fadeIn(Motion.screenFadeMillis, LinearOutSlowInEasing) }
         Box(Modifier.matchParentSize().graphicsLayer { }.drawBehind {
             val veil = 1f - shown.value
             if (veil > 0f) drawRect(Colors.ground, alpha = veil)

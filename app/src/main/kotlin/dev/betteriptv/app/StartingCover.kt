@@ -1,7 +1,5 @@
 package dev.betteriptv.app
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -49,7 +47,7 @@ internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Ti
  * What covers the picture while a Version starts, so waiting isn't a black screen: a Title's
  * backdrop dimmed by a `veil`, with its logo (its [name] without one) in the middle, or a Channel's
  * logo on a glass card. The player's starting label sits over it. Once the engine shows its first
- * frame ([pictured]), it fades away over [Motion.screenFadeMillis] to the picture under it, and
+ * frame ([pictured]), it fades away over [Motion.screenFadeMillis] of frames ([Fade]) to the picture under it, and
  * leaves the screen. Without [art] (a Sports replay) it is the bare `ground`.
  *
  * Once the session has [failed], the cover is back at full strength whether or not a frame showed (VLC
@@ -61,10 +59,12 @@ internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Ti
 @Composable
 internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, failed: Boolean = false) {
     var gone by remember { mutableStateOf(false) }
-    val alpha = remember { Animatable(1f) }
+    // Over frames, not by the clock: the stick can draw a frame every 120 ms as the picture starts,
+    // and a fade timed by the clock was a cut (#407).
+    val alpha = remember { Fade(1f) }
     LaunchedEffect(pictured) {
         if (!pictured) return@LaunchedEffect
-        alpha.animateTo(0f, tween(Motion.screenFadeMillis))
+        alpha.fadeOut(Motion.screenFadeMillis)
         gone = true
     }
     if (gone && !failed) return

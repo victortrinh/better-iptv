@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 
 /**
- * An alpha that fades in from [start] to 1 ([fadeIn]) and is shown over frames, however late they
+ * An alpha that fades in from [start] to 1 ([fadeIn]), or out to 0 ([fadeOut]), and is shown over frames, however late they
  * come: each frame moves it on by the time since the last one, but never by more than
  * [LONGEST_FADE_STEP_MILLIS]. A fade timed by the clock alone is over by the first frame after the
  * main thread is held up, so what it brings in pops: on the stick's cold start, Home's rows and hero
@@ -27,13 +27,26 @@ class Fade(start: Float) {
     }
 
     /** Fades it in over [millis] of frames, from the first frame after it's called, on its [easing]. */
-    suspend fun fadeIn(millis: Int, easing: Easing = FastOutSlowInEasing) {
+    suspend fun fadeIn(millis: Int, easing: Easing = FastOutSlowInEasing) = fade(millis, easing) { it }
+
+    /**
+     * Fades it out over [millis] of frames, from the first frame after it's called, on its [easing]: the
+     * starting cover's way to the picture, which on the stick comes a frame every 50–120 ms as a trailer
+     * starts (#407).
+     */
+    suspend fun fadeOut(millis: Int, easing: Easing = FastOutSlowInEasing) = fade(millis, easing) { 1f - it }
+
+    private suspend fun fade(millis: Int, easing: Easing, at: (Float) -> Float) {
+        // Already where it's going (a screen shown as is): it stays there.
+        if (value == at(1f)) return
         var last = -1L
         var shown = 0L
-        while (value < 1f) withFrameMillis { now ->
+        var done = false
+        while (!done) withFrameMillis { now ->
             if (last >= 0) shown += (now - last).coerceAtMost(LONGEST_FADE_STEP_MILLIS)
             last = now
-            value = if (shown >= millis) 1f else easing.transform(shown.toFloat() / millis)
+            done = shown >= millis
+            value = at(if (done) 1f else easing.transform(shown.toFloat() / millis))
         }
     }
 }
