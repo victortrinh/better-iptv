@@ -363,7 +363,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     /** Removes the login from [text], also in the percent-encoded forms a URL carries it in. */
     private fun scrub(text: String): String {
         val secrets = listOf(login.password, login.username).filter { it.isNotEmpty() }.flatMap {
-            val encoded = URLEncoder.encode(it, Charsets.UTF_8)
+            val encoded = URLEncoder.encode(it, "UTF-8")
             listOf(it, encoded, encoded.replace("+", "%20"))
         }
         return secrets.sortedByDescending { it.length }.fold(text) { acc, secret -> acc.replace(secret, "***", ignoreCase = true) }

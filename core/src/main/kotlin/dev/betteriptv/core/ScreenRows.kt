@@ -9,15 +9,22 @@ package dev.betteriptv.core
 internal class ScreenRows {
     private val shown = HashSet<TitleId>()
 
-    /** A Chart's [titles], all of them, or none when there are fewer than [min]. The rows below skip them. */
-    fun chart(titles: List<StoredTitle>, min: Int = 1): List<StoredTitle> = if (titles.size < min) emptyList() else titles.also(::show)
+    /**
+     * A Chart's [titles], all of them, each once (where it first ranks), or none when there are fewer
+     * than [min]. The rows below skip them.
+     */
+    fun chart(titles: List<StoredTitle>, min: Int = 1): List<StoredTitle> {
+        val once = titles.distinctBy { it.id }
+        return if (once.size < min) emptyList() else once.also(::show)
+    }
 
     /**
-     * Up to [size] of [titles] not shown in a row above, in their order, or none when fewer than
-     * [min] are left: a row of two looks broken.
+     * Up to [size] of [titles] not shown in a row above, in their order, each once, or none when
+     * fewer than [min] are left: a row of two looks broken. A rail keys its cards by Title, so the
+     * same Title twice in a row would crash the app (#378).
      */
     fun row(titles: List<StoredTitle>, size: Int, min: Int = 1): List<StoredTitle> {
-        val left = titles.filter { it.id !in shown }
+        val left = titles.filter { it.id !in shown }.distinctBy { it.id }
         return if (left.size < min) emptyList() else left.take(size).also(::show)
     }
 
