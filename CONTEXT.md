@@ -95,7 +95,7 @@ The streaming service a Version was copied from, according to its Prefix (`NF` i
 _Avoid_: Origin, platform
 
 **Untagged Version**:
-A Version whose Prefix names a Source but no language.
+A Version whose Prefix names a Source but no language. A streaming service's or Blu-ray's copy keeps the original audio, so it is Likely in the Title's original language when TMDB names one.
 
 **Audio-description Version**:
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.

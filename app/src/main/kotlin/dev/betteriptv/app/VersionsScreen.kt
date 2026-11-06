@@ -144,7 +144,10 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
 /** The Other languages row's key in the list. */
 private const val OTHER_LANGUAGES = "other languages"
 
-/** A language's heading ("English · 3"), then its rows: each Version, its Backups under it. */
+/**
+ * A language's heading ("English · 3"), or "More versions · 2" over the Versions whose language
+ * nothing names, then its rows: each Version, its Backups under it.
+ */
 private fun LazyListScope.languageGroup(
     context: Context,
     group: VersionTableGroup,
@@ -157,7 +160,7 @@ private fun LazyListScope.languageGroup(
 ) {
     item(key = "language ${group.language}") {
         Text(
-            "${group.language?.let(::languageName) ?: context.getString(R.string.language_untagged)} · ${group.versionCount}",
+            "${group.language?.let(::languageName) ?: context.getString(R.string.versions_untagged)} · ${group.versionCount}",
             style = Type.title,
             color = Colors.ink,
             maxLines = 1,

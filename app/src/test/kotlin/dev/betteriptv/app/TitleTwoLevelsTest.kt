@@ -218,6 +218,16 @@ class TitleTwoLevelsTest {
         focusedOn("Backup")
     }
 
+    @Test fun versionsWhoseLanguageIsntNamedAreHeadedMoreVersionsNeverLanguageNotNamed() {
+        // The Nordic copy says nothing of its language (it may be a dub); the Source copies are Likely English (#388).
+        val nordic = LanguageGroup(null, listOf(Version(11, "SC - Heat (1995)", VersionAttributes())))
+        open(loaded = details().copy(languages = listOf(LanguageGroup("en", listOf(best)), nordic)) to stopped)
+        openVersions()
+
+        assertTrue(shows("More versions · 1"))
+        assertFalse(shows("Language not named"))
+    }
+
     @Test fun badgesOnTheMetadataLineStillShowConfirmedAndLikely() {
         val badges = VersionAttributes(language = likely("en"), quality = fullHd(confirmed = true)).cardBadges()
 

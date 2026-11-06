@@ -42,7 +42,23 @@ internal fun inContentLanguages(candidates: List<Candidate>, contentLanguages: L
 }
 
 /**
- * Groups [candidates] by language: the Viewer's [contentLanguages] in their order, then Untagged
+ * [candidates] with each Untagged one, whose Prefix names a Source but no language (`D+`, `NF`,
+ * `TOP`), Likely in the language the Title was released in ([originalLanguage], TMDB's): a streaming
+ * service's or a Blu-ray's copy keeps the original audio. One whose Prefix names neither (`SC`, the
+ * Nordic copies, which may be dubs) is left as it is, as is every one when TMDB names no language.
+ */
+internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLanguage: String?): List<Candidate> {
+    // TMDB's "xx" is "No Language".
+    val language = originalLanguage?.takeIf { it.isNotBlank() && it != "xx" } ?: return candidates
+    return candidates.map { candidate ->
+        val attributes = candidate.attributes
+        if (attributes.language != null || attributes.source == null) candidate
+        else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)))
+    }
+}
+
+/**
+ * Groups [candidates] by language:the Viewer's [contentLanguages] in their order, then Untagged
  * Versions (which may well be in the Viewer's language), then the other languages, most Versions
  * first. Within a group the best Version leads, and Versions equivalent to a better one (same
  * language and quality) become its Backups.
