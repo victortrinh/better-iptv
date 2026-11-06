@@ -22,6 +22,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.drawscope.translate
@@ -56,7 +57,8 @@ internal const val HERO_DETAILS = "details"
  * ([featuredBackdrop]). [onFocus] says which button took focus ([HERO_PLAY], [HERO_DETAILS]);
  * focus coming into the hero from outside lands on the one focused [last], else on Play: the hero
  * leaves composition once scrolled away, so a focus restorer would forget it, and Up from the first
- * row lands on whichever button is nearer.
+ * row lands on whichever button is nearer. It is drawn at [alpha], read only in drawing: the fade a
+ * hero arriving after the screen is up comes in by, with its backdrop ([featuredBackdrop]).
  */
 @Composable
 internal fun FeaturedHero(
@@ -67,12 +69,13 @@ internal fun FeaturedHero(
     onDetails: () -> Unit,
     onFocus: (String) -> Unit,
     last: String = HERO_PLAY,
+    alpha: () -> Float = { 1f },
 ) {
     val context = LocalContext.current
     // While focus is on a button, Left and Right move between them; from outside, only [last] takes it.
     var inside by remember { mutableStateOf(false) }
     // It starts 96 dp under the tabs, which keep 16 dp under them.
-    Column(Modifier.padding(start = Spacing.screenX, top = 96.dp - 16.dp, bottom = 28.dp).width(440.dp)) {
+    Column(Modifier.padding(start = Spacing.screenX, top = 96.dp - 16.dp, bottom = 28.dp).width(440.dp).graphicsLayer { this.alpha = alpha() }) {
         TitleName(title.name, rememberArtwork(title.logo))
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

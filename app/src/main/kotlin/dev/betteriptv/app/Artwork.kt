@@ -77,9 +77,24 @@ private fun artworkRequest(context: PlatformContext, url: String, card: Boolean)
  * in. It is the image [rememberArtwork] asks for, at the original size its painter loads it at, so
  * the grown card finds it there on its first grown frame.
  */
-fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) {
-    SingletonImageLoader.get(context).enqueue(artworkRequest(context, backdrop, card = false).newBuilder().size(coil3.size.Size.ORIGINAL).build())
+fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) = preloadArtwork(context, backdrop)
+
+/**
+ * Loads the artwork at [url] into the memory cache, as [rememberArtwork] asks for it (at the
+ * original size its painter loads it at), so it shows on the first frame it's drawn, with no fade.
+ * It goes on when the caller leaves: the featured hero's art, read for the next entry (#386).
+ */
+fun preloadArtwork(context: PlatformContext, url: String) {
+    SingletonImageLoader.get(context).enqueue(preloadRequest(context, url))
 }
+
+/** [preloadArtwork], returning once the artwork is in the memory cache, or couldn't be loaded. */
+suspend fun loadArtwork(context: PlatformContext, url: String) {
+    SingletonImageLoader.get(context).execute(preloadRequest(context, url))
+}
+
+private fun preloadRequest(context: PlatformContext, url: String) =
+    artworkRequest(context, url, card = false).newBuilder().size(coil3.size.Size.ORIGINAL).build()
 
 /** How long a card is on screen, or focus rests on one, before artwork loads for it ([SettleFirst], the rows' preloading). */
 const val SETTLE_MILLIS = 250L
