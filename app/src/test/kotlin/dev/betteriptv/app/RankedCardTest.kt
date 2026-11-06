@@ -123,13 +123,13 @@ class RankedCardTest {
     }
 
     @Test
-    fun theNumeralIsDrawnAtItsHeightCentredOnThePoster() {
+    fun theNumeralIsDrawnAtItsHeightLevelWithThePostersTop() {
         ranked(rank = 7)
         val numeral = compose.onAllNodesWithTag(NUMERAL_TAG, useUnmergedTree = true)[0].getBoundsInRoot()
         val poster = poster()
         // The digits are numeralHeight tall; the drawable keeps a little room around them for its stroke.
         assertEquals(Cards.numeralHeight.value, (numeral.bottom - numeral.top).value, 4.5f)
-        assertEquals((poster.top + poster.bottom) / 2, (numeral.top + numeral.bottom).value / 2, 0.5f)
+        assertEquals(poster.top, numeral.top.value, 0.5f)
         // It reaches at least the overlap under the poster's left edge (a wide digit runs on under
         // the poster), and never reaches before the card.
         assertTrue(numeral.right.value >= poster.left + Cards.numeralOverlap.value - 0.5f)

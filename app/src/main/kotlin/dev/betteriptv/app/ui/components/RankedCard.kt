@@ -13,9 +13,17 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 import dev.betteriptv.app.R
@@ -26,6 +34,8 @@ import dev.betteriptv.app.ui.theme.Cards
  * [card] (a poster [TitleCard]) overlapping its right edge. The numeral never takes focus; the poster
  * does, and grows from its left edge, so it never covers more of the numeral than it does at rest,
  * and casts its shadow down and to the right, away from it (#379). It widens to the right into its backdrop.
+ * As on Netflix, the numeral's top is level with the poster's, and its right side fades into the ground
+ * before the poster starts.
  */
 @Composable
 fun RankedCard(rank: Int, modifier: Modifier = Modifier, style: NumeralStyle = Numerals.style, card: @Composable () -> Unit) {
@@ -34,6 +44,9 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, style: NumeralStyle = N
     // Drawn at its own size: its digits Cards.numeralHeight tall, with room around them for the stroke.
     val size = with(LocalDensity.current) { numeral.intrinsicSize.toDpSize() }
     val width = size.width
+    val offset = (room - width).coerceAtLeast(0.dp)
+    // Where the poster starts, in the numeral's own coordinates: the fade ends there.
+    val posterStart = Cards.numeralWidth - offset
     // As wide as the numeral and the card: a focused poster grows to the right of the numeral, which stays put (#216).
     Box(modifier) {
         // As tall as the poster, which sets the card's height.
@@ -42,11 +55,12 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, style: NumeralStyle = N
                 numeral,
                 contentDescription = null,
                 Modifier
-                    .align(Alignment.CenterStart)
+                    .align(Alignment.TopStart)
                     // Ending where the room does; a 10, wider, starts where it does and runs on under the poster.
                     .wrapContentWidth(Alignment.Start, unbounded = true)
-                    .offset(x = (room - width).coerceAtLeast(0.dp))
+                    .offset(x = offset)
                     .requiredSize(size)
+                    .fadeRightTo(posterStart)
                     .testTag(NUMERAL_TAG),
             )
         }
@@ -55,6 +69,26 @@ fun RankedCard(rank: Int, modifier: Modifier = Modifier, style: NumeralStyle = N
         }
     }
 }
+
+/**
+ * Fades what this draws out to the right, over [Cards.numeralFade], down to [Cards.numeralFadeAlpha]
+ * at [end] and past it: a Top row's numeral sinking into the ground under the poster's left edge.
+ */
+private fun Modifier.fadeRightTo(end: Dp) =
+    graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
+        drawContent()
+        val to = end.toPx()
+        val from = to - Cards.numeralFade.toPx()
+        drawRect(
+            Brush.horizontalGradient(
+                0f to Color.Black,
+                1f to Color.Black.copy(alpha = Cards.numeralFadeAlpha),
+                startX = from,
+                endX = to,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 /**
  * How a Top row's numerals are drawn (#379): which open-licence condensed face they are cut from
