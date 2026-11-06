@@ -126,12 +126,12 @@ class GameLabelsTest {
         assertTrue(context.mainCardCaption(card(), Instant.parse("2026-11-01T22:00:00Z"), ZoneId.of("America/Toronto"))!!.startsWith("Carte principale "))
     }
 
-    /** #354's and #375's Leagues, as Settings' picker and Live's rows name them. */
-    private val added = listOf(League.EuropaLeague, League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague, League.Nrl, League.Afl)
+    /** #354's, #375's and #383's Leagues, as Settings' picker and Live's rows name them. */
+    private val added = listOf(League.EuropaLeague, League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague, League.Nrl, League.Top14, League.Afl)
 
     @Test fun theLeaguesAddedForMoreLeaguesAreNamedInEnglish() {
         assertEquals(
-            listOf("Europa League", "EFL Championship", "Liga Portugal", "2. Bundesliga", "Women's Super League", "NRL", "AFL"),
+            listOf("Europa League", "EFL Championship", "Liga Portugal", "2. Bundesliga", "Women's Super League", "NRL", "Top 14", "AFL"),
             added.map { context.leagueName(it) },
         )
     }
@@ -140,7 +140,7 @@ class GameLabelsTest {
     @Config(qualifiers = "fr")
     fun theLeaguesAddedForMoreLeaguesAreNamedInFrench() {
         assertEquals(
-            listOf("Ligue Europa", "EFL Championship", "Liga Portugal", "2. Bundesliga", "Super League féminine", "NRL", "AFL"),
+            listOf("Ligue Europa", "EFL Championship", "Liga Portugal", "2. Bundesliga", "Super League féminine", "NRL", "Top 14", "AFL"),
             added.map { context.leagueName(it) },
         )
     }

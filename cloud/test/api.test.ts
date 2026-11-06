@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { LEAGUES } from "../src/schedule";
 import { GAMES_SUBREQUESTS } from "../src/games";
-import { added, argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leaderboard, leafs, sens, stockCarRace, team, texans, tournament } from "./fake-espn";
+import { added, argos, bombers, broncos, bruins, event, FakeEspn, fightCard, grandPrix, habs, indyCarRace, leaderboard, leafs, sens, stockCarRace, team, texans, top14, tournament } from "./fake-espn";
 import { FakeNetflix } from "./fake-netflix";
 import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 
@@ -893,6 +893,56 @@ describe("Games", () => {
     expect(JSON.stringify(leagues)).not.toMatch(/"(score|period|clock|records?|displayClock)"/i);
   });
 
+  it("answers Top 14's Games with the names the Provider calls its clubs by, and none of ESPN's abbreviations (#383)", async () => {
+    // ESPN's round of 2026-10-24 and 25, moved to this test's days.
+    const t = top14;
+    espn.scoreboard(
+      "rugby/270559",
+      "2026-11-01",
+      event("t14-1", "2026-11-01T12:30:00Z", "pre", t.vannes, t.clermont),
+      event("t14-2", "2026-11-01T14:35:00Z", "pre", t.bayonne, t.lyon),
+      event("t14-3", "2026-11-01T14:35:00Z", "pre", t.castres, t.stadeFrancais),
+      event("t14-4", "2026-11-01T14:35:00Z", "pre", t.racing, t.montpellier),
+      event("t14-5", "2026-11-01T14:35:00Z", "pre", t.toulouse, t.perpignan),
+      event("t14-6", "2026-11-01T19:00:00Z", "pre", t.toulon, t.pau),
+      event("t14-7", "2026-11-01T20:05:00Z", "pre", t.laRochelle, t.bordeaux),
+    );
+    espn.teams("rugby/270559", ...Object.values(t).map((c) => team(c)));
+    const { leagues } = await filled(await registerDevice(), ["top-14"], 3);
+
+    const games = leagues.find((l) => l.league === "top-14")?.games as { id: string; home: { name: string; abbreviation: string; aliases: string[] }; away: { name: string; abbreviation: string; aliases: string[] } }[];
+    const aliases = Object.fromEntries(games.flatMap((g) => [g.home, g.away]).map((team) => [team.name, team.aliases]));
+    expect(aliases).toEqual({
+      Vannes: ["Vannes"],
+      "Clermont Auvergne": ["Clermont Auvergne", "Clermont"],
+      Bayonne: ["Bayonne", "Aviron Bayonnais"],
+      Lyon: ["Lyon"],
+      "Castres Olympique": ["Castres Olympique", "Castres"],
+      "Stade Francais Paris": ["Stade Francais Paris", "Stade Francais"],
+      "Racing 92": ["Racing 92"],
+      "Montpellier Herault": ["Montpellier Herault", "Montpellier"],
+      "Stade Toulousain": ["Stade Toulousain", "Toulouse"],
+      Perpignan: ["Perpignan"],
+      Toulon: ["Toulon"],
+      Pau: ["Pau", "Section Paloise"],
+      "La Rochelle": ["La Rochelle", "Stade Rochelais"],
+      "Bordeaux Begles": ["Bordeaux Begles"],
+    });
+    // ESPN's abbreviation is still the team's, only never a name to match by.
+    expect(games.find((g) => g.id === "t14-5")?.home).toMatchObject({ name: "Stade Toulousain", abbreviation: "STA" });
+    expect(espn.asked).toContain("rugby/270559/teams");
+  });
+
+  it("gives another League's teams none of Top 14's names, and keeps their abbreviations", async () => {
+    // A Ligue 1 club ESPN might one day call "Stade Toulousain" too: the names are Top 14's alone.
+    const stade = { ...top14.toulouse, id: "999", abbreviation: "TFC" };
+    espn.scoreboard("soccer/fra.1", "2026-11-01", event("l1-1", "2026-11-01T19:45:00Z", "pre", stade, top14.lyon));
+    const { leagues } = await filled(await registerDevice(), ["ligue-1"], 2);
+
+    const game = leagues.find((l) => l.league === "ligue-1")?.games[0] as { home: { aliases: string[] } };
+    expect(game.home.aliases).toEqual(["Stade Toulousain", "TFC"]);
+  });
+
   it("answers only the Leagues asked for, and reads only the Leagues some device has on", async () => {
     const token = await registerDevice();
     const first = await filled(token, ["nhl"]);
@@ -1032,6 +1082,7 @@ describe("Games", () => {
       "ncaa-basketball": "basketball/mens-college-basketball",
       wnba: "basketball/wnba",
       nrl: "rugby-league/3",
+      "top-14": "rugby/270559",
       afl: "australian-football/afl",
       f1: "racing/f1",
       nascar: "racing/nascar-premier",

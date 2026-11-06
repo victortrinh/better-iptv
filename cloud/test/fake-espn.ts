@@ -208,6 +208,28 @@ export const added: Record<string, { path: string; home: TeamSpec; away: TeamSpe
   },
 };
 
+/**
+ * Top 14's clubs as ESPN's `rugby/270559` names them (scoreboards for 2026-10-24 and 25, checked
+ * 2026-11-06): no location, and abbreviations no Event channel uses, three of them `STA`.
+ */
+const club = (id: string, name: string, abbreviation: string, color?: string): TeamSpec => ({ id, displayName: name, shortDisplayName: name, abbreviation, location: null, name, ...(color === undefined ? {} : { color }) });
+export const top14 = {
+  vannes: club("289337", "Vannes", "VAN"),
+  clermont: club("25917", "Clermont Auvergne", "ASM", "FFCC00"),
+  bayonne: club("25912", "Bayonne", "BAY", "6699CC"),
+  lyon: club("143736", "Lyon", "LYO", "CC0000"),
+  castres: club("25916", "Castres Olympique", "CAS", "000066"),
+  stadeFrancais: club("25921", "Stade Francais Paris", "STA", "CC0066"),
+  racing: club("99855", "Racing 92", "RAC", "3399FF"),
+  montpellier: club("25918", "Montpellier Herault", "MON", "0000FF"),
+  toulouse: club("25922", "Stade Toulousain", "STA", "000000"),
+  perpignan: club("25920", "Perpignan", "USA", "FF6600"),
+  toulon: club("25986", "Toulon", "RC", "CC0000"),
+  pau: club("270567", "Pau", "SEC", "FF0001"),
+  laRochelle: club("119318", "La Rochelle", "STA", "FFCC00"),
+  bordeaux: club("143737", "Bordeaux Begles", "UNI", "000099"),
+};
+
 /** A driver as ESPN's racing scoreboard lists one among a session's competitors. */
 const driver = (id: string, name: string, order: number) => ({ id, type: "athlete", order, winner: order === 1, athlete: { displayName: name, shortName: name, flag: { alt: "Netherlands" } } });
 

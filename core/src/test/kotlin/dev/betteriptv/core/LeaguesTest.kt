@@ -8,13 +8,13 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `twenty-eight Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `twenty-nine Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
                 "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "europa-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
                 "efl-championship", "liga-portugal", "2-bundesliga", "wsl",
-                "ncaa-football", "ncaa-basketball", "wnba", "nrl", "afl", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
+                "ncaa-football", "ncaa-basketball", "wnba", "nrl", "top-14", "afl", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
             ),
             League.entries.map { it.key },
         )
@@ -49,15 +49,15 @@ class LeaguesTest {
                 Sport.Motorsport to listOf(League.F1, League.Nascar, League.IndyCar),
                 Sport.Golf to listOf(League.Pga, League.Lpga),
                 Sport.Fighting to listOf(League.Ufc),
-                Sport.Rugby to listOf(League.Nrl),
+                Sport.Rugby to listOf(League.Nrl, League.Top14),
                 Sport.AustralianFootball to listOf(League.Afl),
             ),
             Sport.entries.associateWith { sport -> League.entries.filter { it.sport == sport } }.filterValues { it.isNotEmpty() },
         )
     }
 
-    @Test fun `the Leagues #354 and #375 added are two-team Leagues named by their own names, never a bare word another sport's slots say, and on in no Region until the Viewer turns them on`() {
-        val added = listOf(League.EuropaLeague, League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague, League.Nrl, League.Afl)
+    @Test fun `the Leagues #354, #375 and #383 added are two-team Leagues named by their own names, never a bare word another sport's slots say, and on in no Region until the Viewer turns them on`() {
+        val added = listOf(League.EuropaLeague, League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague, League.Nrl, League.Top14, League.Afl)
         assertEquals(
             listOf(
                 listOf("Europa League", "UEL", "UEFA EL"),
@@ -66,6 +66,7 @@ class LeaguesTest {
                 listOf("2. Bundesliga", "Bundesliga 2"),
                 listOf("Women's Super League", "Womens Super League", "WSL"),
                 listOf("NRL"),
+                listOf("Top 14", "Top14"),
                 listOf("AFL"),
             ),
             added.map { it.names },
@@ -79,6 +80,8 @@ class LeaguesTest {
         assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/24.png", League.EflChampionship.logo)
         assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/2310.png", League.EuropaLeague.logo)
         assertEquals("https://a.espncdn.com/i/teamlogos/leagues/500-dark/afl.png", League.Afl.logo)
+        // ESPN has no Top 14 logo: its scoreboard names its rugby icon.
+        assertEquals("https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png", League.Top14.logo)
         assertEquals("https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-soccer.png", League.Bundesliga2.logo)
     }
 

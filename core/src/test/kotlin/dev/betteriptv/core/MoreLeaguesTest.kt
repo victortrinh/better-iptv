@@ -11,7 +11,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * The Leagues #354 and #375 added, seen through the Library: the fake cloud's Games, with their teams as
+ * The Leagues #354, #375 and #383 added, seen through the Library: the fake cloud's Games, with their teams as
  * ESPN's scoreboards named them on 2026-11-04 (each team's aliases as cloud/src/espn.ts lists
  * them), matched to Event channels written the ways the surveyed Provider writes them
  * (`LEAGUE: Team vs Team (date time)`, `LEAGUE | Team v Team`). Prior art: [GameRowsTest].
@@ -188,6 +188,43 @@ class MoreLeaguesTest {
         val feeds = feeds(League.Nrl)
         assertEquals(listOf("NRL: Newcastle Knights vs Sydney Roosters (2026-11-01 17:00:00)"), feeds["1"])
         assertEquals(listOf("NRL: New Zealand Warriors vs Melbourne Storm (2026-11-01 17:00:00)"), feeds["2"])
+    }
+
+    @Test fun `a whole Top 14 round takes the Provider's FloRugby slots, which name the clubs as fans do and no League, each Game only its own`() = runBlocking {
+        // ESPN's round of 2026-10-24 and 25 (rugby/270559), moved to Monday 2026-11-02 at the same UTC times, its clubs
+        // with the aliases the cloud gives them (cloud/src/espn.ts: ESPN's names, none of its abbreviations, and MORE_NAMES).
+        fun club(name: String, vararg more: String) = mapOf("id" to name, "name" to name, "shortName" to name, "abbreviation" to "STA", "aliases" to listOf(name, *more), "logo" to null)
+        fun round(id: String, start: String, home: Map<String, Any?>, away: Map<String, Any?>) =
+            mapOf("id" to id, "league" to "top-14", "start" to start, "state" to "upcoming", "home" to home, "away" to away, "broadcasters" to emptyList<String>())
+        cloud.games(
+            "top-14",
+            round("1", "2026-11-02T12:30:00Z", club("Vannes"), club("Clermont Auvergne", "Clermont")),
+            round("2", "2026-11-02T14:35:00Z", club("Bayonne", "Aviron Bayonnais"), club("Lyon")),
+            round("3", "2026-11-02T14:35:00Z", club("Castres Olympique", "Castres"), club("Stade Francais Paris", "Stade Francais")),
+            round("4", "2026-11-02T14:35:00Z", club("Racing 92"), club("Montpellier Herault", "Montpellier")),
+            round("5", "2026-11-02T14:35:00Z", club("Stade Toulousain", "Toulouse"), club("Perpignan")),
+            round("6", "2026-11-02T19:00:00Z", club("Toulon"), club("Pau", "Section Paloise")),
+            round("7", "2026-11-02T20:05:00Z", club("La Rochelle", "Stade Rochelais"), club("Bordeaux Begles")),
+        )
+        // The Provider's slots for that round (survey 2026-10-24), moved to the same day, in its Eastern time.
+        val slots = mapOf(
+            "1" to "(FLSP 056) | rugby:  RC Vannes vs Clermont (RC Vannes vs Clermont) (2026-11-02 07:30:00)",
+            "2" to "(FLSP 091) | rugby:  Bayonne vs Lyon (Bayonne vs Lyon) (2026-11-02 09:35:15)",
+            "3" to "(FLSP 090) | rugby:  Castres vs Stade Francais (Castres vs Stade Francais) (2026-11-02 09:35:10)",
+            "4" to "(FLSP 088) | rugby:  Racing 92 vs Montpellier (Racing 92 vs Montpellier) (2026-11-02 09:35:00)",
+            "5" to "(FLSP 089) | rugby:  Toulouse vs Perpignan (Toulouse vs Perpignan) (2026-11-02 09:35:05)",
+            "6" to "(FLSP 402) | rugby:  Toulon vs Pau (Toulon vs Pau) (2026-11-02 14:00:25)",
+            "7" to "(FLSP 816) | rugby:  La Rochelle vs Bordeaux_Begles (La Rochelle vs Bordeaux_Begles) (2026-11-02 15:05:00)",
+        )
+        provider.serveChannels(
+            *slots.values.map { it to "US| FLO VIP PPV" }.toTypedArray(),
+            // The same morning's Premiership and URC slots name no Top 14 club.
+            "(FLSP 084) | rugby:  Leicester Tigers vs Northampton Saints (Leicester vs Saints) (2026-11-02 09:35:00)" to "US| FLO VIP PPV",
+            "(FLSP 245) | rugby:  Leinster Rugby vs Munster Rugby (Leinster vs Munster) (2026-11-02 09:35:40)" to "US| FLO VIP PPV",
+        )
+        library.sync()
+
+        assertEquals(slots.mapValues { listOf(it.value) }, feeds(League.Top14))
     }
 
     @Test fun `an AFL Game takes its Event channels, and Melbourne never takes North Melbourne's`() = runBlocking {

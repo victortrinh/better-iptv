@@ -30,8 +30,9 @@ package dev.betteriptv.core
  * #354: two-team Leagues whose ESPN scoreboard was read on 2026-11-04 and whose Event channels the
  * 2026-10-24 survey showed. #375's survey (2026-11-06, set against ESPN's Games of that week and of
  * 2026-10-24's) dropped the Scottish Premiership and the Süper Lig, whose Games no Event channel
- * named, and added the Europa League. Like every League outside a Region's [defaults], they are
- * off until the Viewer turns them on.
+ * named, and added the Europa League. Top 14 came in #383, once the cloud gave its clubs the names
+ * the Provider calls them by. Like every League outside a Region's [defaults], they are off until
+ * the Viewer turns them on.
  */
 enum class League(
     val key: String,
@@ -75,6 +76,11 @@ enum class League(
     NcaaMensBasketball("ncaa-basketball", listOf("NCAA Basketball", "NCAAB", "NCAAM", "College Basketball", "CBB"), Sport.Basketball, logo = "${ICONS}NCAASports_MensBasketball.png"),
     Wnba("wnba", listOf("WNBA"), Sport.Basketball, logo = "${LEAGUES}wnba.png"),
     Nrl("nrl", listOf("NRL"), Sport.Rugby, logo = "${LEAGUES}nrl.png"),
+
+    // #383: rugby union's. The Provider's FloRugby slots list the whole round with no League name ("rugby:  Castres vs Stade
+    // Francais (…) (2026-10-24 10:35:10)"), so its Games take them by both teams, by the names the cloud adds to ESPN's
+    // (cloud/src/espn.ts: MORE_NAMES). ESPN has no logo for it: its tile shows ESPN's rugby icon, which its scoreboard names.
+    Top14("top-14", listOf("Top 14", "Top14"), Sport.Rugby, logo = "${ICONS}ESPN-icon-rugby.png"),
     Afl("afl", listOf("AFL"), Sport.AustralianFootball, logo = "${LEAGUES}afl.png"),
     F1("f1", listOf("F1", "Formula 1", "Formula One"), Sport.Motorsport, logo = "${LEAGUES}f1.png", network = "Sky Sports F1", events = true),
     Nascar(
@@ -135,8 +141,8 @@ enum class League(
 
 /**
  * A League's sport: what Settings' League picker groups the Leagues under, in this order (#353).
- * The picker shows only the sports that have a League. Rugby's is the NRL, rugby league's; the
- * AFL's Australian football is a sport of its own (#354).
+ * The picker shows only the sports that have a League. Rugby's are the NRL, rugby league's, and
+ * Top 14, rugby union's (#383); the AFL's Australian football is a sport of its own (#354).
  */
 enum class Sport { Hockey, Football, Basketball, Baseball, Soccer, Motorsport, Golf, Fighting, Rugby, AustralianFootball }
 

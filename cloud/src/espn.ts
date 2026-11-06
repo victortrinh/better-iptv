@@ -4,7 +4,7 @@ import { EVENT_LEAGUES, FIGHT_LEAGUES, type Game, type GameFighter, GOLF_LEAGUES
 /**
  * Each League's path under ESPN's site API (`sports/<path>/scoreboard`, `/teams`). The first fifteen team
  * Leagues checked 2026-11-01 with a plain fetch, F1, NASCAR Cup, IndyCar, the PGA Tour, the LPGA and UFC on 2026-11-03,
- * #354's on 2026-11-04 and the Europa League on 2026-11-06: each answers two-team Games (`competitors`, home and away) and a teams list.
+ * #354's on 2026-11-04, the Europa League on 2026-11-06 and Top 14 (#383) on 2026-11-06: each answers two-team Games (`competitors`, home and away) and a teams list.
  */
 const PATHS: Record<League, string> = {
   nhl: "hockey/nhl",
@@ -28,6 +28,7 @@ const PATHS: Record<League, string> = {
   "ncaa-basketball": "basketball/mens-college-basketball",
   wnba: "basketball/wnba",
   nrl: "rugby-league/3",
+  "top-14": "rugby/270559",
   afl: "australian-football/afl",
   f1: "racing/f1",
   nascar: "racing/nascar-premier",
@@ -113,7 +114,7 @@ export class Espn implements ScheduleSource {
       // The logo ESPN marks for dark backgrounds, as the cards' glass is: a black one (the Raiders') vanishes on it.
       const marked = (rel: string) => team.logos?.find((l) => l.rel?.includes(rel))?.href;
       const logo = marked("dark") ?? marked("default") ?? team.logos?.[0]?.href ?? null;
-      return [{ id: String(team.id), aliases: aliases(team), logo }];
+      return [{ id: String(team.id), aliases: aliases(league, team), logo }];
     });
   }
 
@@ -166,7 +167,7 @@ function readGame(league: League, event: EspnEvent): Game | null {
   const away = competition.competitors?.find((c) => c.homeAway === "away")?.team;
   const start = new Date(event.date ?? "");
   if (!home?.id || !away?.id || Number.isNaN(start.getTime())) return null;
-  return { id: String(event.id), league, start: start.toISOString(), state, home: readTeam(home), away: readTeam(away), broadcasters: national(competition) };
+  return { id: String(event.id), league, start: start.toISOString(), state, home: readTeam(league, home), away: readTeam(league, away), broadcasters: national(competition) };
 }
 
 /**
@@ -342,8 +343,8 @@ function national(competition: EspnCompetition): string[] {
 /** The logo ESPN marks as the default among [logos], else its first. */
 const defaultLogo = (logos: { href?: string; rel?: string[] }[] | undefined): string | null => logos?.find((l) => l.rel?.includes("default"))?.href ?? logos?.[0]?.href ?? null;
 
-function readTeam(team: EspnTeam): GameTeam {
-  const names = aliases(team);
+function readTeam(league: League, team: EspnTeam): GameTeam {
+  const names = aliases(league, team);
   return {
     id: String(team.id),
     name: text(team.displayName) ?? names[0] ?? "",
@@ -362,9 +363,46 @@ const colour = <K extends string>(key: K, value: unknown): Partial<Record<K, str
   return hex && /^[0-9a-f]{6}$/.test(hex) ? ({ [key]: hex } as Record<K, string>) : {};
 };
 
-/** Every name ESPN gives a team, each once, in the order the device should try them. */
-const aliases = (team: EspnTeam): string[] =>
-  [...new Set([team.displayName, team.shortDisplayName, team.abbreviation, team.location, team.name, team.nickname].map(text).filter((n): n is string => n !== null))];
+/**
+ * Every name a team goes by, each once, in the order the device should try them: ESPN's, then the
+ * League's {@link MORE_NAMES} for it. A League in {@link NO_ABBREVIATIONS} leaves ESPN's
+ * abbreviation out of them (it is still the team's `abbreviation`).
+ */
+const aliases = (league: League, team: EspnTeam): string[] => {
+  const abbreviation = NO_ABBREVIATIONS.includes(league) ? null : team.abbreviation;
+  const espn = [team.displayName, team.shortDisplayName, abbreviation, team.location, team.name, team.nickname].map(text).filter((n): n is string => n !== null);
+  const more = MORE_NAMES[league]?.[text(team.displayName) ?? ""] ?? [];
+  return [...new Set([...espn, ...more])];
+};
+
+/**
+ * The names an Event channel calls a League's teams by that ESPN doesn't give them, by ESPN's
+ * `displayName`. Top 14's (#383): the Provider's FloRugby slots name the clubs as French fans do
+ * ("rugby:  Castres vs Stade Francais", "Toulouse vs Perpignan", "RC Vannes vs Clermont",
+ * "Racing 92 vs Montpellier", "La Rochelle vs Bordeaux_Begles"; survey 2026-10-24), ESPN by their
+ * full names (Castres Olympique, Stade Francais Paris, Stade Toulousain, Clermont Auvergne,
+ * Montpellier Herault), and a club's French name ESPN's doesn't hold is here too (Section
+ * Paloise for Pau). Never a bare word another club's or sport's slots hold ("Racing", "Stade", "Paris").
+ */
+const MORE_NAMES: Partial<Record<League, Record<string, string[]>>> = {
+  "top-14": {
+    "Stade Toulousain": ["Toulouse"],
+    "Clermont Auvergne": ["Clermont"],
+    "Castres Olympique": ["Castres"],
+    "Stade Francais Paris": ["Stade Francais"],
+    "Montpellier Herault": ["Montpellier"],
+    Pau: ["Section Paloise"],
+    "La Rochelle": ["Stade Rochelais"],
+    Bayonne: ["Aviron Bayonnais"],
+  },
+};
+
+/**
+ * The Leagues whose ESPN abbreviations are no names an Event channel would use. Top 14's (ESPN's
+ * `rugby/270559/teams`, 2026-11-06): Stade Toulousain, Stade Francais Paris and La Rochelle are all
+ * `STA`, Perpignan is `USA`, Toulon `RC` (which "RC Vannes" holds), Pau `SEC`, Bordeaux Begles `UNI`.
+ */
+const NO_ABBREVIATIONS: readonly League[] = ["top-14"];
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value.trim() : null);
 
