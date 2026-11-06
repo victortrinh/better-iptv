@@ -298,15 +298,14 @@
     <string name="league_mls">MLS</string>
     <string name="league_premier_league">Premier League</string>
     <string name="league_champions_league">Champions League</string>
+    <string name="league_europa_league">Europa League</string>
     <string name="league_la_liga">La Liga</string>
     <string name="league_bundesliga">Bundesliga</string>
     <string name="league_serie_a">Serie A</string>
     <string name="league_ligue_1">Ligue 1</string>
     <string name="league_efl_championship">EFL Championship</string>
-    <string name="league_scottish_premiership">Scottish Premiership</string>
     <string name="league_liga_portugal">Liga Portugal</string>
     <string name="league_2_bundesliga">2. Bundesliga</string>
-    <string name="league_super_lig">Süper Lig</string>
     <string name="league_wsl">Women\'s Super League</string>
     <string name="league_ncaa_football">NCAA football</string>
     <string name="league_ncaa_mens_basketball">NCAA men\'s basketball</string>

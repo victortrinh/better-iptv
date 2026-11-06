@@ -168,17 +168,17 @@ export const argos: TeamSpec = { id: "7", displayName: "Toronto Argonauts", shor
 export const broncos: TeamSpec = { id: "7", displayName: "Denver Broncos", shortDisplayName: "Broncos", abbreviation: "DEN", location: "Denver", name: "Broncos" };
 export const texans: TeamSpec = { id: "34", displayName: "Houston Texans", shortDisplayName: "Texans", abbreviation: "HOU", location: "Houston", name: "Texans" };
 
-/** One Game's two teams in each League #354 added, as ESPN's scoreboards named them on 2026-11-04 (the NRL's and the AFL's from their grand finals). */
+/** One Game's two teams in each League #354 and #375 added, as ESPN's scoreboards named them on 2026-11-04 (the NRL's and the AFL's from their grand finals; the Europa League's on 2026-11-06, from 2026-11-05). */
 export const added: Record<string, { path: string; home: TeamSpec; away: TeamSpec }> = {
+  "europa-league": {
+    path: "soccer/uefa.europa",
+    home: { id: "103", displayName: "AC Milan", shortDisplayName: "Milan", abbreviation: "MIL", location: "AC Milan", name: "AC Milan", color: "e4002b", alternateColor: "ffffff" },
+    away: { id: "622", displayName: "Ferencvaros", shortDisplayName: "Ferencvaros", abbreviation: "FER", location: "Ferencvaros", name: "Ferencvaros", color: "239B56", alternateColor: "000000" },
+  },
   "efl-championship": {
     path: "soccer/eng.2",
     home: { id: "347", displayName: "Cardiff City", shortDisplayName: "Cardiff", abbreviation: "CAR", location: "Cardiff City", name: "Cardiff City", color: "0000fa", alternateColor: "c6d4db" },
     away: { id: "371", displayName: "West Ham United", shortDisplayName: "West Ham", abbreviation: "WHU", location: "West Ham United", name: "West Ham United", color: "7c2c3b", alternateColor: "F1E7E0" },
-  },
-  "scottish-premiership": {
-    path: "soccer/sco.1",
-    home: { id: "260", displayName: "Dundee United", shortDisplayName: "Dundee Utd", abbreviation: "DUN", location: "Dundee United", name: "Dundee United" },
-    away: { id: "263", displayName: "Motherwell", shortDisplayName: "Motherwell", abbreviation: "MOT", location: "Motherwell", name: "Motherwell" },
   },
   "liga-portugal": {
     path: "soccer/por.1",
@@ -189,11 +189,6 @@ export const added: Record<string, { path: string; home: TeamSpec; away: TeamSpe
     path: "soccer/ger.2",
     home: { id: "3536", displayName: "Dynamo Dresden", shortDisplayName: "D Dresden", abbreviation: "SGD", location: "Dynamo Dresden", name: "Dynamo Dresden" },
     away: { id: "3428", displayName: "SpVgg Greuther Fürth", shortDisplayName: "Greuther Furth", abbreviation: "SGF", location: "SpVgg Greuther Fürth", name: "SpVgg Greuther Fürth" },
-  },
-  "super-lig": {
-    path: "soccer/tur.1",
-    home: { id: "11250", displayName: "Gaziantep FK", shortDisplayName: "Gaziantep", abbreviation: "GAZ", location: "Gaziantep FK", name: "Gaziantep FK" },
-    away: { id: "6010", displayName: "Kasimpasa", shortDisplayName: "Kasimpasa", abbreviation: "KAS", location: "Kasimpasa", name: "Kasimpasa" },
   },
   wsl: {
     path: "soccer/eng.w.1",

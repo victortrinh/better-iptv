@@ -863,12 +863,12 @@ describe("Games", () => {
     });
   });
 
-  it("answers #354's Leagues' Games as two teams', read at each League's ESPN path, with their aliases, colours and Broadcasters", async () => {
+  it("answers #354's and #375's Leagues' Games as two teams', read at each League's ESPN path, with their aliases, colours and Broadcasters", async () => {
     for (const [league, { path, home, away }] of Object.entries(added)) {
       espn.scoreboard(path, "2026-11-01", event(`${league}-1`, "2026-11-01T15:00:00Z", "pre", home, away, league === "efl-championship" || league === "wsl" ? [{ name: "Paramount+" }] : []));
       espn.teams(path, team(home), team(away));
     }
-    // Eight Leagues' days and teams take a few runs of the budget.
+    // Seven Leagues' days and teams take a few runs of the budget.
     const { leagues } = await filled(await registerDevice(), Object.keys(added), 6);
 
     expect(leagues.map((l) => l.league).sort()).toEqual(Object.keys(added).sort());
@@ -1019,15 +1019,14 @@ describe("Games", () => {
       mls: "soccer/usa.1",
       "premier-league": "soccer/eng.1",
       "champions-league": "soccer/uefa.champions",
+      "europa-league": "soccer/uefa.europa",
       "la-liga": "soccer/esp.1",
       bundesliga: "soccer/ger.1",
       "serie-a": "soccer/ita.1",
       "ligue-1": "soccer/fra.1",
       "efl-championship": "soccer/eng.2",
-      "scottish-premiership": "soccer/sco.1",
       "liga-portugal": "soccer/por.1",
       "2-bundesliga": "soccer/ger.2",
-      "super-lig": "soccer/tur.1",
       wsl: "soccer/eng.w.1",
       "ncaa-football": "football/college-football",
       "ncaa-basketball": "basketball/mens-college-basketball",

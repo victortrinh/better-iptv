@@ -101,8 +101,8 @@ internal class EventChannelListing(val channel: Channel, val start: Instant?, va
  * either) needs the Game's League named too. A League's name another of its own names holds keeps
  * none of its Event channels out ("Bundesliga" in "2. Bundesliga"). And an Event channel naming
  * both teams of one Game is never another Game's for naming one of its teams and the League:
- * "SPFL: Dundee United vs Motherwell" is not Dundee's, "AFL: North Melbourne vs Carlton" not
- * Melbourne's, and "NRL: New Zealand Warriors vs Storm" not the Knights', whom ESPN also calls NEW.
+ * "AFL: North Melbourne vs Carlton" is not Melbourne's, and "NRL: New Zealand Warriors vs Storm"
+ * not the Knights', whom ESPN also calls NEW.
  *
  * An event League's Game ([GameEvent], F1's, a NASCAR or IndyCar race, or a golf round) has no teams: its
  * Event channels name the League and one of the event's aliases ("NEXT | SÃO PAULO: RACE | … | US:

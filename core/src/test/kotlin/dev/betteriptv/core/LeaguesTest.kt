@@ -8,18 +8,21 @@ import org.junit.Test
 
 /** The Leagues offered and which are on: the Region's defaults until the Viewer chooses. */
 class LeaguesTest {
-    @Test fun `twenty-nine Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
+    @Test fun `twenty-eight Leagues are offered, in Settings' order, by the keys the cloud's Games call takes`() {
         // The cloud's LEAGUES (cloud/src/schedule.ts), in its order: a key the cloud doesn't know gets no Games.
         assertEquals(
             listOf(
-                "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
-                "efl-championship", "scottish-premiership", "liga-portugal", "2-bundesliga", "super-lig", "wsl",
+                "nhl", "nfl", "nba", "mlb", "cfl", "mls", "premier-league", "champions-league", "europa-league", "la-liga", "bundesliga", "serie-a", "ligue-1",
+                "efl-championship", "liga-portugal", "2-bundesliga", "wsl",
                 "ncaa-football", "ncaa-basketball", "wnba", "nrl", "afl", "f1", "nascar", "indycar", "pga", "lpga", "ufc",
             ),
             League.entries.map { it.key },
         )
         assertEquals(League.entries.toList(), League.entries.map { League.byKey(it.key) })
         assertNull(League.byKey("boxing"))
+        // #375 dropped these two: the Provider names none of their Games. A choice kept by their keys finds no League.
+        assertNull(League.byKey("scottish-premiership"))
+        assertNull(League.byKey("super-lig"))
     }
 
     @Test fun `every League has its own logo, ESPN's dark-background one, without a Game`() {
@@ -40,8 +43,8 @@ class LeaguesTest {
                 Sport.Basketball to listOf(League.Nba, League.NcaaMensBasketball, League.Wnba),
                 Sport.Baseball to listOf(League.Mlb),
                 Sport.Soccer to listOf(
-                    League.Mls, League.PremierLeague, League.ChampionsLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1,
-                    League.EflChampionship, League.ScottishPremiership, League.LigaPortugal, League.Bundesliga2, League.SuperLig, League.WomensSuperLeague,
+                    League.Mls, League.PremierLeague, League.ChampionsLeague, League.EuropaLeague, League.LaLiga, League.Bundesliga, League.SerieA, League.Ligue1,
+                    League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague,
                 ),
                 Sport.Motorsport to listOf(League.F1, League.Nascar, League.IndyCar),
                 Sport.Golf to listOf(League.Pga, League.Lpga),
@@ -53,15 +56,14 @@ class LeaguesTest {
         )
     }
 
-    @Test fun `the Leagues #354 added are two-team Leagues named by their own names, never a bare word another sport's slots say, and on in no Region until the Viewer turns them on`() {
-        val added = listOf(League.EflChampionship, League.ScottishPremiership, League.LigaPortugal, League.Bundesliga2, League.SuperLig, League.WomensSuperLeague, League.Nrl, League.Afl)
+    @Test fun `the Leagues #354 and #375 added are two-team Leagues named by their own names, never a bare word another sport's slots say, and on in no Region until the Viewer turns them on`() {
+        val added = listOf(League.EuropaLeague, League.EflChampionship, League.LigaPortugal, League.Bundesliga2, League.WomensSuperLeague, League.Nrl, League.Afl)
         assertEquals(
             listOf(
-                listOf("EFL Championship", "EFL", "Sky Bet Championship"),
-                listOf("Scottish Premiership", "SPFL", "Scottish Prem"),
+                listOf("Europa League", "UEL", "UEFA EL"),
+                listOf("EFL Championship", "EFL", "Sky Bet Championship", "English Football League"),
                 listOf("Liga Portugal", "Primeira Liga", "Liga Betclic"),
                 listOf("2. Bundesliga", "Bundesliga 2"),
-                listOf("Süper Lig"),
                 listOf("Women's Super League", "Womens Super League", "WSL"),
                 listOf("NRL"),
                 listOf("AFL"),
@@ -75,6 +77,7 @@ class LeaguesTest {
         }
         // ESPN's dark-background logos, but the 2. Bundesliga's: ESPN's only one for it reads "BUNDESLIGA", so it shows ESPN's soccer icon.
         assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/24.png", League.EflChampionship.logo)
+        assertEquals("https://a.espncdn.com/i/leaguelogos/soccer/500-dark/2310.png", League.EuropaLeague.logo)
         assertEquals("https://a.espncdn.com/i/teamlogos/leagues/500-dark/afl.png", League.Afl.logo)
         assertEquals("https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-soccer.png", League.Bundesliga2.logo)
     }

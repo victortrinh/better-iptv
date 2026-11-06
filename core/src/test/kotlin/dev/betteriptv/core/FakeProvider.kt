@@ -266,8 +266,12 @@ class FakeProvider : Closeable {
             "get_series" -> respond(exchange) { body ->
                 if (!catalogFile("series_streams.json", body)) body.write(showListOverride?.toByteArray() ?: fixture("series_streams.json"))
             }
-            "get_live_categories" -> respond(exchange) { it.write((liveCategoriesOverride ?: "[]").toByteArray()) }
-            "get_live_streams" -> respond(exchange) { it.write((liveListOverride ?: "[]").toByteArray()) }
+            "get_live_categories" -> respond(exchange) { body ->
+                if (!catalogFile("live_categories.json", body)) body.write((liveCategoriesOverride ?: "[]").toByteArray())
+            }
+            "get_live_streams" -> respond(exchange) { body ->
+                if (!catalogFile("live_streams.json", body)) body.write((liveListOverride ?: "[]").toByteArray())
+            }
             "get_short_epg", "get_simple_data_table" -> {
                 val id = query["stream_id"]?.toLongOrNull() ?: -1
                 _guideRequests += id
