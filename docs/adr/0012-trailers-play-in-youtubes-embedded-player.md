@@ -20,7 +20,7 @@ The first version of this decision opened every trailer in the YouTube app. On t
 
 ## Consequences
 
-- The trailer plays in YouTube's player, not Zugig's: the player's settings (subtitle style, delays) don't apply, and YouTube draws its own captions and controls. The remote's OK, Left and Right go to the player through its JavaScript API.
-- The WebView sits over the app's Compose content rather than inside it: inside Compose, Fire OS 7's WebView plays the sound but draws no picture.
-- On the stick a trailer starts about 4.5 s after OK, and the first one in a session freezes the screen for about 1.3 s while the WebView loads. Trailers never touch the Provider, so they don't compete for the one connection.
+- The trailer plays in YouTube's player, not Zugig's: the player's settings (subtitle style, delays) don't apply, and YouTube draws its own captions. Its controls are off (`controls=0`), but it still shows the video's title, "More videos" and its logo for the first few seconds, and no player setting hides them. Covering them would go against YouTube's terms (#399). The remote's OK, Left and Right go to the player through its JavaScript API.
+- The WebView sits over the app's Compose content rather than inside it: inside Compose, Fire OS 7's WebView plays the sound but draws no picture. A cover of its own sits over it until the trailer plays, then fades away. Fading the WebView itself cut straight to the picture on the stick (#399).
+- On the stick a trailer starts about 4.5 s after OK. The first one in a session holds the main thread for one to three seconds while the WebView loads, so the WebView is built only once the starting cover is on screen, where the hold can't be seen (#399). Trailers never touch the Provider, so they don't compete for the one connection.
 - A trailer that can't be embedded still has the YouTube app's Back problem.
