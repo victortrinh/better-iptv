@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cut by scripts/numerals/numerals.py from Bebas Neue (SIL Open Font License 1.1, see scripts/numerals): edit that, not this. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="73.24dp"
+    android:height="156dp"
+    android:viewportWidth="73.24"
+    android:viewportHeight="156">
+    <path
+        android:fillColor="#80000000"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M2,117.27Q2,135 10.76,144.5Q19.52,154 36.62,154Q53.72,154 62.48,144.61Q71.24,135.21 71.24,117.48L71.24,104.39Q71.24,92.57 67.23,84.97Q63.22,77.37 54.14,73.99L54.14,73.57Q62.59,70.4 66.6,63.12Q70.61,55.83 70.61,43.8L70.61,38.52Q70.61,20.79 61.96,11.39Q53.3,2 36.62,2Q20.16,2 11.39,11.5Q2.63,21 2.63,38.73L2.63,46.54L24.59,46.54L24.59,36.83Q24.59,23.11 35.78,23.11Q41.06,23.11 44.22,26.7Q47.39,30.29 47.39,37.89L47.39,48.66Q47.39,57.1 43.91,60.69Q40.42,64.28 33.46,64.28L25.01,64.28L25.01,85.39L32.82,85.39Q40.84,85.39 44.43,89.72Q48.02,94.04 48.02,104.18L48.02,116.21Q48.02,125.5 44.96,129.19Q41.9,132.89 35.99,132.89Q23.96,132.89 23.96,118.32L23.96,105.23L2,105.23Z" />
+</vector>

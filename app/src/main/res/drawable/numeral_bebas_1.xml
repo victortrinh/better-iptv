@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cut by scripts/numerals/numerals.py from Bebas Neue (SIL Open Font License 1.1, see scripts/numerals): edit that, not this. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="51.5dp"
+    android:height="156dp"
+    android:viewportWidth="51.5"
+    android:viewportHeight="156">
+    <path
+        android:fillColor="#80000000"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M26.28,39.16L26.28,151.89L49.5,151.89L49.5,4.11L33.88,4.11Q31.13,11.5 27.54,15.41Q23.96,19.31 17.94,21Q11.92,22.69 2,22.69L2,39.16Z" />
+</vector>

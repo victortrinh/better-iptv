@@ -83,7 +83,8 @@ object SampleCatalog {
 
     val featured = general
 
-    data class Row(val heading: String, val titles: List<SampleTitle>, val progress: List<Float>? = null, val left: List<String>? = null)
+    /** A row of Home; [ranked] is a Top row, its cards numbered 1 to 10 (#379). */
+    data class Row(val heading: String, val titles: List<SampleTitle>, val progress: List<Float>? = null, val left: List<String>? = null, val ranked: Boolean = false)
 
     val rows = listOf(
         Row(
@@ -92,6 +93,7 @@ object SampleCatalog {
             progress = listOf(0.62f, 0.2f, 0.85f, 0.4f),
             left = listOf("58 min left", "36 min left", "14 min left", "41 min left"),
         ),
+        Row("Top movies in Canada", listOf(general, metropolis, safetyLast, sherlockJr, kid, goldRush, phantom, caligari, general, metropolis), ranked = true),
         Row("New on your service", listOf(goldRush, safetyLast, caligari, kid, metropolis, sherlockJr, phantom)),
         Row("Comedy", listOf(safetyLast, kid, goldRush, sherlockJr, general)),
     )
