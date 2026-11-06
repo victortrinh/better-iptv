@@ -15,7 +15,6 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -28,6 +27,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.runtime.rememberCompositionContext
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -39,7 +41,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.betteriptv.app.ui.theme.Colors
-import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 
@@ -82,99 +83,106 @@ internal val YOUTUBE_APPS = listOf(
 
 /**
  * The Title page's Trailer screen ([TitleSection.Trailer], ADR 0012): YouTube video [videoId] in
- * YouTube's IFrame player, inside Zugig, so Back returns to the page with focus on Trailer. Until the
- * player shows its first frame, the Title's [art] and [name] cover it, as when a Version starts
- * ([StartingCover]), and the player fades in over them. OK (or Play/Pause) pauses and resumes, with
- * a pause sign while paused; Left and Right (or Rewind and Fast-forward) go back and forward 10 s.
- * Leaving the app pauses it. When the trailer ends, the page comes back ([onClose]).
+ * YouTube's IFrame player, inside Zugig, so Back returns to the page with focus on Trailer. OK on
+ * Trailer shows the Title's [art] and [name] at once, as when a Version starts ([StartingCover]). The
+ * player is built behind that cover, once it's on screen: the first WebView of a session holds the
+ * main thread for seconds (#399). The cover stays over the player until it plays, then fades away to
+ * the picture. OK (or Play/Pause) pauses and resumes, with a pause sign while paused; Left and Right
+ * (or Rewind and Fast-forward) go back and forward 10 s. Leaving the app pauses it. Back mutes the
+ * trailer at once and the page comes back ([onClose]), as it does when the trailer ends.
  *
  * A trailer YouTube won't let others embed (player errors 101, 150, 153) opens in the device's YouTube
  * app instead ([trailerIntent]), and the page is already back under it. Any other error, or no YouTube
  * app, says the trailer can't play here; Back returns.
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun TrailerContent(videoId: String, name: String, art: StartingArt.Title, onClose: () -> Unit) {
-    var pictured by remember(videoId) { mutableStateOf(false) }
-    var failed by remember(videoId) { mutableStateOf(false) }
+    val pictured = remember(videoId) { mutableStateOf(false) }
+    val failed = remember(videoId) { mutableStateOf(false) }
     val close by rememberUpdatedState(onClose)
     val context = LocalContext.current
     val host = LocalView.current
     val language = LocalConfiguration.current.locales[0].language
-    val web = remember(videoId) {
-        val main = Handler(Looper.getMainLooper())
-        TrailerWebView(context).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
-            // Hidden until the trailer plays, over the cover; then it fades in.
-            alpha = 0f
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            // It starts by itself, as OK on Trailer asked for it.
-            settings.mediaPlaybackRequiresUserGesture = false
-            webChromeClient = WebChromeClient()
-            webViewClient = WebViewClient()
-            // The player's page calls these from its own thread.
-            addJavascriptInterface(
-                TrailerEvents(
-                    onState = { state ->
-                        main.post {
-                            when (state) {
-                                TrailerEvents.PLAYING -> pictured = true
-                                TrailerEvents.ENDED -> close()
-                            }
-                        }
-                    },
-                    onError = { code ->
-                        main.post {
-                            val app = if (code in UNEMBEDDABLE) trailerIntent(context.packageManager, videoId) else null
-                            if (app != null) {
-                                context.openTrailer(app)
-                                close()
-                            } else {
-                                failed = true
-                            }
-                        }
-                    },
-                ),
-                TRAILER_BRIDGE,
-            )
-            isFocusable = true
-            isFocusableInTouchMode = true
-            val origin = "https://${context.packageName}"
-            loadDataWithBaseURL("$origin/", trailerPage(videoId, language, origin), "text/html", "utf-8", null)
-        }
+    val parent = rememberCompositionContext()
+    var web by remember(videoId) { mutableStateOf<WebView?>(null) }
+    LaunchedEffect(videoId) {
+        // The cover fades in first; building the WebView can hold the main thread, so it waits behind a still cover.
+        val shown = withFrameNanos { it }
+        while (withFrameNanos { it } - shown < COVER_SETTLE_MILLIS * 1_000_000L) continue
+        web = trailerWebView(
+            context, videoId, language,
+            onPlaying = { pictured.value = true },
+            onEnded = { close() },
+            onError = { code ->
+                val app = if (code in UNEMBEDDABLE) trailerIntent(context.packageManager, videoId) else null
+                if (app != null) {
+                    context.openTrailer(app)
+                    close()
+                } else {
+                    failed.value = true
+                }
+            },
+        )
+    }
+    // The cover over the player fades once it plays and the main thread draws steadily again: starting
+    // the picture can hold it for half a second, and a fade run through that is a cut (#399).
+    val faded = remember(videoId) { mutableStateOf(false) }
+    LaunchedEffect(pictured.value) {
+        if (!pictured.value) return@LaunchedEffect
+        awaitSteadyFrames()
+        faded.value = true
     }
     // Over the app's Compose content rather than in it: inside Compose, Fire OS 7's WebView plays the
     // sound but draws no picture (#385). It takes focus, so the remote's keys go to the player, and
-    // Back still reaches the app's Back handling.
+    // Back still reaches the app's Back handling. Over it, a cover of its own fades away once it plays:
+    // the WebView's own fade cut straight to the picture on the stick (#399).
     DisposableEffect(web) {
+        val player = web ?: return@DisposableEffect onDispose { }
         val content = host.rootView.findViewById<ViewGroup>(android.R.id.content)
-        content.addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        web.requestFocus()
-        onDispose {
-            content.removeView(web)
-            web.destroy()
+        val cover = ComposeView(context).apply {
+            setParentCompositionContext(parent)
+            setContent { TrailerCover(art, name, faded.value, failed.value) }
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         }
-    }
-    LaunchedEffect(web, pictured, failed) {
-        web.animate().alpha(if (pictured && !failed) 1f else 0f).setDuration(Motion.screenFadeMillis.toLong())
+        val fill = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        content.addView(player, fill)
+        content.addView(cover, fill)
+        player.requestFocus()
+        onDispose {
+            // Muted before it goes, so the sound stops with the picture. Not stopped: a stopped player is
+            // black, and it showed until the page's first frame was ready.
+            player.evaluateJavascript("mute()", null)
+            content.removeView(cover)
+            cover.disposeComposition()
+            content.removeView(player)
+            // Destroying it can hold the main thread too: once the page is back.
+            Handler(Looper.getMainLooper()).postDelayed({ player.destroy() }, DESTROY_DELAY_MILLIS)
+        }
     }
     // Leaving the app pauses the trailer; it stays paused until OK.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, web) {
+        val player = web ?: return@DisposableEffect onDispose { }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> web.run { evaluateJavascript("pause()", null); onPause() }
-                Lifecycle.Event.ON_RESUME -> web.onResume()
+                Lifecycle.Event.ON_PAUSE -> player.run { evaluateJavascript("pause()", null); onPause() }
+                Lifecycle.Event.ON_RESUME -> player.onResume()
                 else -> Unit
             }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    Box(Modifier.fillMaxSize().background(Colors.ground)) {
-        // Under the player, which fades in over it once it plays, and out again if it fails.
-        StartingCover(art, name, pictured = false)
+    // Under the player: what shows before it's built. The cover over it is the same.
+    TrailerCover(art, name, pictured = false, failed = failed.value)
+}
+
+/** The Trailer screen's cover: the Title's [art] and [name] until the player has [pictured] the trailer, and why it [failed] if it did. */
+@Composable
+private fun TrailerCover(art: StartingArt.Title, name: String, pictured: Boolean, failed: Boolean) {
+    Box(Modifier.fillMaxSize()) {
+        StartingCover(art, name, pictured = pictured && !failed)
         if (failed) {
             Text(
                 stringResource(R.string.trailer_unavailable),
@@ -186,6 +194,70 @@ internal fun TrailerContent(videoId: String, name: String, art: StartingArt.Titl
         }
     }
 }
+
+/** The WebView that plays [videoId] in YouTube's IFrame player, its page already loading; the player's events come on the main thread. */
+@SuppressLint("SetJavaScriptEnabled")
+private fun trailerWebView(
+    context: Context,
+    videoId: String,
+    language: String,
+    onPlaying: () -> Unit,
+    onEnded: () -> Unit,
+    onError: (Int) -> Unit,
+): WebView = TrailerWebView(context).apply {
+    val main = Handler(Looper.getMainLooper())
+    setBackgroundColor(android.graphics.Color.BLACK)
+    settings.javaScriptEnabled = true
+    settings.domStorageEnabled = true
+    // It starts by itself, as OK on Trailer asked for it.
+    settings.mediaPlaybackRequiresUserGesture = false
+    webChromeClient = WebChromeClient()
+    webViewClient = WebViewClient()
+    // The player's page calls these from its own thread.
+    addJavascriptInterface(
+        TrailerEvents(
+            onState = { state ->
+                main.post {
+                    when (state) {
+                        TrailerEvents.PLAYING -> onPlaying()
+                        TrailerEvents.ENDED -> onEnded()
+                    }
+                }
+            },
+            onError = { code -> main.post { onError(code) } },
+        ),
+        TRAILER_BRIDGE,
+    )
+    isFocusable = true
+    isFocusableInTouchMode = true
+    val origin = "https://${context.packageName}"
+    loadDataWithBaseURL("$origin/", trailerPage(videoId, language, origin), "text/html", "utf-8", null)
+}
+
+/**
+ * Waits until the main thread draws [STEADY_FRAMES] frames in a row, each within [STEADY_GAP_MILLIS]
+ * of the one before, or [STEADY_WAIT_MILLIS] have passed.
+ */
+internal suspend fun awaitSteadyFrames() {
+    val start = withFrameNanos { it }
+    var last = start
+    var steady = 0
+    while (steady < STEADY_FRAMES && last - start < STEADY_WAIT_MILLIS * 1_000_000L) {
+        val now = withFrameNanos { it }
+        steady = if (now - last <= STEADY_GAP_MILLIS * 1_000_000L) steady + 1 else 0
+        last = now
+    }
+}
+
+private const val STEADY_FRAMES = 3
+private const val STEADY_GAP_MILLIS = 50L
+private const val STEADY_WAIT_MILLIS = 1_500L
+
+/** How long the cover is on screen before the player is built behind it: its fade in, and its art's from disk. */
+private const val COVER_SETTLE_MILLIS = 400L
+
+/** How long after the Trailer screen goes its WebView is destroyed: after the page has faded back in. */
+private const val DESTROY_DELAY_MILLIS = 1_000L
 
 /**
  * The Trailer screen's WebView, which hands the remote's keys to the player's page: OK and Play/Pause
@@ -230,7 +302,8 @@ internal class TrailerEvents(private val onState: (Int) -> Unit, private val onE
 /**
  * The page the Trailer screen loads at [origin]: YouTube's IFrame player for [videoId], filling the
  * screen, starting by itself, in [language], with related videos from the trailer's own channel only.
- * Its keyboard is off, so the remote's keys reach it once, through `toggle()`, `seek()` and `pause()`.
+ * YouTube's controls are off (#399). Its keyboard is off too, so the remote's keys reach it once,
+ * through `toggle()`, `seek()`, `pause()` and `mute()`.
  * Paused that way, YouTube's player shows nothing, so the page shows a pause sign in the middle.
  * Only a YouTube id's characters are kept, so nothing TMDB sends can break out of the script.
  */
@@ -250,7 +323,7 @@ var player;
 function onYouTubeIframeAPIReady() {
   player = new YT.Player('player', {
     width: '100%', height: '100%', videoId: "${plain(videoId)}",
-    playerVars: { autoplay: 1, controls: 1, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3, playsinline: 1, hl: "${plain(language)}", origin: "${origin.filter { it != '"' && it != '<' }}" },
+    playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3, playsinline: 1, hl: "${plain(language)}", origin: "${origin.filter { it != '"' && it != '<' }}" },
     events: {
       onReady: function (e) { e.target.playVideo(); },
       onStateChange: function (e) { document.getElementById('paused').style.display = e.data == 2 ? 'block' : 'none'; $TRAILER_BRIDGE.state(e.data); },
@@ -261,6 +334,7 @@ function onYouTubeIframeAPIReady() {
 function ready() { return player && player.getPlayerState; }
 function toggle() { if (ready()) { if (player.getPlayerState() == 1) player.pauseVideo(); else player.playVideo(); } }
 function pause() { if (ready()) player.pauseVideo(); }
+function mute() { if (ready()) player.mute(); }
 function seek(s) { if (ready()) player.seekTo(Math.max(0, player.getCurrentTime() + s), true); }
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>

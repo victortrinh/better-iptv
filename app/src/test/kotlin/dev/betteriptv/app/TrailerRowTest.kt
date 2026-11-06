@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -24,6 +25,7 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -191,12 +193,50 @@ class TrailerRowTest {
         assertTrue(page.baseUrl, page.baseUrl.startsWith("https://"))
         assertTrue(page.data, page.data.contains("https://www.youtube.com/iframe_api"))
         assertTrue(page.data, page.data.contains("\"KzSm2Q9h3nM\""))
-        // Until it plays, it's hidden over the Title's backdrop and name, as when a Version starts; then it fades in.
+    }
+
+    @Test fun okOnTrailerShowsTheCoverAtOnceAndBuildsThePlayerBehindIt() {
+        open(details(trailer = "KzSm2Q9h3nM"))
+        compose.mainClock.autoAdvance = false
+        openTrailer()
+
+        // The first frame after OK is the Title's backdrop and name, as when a Version starts.
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag(STARTING_COVER).assertExists()
-        assertEquals(0f, webView()!!.alpha)
+        // The WebView, which can hold the main thread for seconds the first time, comes once the cover is on screen.
+        assertNull(webView())
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        assertNotNull(webView())
+    }
+
+    @Test fun thePlayerFadesInFromUnderItsCoverOnceItPlays() {
+        open(details(trailer = "KzSm2Q9h3nM"))
+        openTrailer()
+        val web = webView()!!
+
+        // The player is drawn from the start, under a cover of its own: a view's fade over a WebView is
+        // a plain one, where the WebView's own fade cut in on the stick (#399).
+        val content = web.parent as ViewGroup
+        val cover = content.getChildAt(content.indexOfChild(web) + 1)
+        assertTrue("$cover", cover is ComposeView)
+        // The remote's keys still go to the player.
+        assertFalse(cover.isFocusable)
+        assertEquals(ViewGroup.FOCUS_BLOCK_DESCENDANTS, (cover as ViewGroup).descendantFocusability)
+        assertEquals(1f, web.alpha)
+        assertEquals(View.VISIBLE, web.visibility)
+        assertEquals(2, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+
         player { state(TrailerEvents.PLAYING) }
-        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1))
-        assertEquals(1f, webView()!!.alpha)
+
+        // Only the cover under the player, which nothing sees, is left.
+        assertEquals(1, compose.onAllNodesWithTag(STARTING_COVER).fetchSemanticsNodes().size)
+    }
+
+    @Test fun youTubesOwnControlsAreHidden() {
+        val page = trailerPage("KzSm2Q9h3nM", "en", "https://dev.betteriptv")
+        assertTrue(page, page.contains("controls: 0"))
+        assertFalse(page, page.contains("controls: 1"))
     }
 
     @Test fun theRemotesKeysDriveThePlayer() {
@@ -223,10 +263,16 @@ class TrailerRowTest {
         openTrailer()
         player { state(TrailerEvents.PLAYING) }
 
+        val web = webView()!!
+
         back()
 
+        // Its sound stops at once, and it goes; the WebView is destroyed once the page is back.
+        assertEquals("mute()", shadowOf(web).lastEvaluatedJavascript)
         assertNull(webView())
         compose.onNodeWithTag("trailer action").assertIsFocused()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(2))
+        assertTrue(shadowOf(web).wasDestroyCalled())
         // Versions comes after it.
         press(Key.DirectionDown)
         compose.onNodeWithTag("versions action").assertIsFocused()
@@ -338,5 +384,30 @@ class TrailerRowTest {
         installFireTvYouTube()
 
         assertEquals("com.amazon.firetv.youtube", trailerIntent(packageManager, "KzSm2Q9h3nM")?.`package`)
+    }
+}
+
+/**
+ * The cover over the trailer fades once frames flow again: on the emulator the main thread stalled
+ * ~0.5 s just after YouTube's player said it played, and a fade run through it was a cut (#399).
+ */
+class SteadyFramesTest {
+    /** A frame clock that answers with these frame times, in milliseconds, and counts what was asked. */
+    private class Frames(vararg millis: Long) : androidx.compose.runtime.MonotonicFrameClock {
+        val left = ArrayDeque(millis.toList())
+        override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R = onFrame(left.removeFirst() * 1_000_000)
+    }
+
+    @Test fun itWaitsOutAStall() {
+        val frames = Frames(0, 16, 520, 536, 552, 568, 584, 600)
+        kotlinx.coroutines.runBlocking(frames) { awaitSteadyFrames() }
+        // The stall from 16 to 520 ms starts the count again; three steady frames after it end the wait.
+        assertEquals(listOf(584L, 600L), frames.left.toList())
+    }
+
+    @Test fun itGivesUpOnAMainThreadThatNeverSettles() {
+        val frames = Frames(*LongArray(20) { it * 200L })
+        kotlinx.coroutines.runBlocking(frames) { awaitSteadyFrames() }
+        assertTrue(frames.left.size > 0)
     }
 }
