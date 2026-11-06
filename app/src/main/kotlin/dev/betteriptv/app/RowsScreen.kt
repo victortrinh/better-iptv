@@ -373,7 +373,7 @@ internal fun RowsLayout(
         val choose = !checked && entering && !state.upNextRead
         val chosen = if (choose) featurer?.let { feature -> async { feature() } } else null
         val art = chosen?.let { async { it.await()?.let { title -> awaitAll(async { loadArtwork(context, title.backdrop) }, async { loadArtwork(context, title.logo) }) } } }
-        val fresh = reader()
+        val fresh = reader().withUniqueCards()
         if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await() }
         val late = chosen != null && !chosen.isCompleted
         state.held = null
@@ -423,7 +423,7 @@ internal fun RowsLayout(
         scope.launch {
             setFavourite(channel, favourite)
             val before = state.rows.orEmpty()
-            state.rows = reader()
+            state.rows = reader().withUniqueCards()
             state.held = null
             if (!favourite) {
                 // Focus goes to its neighbour, or to the row that takes its place; with no row left
@@ -782,6 +782,27 @@ private val HomeRow.key: String
         is HomeRow.MoreLiveEvents -> "more-live-events"
         is HomeRow.Replays -> "replays"
     }
+
+/**
+ * These rows with each card once in its row, where it first comes, and each row once: the rails and
+ * the rows' list key their items by these keys, and a key used twice closes the app (#378). The
+ * Library gives each Title once in a row, so this only stands guard over a list that slips one in twice.
+ */
+internal fun List<HomeRow>.withUniqueCards(): List<HomeRow> = distinctBy { it.key }.map { row ->
+    when (row) {
+        is HomeRow.ContinueWatching -> row.copy(titles = row.titles.distinctBy { it.title.id })
+        is HomeRow.Favourites -> row.copy(channels = row.channels.distinctBy(::channelKey))
+        is HomeRow.Channels -> row.copy(countries = row.countries.distinctBy(::countryKey))
+        is HomeRow.Chart -> row.copy(titles = row.titles.distinctBy { it.id })
+        is HomeRow.NewOnYourService -> row.copy(titles = row.titles.distinctBy { it.id })
+        is HomeRow.Genre -> row.copy(titles = row.titles.distinctBy { it.id })
+        is HomeRow.LiveNow -> row.copy(games = row.games.distinctBy(::gameKey))
+        is HomeRow.Today -> row.copy(games = row.games.distinctBy(::gameKey))
+        is HomeRow.LeagueGames -> row.copy(games = row.games.distinctBy(::gameKey))
+        is HomeRow.MoreLiveEvents -> row.copy(events = row.events.distinctBy { channelKey(it.channel) })
+        is HomeRow.Replays -> row.copy(replays = row.replays.distinctBy(::replayKey))
+    }
+}
 
 /** Each row's key to its cards' keys, in screen order, for [restoredCard]. */
 private val List<HomeRow>.cards: Map<String, List<String>>
