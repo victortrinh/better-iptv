@@ -35,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -79,8 +81,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withTimeoutOrNull
 import coil3.compose.LocalPlatformContext
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
@@ -174,10 +174,16 @@ private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
 /**
  * The textless backdrops the cards on either side of [card] grow into, in [rows]: what the next Left
  * or Right grows into. On a rail that [loops] the first card's left is the last card, and the last
- * card's right is the first. None for a card that doesn't grow (Continue watching's stills,
- * Channels, Games) or a neighbour with no textless backdrop.
+ * card's right is the first. From the hero ([HERO_ROW]), the first row's first card, where Down
+ * lands. None for a card that doesn't grow (Continue watching's stills, Channels, Games) or a
+ * neighbour with no textless backdrop.
  */
 internal fun neighbourBackdrops(rows: List<HomeRow>, card: RowCard, loops: (HomeRow) -> Boolean): List<String> {
+    if (card.row == HERO_ROW) {
+        // The first Down from the hero lands on the first row's first card (#398).
+        val first = rows.firstOrNull()?.takeUnless { it is HomeRow.ContinueWatching } ?: return emptyList()
+        return listOfNotNull(first.titles.firstOrNull()?.let { cardArt(it.image, it.about, textlessPosters = true).grown?.backdrop })
+    }
     val row = rows.firstOrNull { it.key == card.row } ?: return emptyList()
     if (row is HomeRow.ContinueWatching) return emptyList()
     val titles = row.titles
@@ -348,10 +354,15 @@ internal fun RowsLayout(
         }
     }
     val hero = if (feature != null) state.featured else null
-    // A hero that arrives after the screen is up (the first entry's, read with the rows) fades in as
-    // one, its text and its backdrop together; one there from the first frame shows at once.
-    val heroFade = remember { Animatable(if (hero != null) 1f else 0f) }
-    LaunchedEffect(hero != null) { if (hero != null) heroFade.animateTo(1f, tween(Motion.screenFadeMillis)) }
+    // Rows that arrive after the screen is up (the first entry's, with the hero read beside them) fade
+    // in as one with the hero, its backdrop included, over the placeholders that held their place,
+    // which then go. The fade shows over frames even when the first of them comes late, as on the
+    // stick's cold start (#398). Rows kept from last time, and the hero read for this entry with
+    // them, show at once.
+    val arrived = placeholder == null && state.rows != null
+    val arrival = remember { Fade(if (arrived) 1f else 0f) }
+    LaunchedEffect(arrived) { if (arrived) arrival.fadeIn(Motion.screenFadeMillis) }
+    val arriving by remember(arrival) { derivedStateOf { arrival.value < 1f } }
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
     // so the card is checked again once they are read: the Title opened may have left Continue
@@ -475,173 +486,175 @@ internal fun RowsLayout(
     val heroDetails = remember { FocusRequester() }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
-    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * heroFade.value }) {
+    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * arrival.value }) {
         header(tab)
         if (placeholder != null) return@Column placeholder()
         if (rows == null) return@Column PlaceholderRows()
-        CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
-            LazyColumn(
-                Modifier.fillMaxSize().onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
-                state = state.list,
-            ) {
-                if (hero != null) item(key = HERO_ROW, contentType = HERO_ROW) {
-                    onScreen(hero.id)
-                    FeaturedHero(
-                        hero, heroPlay, heroDetails,
-                        onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
-                        onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id, hero.backdrop) },
-                        onFocus = { state.focused = RowCard(HERO_ROW, it) },
-                        last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
-                        alpha = { heroFade.value },
-                    )
-                    if (focusOn?.row == HERO_ROW) LaunchedEffect(focusOn) {
-                        (if (focusOn.key == HERO_DETAILS) heroDetails else heroPlay).requestFocus()
-                        onFocused()
-                    }
-                }
-                if (rows?.isEmpty() == true && trailing == null) {
-                    item(key = "empty") {
-                        Text(empty, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
-                    }
-                }
-                rows.orEmpty().forEach { row ->
-                    item(key = "row-${row.key}", contentType = "row") {
-                        row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
-                        val wide = row is HomeRow.ContinueWatching
-                        // Channels, countries, Games and Replays are wide cards alike.
-                        val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
-                        val ranked = row.ranked
-                        // Kept with the row: new lists would compose each of its cards again.
-                        val keys = remember(row) { row.keys }
-                        val titles = remember(row) { row.titles }
-                        val loop = remember(keys.size, wide, channels, ranked) {
-                            RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters, ranked)
+        Box(Modifier.fillMaxSize()) {
+            if (arriving) PlaceholderRows(modifier = Modifier.graphicsLayer { alpha = 1f - arrival.value })
+            CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
+                LazyColumn(
+                    Modifier.fillMaxSize().graphicsLayer { alpha = arrival.value }.onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
+                    state = state.list,
+                ) {
+                    if (hero != null) item(key = HERO_ROW, contentType = HERO_ROW) {
+                        onScreen(hero.id)
+                        FeaturedHero(
+                            hero, heroPlay, heroDetails,
+                            onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
+                            onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id, hero.backdrop) },
+                            onFocus = { state.focused = RowCard(HERO_ROW, it) },
+                            last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
+                        )
+                        if (focusOn?.row == HERO_ROW) LaunchedEffect(focusOn) {
+                            (if (focusOn.key == HERO_DETAILS) heroDetails else heroPlay).requestFocus()
+                            onFocused()
                         }
-                        val cardWidth = when {
-                            wide -> Cards.continueWidth
-                            channels -> Cards.wideWidth
-                            ranked -> Cards.rankedWidth
-                            else -> Cards.posterWidth
+                    }
+                    if (rows?.isEmpty() == true && trailing == null) {
+                        item(key = "empty") {
+                            Text(empty, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX))
                         }
-                        val rail = state.rail(row.key, loop)
-                        val resting = with(LocalDensity.current) { cardWidth.roundToPx() }
-                        // The card a row entered for the first time starts at.
-                        val entry = remember { FocusRequester() }
-                        // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
-                        val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
-                        // The rail keeps the focused card at the left margin by gliding there ([glideTo]),
-                        // not by bringing it into view, which a card growing as it scales would throw off.
-                        LazyRow(
-                            state = rail,
-                            // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
-                            contentPadding = PaddingValues(
-                                start = Spacing.screenX,
-                                end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - cardWidth,
-                                top = 10.dp,
-                                bottom = 10.dp,
-                            ),
-                            horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-                            modifier = Modifier.rowFocus(entry),
-                        ) {
-                            // Each card by its Title's (Channel's, Game's…) key and, on a looping rail, which copy
-                            // of it, not by its place: a rail read again with other cards never shows a card
-                            // composed for another, its art and all, in that place.
-                            items(loop.count, key = { if (loop.loops) "${keys[loop.card(it)]}#${it / keys.size}" else keys[it] }, contentType = { row.contentType }) { place ->
-                                val index = loop.card(place)
-                                val focus = remember { FocusRequester() }
-                                val card = RowCard(row.key, keys[index])
-                                val onFocus = {
-                                    state.focused = card
-                                    scope.launch { rail.glideTo(place, resting) }
-                                    Unit
-                                }
-                                // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
-                                val ends = Modifier.focusRequester(focus).entryAt(rail, place, entry).focusProperties {
-                                    if (!loop.loops && index == 0) left = FocusRequester.Cancel
-                                    if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
-                                }
-                                if (card == focusOn && place == target) LaunchedEffect(Unit) {
-                                    focus.requestFocus()
-                                    onFocused()
-                                }
-                                if (row is HomeRow.Favourites) {
-                                    ChannelCard(
-                                        row.channels[index],
-                                        onWatch = { onWatch(card, it) },
-                                        onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
-                                        modifier = ends,
-                                        named = false,
-                                        onFocus = onFocus,
-                                    )
-                                    return@items
-                                }
-                                if (row is HomeRow.MoreLiveEvents) {
-                                    // An Event channel is a Channel: OK watches it at once, the menu key favourites it.
-                                    ChannelCard(
-                                        row.events[index].channel,
-                                        onWatch = { onWatch(card, it) },
-                                        onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
-                                        modifier = ends,
-                                        named = false,
-                                        onFocus = onFocus,
-                                    )
-                                    return@items
-                                }
-                                if (row is HomeRow.Channels) {
-                                    val country = row.countries[index]
-                                    CountryCard(country.name(appLanguage), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
-                                    return@items
-                                }
-                                val games = row.games
-                                if (games != null) {
-                                    GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus, league = row.mixesLeagues)
-                                    return@items
-                                }
-                                if (row is HomeRow.Replays) {
-                                    ReplayGameCard(row.replays[index], onPlay = { onPlayReplay(card, it) }, modifier = ends, onFocus = onFocus)
-                                    return@items
-                                }
-                                val title = titles[index]
-                                val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
-                                // The info under the rail shows the badges, so the card only counts as on screen.
-                                onScreen(title.id)
-                                val logo = title.about?.logo
-                                // A poster has its name printed on it, so the logo goes only over a textless one;
-                                // focused, it grows into its textless backdrop (#216).
-                                val art = remember(title) { cardArt(title.image, title.about, textlessPosters = true) }
-                                val grown = art.grown
-                                val poster = @Composable {
-                                    TitleCard(
-                                        image = rememberArtwork(if (wide) resume?.still ?: title.image else art.poster, card = true),
-                                        name = title.name,
-                                        badges = emptyList(),
-                                        onClick = { onOpen(card, title.id, grown?.backdrop.takeIf { !wide }) },
-                                        modifier = ends,
-                                        wide = wide,
-                                        progress = resume?.progress,
-                                        named = false,
-                                        onFocus = onFocus,
-                                        art = if (wide || art.posterLogo != null) {
-                                            { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
-                                        } else null,
-                                        grown = if (!wide && grown != null) {
-                                            { GrownArtwork(grown, title.name) }
-                                        } else null,
-                                    )
-                                }
-                                // A Chart's Titles are ranked 1…n in order.
-                                if (ranked) RankedCard(index + 1) { poster() } else poster()
+                    }
+                    rows.orEmpty().forEach { row ->
+                        item(key = "row-${row.key}", contentType = "row") {
+                            row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
+                            val wide = row is HomeRow.ContinueWatching
+                            // Channels, countries, Games and Replays are wide cards alike.
+                            val channels = row is HomeRow.Favourites || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
+                            val ranked = row.ranked
+                            // Kept with the row: new lists would compose each of its cards again.
+                            val keys = remember(row) { row.keys }
+                            val titles = remember(row) { row.titles }
+                            val loop = remember(keys.size, wide, channels, ranked) {
+                                RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters, ranked)
                             }
+                            val cardWidth = when {
+                                wide -> Cards.continueWidth
+                                channels -> Cards.wideWidth
+                                ranked -> Cards.rankedWidth
+                                else -> Cards.posterWidth
+                            }
+                            val rail = state.rail(row.key, loop)
+                            val resting = with(LocalDensity.current) { cardWidth.roundToPx() }
+                            // The card a row entered for the first time starts at.
+                            val entry = remember { FocusRequester() }
+                            // The place to focus: the card's copy nearest where the rail is, so it doesn't jump.
+                            val target = if (focusOn?.row == row.key) keys.indexOf(focusOn.key).takeIf { it >= 0 }?.let { loop.place(it, rail.firstVisibleItemIndex) } else null
+                            // The rail keeps the focused card at the left margin by gliding there ([glideTo]),
+                            // not by bringing it into view, which a card growing as it scales would throw off.
+                            LazyRow(
+                                state = rail,
+                                // Room after a rail that doesn't loop, so its last card too scrolls to the margin, under the info.
+                                contentPadding = PaddingValues(
+                                    start = Spacing.screenX,
+                                    end = if (loop.loops) Spacing.screenX else CANVAS_WIDTH - Spacing.screenX - cardWidth,
+                                    top = 10.dp,
+                                    bottom = 10.dp,
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(Cards.gap),
+                                modifier = Modifier.rowFocus(entry),
+                            ) {
+                                // Each card by its Title's (Channel's, Game's…) key and, on a looping rail, which copy
+                                // of it, not by its place: a rail read again with other cards never shows a card
+                                // composed for another, its art and all, in that place.
+                                items(loop.count, key = { if (loop.loops) "${keys[loop.card(it)]}#${it / keys.size}" else keys[it] }, contentType = { row.contentType }) { place ->
+                                    val index = loop.card(place)
+                                    val focus = remember { FocusRequester() }
+                                    val card = RowCard(row.key, keys[index])
+                                    val onFocus = {
+                                        state.focused = card
+                                        scope.launch { rail.glideTo(place, resting) }
+                                        Unit
+                                    }
+                                    // A rail that doesn't loop ends at its first and last cards: Left and Right there go nowhere, not up to the tabs.
+                                    val ends = Modifier.focusRequester(focus).entryAt(rail, place, entry).focusProperties {
+                                        if (!loop.loops && index == 0) left = FocusRequester.Cancel
+                                        if (!loop.loops && index == keys.lastIndex) right = FocusRequester.Cancel
+                                    }
+                                    if (card == focusOn && place == target) LaunchedEffect(Unit) {
+                                        focus.requestFocus()
+                                        onFocused()
+                                    }
+                                    if (row is HomeRow.Favourites) {
+                                        ChannelCard(
+                                            row.channels[index],
+                                            onWatch = { onWatch(card, it) },
+                                            onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
+                                            modifier = ends,
+                                            named = false,
+                                            onFocus = onFocus,
+                                        )
+                                        return@items
+                                    }
+                                    if (row is HomeRow.MoreLiveEvents) {
+                                        // An Event channel is a Channel: OK watches it at once, the menu key favourites it.
+                                        ChannelCard(
+                                            row.events[index].channel,
+                                            onWatch = { onWatch(card, it) },
+                                            onFavourite = { it, favourite -> onFavourite(row, it, favourite) },
+                                            modifier = ends,
+                                            named = false,
+                                            onFocus = onFocus,
+                                        )
+                                        return@items
+                                    }
+                                    if (row is HomeRow.Channels) {
+                                        val country = row.countries[index]
+                                        CountryCard(country.name(appLanguage), onClick = { onOpenCountry(card, country) }, modifier = ends, onFocus = onFocus)
+                                        return@items
+                                    }
+                                    val games = row.games
+                                    if (games != null) {
+                                        GameCard(games[index], onOpen = { onOpenGame(card, it) }, modifier = ends, onFocus = onFocus, league = row.mixesLeagues)
+                                        return@items
+                                    }
+                                    if (row is HomeRow.Replays) {
+                                        ReplayGameCard(row.replays[index], onPlay = { onPlayReplay(card, it) }, modifier = ends, onFocus = onFocus)
+                                        return@items
+                                    }
+                                    val title = titles[index]
+                                    val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
+                                    // The info under the rail shows the badges, so the card only counts as on screen.
+                                    onScreen(title.id)
+                                    val logo = title.about?.logo
+                                    // A poster has its name printed on it, so the logo goes only over a textless one;
+                                    // focused, it grows into its textless backdrop (#216).
+                                    val art = remember(title) { cardArt(title.image, title.about, textlessPosters = true) }
+                                    val grown = art.grown
+                                    val poster = @Composable {
+                                        TitleCard(
+                                            image = rememberArtwork(if (wide) resume?.still ?: title.image else art.poster, card = true),
+                                            name = title.name,
+                                            badges = emptyList(),
+                                            onClick = { onOpen(card, title.id, grown?.backdrop.takeIf { !wide }) },
+                                            modifier = ends,
+                                            wide = wide,
+                                            progress = resume?.progress,
+                                            named = false,
+                                            onFocus = onFocus,
+                                            art = if (wide || art.posterLogo != null) {
+                                                { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
+                                            } else null,
+                                            grown = if (!wide && grown != null) {
+                                                { GrownArtwork(grown, title.name) }
+                                            } else null,
+                                        )
+                                    }
+                                    // A Chart's Titles are ranked 1…n in order.
+                                    if (ranked) RankedCard(index + 1) { poster() } else poster()
+                                }
+                            }
+                            SettledInfo(row, state, info)
+                            Spacer(Modifier.height(14.dp))
                         }
-                        SettledInfo(row, state, info)
-                        Spacer(Modifier.height(14.dp))
                     }
+                    // Room under the last row, so it too comes up to the top of the rows. Only with the
+                    // rows: alone, it would be the item the list keeps in place as they arrive above it.
+                    if (trailing != null) item(key = "trailing", contentType = "trailing") { trailing() }
+                    if (!rows.isNullOrEmpty()) item(key = "end") { Spacer(Modifier.fillParentMaxHeight()) }
                 }
-                // Room under the last row, so it too comes up to the top of the rows. Only with the
-                // rows: alone, it would be the item the list keeps in place as they arrive above it.
-                if (trailing != null) item(key = "trailing", contentType = "trailing") { trailing() }
-                if (!rows.isNullOrEmpty()) item(key = "end") { Spacer(Modifier.fillParentMaxHeight()) }
-            }
+        }
         }
     }
 }
@@ -913,8 +926,8 @@ private fun HomeRow.heading(): String = when (this) {
  * the caption says so above them.
  */
 @Composable
-internal fun PlaceholderRows(caption: String? = null) {
-    Column(Modifier.fillMaxSize()) {
+internal fun PlaceholderRows(caption: String? = null, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxSize().testTag(PLACEHOLDERS)) {
         if (caption != null) {
             Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(start = Spacing.screenX, bottom = 12.dp))
         }
@@ -931,6 +944,9 @@ internal fun PlaceholderRows(caption: String? = null) {
         }
     }
 }
+
+/** The placeholder rows, for tests. */
+internal const val PLACEHOLDERS = "placeholders"
 
 private const val PLACEHOLDER_ROWS = 2
 /** As many posters as the screen shows, the last peeking at the right edge. */

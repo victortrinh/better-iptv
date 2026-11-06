@@ -38,6 +38,18 @@ class NeighbourBackdropsTest {
         assertEquals(emptyList<String>(), neighbourBackdrops(listOf(row), card(1)) { false })
     }
 
+    @Test fun fromTheHeroTheFirstRowsFirstCardIsLoaded() {
+        // The first Down from the hero lands on the first row's first card, which grows into its backdrop (#398).
+        val below = HomeRow.Genre("Drama", (10 until 20).map { title(it) })
+        assertEquals(listOf(backdrop(0)), neighbourBackdrops(listOf(row, below), RowCard(HERO_ROW, HERO_PLAY)) { true })
+        assertEquals(listOf(backdrop(0)), neighbourBackdrops(listOf(row, below), RowCard(HERO_ROW, HERO_DETAILS)) { false })
+    }
+
+    @Test fun fromTheHeroAFirstRowOfStillsLoadsNothing() {
+        val resumes = HomeRow.ContinueWatching(emptyList())
+        assertEquals(emptyList<String>(), neighbourBackdrops(listOf(resumes, row), RowCard(HERO_ROW, HERO_PLAY)) { true })
+    }
+
     @Test fun aCardInNoTitleRowLoadsNothing() {
         assertEquals(emptyList<String>(), neighbourBackdrops(listOf(row), RowCard("live-now", "game/nhl/1")) { true })
         assertEquals(emptyList<String>(), neighbourBackdrops(listOf(row), RowCard("genre/Other", title(1).id.toString())) { true })

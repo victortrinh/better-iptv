@@ -1,7 +1,5 @@
 package dev.betteriptv.app
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
@@ -57,11 +55,12 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? {
     val context = LocalPlatformContext.current
     val request = remember(url, card) { artworkRequest(context, url, card) }
     val image = rememberAsyncImagePainter(request, onError = { failed = true })
-    val fade = remember(url) { Animatable(0f) }
+    val fade = remember(url) { Fade(0f) }
     LaunchedEffect(image, fade) {
         // This url's image, not the one the painter showed before it.
         val arrived = image.state.first { it is AsyncImagePainter.State.Success && it.result.request.data == url } as AsyncImagePainter.State.Success
-        if (arrived.result.dataSource == DataSource.MEMORY_CACHE) fade.snapTo(1f) else fade.animateTo(1f, tween(Motion.imageFadeMillis))
+        // Over frames, however late they come, so art arriving as the main thread is held up doesn't pop ([Fade], #398).
+        if (arrived.result.dataSource == DataSource.MEMORY_CACHE) fade.show() else fade.fadeIn(Motion.imageFadeMillis)
     }
     val painter = remember(image, fade) { FadeIn(image, fade) }
     return if (failed) null else painter
@@ -119,7 +118,7 @@ fun rememberArtworkInMemory(url: String?): Painter? {
  * Draws [image] at the [fade]'s alpha, or at full alpha at once when it came from the memory cache.
  * Only the drawing reads the fade, so an image fading in only redraws itself and recomposes nothing.
  */
-private class FadeIn(private val image: AsyncImagePainter, private val fade: Animatable<Float, *>) : Painter() {
+private class FadeIn(private val image: AsyncImagePainter, private val fade: Fade) : Painter() {
     private var alpha = DefaultAlpha
     private var colorFilter: ColorFilter? = null
 
