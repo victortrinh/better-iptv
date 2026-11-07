@@ -82,8 +82,8 @@ class MetadataTest {
         assertFalse(plan.isOriginal(Track("eng")))
     }
 
-    @Test fun `a card and the details show TMDB's name, poster, description and genres in the App language`() = runBlocking {
-        cloud.title("fr", leParrain)
+    @Test fun `a card and the details show TMDB's name, poster and art in the App language, but not its description, genres, cast or trailer`() = runBlocking {
+        cloud.title("fr", leParrain.plus("trailers" to listOf(trailer("fr-official", "fr"))))
 
         card(godfather, "fr").let {
             assertEquals("Le Parrain", it.name)
@@ -92,39 +92,22 @@ class MetadataTest {
         }
         details(godfather, "fr").let {
             assertEquals("Le Parrain", it.name)
-            assertEquals("En 1945, à New York…", it.description)
-            assertEquals(listOf("Drame", "Crime"), it.genres)
-            assertEquals(175, it.runtimeMinutes)
             assertEquals("https://image.tmdb.org/t/p/w1280/godfather-backdrop.jpg", it.backdrop)
             assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", it.logo)
-            assertEquals(listOf("Marlon Brando", "Al Pacino"), it.cast)
             assertTrue(it.fromTmdb)
+            // What the Title is comes from the Provider (#473), which gave no details here: nothing from TMDB stands in.
+            assertNull(it.description)
+            // Its genre is its `FR - DRAME` Category's, named in the App language.
+            assertEquals(listOf("Drame"), it.genres)
+            assertNull(it.runtimeMinutes)
+            assertEquals(emptyList<String>(), it.cast)
+            assertNull(it.trailer)
         }
         // The Versions are still the Provider's, the Viewer's language first.
         assertEquals("fr", details(godfather, "fr").languages.first().language)
     }
 
-    @Test fun `a Title's trailer is the first listed in the App language, else in English, else the first listed`() = runBlocking {
-        // As the cloud lists them: official ones first.
-        val trailers = listOf(trailer("en-official", "en"), trailer("fr-official", "fr"), trailer("fr-fan", "fr", official = false), trailer("de", "de", official = false))
-        cloud.title("fr", tmdbTitle(238, "The Godfather", trailers = trailers))
-        cloud.title("de", tmdbTitle(238, "The Godfather", trailers = trailers.filter { it["language"] != "de" }))
-        cloud.title("it", tmdbTitle(238, "The Godfather", trailers = listOf(trailer("unnamed", null), trailer("es", "es"))))
-
-        assertEquals("fr-official", details(godfather, "fr-CA").trailer)
-        assertEquals("en-official", details(godfather, "de").trailer)
-        assertEquals("unnamed", details(godfather, "it").trailer)
-    }
-
-    @Test fun `a Title with no trailer has none, and one cached before trailers had languages gets the first listed`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather"))
-        cloud.title("en", tmdbTitle(238, "The Godfather", trailers = listOf("official", "fan")))
-
-        assertNull(details(godfather, "fr").trailer)
-        assertEquals("official", details(godfather, "en").trailer)
-    }
-
-    @Test fun `without a translation in the App language, the name and description are in English`() = runBlocking {
+    @Test fun `without a translation in the App language, the name is in English`() = runBlocking {
         cloud.title(
             "fr",
             tmdbTitle(
@@ -137,7 +120,8 @@ class MetadataTest {
         )
 
         assertEquals("From the World of John Wick: Ballerina", card(ballerina, "fr").name)
-        assertEquals("Taking place during the events of John Wick: Chapter 3…", details(ballerina, "fr").description)
+        // The description is the Provider's plot now (#473), never TMDB's.
+        assertNull(details(ballerina, "fr").description)
     }
 
     @Test fun `an SVG logo is asked for as a PNG, and a Title without one has no logo`() = runBlocking {
@@ -224,7 +208,6 @@ class MetadataTest {
         )
 
         assertEquals("Le Parrain (Québec)", card(godfather, "fr-CA").name)
-        assertEquals("Au Québec…", details(godfather, "fr-CA").description)
         assertEquals("Le Parrain", card(godfather, "fr-FR").name)
         // The cloud is asked in French either way.
         assertEquals(setOf("movie/238/fr"), cloud.metadataAsked.filter { it.startsWith("movie/238/") }.toSet())

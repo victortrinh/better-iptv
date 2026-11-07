@@ -58,7 +58,6 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
-import dev.betteriptv.core.EpisodeStill
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.TitleDetails
@@ -78,7 +77,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * A Title's page, in two levels (DESIGN.md, Details). The page itself holds the Title and what to do
- * with it: the logo, the metadata line with its badges, two lines of description and the actions,
+ * with it: the logo, the metadata line (year · runtime · genres · rating, as the Provider gives them,
+ * ADR 0014) with its badges, two lines of the Provider's plot and the actions,
  * Play first, then Restart, "Remove from Continue watching" and Versions, whose value says what Play
  * starts ("English · 1080p · 9 Versions"). A Movie's fits on one screen. OK on Versions opens the
  * [section] [TitleSection.Versions] ([onSection]): the Versions screen, which lists every Version
@@ -88,7 +88,8 @@ import kotlinx.coroutines.withContext
  *
  * On a Show, an Episodes action after Play says where the Viewer is ("Season 2 · E4"), and OK on it
  * opens [TitleSection.Episodes], the Episode picker ([EpisodesContent]): seasons on the left, the
- * picked season's Episodes on the right, opening on the next Episode to watch; choosing one plays it.
+ * picked season's Episodes on the right with the Provider's stills, opening on the next Episode to
+ * watch; choosing one plays it.
  * TMDB's backdrop fills the screen. Without one, the poster sits beside the header instead: a
  * poster blown up as a backdrop is too blurry and too bright to keep text on it readable.
  *
@@ -96,7 +97,7 @@ import kotlinx.coroutines.withContext
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
  * Play becomes "Continue from 1:02:13", with Restart and "Remove from Continue watching" under it.
  * Trailer, before Versions, plays the Title's trailer in YouTube's player inside Zugig ([TrailerContent],
- * ADR 0012), and is left out when it has none.
+ * ADR 0012), and is left out when the Provider gives no trailer key.
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode; with nothing to play, focus goes to the Episodes action.
  *
@@ -174,7 +175,6 @@ fun TitleScreen(
                 plan?.let { start(it, name) }
             }
         },
-        stillsOf = { season -> library.seasonStills(id, season, appLanguage) },
         onEpisode = { episode, name ->
             scope.launch {
                 val device = withContext(Dispatchers.Default) { deviceProfile() }
@@ -219,7 +219,6 @@ internal fun TitlePage(
     onRemove: () -> Unit = {},
     onChoose: (Version, String) -> Unit = { _, _ -> },
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
-    stillsOf: suspend (Int) -> Map<Int, EpisodeStill> = { emptyMap() },
     contentLanguages: List<String> = emptyList(),
     kids: Boolean = false,
     checking: Boolean = false,
@@ -244,9 +243,9 @@ internal fun TitlePage(
             val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
-                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) }, checking = checking)
+                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, title.fromTmdb, onChoose = { onChoose(it, title.name) }, checking = checking)
                     TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
-                    TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }, stillsOf = stillsOf) }
+                    TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
                     null -> TitleContent(
                         if (kids) title.copy(trailer = null) else title, plan, show?.first,
                         versions = versions,
@@ -357,10 +356,11 @@ private fun TitleContent(
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
                 itemVerticalAlignment = Alignment.CenterVertically,
             ) {
-                // The Version count is the Versions action's.
+                // The Version count is the Versions action's. What the Provider doesn't give is left out (ADR 0014).
                 Text(
-                    listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null })
+                    listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null }, title.rating?.let(::ratingLabel))
                         .joinToString(" · "),
+                    modifier = Modifier.testTag("metadata line"),
                     style = Type.body,
                     color = Colors.inkMuted,
                     maxLines = 1,
@@ -384,7 +384,7 @@ private fun TitleContent(
                     modifier = Modifier.padding(top = Spacing.s),
                 )
             }
-            // Two lines, so the page fits on one screen; the cast is on the Versions screen.
+            // The Provider's plot, two lines, so the page fits on one screen; the cast and director are on the Versions screen.
             title.description?.let {
                 Spacer(Modifier.height(Spacing.s))
                 Text(it, style = Type.body, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)

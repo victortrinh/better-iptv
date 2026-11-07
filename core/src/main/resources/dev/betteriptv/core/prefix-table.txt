@@ -346,6 +346,12 @@ BØRN            | Kids
 کارتون          | Kids
 DESSINS ANIMÉS  | Kids
 CARTOONS        | Kids
+FAMILIAL        | Kids
+FAMILIE         | Kids
+FAMILIA         | Kids
+FAMIGLIA        | Kids
+FAMÍLIA         | Kids
+AILE            | Kids
 # Documentaries
 DOCUMENTARY     | Documentaries
 DOCUMENTARIES   | Documentaries
@@ -354,6 +360,10 @@ DOCUMENTAIRE    | Documentaries
 DOKU            | Documentaries
 DOKUMENTATION   | Documentaries
 DOCUMENTALES    | Documentaries
+DOCUMENTAL      | Documentaries
+DOCUMENTÁRIO    | Documentaries
+DOKUMENTARFILM  | Documentaries
+BELGESEL        | Documentaries
 # Music
 MUSIC           | Music
 MUSIQUE         | Music
@@ -370,3 +380,149 @@ RÉGIONAL        | Local
 # Religion
 RELIGIOUS       | Religion
 RELIGION        | Religion
+
+# The genres of Titles (ADR 0014), as TMDB names them in English and in the languages the Provider's
+# genre fields and Categories were surveyed in (2026-11-07): a Movie's genre comes from its Category
+# where a word here names one, else from its details' genre field; a Show's from its Listing's field.
+# `Drame`, `Komödie` and `Comedia` all fold into Comedy and Drama. These describe Titles, not Channels:
+# the Channel browser ranks Categories by the genres above only.
+# Action
+ACTION          | Action
+ACCIÓN          | Action
+AZIONE          | Action
+AÇÃO            | Action
+ACTIE           | Action
+AKSIYON         | Action
+AKCJA           | Action
+ΔΡΑΣΗ           | Action
+# Adventure
+ADVENTURE       | Adventure
+AVENTURE        | Adventure
+ABENTEUER       | Adventure
+AVENTURA        | Adventure
+AVVENTURA       | Adventure
+AVONTUUR        | Adventure
+MACERA          | Adventure
+PRZYGODA        | Adventure
+ΠΕΡΙΠΕΤΕΙΑ      | Adventure
+# Animation
+ANIMATION       | Animation
+ANIMACIÓN       | Animation
+ANIMAZIONE      | Animation
+ANIMAÇÃO        | Animation
+ANIMATIE        | Animation
+ANIMASYON       | Animation
+ANIMACJA        | Animation
+# Comedy
+COMEDY          | Comedy
+COMÉDIE         | Comedy
+KOMÖDIE         | Comedy
+COMEDIA         | Comedy
+COMMEDIA        | Comedy
+KOMEDIE         | Comedy
+KOMEDI          | Comedy
+KOMEDIA         | Comedy
+ΚΩΜΩΔΙΑ         | Comedy
+# Crime
+CRIME           | Crime
+KRIMI           | Crime
+CRIMEN          | Crime
+MISDAAD         | Crime
+SUÇ             | Crime
+KRYMINAŁ        | Crime
+ΑΣΤΥΝΟΜΙΚΗ      | Crime
+פשע             | Crime
+# Drama
+DRAMA           | Drama
+DRAME           | Drama
+DRAMMA          | Drama
+DRAM            | Drama
+DRAMAT          | Drama
+ΔΡΑΜΑ           | Drama
+דרמה            | Drama
+# Fantasy
+FANTASY         | Fantasy
+FANTASTIQUE     | Fantasy
+FANTASÍA        | Fantasy
+FANTASIA        | Fantasy
+FANTASIE        | Fantasy
+FANTASTIK       | Fantasy
+FANTAZI         | Fantasy
+ΦΑΝΤΑΣΙΑΣ       | Fantasy
+# History
+HISTORY         | History
+HISTOIRE        | History
+HISTORIE        | History
+HISTORIA        | History
+STORIA          | History
+HISTÓRIA        | History
+TARIH           | History
+# Horror
+HORROR          | Horror
+HORREUR         | Horror
+TERROR          | Horror
+KORKU           | Horror
+ΤΡΟΜΟΥ          | Horror
+# Mystery
+MYSTERY         | Mystery
+MYSTÈRE         | Mystery
+MISTERIO        | Mystery
+MISTERO         | Mystery
+MISTÉRIO        | Mystery
+MYSTERIE        | Mystery
+GIZEM           | Mystery
+ΜΥΣΤΗΡΙΟΥ       | Mystery
+# Romance
+ROMANCE         | Romance
+LIEBESFILM      | Romance
+ROMANTIEK       | Romance
+ROMANTIK        | Romance
+ROMANS          | Romance
+ΡΟΜΑΝΤΙΚΗ       | Romance
+# Science Fiction
+SCIENCE FICTION | Science Fiction
+SCIENCE-FICTION | Science Fiction
+SCI-FI          | Science Fiction
+SCIFI           | Science Fiction
+CIENCIA FICCIÓN | Science Fiction
+FANTASCIENZA    | Science Fiction
+FICÇÃO CIENTÍFICA | Science Fiction
+SCIENCEFICTION  | Science Fiction
+BILIM KURGU     | Science Fiction
+BILIM-KURGU     | Science Fiction
+ΕΠΙΣΤΗΜΟΝΙΚΗ ΦΑΝΤΑΣΙΑ | Science Fiction
+# Thriller
+THRILLER        | Thriller
+SUSPENSE        | Thriller
+SUSPENSO        | Thriller
+GERILIM         | Thriller
+ΘΡΙΛΕΡ          | Thriller
+# War
+WAR             | War
+GUERRE          | War
+KRIEGSFILM      | War
+KRIEG           | War
+BÉLICA          | War
+GUERRA          | War
+OORLOG          | War
+SAVAŞ           | War
+WOJENNY         | War
+ΠΟΛΕΜΙΚΗ        | War
+# Western
+WESTERN         | Western
+FAROESTE        | Western
+# TV Movie
+TV MOVIE        | TV Movie
+TÉLÉFILM        | TV Movie
+TV-FILM         | TV Movie
+TV FILM         | TV Movie
+# Reality
+REALITY         | Reality
+RÉALITÉ         | Reality
+TELEREALIDAD    | Reality
+REALITY-TV      | Reality
+# Soap
+SOAP            | Soap
+# Talk
+TALK            | Talk
+TALK-SHOW       | Talk

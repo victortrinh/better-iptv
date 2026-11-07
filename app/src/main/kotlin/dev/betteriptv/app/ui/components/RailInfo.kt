@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
@@ -23,8 +24,12 @@ sealed interface CardInfo {
      */
     data class InProgress(val heading: String, val status: String?) : CardInfo
 
-    /** A Title not started: its [metadata] line (year · runtime · genres) and its [description]. */
-    data class About(val metadata: String, val description: String?) : CardInfo
+    /**
+     * A Title not started: one [metadata] line, year · genre · the Provider's rating ("2024 · Drama ·
+     * ★ 6.6"), from what the device holds, so focus costs no Provider call (ADR 0014). No description,
+     * no runtime: those are read when the page opens.
+     */
+    data class About(val metadata: String) : CardInfo
 
     /** A Channel: its [name], since its card is only a logo, and what the menu key does ([hint]: "≡ Add to Favourites"). */
     data class Channel(val name: String, val hint: String) : CardInfo
@@ -40,8 +45,9 @@ sealed interface CardInfo {
 /**
  * The info under Home's focused rail, as on Netflix: the focused card's [info] and [badges], at the
  * left margin. As tall as the rail's kind of card needs ([short] for Continue watching, Favourites
- * and the Game rows, which have two lines), whichever card it tells about, so the rails under it stay put
- * as focus moves along. Empty when [info] is null.
+ * and the Game rows, which have two lines; a Title row's is one line with the compact badges),
+ * whichever card it tells about, so the rails under it stay put as focus moves along. Empty when
+ * [info] is null.
  */
 @Composable
 fun RailInfo(info: CardInfo?, badges: List<BadgeSpec>, short: Boolean, modifier: Modifier = Modifier) {
@@ -53,12 +59,9 @@ fun RailInfo(info: CardInfo?, badges: List<BadgeSpec>, short: Boolean, modifier:
                 if (info.status != null) Text(info.status, style = Type.railStrong, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             is CardInfo.About -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("rail info")) {
                     Text(info.metadata, style = Type.railMeta, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (badges.isNotEmpty()) BadgeRow(badges, Modifier.padding(start = Spacing.s), compact = true)
-                }
-                if (info.description != null) {
-                    Text(info.description, style = Type.rail, color = Colors.ink, maxLines = DESCRIPTION_LINES, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = GAP))
                 }
             }
             is CardInfo.Channel -> {
@@ -76,11 +79,9 @@ fun RailInfo(info: CardInfo?, badges: List<BadgeSpec>, short: Boolean, modifier:
 @Composable
 private fun Line(text: String) = Text(text, style = Type.rail, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
-private const val DESCRIPTION_LINES = 3
-// Netflix's description runs about as wide as its focused card; about 55 characters a line.
+// As wide as Netflix's info, about 55 characters of a line.
 private val INFO_WIDTH = 500.dp
-private val GAP = 4.dp
-// The metadata line, the gap and three lines of description.
-private val HEIGHT = 22.dp + GAP + 75.dp
+// One line: the metadata line with its badges.
+private val HEIGHT = 22.dp
 // Two lines.
 private val SHORT_HEIGHT = 50.dp

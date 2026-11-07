@@ -1033,5 +1033,28 @@
   "category_ids": [
    24
   ]
+ },
+ {
+  "num": 46,
+  "name": "DE - Der Scheich (2022)",
+  "series_id": 2046,
+  "cover": "",
+  "plot": "Ringo (Björn Meyer) ist ein Mann mit schlichtem Gemüt, der in seinem Heimatort als Dorftrottel gebrandmarkt wurde. Er beschließt schließlich, sich als arabischer Milliarden-Erbe auszugeben – und hat überragenden Erfolg.\r\n\r\nAusgestattet mit nichts weiter als gewaltigem Selbstvertrauen, einer gefälschten Bankauskunft, die ihn als Besitzer von acht Milliarden ausweist und frei erfundenen, aufschneiderischen Geschichten zieht er die Aufmerksamkeit von jedem in der Schweiz auf sich, der nach einem Investoren sucht. Als Folge seines Betrugs gerät die Alpenrepublik an den Rand einer Politik- und Wirtschaftskrise.",
+  "cast": "Max Hopp",
+  "director": "",
+  "genre": "Komödie / Drama",
+  "releaseDate": "2022-12-22",
+  "release_date": "2022-12-22",
+  "last_modified": "1695026445",
+  "rating": "7",
+  "rating_5based": "3.5",
+  "backdrop_path": [],
+  "youtube_trailer": "",
+  "tmdb": "216963",
+  "episode_run_time": "45",
+  "category_id": "34",
+  "category_ids": [
+   34
+  ]
  }
 ]

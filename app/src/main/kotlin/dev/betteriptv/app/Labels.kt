@@ -18,6 +18,20 @@ import dev.betteriptv.core.VersionAttributes
 import dev.betteriptv.core.VersionTableRow
 import java.util.Locale
 
+/**
+ * The Provider's [rating] on a 10 scale as the screens show it, "★ 6.6", one decimal in the device's
+ * locale ("★ 6,6" in French). Nothing is shown for a Title without one: callers pass none.
+ */
+fun ratingLabel(rating: Double): String = "★ " + String.format(Locale.getDefault(), "%.1f", rating)
+
+/**
+ * The one line under a focused Home card (DESIGN.md, Cards): [year] · the first of its [genres] · the
+ * Provider's [rating] ("2024 · Drama · ★ 6.6"), leaving out what the Provider doesn't give, so a
+ * Title with none of them reads as nothing. From stored data alone: no Provider call on focus (ADR 0014).
+ */
+fun aboutLine(year: Int?, genres: List<String>, rating: Double?): String =
+    listOfNotNull(year?.toString(), genres.firstOrNull(), rating?.let(::ratingLabel)).joinToString(" · ")
+
 /** A card's badges: quality, HDR, then language, as in "4K · HDR · EN". */
 fun VersionAttributes.cardBadges(): List<BadgeSpec> =
     pictureBadges() + listOfNotNull(language?.badge { it.uppercase(Locale.ROOT) })

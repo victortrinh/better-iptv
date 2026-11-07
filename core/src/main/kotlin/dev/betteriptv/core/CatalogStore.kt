@@ -4,6 +4,9 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
+import com.squareup.moshi.JsonReader
+import com.squareup.moshi.JsonWriter
+import okio.Buffer
 import java.io.Closeable
 import java.time.Duration
 import java.time.Instant
@@ -82,6 +85,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
         execSQL(LISTING_TABLE.format("listing"))
+        // What the Provider says of a Title on its Listing (ADR 0014), kept at Sync; a catalog from before these columns gets them empty until its next Sync.
+        DETAILS_COLUMNS.forEach { (column, type) -> if (!hasColumn("listing", column)) execSQL("ALTER TABLE listing ADD COLUMN $column $type") }
         execSQL(TITLE_TABLE.format("title"))
         execSQL(CHANNEL_TABLE.format("channel"))
         execSQL(LIVE_CATEGORY_TABLE.format("live_category"))
@@ -147,9 +152,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
                 "PRIMARY KEY (title_key, language))",
         )
-        // Episodes kept before their file extension was are asked again, so they can play.
+        // Episodes kept before their file extension was are asked again, so they can play; so are those kept before their still and length were (ADR 0014).
         if (prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'audio_language'").use { it.step(); it.getLong(0) } > 0 &&
-            prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'container'").use { it.step(); it.getLong(0) } == 0L
+            (!hasColumn("episode", "container") || !hasColumn("episode", "still"))
         ) {
             execSQL("DROP TABLE show_details")
             execSQL("DROP TABLE episode")
@@ -163,11 +168,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         // What a movie Listing's file holds, from a Header read, Playback or the cloud; a null body: its header can't be read.
         // `shared` says whether the cloud has it. Kept forever: a Listing's file doesn't change.
         execSQL("CREATE TABLE IF NOT EXISTS file_read (listing_id INTEGER PRIMARY KEY, body TEXT, read_at INTEGER NOT NULL, shared INTEGER NOT NULL)")
-        // The bitrate a movie Listing's Provider details give, null when they give none.
+        // A movie Listing's Provider details (ADR 0014): the bitrate they give (null when none), what they say of the Movie, and the Listing's
+        // `added` when they were read, so they are read again only once the Provider changes the Listing. Kept for good.
         execSQL("CREATE TABLE IF NOT EXISTS movie_details (listing_id INTEGER PRIMARY KEY, bitrate INTEGER, fetched_at INTEGER NOT NULL)")
+        (DETAILS_COLUMNS + listOf("runtime" to "INTEGER", "added" to "INTEGER")).forEach { (column, type) ->
+            if (!hasColumn("movie_details", column)) execSQL("ALTER TABLE movie_details ADD COLUMN $column $type")
+        }
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
-                "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, container TEXT, PRIMARY KEY (listing_id, id))",
+                "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, container TEXT, still TEXT, duration INTEGER, PRIMARY KEY (listing_id, id))",
         )
     }
     private val reader: SQLiteConnection = driver.open(path)
@@ -231,7 +240,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Where a Sync writes the Titles stage: the movie and show Categories and Listings, and the Sports replays. */
     class TitleStaging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var replayPosition = 0L
 
@@ -248,9 +257,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
          * [match], or standing alone without one, until the cloud answers [match] otherwise. A
          * [hidden] one is kept out of the lists and gets no Title. [added] orders the list, newest
          * first: for a Show, it is when the Provider last changed it. [container] is a movie file's
-         * extension (`mkv`), which its stream location ends with.
+         * extension (`mkv`), which its stream location ends with. [rating] is the Provider's, on a 10
+         * scale, and [details] what a show Listing says of its Show (ADR 0014); a movie Listing has none.
          */
-        fun listing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String? = null) = insertListing.run {
+        fun listing(
+            id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String? = null,
+            rating: Double? = null, details: ProviderDetails? = null,
+        ) = insertListing.run {
             bindText(1, kindKey(match.kind))
             bindLong(2, id)
             bindText(3, name)
@@ -263,6 +276,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             bindText(10, matchName(match.name))
             bindText(11, match.key)
             if (container == null) bindNull(12) else bindText(12, container)
+            val said = details?.takeUnless { it.isEmpty }
+            bindDetails(13, rating ?: said?.rating, said)
             stepAndReset()
         }
 
@@ -340,7 +355,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
                 "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                    "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT)",
+                    "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT, $DETAILS_COLUMN_NAMES)",
             )
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
@@ -372,9 +387,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
                 writer.execSQL(
                     """
-                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container)
+                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container, $DETAILS_COLUMN_NAMES)
                     SELECT l.kind, row_number() OVER (PARTITION BY l.kind ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image,
-                        t.position, l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container
+                        t.position, l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container, ${DETAILS_COLUMNS.joinToString(", ") { "l." + it.first }}
                     FROM staging_listing l
                     LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
                     JOIN staging_title t ON t.key = l.title_key
@@ -1248,13 +1263,35 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         year = if (isNull(7)) null else getLong(7).toInt(),
     )
 
-    private fun SQLiteStatement.listing(from: Int) = StoredListing(
-        id = getLong(from),
-        name = getText(from + 1),
-        category = getText(from + 2),
-        added = if (isNull(from + 3)) null else getLong(from + 3),
-        image = if (isNull(from + 4)) null else getText(from + 4),
-    )
+    private fun SQLiteStatement.listing(from: Int): StoredListing {
+        val details = details(from + 5)
+        return StoredListing(
+            id = getLong(from),
+            name = getText(from + 1),
+            category = getText(from + 2),
+            added = if (isNull(from + 3)) null else getLong(from + 3),
+            image = if (isNull(from + 4)) null else getText(from + 4),
+            rating = details.rating,
+            details = details.takeUnless { it.isEmpty },
+        )
+    }
+
+    /** The details columns ([DETAILS_COLUMNS], in order) read from [from]. */
+    private fun SQLiteStatement.details(from: Int): ProviderDetails {
+        fun text(i: Int) = if (isNull(from + i)) null else getText(from + i)
+        val backdrops = text(6)?.let { json -> (runCatching { JsonReader.of(Buffer().writeUtf8(json)).readJsonValue() }.getOrNull() as? List<*>).orEmpty().filterIsInstance<String>() }.orEmpty()
+        return ProviderDetails(
+            plot = text(1),
+            genre = text(2),
+            releaseDate = text(5),
+            director = text(4),
+            cast = text(3),
+            rating = if (isNull(from)) null else getDouble(from),
+            backdrop = backdrops.firstOrNull(),
+            trailer = text(7),
+            backdrops = backdrops,
+        )
+    }
 
     /** The Charts the cloud last gave for [region] in [language] (ISO 639-1), as JSON, and when; null before it ever did. */
     fun charts(region: String, language: String): StoredCharts? = synchronized(reader) {
@@ -1351,7 +1388,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             buildMap { while (it.step()) put(it.getLong(0), (if (it.isNull(1)) null else it.getLong(1)) to Instant.ofEpochMilli(it.getLong(2))) }
         }
         val episodes = reader.prepare(
-            "SELECT listing_id, id, season, number, title, added, width, height, audio_language, container FROM episode WHERE listing_id IN ($marks) ORDER BY season, number, id",
+            "SELECT listing_id, id, season, number, title, added, width, height, audio_language, container, still, duration FROM episode WHERE listing_id IN ($marks) ORDER BY season, number, id",
         ).use {
             listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
             val byListing = HashMap<Long, MutableList<ProviderEpisode>>()
@@ -1366,6 +1403,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     height = if (it.isNull(7)) null else it.getLong(7).toInt(),
                     audioLanguage = if (it.isNull(8)) null else it.getText(8),
                     container = if (it.isNull(9)) null else it.getText(9),
+                    still = if (it.isNull(10)) null else it.getText(10),
+                    durationSeconds = if (it.isNull(11)) null else it.getLong(11).toInt(),
                 )
             }
             byListing
@@ -1387,7 +1426,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 it.bindLong(1, listingId)
                 it.step()
             }
-            writer.prepare("INSERT OR REPLACE INTO episode VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
+            writer.prepare("INSERT OR REPLACE INTO episode VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
                 episodes.forEach { episode ->
                     insert.bindLong(1, listingId)
                     insert.bindLong(2, episode.id)
@@ -1399,6 +1438,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     if (episode.height == null) insert.bindNull(8) else insert.bindLong(8, episode.height.toLong())
                     if (episode.audioLanguage == null) insert.bindNull(9) else insert.bindText(9, episode.audioLanguage)
                     if (episode.container == null) insert.bindNull(10) else insert.bindText(10, episode.container)
+                    if (episode.still == null) insert.bindNull(11) else insert.bindText(11, episode.still)
+                    if (episode.durationSeconds == null) insert.bindNull(12) else insert.bindLong(12, episode.durationSeconds.toLong())
                     insert.stepAndReset()
                 }
             }
@@ -2053,14 +2094,43 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
-    fun saveMovieBitrates(bitrates: Map<Long, Long?>, at: Instant) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO movie_details VALUES (?, ?, ?)").use { insert ->
-            bitrates.forEach { (id, bitrate) ->
-                insert.bindLong(1, id)
-                if (bitrate == null) insert.bindNull(2) else insert.bindLong(2, bitrate)
-                insert.bindLong(3, at.toEpochMilli())
-                insert.stepAndReset()
+    /** The Provider's movie details kept for these movie Listings, by Listing id, for those asked. */
+    fun movieDetails(listingIds: List<Long>): Map<Long, StoredMovieDetails> = synchronized(reader) {
+        if (listingIds.isEmpty()) return emptyMap()
+        reader.prepare(
+            "SELECT listing_id, bitrate, fetched_at, added, runtime, $DETAILS_COLUMN_NAMES FROM movie_details WHERE listing_id IN (${listingIds.joinToString(",") { "?" }})",
+        ).use {
+            listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
+            buildMap {
+                while (it.step()) {
+                    put(
+                        it.getLong(0),
+                        StoredMovieDetails(
+                            bitrate = if (it.isNull(1)) null else it.getLong(1),
+                            fetchedAt = Instant.ofEpochMilli(it.getLong(2)),
+                            added = if (it.isNull(3)) null else it.getLong(3),
+                            details = it.details(5).copy(runtimeMinutes = if (it.isNull(4)) null else it.getLong(4).toInt()),
+                        ),
+                    )
+                }
             }
+        }
+    }
+
+    /**
+     * Keeps movie Listing [listingId]'s Provider details, read at [at] while the Provider had the
+     * Listing [added] then: they stand until the Provider changes that.
+     */
+    fun saveMovieDetails(listingId: Long, details: ProviderMovieDetails, added: Long?, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO movie_details (listing_id, bitrate, fetched_at, added, runtime, $DETAILS_COLUMN_NAMES) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
+            insert.bindLong(1, listingId)
+            if (details.bitrate == null) insert.bindNull(2) else insert.bindLong(2, details.bitrate)
+            insert.bindLong(3, at.toEpochMilli())
+            if (added == null) insert.bindNull(4) else insert.bindLong(4, added)
+            val said = details.details
+            if (said.runtimeMinutes == null) insert.bindNull(5) else insert.bindLong(5, said.runtimeMinutes.toLong())
+            insert.bindDetails(6, said.rating, said)
+            insert.step()
         }
     }
     /** Where the Viewer stopped in [id], or null when they never played it. */
@@ -2275,10 +2345,19 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val SEPARATOR = '\u001f'
         /** The most the write-ahead log keeps on the device's storage between checkpoints, in bytes. */
         const val WAL_SIZE_LIMIT = 4L * 1024 * 1024
-        const val LISTING_TABLE =
+        /**
+         * What the Provider says of a Title (ADR 0014), as columns on a Listing (a show Listing's, read at
+         * Sync) and on a Movie's kept details: its rating, plot, genre field, cast, director, release date,
+         * backdrops (a JSON list of URLs) and trailer key. [SQLiteStatement.details] reads them in this order.
+         */
+        val DETAILS_COLUMNS = listOf(
+            "rating" to "REAL", "plot" to "TEXT", "genre" to "TEXT", "actors" to "TEXT", "director" to "TEXT", "release_date" to "TEXT", "backdrops" to "TEXT", "trailer" to "TEXT",
+        )
+        val DETAILS_COLUMN_NAMES = DETAILS_COLUMNS.joinToString(", ") { it.first }
+        val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
                 "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
-                "container TEXT, PRIMARY KEY (kind, position))"
+                "container TEXT, ${DETAILS_COLUMNS.joinToString(", ") { "${it.first} ${it.second}" }}, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
                 "category_id TEXT, guide_id TEXT NOT NULL, channel_key TEXT NOT NULL, channel_name TEXT NOT NULL, country TEXT, quality TEXT, hevc INTEGER NOT NULL, " +
@@ -2361,7 +2440,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "CREATE INDEX IF NOT EXISTS channel_event_start ON channel (event_start)",
         )
         val INDEXES = TITLE_INDEXES + CHANNEL_INDEXES
-        const val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image"
+        val LISTING_COLUMNS = "l.id, l.name, l.category, l.added, l.image, " + DETAILS_COLUMNS.joinToString(", ") { "l." + it.first }
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */
         const val TITLES_BY_NEWEST_LISTING =
             "SELECT kind, row_number() OVER (PARTITION BY kind ORDER BY max(added) DESC, min(name), min(id)), title_key FROM %s GROUP BY kind, title_key"
@@ -2428,8 +2507,32 @@ internal class StoredCharts(val body: String, val fetchedAt: Instant)
 /** One League's Games in the cloud's answer, as JSON ([Games]), and when the cloud sent it. */
 internal class StoredGames(val body: String, val fetchedAt: Instant)
 
-/** [added] is when a movie Listing was added, or when the Provider last changed a show Listing. */
-internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)
+/**
+ * [added] is when a movie Listing was added, or when the Provider last changed a show Listing.
+ * [rating] is the Provider's, on a 10 scale (null when it gives none), and [details] what a show
+ * Listing says of its Show (ADR 0014); a movie Listing's details are kept apart ([StoredMovieDetails]).
+ */
+internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?, val rating: Double? = null, val details: ProviderDetails? = null)
+
+/**
+ * A movie Listing's kept Provider details: the [bitrate] they gave (null when none), what they say
+ * of the Movie, when they were read, and the Listing's [added] then (null for details kept before
+ * that was, which are read again).
+ */
+internal class StoredMovieDetails(val bitrate: Long?, val fetchedAt: Instant, val added: Long?, val details: ProviderDetails)
+
+/** Binds the details columns ([CatalogStore.DETAILS_COLUMNS], in order) from [from]: [rating], then what [details] says. */
+private fun SQLiteStatement.bindDetails(from: Int, rating: Double?, details: ProviderDetails?) {
+    if (rating == null) bindNull(from) else bindDouble(from, rating)
+    fun text(i: Int, value: String?) = if (value == null) bindNull(from + i) else bindText(from + i, value)
+    text(1, details?.plot)
+    text(2, details?.genre)
+    text(3, details?.cast)
+    text(4, details?.director)
+    text(5, details?.releaseDate)
+    text(6, details?.backdrops?.takeIf { it.isNotEmpty() }?.let { list -> Buffer().also { buffer -> JsonWriter.of(buffer).use { writer -> writer.beginArray(); list.forEach(writer::value); writer.endArray() } }.readUtf8() })
+    text(7, details?.trailer)
+}
 
 /** A Listing whose Match is checked by name, with the TMDB ID its Provider gave it. */
 internal class StoredSuspect(val kind: TitleKind, val name: String, val category: String, val providerTmdbId: Long?)

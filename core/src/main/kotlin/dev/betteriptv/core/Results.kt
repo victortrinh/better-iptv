@@ -38,13 +38,15 @@ data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val i
 data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
 
 /**
- * TMDB's description, genres, runtime and logo art (sized for a card) of a Title, in the App
- * language, falling back to English, and a [textlessPoster] to lay the logo over, only with a logo.
+ * What the info under a focused Home row tells of a Title, from what the device already holds, so
+ * focus costs no Provider call (ADR 0014): its [genres], as the Prefix table maps the Provider's
+ * Category and genre field, named in the App language, and the Provider's [rating] on a 10 scale
+ * (null when it gives none or zero). The rest is TMDB's card art, until the look leaves it (#474):
+ * the [logo] sized for a card and a [textlessPoster] to lay it over, only with a logo.
  */
 data class TitleAbout(
-    val description: String?,
-    val genres: List<String>,
-    val runtimeMinutes: Int?,
+    val genres: List<String> = emptyList(),
+    val rating: Double? = null,
     val logo: String? = null,
     val textlessPoster: String? = null,
     /** A backdrop with no text on it, sized for a card: what the card grows into once focused (#216). */
@@ -155,8 +157,13 @@ data class NextEpisode(val number: EpisodeNumber, val name: String?, val started
 
 /**
  * A Title with its Versions grouped by language: [languages] are the Viewer's, [otherLanguages] the
- * rest. [name], [year] and [image] are as on its card. The rest is TMDB metadata in the App language,
- * falling back to English, and empty without it ([fromTmdb] false).
+ * rest. [name], [year] and [image] are as on its card. What the Title is comes from the Provider
+ * (ADR 0014): its [description] is the plot, its [genres] the Prefix table's mapping of its Category
+ * and genre field named in the App language, its [runtimeMinutes], [cast], [directors], [rating]
+ * (on a 10 scale, null when absent or zero) and [trailer] what its movie details or show Listing
+ * say; each empty when the Provider doesn't say. A Movie's details are read when its page opens and
+ * kept for good, so a page opens whole from kept data when the Provider is unreachable. The art
+ * ([backdrop], [logo]) is still TMDB's until #475 ([fromTmdb]).
  */
 data class TitleDetails(
     val id: TitleId,
@@ -172,14 +179,18 @@ data class TitleDetails(
     val backdrop: String? = null,
     /** The Title's logo art URL, drawn in place of its name; null when TMDB has none in the App language or English. */
     val logo: String? = null,
-    /** The main cast's names, billing order. */
+    /** The main cast's names, as the Provider lists them. */
     val cast: List<String> = emptyList(),
     /** Its place in the Region's Top 10, if it has one. */
     val rank: ChartRank? = null,
-    /** Whether the metadata came from TMDB, whose terms ask for attribution where it is shown. */
+    /** Whether TMDB's art (the backdrop, the logo) is on the page: its terms ask for attribution where its data is shown. */
     val fromTmdb: Boolean = false,
-    /** The YouTube video ID of its trailer, in the App language, else English, else the first TMDB lists (ADR 0012); null when it has none. */
+    /** The YouTube video ID of its trailer, as the Provider gives it (ADR 0012); null when it gives none, and the Trailer action stays out. */
     val trailer: String? = null,
+    /** The director's name, or the directors', as the Provider lists them. */
+    val directors: List<String> = emptyList(),
+    /** The Provider's rating on a 10 scale ("★ 6.6"); null when it gives none or zero. */
+    val rating: Double? = null,
     /**
      * The language the Title was released in (TMDB's, a primary subtag), when Prefer original audio
      * acts on it: the setting is on, TMDB names the language and it is no Content language. Its
@@ -199,7 +210,7 @@ data class LanguageGroup(val language: String?, val versions: List<Version>) {
 
 /**
  * A Show's Episodes, merged by season and episode number across all its Versions' show details,
- * so it has every season any Version has, and the ones TMDB lists as not aired yet. [unreadVersions]
+ * so it has every season any Version has, and no Episode the Provider lacks. [unreadVersions]
  * counts the Versions whose details the Provider couldn't give (and that weren't kept from before):
  * their Episodes are missing. [next] is the Episode to watch next ([nextEpisode]), null when there are none.
  *
@@ -232,16 +243,10 @@ private fun Episode.namedLanguages(): List<String> = (languages + otherLanguages
  * what an Episode of the Show usually offers, so an Episode that offers just that needn't say so.
  */
 fun usualLanguages(seasons: List<Season>): Set<String> {
-    val offered = seasons.flatMap { it.episodes }.filter { it.availableOn == null }.map { it.namedLanguages() }
+    val offered = seasons.flatMap { it.episodes }.map { it.namedLanguages() }
     if (offered.isEmpty()) return emptySet()
     return offered.flatten().groupingBy { it }.eachCount().filterValues { it * 2 > offered.size }.keys
 }
-
-/**
- * What TMDB knows of Episode [number] of a season for the Episode picker: its [still], a 16:9 image
- * URL, and its runtime, each null when TMDB has none.
- */
-data class EpisodeStill(val number: Int, val still: String?, val runtimeMinutes: Int?)
 
 /** One season of a Show, its Episodes in order. Specials (season 0) come after the others. */
 data class Season(val number: Int, val episodes: List<Episode>)
@@ -249,11 +254,12 @@ data class Season(val number: Int, val episodes: List<Episode>)
 /**
  * One Episode of a Show with its Versions grouped by language, as a Title's are: [languages] are
  * the Viewer's, [otherLanguages] the rest, so together they are the languages it's available in.
- * [name] is the Episode's name as the Provider gives it in the best Version (as TMDB gives it, for
- * one not aired yet), null when it gives none.
+ * [name] is the Episode's name as the Provider gives it in the best Version, null when it gives
+ * none; [still] (a 16:9 image URL) and [runtimeMinutes] come from the Provider's show details of
+ * that Version, else of any that has them, null when none does.
  *
  * [progress] is how far the Viewer got, from 0 to 1, null when they never played it; it is 1 once
- * it's [watched]. An Episode TMDB lists as airing on [availableOn] has no Version yet, so it can't be played.
+ * it's [watched].
  */
 data class Episode(
     val season: Int,
@@ -263,7 +269,8 @@ data class Episode(
     val otherLanguages: List<LanguageGroup>,
     val progress: Float? = null,
     val watched: Boolean = false,
-    val availableOn: LocalDate? = null,
+    val still: String? = null,
+    val runtimeMinutes: Int? = null,
 ) {
     val id: EpisodeNumber get() = EpisodeNumber(season, number)
 }

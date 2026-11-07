@@ -25,7 +25,6 @@ import androidx.compose.ui.test.pressKey
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
-import dev.betteriptv.core.EpisodeStill
 import dev.betteriptv.core.Known
 import dev.betteriptv.core.LanguageGroup
 import dev.betteriptv.core.PlayPlan
@@ -48,7 +47,6 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.LocalDate
 
 /**
  * The Episode picker (#347): a Show's Episodes action says where the Viewer is, OK opens the picker
@@ -82,7 +80,8 @@ class EpisodePickerTest {
 
     /**
      * Love is Blind: three seasons of 14, 12 and 10 Episodes in English and French. Season 2's E3 is in
-     * English alone, its E12 not out yet; the Viewer watched up to S2 E3 and is partway into E4.
+     * English alone, its E4 carries the Provider's still and runtime; the Viewer watched up to S2 E3 and
+     * is partway into E4.
      */
     private fun seasons(): List<Season> {
         val counts = mapOf(1 to 14, 2 to 12, 3 to 10)
@@ -91,9 +90,8 @@ class EpisodePickerTest {
                 val id = season * 100L + number
                 when {
                     season == 2 && number == 3 -> Episode(season, number, "Pods", listOf(LanguageGroup("en", listOf(version(id, "en")))), emptyList(), progress = 1f, watched = true)
-                    season == 2 && number == 12 -> Episode(season, number, "Reunion", emptyList(), emptyList(), availableOn = LocalDate.of(LocalDate.now().year, 10, 31).plusYears(1))
                     season == 1 || (season == 2 && number < 3) -> Episode(season, number, "Episode name $season.$number", both(id), emptyList(), progress = 1f, watched = true)
-                    season == 2 && number == 4 -> Episode(season, number, "The Reveal", both(id), emptyList(), progress = 0.4f)
+                    season == 2 && number == 4 -> Episode(season, number, "The Reveal", both(id), emptyList(), progress = 0.4f, still = "https://stills.example/reveal.jpg", runtimeMinutes = 52)
                     else -> Episode(season, number, "Episode name $season.$number", both(id), emptyList())
                 }
             })
@@ -103,7 +101,6 @@ class EpisodePickerTest {
     private val details = TitleDetails(show, "Love Is Blind", 2020, null, both(1), emptyList(), description = "Singles hoping to find love.")
 
     private var played: Episode? = null
-    private var asked = mutableListOf<Int>()
 
     private fun open(next: EpisodeNumber? = EpisodeNumber(2, 4), seasons: List<Season> = seasons()) {
         val episodes = ShowEpisodes(seasons, 0, next = next)
@@ -125,10 +122,6 @@ class EpisodePickerTest {
                     returnedFrom = null
                 },
                 onEpisode = { episode, _ -> played = episode },
-                stillsOf = { season ->
-                    asked += season
-                    mapOf(4 to EpisodeStill(4, null, 52))
-                },
             )
         }
         compose.waitForIdle()
@@ -188,8 +181,7 @@ class EpisodePickerTest {
         // Season 2's Episodes are listed, the one before it peeking above.
         assertTrue(shows("3. Pods"))
         assertFalse("not season 1's", shows("Episode name 1.1"))
-        // The season's stills are asked for once focus rests, with their runtimes.
-        assertEquals(listOf(2), asked)
+        // An Episode's runtime comes with it, from the Provider's show details (#473).
         assertTrue(shows("52 min"))
     }
 
@@ -220,7 +212,7 @@ class EpisodePickerTest {
         focusedOn("Season 1")
     }
 
-    @Test fun anEpisodeNamesItsLanguagesOnlyWhenTheyDifferAndOneNotOutYetSaysWhen() {
+    @Test fun anEpisodeNamesItsLanguagesOnlyWhenTheyDifferAndThePickerListsTheProvidersEpisodesOnly() {
         open()
         openPicker()
 
@@ -229,12 +221,10 @@ class EpisodePickerTest {
         compose.onAllNodesWithText("3. Pods", substring = true).fetchSemanticsNodes().single()
         assertFalse(shows("Français"))
         assertFalse(shows("Language not named"))
+        // Season 2 has the 12 Episodes the Provider has, and nothing promised for later.
         repeat(8) { press(Key.DirectionDown) }
-        focusedOn("12. Reunion")
-        assertTrue(shows("Available October 31"))
-        // It plays nothing.
-        press(Key.DirectionCenter)
-        assertEquals(null, played)
+        focusedOn("12. Episode name 2.12")
+        assertFalse(shows("Available"))
     }
 
     @Test fun okOnAnEpisodePlaysItAndBackReturnsToTheEpisodesAction() {
