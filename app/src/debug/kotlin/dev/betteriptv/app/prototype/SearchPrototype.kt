@@ -41,7 +41,6 @@ import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
-import kotlinx.coroutines.delay
 
 /**
  * Search, as Netflix lays it out: a D-pad keyboard on the left, completions under it, and the query
@@ -73,13 +72,8 @@ fun SearchPrototype() {
                 genres.filter(starts).take(1)
             ).filter { !it.equals(typed, ignoreCase = true) }.take(7)
     }
-    // Search answers twice: the device's own matches, then reordered once TMDB's search adds what it knows.
-    var shown by remember { mutableStateOf(results) }
-    LaunchedEffect(query) {
-        shown = results
-        delay(SECOND_ANSWER_MS)
-        shown = results.reversed()
-    }
+    // Search answers once, from the device's index.
+    val shown = results
     LaunchedEffect(toResults, query) {
         if (!toResults || results.isEmpty()) return@LaunchedEffect
         withFrameNanos {}
@@ -133,6 +127,3 @@ fun SearchPrototype() {
         }
     }
 }
-
-/** As TMDB's search takes on the stick: about a second after the device's own matches. */
-private const val SECOND_ANSWER_MS = 1500L

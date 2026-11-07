@@ -59,6 +59,7 @@ import dev.betteriptv.core.SearchResults
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -98,11 +99,9 @@ fun SearchScreen(
     LaunchedEffect(query, catalog, contentLanguages, appLanguage, region) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
-        // The device's own matches, then again with what TMDB's search adds.
-        library.search(query, contentLanguages, appLanguage, region).collect {
-            results = it
-            answered = query
-        }
+        // One answer, from the device's index (ADR 0014).
+        results = library.search(query, contentLanguages, appLanguage, region).first()
+        answered = query
     }
     val keyboard = remember { FocusRequester() }
     val tab = remember { FocusRequester() }
@@ -244,10 +243,9 @@ private fun ResultTitle(title: TitleSummary, onOpen: (TitleId) -> Unit, modifier
 /**
  * Result [cards] as one grid: rows of [POSTER_COLUMNS] posters, or of [WIDE_COLUMNS] [wide] cards, in
  * a `LazyColumn`, so each run of one shape fills its rows. [keyOf] names a card; [first] goes on the
- * first card, for a picked completion. Search answers again once TMDB's search adds what it knows,
- * reordering the cards best first: so a new answer shows the grid from its top, unless focus is in
- * it, where moving the cards under the Viewer would be worse (#169). Focus still on the first card,
- * where picking a completion put it, moves to the new first card.
+ * first card, for a picked completion. Search answers each query once, so new cards come with a
+ * new query, typed or picked: they show from the grid's top, unless focus is in it (a Sync landing
+ * meanwhile), where moving the cards under the Viewer would be worse (#169).
  */
 @Composable
 internal fun <T> ResultGrid(
@@ -260,19 +258,9 @@ internal fun <T> ResultGrid(
 ) {
     val rows = remember(cards) { gridRows(cards, wide) }
     val list = rememberLazyListState()
-    // The focused card's place among the cards, or null when focus is elsewhere.
-    var focused by remember { mutableStateOf<Int?>(null) }
-    val refocus = remember(cards) {
-        val at = focused
-        if (at == null || at == 0) list.requestScrollToItem(0)
-        at == 0
-    }
-    LaunchedEffect(cards) {
-        if (!refocus || cards.isEmpty()) return@LaunchedEffect
-        // The new first card is laid out in the frame these cards are composed in.
-        withFrameNanos {}
-        first.requestFocus()
-    }
+    // Whether focus is on one of the cards.
+    var focused by remember { mutableStateOf(false) }
+    remember(cards) { if (!focused) list.requestScrollToItem(0) }
     // The gap under the query line and the margins are content padding: a list clips along its
     // scroll axis, so a focused card on the first or last row, lifted 12 dp, would be cut off at
     // the list's edge otherwise, and cards scroll under the bottom margin rather than stopping at it.
@@ -280,14 +268,13 @@ internal fun <T> ResultGrid(
         state = list,
         contentPadding = PaddingValues(top = GRID_TOP, end = Spacing.screenX, bottom = Spacing.screenY),
         verticalArrangement = Arrangement.spacedBy(ROW_GAP),
-        modifier = modifier.focusRestorer().onFocusChanged { if (!it.hasFocus) focused = null },
+        modifier = modifier.focusRestorer().onFocusChanged { focused = it.hasFocus },
     ) {
         items(rows, key = { row -> keyOf(cards[row.first]) }) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(Cards.gap)) {
                 for (i in row) {
                     key(keyOf(cards[i])) {
-                        val at = Modifier.onFocusChanged { if (it.isFocused) focused = i }
-                        card(cards[i], if (i == 0) at.focusRequester(first) else at)
+                        card(cards[i], if (i == 0) Modifier.focusRequester(first) else Modifier)
                     }
                 }
             }

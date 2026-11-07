@@ -5,7 +5,7 @@ import java.util.Locale
 
 /**
  * What a search found, best first in each list: the [titles] whose names match, Movies and Shows
- * together, and the same as [movies] and [shows] apart, [people] (cast) and TMDB [genres] whose
+ * together, and the same as [movies] and [shows] apart, [people] (the Provider's cast) and [genres] whose
  * names match, each with their Titles the Provider has, the [channels] whose names match, and the
  * Sports [replays] whose names match (every one, highlights shows included, since Search alone shows
  * them; Live shows only the Leagues'). [completions] are queries one press away: Title names, people
@@ -59,15 +59,17 @@ sealed interface SearchCard {
     data class OfReplay(val replay: Replay) : SearchCard
 }
 
-/** One of TMDB's genres ([name], in the App language), with its Titles the Provider has, best first. */
+/** One of the Prefix table's genres ([name], in the App language), with its Titles the Provider has, best first. */
 data class Genre(val name: String, val titles: List<TitleSummary>)
 
-/** Someone in TMDB's cast of Titles the Provider has, with those Titles, best first. */
+/** Someone the Provider names in the cast of its Titles, with those Titles, best first. */
 data class Person(val name: String, val titles: List<TitleSummary>)
 
 /**
- * The catalog's names in memory, built once per catalog and cached metadata: every Listing name of
- * a Title's Versions (cleaned of Prefixes), every name TMDB has for it, and its cast. Names are
+ * The catalog's names in memory, built once per catalog and the details kept for it: every Listing
+ * name of a Title's Versions (cleaned of Prefixes), in every language the Provider carries, the cast
+ * the Provider names (a Show's from its Listing, a Movie's once its details were read), and its
+ * genres as the Prefix table names them (ADR 0014). Names are
  * reduced to words without accents or case, and each distinct word is kept once with the Titles
  * (or people) that have it, so a query only scans the vocabulary, not the catalog. A Listing name
  * is also kept with its year, so "chase 1966" tells The Chase (1966) from The Chase (1994).
@@ -79,7 +81,6 @@ internal class SearchIndex private constructor(
     /** Each Title's [TitleId], as [key] makes it. */
     private val titleKeys: LongArray,
     private val titleLanguages: IntArray,
-    private val titlePopularity: DoubleArray,
     /** The distinct sets of primary languages Titles have, which [titleLanguages] points into. */
     private val languageSets: List<Set<String>>,
     private val positions: LongIntMap,
@@ -98,7 +99,7 @@ internal class SearchIndex private constructor(
     private val replayWords: WordPostings,
     /** Each name of a Title as its words' hash in the high half and the Title in the low half, sorted. */
     private val titleNames: LongArray,
-    /** TMDB's genres of the Titles with metadata, by their English names ([Genres]). */
+    /** The Titles' genres, by their English names ([Genres]): the Prefix table's, or the Provider's own word for one it doesn't know. */
     val genres: List<String>,
     /** Each genre's Titles, as positions. */
     val genreTitles: List<IntArray>,
@@ -117,9 +118,6 @@ internal class SearchIndex private constructor(
 
     /** The primary languages of the Title's Versions, so Content languages can lead. */
     fun languages(position: Int): Set<String> = languageSets[titleLanguages[position]]
-
-    /** TMDB's popularity of the Title, 0 without metadata. */
-    fun popularity(position: Int): Double = titlePopularity[position]
 
     val peopleCount: Int get() = people.size
 
@@ -174,11 +172,10 @@ internal class SearchIndex private constructor(
         return found.orEmpty().map { (entry, distance) -> Hit(entry, distance) }
     }
 
-    /** Takes the catalog's Titles, then the metadata cached for them, and the Channels, in any order. */
+    /** Takes the catalog's Titles, in list order, and the Channels and Replays, in any order. */
     class Builder {
         private var titleKeys = LongArray(1 shl 10)
         private var titleLanguages = IntArray(1 shl 10)
-        private var titlePopularity = DoubleArray(1 shl 10)
         private var titles = 0
         private val languageSets = mutableListOf<Set<String>>()
         private val languageSetIndex = HashMap<Set<String>, Int>()
@@ -197,27 +194,20 @@ internal class SearchIndex private constructor(
         private val genreTitles = PostingsBuilder()
         private val genreWords = WordPostings.Builder()
 
-        /** Adds a Title found by [names], with Versions in [languages]. */
-        fun title(id: TitleId, names: Collection<String>, languages: Set<String>) {
+        /**
+         * Adds a Title found by [names], with Versions in [languages], the people the Provider names
+         * in its [cast] and its [genres] (English names, as [Genres] has them). Titles come in the
+         * Provider's order, which ranks equally close matches.
+         */
+        fun title(id: TitleId, names: Collection<String>, languages: Set<String>, cast: Collection<String> = emptyList(), genres: Collection<String> = emptyList()) {
             if (titles == titleKeys.size) {
                 titleKeys = titleKeys.copyOf(titles * 2)
                 titleLanguages = titleLanguages.copyOf(titles * 2)
-                titlePopularity = titlePopularity.copyOf(titles * 2)
             }
             val index = titles++
             titleKeys[index] = key(id)
             titleLanguages[index] = languageSetIndex.getOrPut(languages) { languageSets += languages; languageSets.size - 1 }
             positions[key(id)] = index
-            addWords(index, names)
-        }
-
-        /**
-         * Adds what TMDB says of Title [id]: more [names] it's found by, its [popularity], [cast] and
-         * [genres]. Titles not added are left out.
-         */
-        fun metadata(id: TitleId, names: Collection<String>, popularity: Double, cast: List<String>, genres: List<String>) {
-            val index = positions[key(id)].takeIf { it >= 0 } ?: return
-            titlePopularity[index] = popularity
             addWords(index, names)
             for (name in cast.distinct()) {
                 val known = people.size
@@ -225,7 +215,6 @@ internal class SearchIndex private constructor(
                 if (person == known) words(name).forEach { word -> personWords.add(word, person) }
                 personTitles.add(person, index)
             }
-            // One genre, whichever language its metadata was cached in.
             for (name in genres.map(Genres::english).distinct()) {
                 val known = this.genres.size
                 val genre = this.genres.add(name)
@@ -264,7 +253,6 @@ internal class SearchIndex private constructor(
             return SearchIndex(
                 titleKeys.copyOf(titles),
                 titleLanguages.copyOf(titles),
-                titlePopularity.copyOf(titles),
                 languageSets.toList(),
                 positions,
                 titleWords.build(),
@@ -308,7 +296,7 @@ internal class SearchIndex private constructor(
         /** A word typed in full, or every word of a Title's. */
         const val WHOLE_WORD = 0
 
-        /** A word the Viewer is still typing, or a Title found by TMDB's search alone. */
+        /** A word the Viewer is still typing. */
         const val STARTED_WORD = 1
 
         /** A Replay whose name has no date ranks after every dated one. */
@@ -317,7 +305,7 @@ internal class SearchIndex private constructor(
         private const val UNMATCHED = 1L shl 62
         private const val KIND_SHIFT = 61
 
-        /** [id] as one long: whether it is Unmatched, its kind, and its TMDB or Listing ID. */
+        /** [id] as one long: whether it is Unmatched, its kind, and its Title number or Listing ID. */
         private fun key(id: TitleId): Long = (id.kind.ordinal.toLong() shl KIND_SHIFT) or when (id) {
             is TitleId.Tmdb -> id.tmdbId
             is TitleId.Unmatched -> UNMATCHED or id.listingId
@@ -427,9 +415,10 @@ internal class SearchIndex private constructor(
 }
 
 /**
- * Indexes every Title of [store] by its Versions' cleaned names and the metadata cached for it, in
- * any language, every Channel by its name, and every Sports replay by its name without its Prefix.
- * [phase] hears how long each part took, in ms.
+ * Indexes every Title of [store] by its Versions' cleaned names in every language, the cast the
+ * Provider names for it and its genres (a Movie's Categories' and kept details', a Show's Listing's
+ * and Categories', as the Prefix table names them), every Channel by its name, and every Sports
+ * replay by its name without its Prefix. [phase] hears how long each part took, in ms.
  */
 internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, phase: (name: String, ms: Long) -> Unit = { _, _ -> }): SearchIndex {
     var started = System.nanoTime()
@@ -439,19 +428,20 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
     lap("channels")
     store.forEachReplay { id, name, day -> builder.replay(id, ReplayNames.body(name), day?.toEpochDay()?.toInt() ?: SearchIndex.NO_DAY) }
     lap("replays")
+    // A Category's genres are worked out once, not once per Listing filed under it.
+    val categoryGenres = HashMap<String, List<String>>()
     for (kind in TitleKind.entries) {
         store.forEachTitle(kind) { id, listings ->
-            val names = listings.flatMapTo(HashSet()) { (name) ->
-                val clean = prefixTable.cleanName(name)
+            val names = listings.flatMapTo(HashSet()) { listing ->
+                val clean = prefixTable.cleanName(listing.name)
                 listOfNotNull(clean.name, clean.year?.let { "${clean.name} $it" })
             }
-            val languages = listings.mapNotNullTo(HashSet()) { (name, category) -> prefixTable.language(name, category)?.let(::primaryLanguage) }
-            builder.title(id, names, languages)
+            val languages = listings.mapNotNullTo(HashSet()) { prefixTable.language(it.name, it.category)?.let(::primaryLanguage) }
+            val cast = listings.flatMapTo(LinkedHashSet()) { cleanList(it.cast) }
+            val genres = listings.flatMapTo(LinkedHashSet()) { categoryGenres.getOrPut(it.category) { prefixTable.titleGenres(it.category) } + prefixTable.genres(it.genre) }
+            builder.title(id, names, languages, cast, genres)
         }
     }
     lap("titles")
-    // Straight into the index: holding every Title's names until its Listings come by doesn't fit the stick's heap.
-    store.forEachSearchMetadata { id, names, cast, genres, popularity -> builder.metadata(id, names, popularity, cast, genres) }
-    lap("metadata")
     return builder.build().also { lap("build") }
 }

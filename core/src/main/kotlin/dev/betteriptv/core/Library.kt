@@ -101,8 +101,6 @@ class Library private constructor(
 
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
     @Volatile private var cloudRetryAt = Instant.MIN
-    /** The same for TMDB's search, which fails on its own when TMDB is rate-limiting: cached metadata still comes through. */
-    @Volatile private var searchRetryAt = Instant.MIN
 
     private val syncLock = Mutex()
     private val searchLock = Any()
@@ -117,8 +115,8 @@ class Library private constructor(
      * it changes (#271, #256). Not the catalog's generation itself, which the search index follows.
      */
     val catalogChanges: StateFlow<Int> = _catalogChanges.asStateFlow()
-    /** Bumped when metadata is cached: the index is rebuilt in the background, the old one serving meanwhile. */
-    private val metadataGeneration = AtomicInteger()
+    /** Bumped when a Movie's details are kept (their cast and genres): the index is rebuilt in the background, the old one serving meanwhile. */
+    private val detailsGeneration = AtomicInteger()
     private val rebuildingSearch = AtomicBoolean()
     /** The low-priority thread building the search index in the background, while it runs. */
     @Volatile private var searchBuilder: Thread? = null
@@ -796,29 +794,25 @@ class Library private constructor(
     }
 
     /**
-     * Movies, Shows and people whose names match [query], once it has two letters. Titles are found
-     * by any Listing name of their Versions and any name TMDB has for them, people by name; accents
-     * and case don't matter, and small typos are tolerated; a year after a name finds that year's
-     * Title. Titles with Versions in the Viewer's [contentLanguages] come first, then closer matches
-     * (a whole name, then whole words, then words being typed, then typos), then TMDB's most
-     * popular. A person's
-     * Titles are those the Provider has. Cards show TMDB's name and poster in the [appLanguage].
-     *
-     * The device's own matches come first, from the Listing names and the metadata it has cached.
-     * Then, for three letters or more, TMDB's search (through the cloud, ADR 0009) adds Titles the
-     * device has no metadata for and every Title of the people it finds, and the results come again.
-     * TMDB's search also finds loose matches, so its Titles rank as words being typed, after the
-     * device's whole-word matches.
-     * Without the cloud the first results are all there are.
+     * Movies, Shows, people and genres whose names match [query], once it has two letters, all from
+     * the device's index of what the Provider says (ADR 0014): it answers once, and the cloud isn't
+     * asked. Titles are found by any Listing name of their Versions, in every language the Provider
+     * carries; people by the cast the Provider names (a Show's from its Listing at Sync, a Movie's once
+     * its details were read, when its page opened); genres by their names in any App language
+     * ([Genres]), as the Prefix table names them from Categories and the Provider's genre fields.
+     * Accents and case don't matter, and small typos are tolerated; a year after a name finds that
+     * year's Title. Titles with Versions in the Viewer's [contentLanguages] come first, then closer
+     * matches (a whole name, then whole words, then words being typed, then typos), then the
+     * Provider's order. A person's Titles are those the Provider has. Cards show the Listing's name
+     * and poster in the [appLanguage].
      *
      * Channels are found by their names (country tag and name, without the Provider's Tier tags and
      * quality words) the same way, each Channel once whatever its variants, Favourites first among
-     * equally close matches, then in the Provider's order; finished Event channels aren't. TMDB's
-     * genres are found like people, with their Titles.
+     * equally close matches, then in the Provider's order; finished Event channels aren't.
      *
      * The results offer completions: the names of the best Titles, people and genres found. Before
-     * anything is typed, they are the genres with the most Titles in the Viewer's languages. Genres
-     * are named in the App language and found by their names in any ([Genres]).
+     * anything is typed, they are the genres with the most Titles in the Viewer's languages, named in
+     * the App language.
      *
      * The search index of the whole catalog is built in the background after a Sync and by
      * [prepareSearchInBackground]; a search before the first one waits for it, and one during or
@@ -833,29 +827,12 @@ class Library private constructor(
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
         val inIndex = { position: Int -> inCatalog(index, position) }
-        val titles = index.findTitles(query).filter { inIndex(it.index) }.associateTo(HashMap()) { it.index to it.distance }
+        val titles = index.findTitles(query).filter { inIndex(it.index) }.associate { it.index to it.distance }
         val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).filterTo(HashSet(), inIndex)) }
         val channels = foundChannels(index, query, forKids?.channels)
         val replays = if (forKids == null) foundReplays(index, query) else emptyList()
         val ranks = if (forKids == null) topRanks(region, contentLanguages, appLanguage) else emptyMap()
-        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
-
-        if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
-        // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
-        delay(TMDB_SEARCH_PAUSE_MS)
-        val found = tmdbSearch(query) ?: return@flow
-        val popularity = HashMap<Int, Double>()
-        for ((id, score) in found.titles) {
-            val position = index.position(id)?.takeIf(inIndex) ?: continue
-            // As a Title's word being typed: a Title's words are a step after its whole name.
-            titles[position] = minOf(titles[position] ?: Int.MAX_VALUE, SearchIndex.STARTED_WORD + 1)
-            popularity[position] = score
-        }
-        val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNull(index::position).filterTo(HashSet(), inIndex)) }
-        val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
-            FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
-        }
-        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
+        emit(searchResults(index, query, titles, people, contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
     }.flowOn(Dispatchers.IO)
 
     /** What a Kids profile's search keeps: the Kids catalog's [titles] and the Channels of Kids Categories, by key. */
@@ -1042,31 +1019,28 @@ class Library private constructor(
 
     /**
      * Ranks [titles] (search index positions and how close they matched), [people] and the genres
-     * [query] matches, and shows the best of them, with the completions they offer. TMDB's search
-     * tells the [popularity] of Titles the device has no metadata for.
+     * [query] matches, and shows the best of them, with the completions they offer. Equally close
+     * matches come in the Provider's order: a Title's place in the index.
      */
     private fun searchResults(
         index: SearchIndex,
         query: String,
         titles: Map<Int, Int>,
         people: List<FoundPerson>,
-        popularity: Map<Int, Double>,
         contentLanguages: List<String>,
         appLanguage: String,
         ranks: Map<TitleId, ChartRank>,
         inCatalog: (Int) -> Boolean,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val popularityOf = { position: Int -> maxOf(index.popularity(position), popularity[position] ?: 0.0) }
         val byRank = compareBy<SearchIndex.Hit>(
             { index.languages(it.index).none(wanted::contains) },
             { it.distance },
-            { -popularityOf(it.index) },
             { it.index },
         )
         val ranked = titles.map { (position, distance) -> SearchIndex.Hit(position, distance) }.sortedWith(byRank)
         val shownPeople = people.filter { it.titles.isNotEmpty() }
-            .sortedWith(compareBy<FoundPerson>({ it.distance }, { person -> -person.titles.maxOf(popularityOf) }))
+            .sortedWith(compareBy<FoundPerson>({ it.distance }, { person -> person.titles.min() }))
             .take(PEOPLE_FOUND)
             .map { person -> person.name to person.titles.map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
         val shownGenres = index.findGenres(query)
@@ -1114,18 +1088,6 @@ class Library private constructor(
         return kinds.indices.flatMap { kinds[it].take(taken[it]) }
     }
 
-    /** What TMDB's search finds for [query] through the cloud, or null when the cloud can't say right now. */
-    private fun tmdbSearch(query: String): CloudSearch? {
-        val now = Instant.now()
-        if (cloud == null || !now.isAfter(maxOf(cloudRetryAt, searchRetryAt))) return null
-        return try {
-            cloud.search(query.trim().take(MAX_TMDB_QUERY))
-        } catch (e: CloudException) {
-            searchRetryAt = now + CLOUD_RETRY_AFTER
-            null
-        }
-    }
-
     /**
      * Builds the search index now, so the Viewer's first letters don't wait for it. A build already
      * running in the background is sped up to the Viewer's priority and waited for.
@@ -1144,7 +1106,7 @@ class Library private constructor(
         val builder = thread(start = false, name = "search-index", isDaemon = true, priority = Thread.MIN_PRIORITY) {
             try {
                 // A Sync or Matches may change the catalog while it builds: the next build starts at once.
-                // Metadata cached meanwhile waits for the next search, so browsing doesn't keep it building.
+                // Details kept meanwhile wait for the next search, so browsing doesn't keep it building.
                 do rebuildSearchIndex() while (searchIndex?.catalog != catalogGeneration.get())
             } catch (e: Exception) {
                 // The Library closed meanwhile; the next search tries again.
@@ -1157,15 +1119,15 @@ class Library private constructor(
         builder.start()
     }
 
-    /** Whether the search index of the current catalog and metadata is built. */
+    /** Whether the search index of the current catalog and the details kept for it is built. */
     internal val searchIndexReady: Boolean
-        get() = searchIndex?.let { it.catalog == catalogGeneration.get() && it.metadata == metadataGeneration.get() } == true
+        get() = searchIndex?.let { it.catalog == catalogGeneration.get() && it.details == detailsGeneration.get() } == true
 
-    private class BuiltIndex(val catalog: Int, val metadata: Int, val index: SearchIndex)
+    private class BuiltIndex(val catalog: Int, val details: Int, val index: SearchIndex)
 
     /**
-     * The search index last built. A Sync, Matches or metadata cached since then (often for the
-     * results of the last search) only start a rebuild in the background, so typing never waits on
+     * The search index last built. A Sync, Matches or a Movie's details kept since then (its page
+     * opened from the last search, say) only start a rebuild in the background, so typing never waits on
      * one (#241): only the first search with no index at all does. The old index's Titles and
      * Channels the catalog no longer has drop out of the results, and new ones show once it's rebuilt.
      */
@@ -1176,7 +1138,7 @@ class Library private constructor(
     }
 
     /**
-     * The search index of the current catalog and metadata, built now unless it is, or [anyBuilt]
+     * The search index of the current catalog and details, built now unless it is, or [anyBuilt]
      * one; the Viewer waits for it.
      */
     private fun rebuildSearchIndex(anyBuilt: Boolean = false): SearchIndex {
@@ -1184,11 +1146,11 @@ class Library private constructor(
         if (Thread.currentThread() != searchBuilder) searchBuilder?.priority = Thread.NORM_PRIORITY
         return synchronized(searchLock) {
             val catalog = catalogGeneration.get()
-            val metadata = metadataGeneration.get()
-            searchIndex?.takeIf { anyBuilt || it.catalog == catalog && it.metadata == metadata }?.index
+            val details = detailsGeneration.get()
+            searchIndex?.takeIf { anyBuilt || it.catalog == catalog && it.details == details }?.index
                 ?: run {
                     onSearchIndexBuild()
-                    buildSearchIndex(store, prefixTable).also { searchIndex = BuiltIndex(catalog, metadata, it) }
+                    buildSearchIndex(store, prefixTable).also { searchIndex = BuiltIndex(catalog, details, it) }
                 }
         }
     }
@@ -1280,6 +1242,7 @@ class Library private constructor(
         }
         val now = Instant.now()
         store.saveMovieDetails(listing.id, read, listing.added, now)
+        detailsGeneration.incrementAndGet()
         return kept + (listing.id to StoredMovieDetails(read.bitrate, now, listing.added, read.details))
     }
 
@@ -2565,6 +2528,7 @@ class Library private constructor(
         }.filterNotNull()
         val now = Instant.now()
         read.forEach { (listing, details) -> store.saveMovieDetails(listing.id, details, listing.added, now) }
+        if (read.isNotEmpty()) detailsGeneration.incrementAndGet()
         if (read.any { (_, details) -> details.bitrate != null }) changed()
     }
 
@@ -2809,10 +2773,9 @@ class Library private constructor(
                         cached[id] = stored
                         unsavedMetadata[language to id] = stored
                     }
-                    // Saved without waiting on a Sync; the search index is built with it once it is.
+                    // Saved without waiting on a Sync.
                     saveLater(after = { answered.forEach { (id, stored) -> unsavedMetadata.remove(language to id, stored) } }) {
                         store.saveMetadata(language, answer.found, answer.notFound, now)
-                        if (answer.found.isNotEmpty()) metadataGeneration.incrementAndGet()
                     }
                 }
             } catch (e: CloudException) {
@@ -3079,12 +3042,6 @@ class Library private constructor(
         private const val REPLAYS_ROW = 40
         /** How many of a Channel's variants watching it tries (each as TS then HLS) before giving up. */
         private const val CHAIN_VARIANTS = 3
-        /** TMDB's search is asked from this many letters (ADR 0009): fewer find too much to be worth a request. */
-        private const val TMDB_SEARCH_LETTERS = 3
-        /** On top of the screen's own pause before searching (150 ms), so TMDB is asked after 400 ms without typing. */
-        private const val TMDB_SEARCH_PAUSE_MS = 250L
-        /** The cloud searches no longer query: anything longer is no name. */
-        private const val MAX_TMDB_QUERY = 100
 
         /**
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
