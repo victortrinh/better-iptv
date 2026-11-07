@@ -93,14 +93,15 @@ class MainActivity : ComponentActivity() {
 private fun BoxScope.Root(app: BetterIptvApp) {
     var loggedIn by remember { mutableStateOf(app.library.isLoggedIn) }
     val update by (app.updates?.state ?: NO_UPDATES).collectAsStateWithLifecycle()
-    // "Later" puts the offered update away until the next launch, or until it's asked for in Settings.
-    var updateLater by rememberSaveable { mutableStateOf(false) }
+    // "Later" puts the offered build away until the next launch, a newer build, or until it's asked for in Settings.
+    var laterFor by rememberSaveable { mutableStateOf<Long?>(null) }
+    val offered = update.offered
     val onUpdate = {
-        updateLater = false
+        laterFor = null
         app.update()
     }
-    if (!updateLater && update.offered != null) {
-        UpdateScreen(update, onUpdate = onUpdate, onLater = { updateLater = true })
+    if (offered != null && laterFor != offered.versionCode) {
+        UpdateScreen(update, onUpdate = onUpdate, onLater = { laterFor = offered.versionCode })
     } else if (!loggedIn) {
         LoginScreen(app.library, onLoggedIn = {
             loggedIn = true
