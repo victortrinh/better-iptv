@@ -19,7 +19,7 @@ import java.time.ZoneId
 class MoreLiveEventsTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val cloud = FakeCloud()
+    private val cloud = FakeCloud().servingSurveyedTable(provider)
     private lateinit var library: Library
 
     /** A Sunday, 3 PM in Toronto (standard time, five hours behind UTC). */

@@ -15,3 +15,11 @@ internal fun surveyedPrefixTable(): PrefixTable = PrefixTable.withProviderTable(
  */
 internal fun openSurveyedLibrary(databasePath: String, credentials: CredentialStore, cloudAddress: String? = null): Library =
     Library.open(databasePath, credentials, cloudAddress, { surveyedProviderTable })
+
+/**
+ * Makes this cloud serve the surveyed Provider's Provider table to [provider], as the real cloud
+ * serves the household's: a Library on [provider] that asks the cloud then keeps the surveyed table.
+ */
+internal fun FakeCloud.servingSurveyedTable(provider: FakeProvider): FakeCloud = apply {
+    providerTables[providerKey(provider.login)] = surveyedProviderTable
+}

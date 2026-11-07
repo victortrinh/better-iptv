@@ -18,7 +18,7 @@ import org.junit.rules.TemporaryFolder
 class UntaggedVersionsTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val cloud = FakeCloud()
+    private val cloud = FakeCloud().servingSurveyedTable(provider)
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {

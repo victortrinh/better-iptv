@@ -517,6 +517,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 LAST_SYNC_REMATCHED to meta(PENDING_REMATCHED)!!,
             ),
         )
+        // The Provider table the staged catalog was described with is the one kept from now on.
+        meta(PENDING_PROVIDER_TABLE_FOR)?.let { key -> writeMeta(mapOf(PROVIDER_TABLE_FOR to key, PROVIDER_TABLE to meta(PENDING_PROVIDER_TABLE)!!)) }
         writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
     }
 
@@ -1572,19 +1574,41 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /**
+     * The Provider table kept for the Provider whose key is [providerKey] (#431): what the cloud last
+     * answered for it, as of the catalog on screen. Null when none was kept, or it was another Provider's.
+     */
+    fun providerTable(providerKey: String): String? =
+        if (meta(PROVIDER_TABLE_FOR) == providerKey) meta(PROVIDER_TABLE) else null
+
+    /**
+     * Keeps [table], the cloud's answer for [providerKey], with the catalog a Sync is staging: it
+     * becomes the kept table when that catalog is swapped in, and goes when it is discarded.
+     */
+    fun stageProviderTable(providerKey: String, table: String) = synchronized(writer) {
+        writeMeta(mapOf(PENDING_PROVIDER_TABLE_FOR to providerKey, PENDING_PROVIDER_TABLE to table))
+    }
+
     /** The email of the Account the device is signed in to, as the cloud last said; null when none. */
     fun accountEmail(): String? = meta(ACCOUNT_EMAIL)
 
-    fun saveAccountEmail(email: String?) = synchronized(writer) {
-        if (email == null) {
+    fun saveAccountEmail(email: String?) = saveOrDeleteMeta(ACCOUNT_EMAIL, email)
+
+    /** Whether this device signed itself out while the cloud couldn't hear it, so the cloud still has it signed in (#434). */
+    fun signOutPending(): Boolean = meta(SIGN_OUT_PENDING) != null
+
+    fun saveSignOutPending(pending: Boolean) = saveOrDeleteMeta(SIGN_OUT_PENDING, if (pending) "1" else null)
+
+    private fun saveOrDeleteMeta(key: String, value: String?) = synchronized(writer) {
+        if (value == null) {
             writer.prepare("DELETE FROM meta WHERE key = ?").use {
-                it.bindText(1, ACCOUNT_EMAIL)
+                it.bindText(1, key)
                 it.step()
             }
         } else {
             writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-                it.bindText(1, ACCOUNT_EMAIL)
-                it.bindText(2, email)
+                it.bindText(1, key)
+                it.bindText(2, value)
                 it.step()
             }
         }
@@ -1707,9 +1731,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val PENDING_SHOW_LISTINGS = "pending_sync_show_listings"
         const val PENDING_CHANNEL_LISTINGS = "pending_sync_channel_listings"
         const val PENDING_REMATCHED = "pending_sync_rematched_listings"
+        const val PENDING_PROVIDER_TABLE_FOR = "pending_sync_provider_table_for"
+        const val PENDING_PROVIDER_TABLE = "pending_sync_provider_table"
+        /** The Provider table kept ([providerTable]), and the key of the Provider it is for. */
+        const val PROVIDER_TABLE_FOR = "provider_table_for"
+        const val PROVIDER_TABLE = "provider_table"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val ACCOUNT_EMAIL = "account_email"
+        const val SIGN_OUT_PENDING = "account_sign_out_pending"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
         const val LAST_FEATURED = "last_featured_"

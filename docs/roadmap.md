@@ -224,7 +224,7 @@ Settled 2026-11-06 in a grilling session against the code, the cloud README, ADR
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
 - M2: matching Netflix's titles (names only, no TMDB IDs) to Titles.
-- M5: the PIN pad and the profile chip in DESIGN.md (the profile list is in Settings since [#428](https://github.com/victortrinh/better-iptv/issues/428), the Sign-in screen and page in its Account section since #429).
+- M5: the PIN pad in DESIGN.md (the profile list is in Settings since [#428](https://github.com/victortrinh/better-iptv/issues/428), the Sign-in screen and page in its Account section since #429, the profile chip and "Who's watching?" under Navigation since [#432](https://github.com/victortrinh/better-iptv/issues/432)).
 - M6: nothing; the first ticket measures the hero's one Provider call on the stick.
 - M7: the Unlock screen's layout and the device list, and the Locked state's exact look in DESIGN.md.
 
