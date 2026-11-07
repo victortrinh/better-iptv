@@ -41,7 +41,9 @@ plot, cast, genre, release date, trailer key, episode stills). An app built on t
 and loses: textless backdrops and title logos (the M4 look), consistent artwork (one poster per
 Listing, 34 different ones for Ballerina), trending and genre Charts, name matching for the 6% of
 Listings without an ID, search by person, upcoming Episodes, and the original language that drives
-Prefer original audio.
+Prefer original audio. Settled 2026-11-07 (M6, ADR 0014): the Provider's own backdrops and details
+carry the look, Wikidata (CC0, free) gives the original language and a Wikipedia-pageviews trending
+row, and the rest is dropped. No new cost line.
 
 ## Decided 2026-11-06
 
