@@ -1,0 +1,79 @@
+# Hand lines for the surveyed Provider (survey of 2026-10-24), the household's own.
+#
+# A Provider table: what this Provider's names mean beyond the Base table
+# (core/src/main/resources/dev/betteriptv/core/prefix-table.txt, whose header documents the format
+# and how a Provider table merges into it). The file is named by the SHA-256 of the Provider's host,
+# in lowercase hex, the key devices send the cloud; the host itself is written nowhere.
+#
+# What is here is this Provider's alone: its typos of common Prefixes, and its own codes. A second
+# Provider must never inherit `CD` meaning German.
+
+[prefixes]
+
+# Typos and cut-off Prefixes
+CD          | language=de               # typo of DE, in GERMANY SERIE
+EQC         | language=fr-CA            # typo of QC, in QC - FILMS VIEILLE
+IIR         | language=fa               # typo of IR
+R           | language=fa               # cut-off IR, in PERSIAN SERIES
+AL          | language=nl               # typo of NL, in NL - AMAZON PRIME
+N           | language=hi               # cut-off IN, in HINDI WEB SERIES
+INKD        | language=hi               # typo of IN-KD
+BI          | language=bn               # typo of IN-BI, in BN - BENGALI
+AC          # typo of SC, in NORDIC FILM NEW RELEASE
+K-FR        | language=fr; quality=4K   # typo of 4K-FR
+4L-PL       | language=pl; quality=4K   # typo of 4K-PL
+4M-AMZ      | source=Prime Video; quality=4K   # typo of 4K-AMZ, in AMAZON MOVIES ⁴ᴷ
+S0C         | sports-replay             # typo of SOC, in SOCCER RUGBY
+
+# Collections named by language
+AF-EN       | language=en               # African films: IROKO TV, IBAKA TV
+AF-FR       | language=fr               # CINAF TV
+SO-IN       | language=so               # Bollywood dubbed in Somali
+SO-EN       | language=so               # Hollywood dubbed in Somali
+EN-TOP      | language=en               # EN - IMDB TOP 250
+DE-TOP      | language=de               # DE - IMDB TOP 100
+3D-DE       | language=de
+
+# India: the Base table's IN is Hindi; IN-xx names a sub-language
+IN-EN       | language=hi               # IN - EN HINDI: English films dubbed in Hindi
+IN-BS       | language=hi               # IN - BOLLYWOOD'S
+IN-KD       | language=hi               # IN - KOREAN HINDI DABBLING
+IN-TL       | language=ta
+IN-TM       | language=ta
+IN-TU       | language=te
+IN-MM       | language=ml
+IN-KN       | language=kn
+IN-PI       | language=pa
+IN-GU       | language=gu
+IN-MR       | language=mr
+IN-BI       | language=bn
+IN-TR       | language=ur               # HINDI TURKISH DUBBED URDU
+IN-CAM      | language=hi; cam
+
+# Regions whose language isn't named: known, but saying nothing
+SC          # Nordic: Scandinavian subtitles or dubs, language not named
+AS          # ASIA MOVIES (MULTI-SUBS)
+AF          # AFRICA SERIES
+4K-SC       | quality=4K                # "4K -SC- ..." where the language got split off
+
+# Dolby audio
+EN-DO       | language=en; dolby-audio
+DE-DO       | language=de; dolby-audio
+ES-DO       | language=es; dolby-audio
+SC-DO       | dolby-audio
+NF-DO       | source=Netflix; dolby-audio
+
+# Sources
+TOP         | source=Blu-ray            # TOP MOVIES BLURAY (MULTI-SUBS)
+4K-TOP      | source=Blu-ray; quality=4K
+VP-NL       | source=Viaplay; language=nl
+DSC+S       | source=Discovery+; subtitles=ar   # DISCOVERY+ SERIES MENA
+DSC-S       | source=Discovery+; subtitles=ar
+AR-DSC-S    | source=Discovery+; subtitles=ar
+DE-JO       | source=Joyn; language=de
+
+[event time zone]
+
+# This Provider's "@ Oct 24 19:00" and "(2026-10-29 18:00:30)" are Eastern time: "NHL: Leafs vs
+# Habs @ Oct 24 19:00 :TSN+ 120" is the 7 PM puck drop in Toronto.
+America/Toronto

@@ -203,6 +203,28 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         return DownloadedSubtitle(format, text)
     }
 
+    /**
+     * A fresh Sign-in code for this device to show, with the sign-in page's address for its QR
+     * (ADR 0015). It replaces the code the device had.
+     */
+    fun startSignIn(): SignInCode {
+        val answer = authorized { token -> post("v1/sign-in", "{}", token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        val code = answer["code"] as? String
+        val url = answer["url"] as? String
+        val expiresIn = (answer["expiresIn"] as? Number)?.toLong()
+        if (code == null || url == null || expiresIn == null || expiresIn <= 0) throw CloudException("The cloud sent a Sign-in code without its address or lifetime.")
+        return SignInCode(code, url, Duration.ofSeconds(expiresIn))
+    }
+
+    /** The email of the Account this device is signed in to, or null when it is signed in to none. */
+    fun account(): String? {
+        val answer = authorized { token -> post("v1/account", "{}", token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        if (!answer.containsKey("email")) throw CloudException("The cloud didn't say which Account this device is signed in to.")
+        return answer["email"] as? String
+    }
+
     /** Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it. */
     private fun authorized(call: (token: String) -> Any?): Any? {
         val token = tokens.deviceToken() ?: register()
@@ -274,6 +296,12 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
 /** What the cloud answered: each found Title's metadata as JSON, and the Titles TMDB doesn't have. */
 internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound: List<TitleId.Tmdb>)
+
+/**
+ * A Sign-in code for the TV to show (ADR 0015): the phone opens [url] (the QR) or types the code on
+ * the sign-in page, for [expiresIn] from when it was given; then the device asks for a new one.
+ */
+data class SignInCode(val code: String, val url: String, val expiresIn: Duration)
 
 /** A subtitle file the cloud found for a Movie or Episode, in [language] (ISO 639-1), named by its [release]. */
 data class SubtitleOffer(val id: String, val language: String, val release: String, val hearingImpaired: Boolean)

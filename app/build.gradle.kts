@@ -149,6 +149,8 @@ dependencies {
     implementation(libs.media3.ffmpeg)
     implementation(libs.ass.media)
     implementation(libs.libvlc)
+    // The Sign-in screen's QR (#429).
+    implementation(libs.zxing.core)
     // Installs the Baseline Profile (the libraries' and the app's own, #63) on first launch when the
     // install didn't carry it as dex metadata.
     implementation(libs.profileinstaller)

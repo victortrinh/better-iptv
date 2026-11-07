@@ -21,8 +21,11 @@
     "OPENSUBTITLES_API": "https://api.opensubtitles.com/api/v1",
     "OPENSUBTITLES_USER_AGENT": "BetterIPTV v1",
     "SUBDL_API": "https://api.subdl.com/api/v1",
-    "SUBDL_DOWNLOADS": "https://dl.subdl.com"
+    "SUBDL_DOWNLOADS": "https://dl.subdl.com",
+    // The sign-in emails' sender (README, Accounts). SITE_URL and EMAIL_FROM go here once the app's domain is set up.
+    "RESEND_API": "https://api.resend.com"
   }
   // Secrets, set with `wrangler secret put`: TMDB_TOKEN (TMDB's API read access token), and for subtitles
-  // OPENSUBTITLES_API_KEY, OPENSUBTITLES_USERNAME, OPENSUBTITLES_PASSWORD and SUBDL_API_KEY.
+  // OPENSUBTITLES_API_KEY, OPENSUBTITLES_USERNAME, OPENSUBTITLES_PASSWORD and SUBDL_API_KEY,
+  // and for sign-in emails RESEND_API_KEY.
 }

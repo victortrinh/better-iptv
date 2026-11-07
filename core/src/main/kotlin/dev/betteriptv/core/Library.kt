@@ -51,9 +51,19 @@ class Library private constructor(
     private val store: CatalogStore,
     private val credentials: CredentialStore,
     private val http: OkHttpClient,
-    private val prefixTable: PrefixTable,
+    /** The Provider table for a Provider key ([providerKey]), as text, or null for a Provider with none. */
+    private val providerTables: (providerKey: String) -> String?,
     private val cloud: CloudClient?,
 ) : Closeable {
+    /**
+     * The Prefix table for the Provider logged in to: the Base table with that Provider's Provider
+     * table merged in, or the Base table alone before a login and for a Provider with no table.
+     */
+    @Volatile private var prefixTable: PrefixTable = prefixTableFor(credentials.load())
+
+    private fun prefixTableFor(login: ProviderLogin?): PrefixTable =
+        PrefixTable.withProviderTable(login?.let { providerTables(providerKey(it)) })
+
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
     @Volatile private var cloudRetryAt = Instant.MIN
     /** The same for TMDB's search, which fails on its own when TMDB is rate-limiting: cached metadata still comes through. */
@@ -238,7 +248,10 @@ class Library private constructor(
     /** Checks [login] with the Provider and keeps it only if the Provider accepts it. */
     suspend fun logIn(login: ProviderLogin): LoginResult = withContext(Dispatchers.IO) {
         try {
-            XtreamClient(login, http).account().also { credentials.save(login) }
+            XtreamClient(login, http).account().also {
+                credentials.save(login)
+                prefixTable = prefixTableFor(login)
+            }
         } catch (e: ProviderException) {
             e.problem
         }
@@ -1092,6 +1105,44 @@ class Library private constructor(
     }
 
     /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
+    private val _account = MutableStateFlow(store.accountEmail())
+
+    /**
+     * The email of the Account this device is signed in to (ADR 0015), or null: kept on the device,
+     * so it reads without the cloud. A device that never signs in never asks the cloud about one.
+     */
+    val account: StateFlow<String?> = _account.asStateFlow()
+
+    /**
+     * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
+     * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
+     */
+    suspend fun startSignIn(): SignInCode? = withContext(Dispatchers.IO) {
+        try {
+            cloud?.startSignIn()
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
+    /**
+     * Asks the cloud which Account this device is signed in to, keeps the answer in [account] and
+     * returns it. While the cloud can't answer, what the device last knew.
+     */
+    suspend fun checkSignIn(): String? = withContext(Dispatchers.IO) {
+        if (cloud == null) return@withContext null
+        val email = try {
+            cloud.account()
+        } catch (e: CloudException) {
+            return@withContext _account.value
+        }
+        if (email != _account.value) {
+            store.saveAccountEmail(email)
+            _account.value = email
+        }
+        email
+    }
+
     /**
      * What TMDB knows of each Episode of season [season] of Show [id] for the Episode picker: its
      * still and runtime, by episode number, in the [appLanguage]. Asked of the cloud once a season
@@ -2389,9 +2440,19 @@ class Library private constructor(
          * Opens the catalog at [databasePath], creating it if needed. Title metadata comes from the
          * cloud at [cloudAddress]; without one, Titles show what the Provider says about them.
          */
-        fun open(databasePath: String, credentials: CredentialStore, cloudAddress: String? = null, http: OkHttpClient = defaultHttp()): Library {
+        fun open(databasePath: String, credentials: CredentialStore, cloudAddress: String? = null, http: OkHttpClient = defaultHttp()): Library =
+            open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, http)
+
+        /** [open], with each Provider's Provider table, by Provider key, from [providerTables] instead of the ones shipped with the app. */
+        internal fun open(
+            databasePath: String,
+            credentials: CredentialStore,
+            cloudAddress: String?,
+            providerTables: (providerKey: String) -> String?,
+            http: OkHttpClient = defaultHttp(),
+        ): Library {
             val store = CatalogStore(databasePath)
-            return Library(store, credentials, http, PrefixTable.bundled(), cloudAddress?.let { CloudClient(it, http, store) })
+            return Library(store, credentials, http, providerTables, cloudAddress?.let { CloudClient(it, http, store) })
         }
 
         private fun defaultHttp() = OkHttpClient.Builder()

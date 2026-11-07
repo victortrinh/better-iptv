@@ -22,4 +22,15 @@ export interface Env {
   SUBDL_DOWNLOADS: string;
   /** A secret. Without it, Subdl isn't asked. */
   SUBDL_API_KEY?: string;
+  /**
+   * Where the sign-in page is served, the app's own domain (`https://zugig.app`): the TV's QR and
+   * the magic links point there. Unset, the address the request came to.
+   */
+  SITE_URL?: string;
+  /** Who sign-in emails are from, `Zugig <sign-in@zugig.app>`. Unset, `sign-in@` the SITE_URL's host. */
+  EMAIL_FROM?: string;
+  /** The transactional sender's API root (Resend), `https://api.resend.com`. */
+  RESEND_API: string;
+  /** A secret. Without it, no sign-in email goes out and the page says so. */
+  RESEND_API_KEY?: string;
 }

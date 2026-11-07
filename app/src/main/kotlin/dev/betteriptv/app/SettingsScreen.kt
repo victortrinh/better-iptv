@@ -72,10 +72,12 @@ import java.time.Duration
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
- * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
+ * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback,
+ * Sign in (or who the device is signed in as) under Account, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
  * App, which offers the [update] when there is one ([onUpdate]). Content languages and Region
- * each open a list, and Leagues its logo grid ([LeaguePicker]), in place of the column; Back returns to the row that opened it.
+ * each open a list, Leagues its logo grid ([LeaguePicker]) and Sign in its code and QR ([SignInScreen]), in place of the
+ * column; Back returns to the row that opened it, as signing in does.
  * Above them, the household's [profiles] ([profilesSection]): a Profile's row opens its page, to watch as it, rename it or
  * delete it, and "Add a profile" its name; each asks [onProfile]. The Languages and "Play next Episode" are the current
  * Profile's, the rest the device's.
@@ -100,11 +102,13 @@ fun SettingsScreen(
         item { SyncRow(library, onSyncNow) }
         item { MatchingRow(library) }
     },
+    account = { onSignIn, modifier -> AccountRow(library, onSignIn, modifier) },
+    signIn = { onSignedIn -> SignInScreen(library, onSignedIn = { onSignedIn() }) },
 )
 
 /**
  * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
- * the Catalog section's rows from [catalog].
+ * the Catalog section's rows from [catalog], the Account row from [account] and the Sign-in screen from [signIn].
  */
 @Composable
 internal fun SettingsContent(
@@ -118,6 +122,8 @@ internal fun SettingsContent(
     onProfile: (ProfileChange) -> Unit,
     catalogLanguages: suspend () -> List<String>,
     catalog: LazyListScope.() -> Unit,
+    account: @Composable (onSignIn: () -> Unit, modifier: Modifier) -> Unit = { _, _ -> },
+    signIn: @Composable (onSignedIn: () -> Unit) -> Unit = {},
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
@@ -130,7 +136,11 @@ internal fun SettingsContent(
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
     val leaguesRow = remember { FocusRequester() }
+    val accountRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
+    // Kept while a list or the Sign-in screen replaces the column, so Back lands with the row that
+    // opened it composed: the Account row is below the first screenful.
+    val settingsList = rememberLazyListState()
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
 
@@ -197,7 +207,12 @@ internal fun SettingsContent(
                     onCancel = { picking = Picker.Profile },
                 )
             }
+            Picker.SignIn -> {
+                BackHandler { picking = null }
+                signIn { picking = null }
+            }
             null -> LazyColumn(
+                state = settingsList,
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.width(SETTINGS_WIDTH),
@@ -319,6 +334,13 @@ internal fun SettingsContent(
                         )
                     }
                 }
+                item { Heading(stringResource(R.string.settings_account)) }
+                item {
+                    account({
+                        returnTo = Picker.SignIn
+                        picking = Picker.SignIn
+                    }, Modifier.focusRequester(accountRow))
+                }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 catalog()
                 item { Heading(stringResource(R.string.settings_app)) }
@@ -348,6 +370,7 @@ internal fun SettingsContent(
                 // Back to the Profile's row; once it's deleted, to the current one's.
                 Picker.Profile, Picker.DeleteProfile -> profileRow(picked?.id ?: profiles.currentId)
                 Picker.ProfileName -> addProfileRow
+                Picker.SignIn -> accountRow
                 // Reached by its tab, which keeps focus.
                 null -> profileRow(profiles.currentId).takeUnless { focusTab }
             }?.requestFocus()
@@ -409,6 +432,24 @@ private enum class Picker {
 
     /** The question before deleting a Profile. */
     DeleteProfile,
+
+    /** The Sign-in code and QR. */
+    SignIn,
+}
+
+/**
+ * The Account row (ADR 0015): "Sign in", which opens the Sign-in screen, or "Signed in as …" once
+ * the device is, read from the device alone. Signing out comes with the device list (#434).
+ */
+@Composable
+private fun AccountRow(library: Library, onSignIn: () -> Unit, modifier: Modifier) {
+    val account by library.account.collectAsStateWithLifecycle()
+    val email = account
+    if (email == null) {
+        SettingRow(stringResource(R.string.settings_sign_in), "", onClick = onSignIn, modifier, detail = stringResource(R.string.settings_sign_in_detail))
+    } else {
+        SettingRow(stringResource(R.string.settings_signed_in_as, email), "", onClick = {}, modifier)
+    }
 }
 
 /**

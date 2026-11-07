@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 
 /**
  * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
- * answers, Charts and Games.
+ * answers, Charts and Games, and signing devices in to Accounts ([phoneSignsIn]).
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -196,6 +196,21 @@ class FakeCloud : Closeable {
         genres += mapOf("kind" to if (kind == TitleKind.Movie) "movie" else "show", "name" to name, "tmdbIds" to tmdbIds.toList())
     }
 
+    /** Each live Sign-in code, by code: the device token showing it. */
+    private val signInCodes = HashMap<String, String>()
+    /** The Account each signed-in device token is bound to, by its email. */
+    private val accounts = HashMap<String, String>()
+
+    /**
+     * What the phone does on the sign-in page (cloud/src/page.ts): types [code] and [email], then taps
+     * the magic link, which binds the TV showing [code] to [email]'s Account. False when [code] isn't live.
+     */
+    fun phoneSignsIn(code: String, email: String): Boolean = synchronized(tokens) {
+        val token = signInCodes.remove(code) ?: return false
+        accounts[token] = email
+        true
+    }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -268,6 +283,17 @@ class FakeCloud : Closeable {
                 val asked = (read(body) as Map<*, *>)["leagues"] as List<*>
                 val leagues = asked.mapNotNull { league -> synchronized(games) { games[league] }?.let { mapOf("league" to league, "games" to it) } }
                 respond(exchange, 200, mapOf("leagues" to leagues))
+            }
+            "/v1/sign-in", "/v1/account" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                if (exchange.requestURI.path == "/v1/account") return respond(exchange, 200, mapOf("email" to synchronized(tokens) { accounts[token] }))
+                val code = (1..6).map { "23456789ABCDEFGHJKLMNPQRSTUVWXYZ".random() }.joinToString("")
+                synchronized(tokens) {
+                    signInCodes.values.remove(token)
+                    signInCodes[code] = token!!
+                }
+                respond(exchange, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
             "/v1/upcoming" -> {

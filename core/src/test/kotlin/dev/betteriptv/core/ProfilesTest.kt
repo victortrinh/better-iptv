@@ -60,7 +60,7 @@ class ProfilesTest {
     private suspend fun favourites(on: Library = library) = on.favourites().map { it.name }
 
     private suspend fun channel(name: String) =
-        library.search(PrefixTable.bundled().channelName(name).let { listOfNotNull(it.country, it.name).joinToString(" ") }, english, "en").last().channels.first { it.variants.any { variant -> variant.name == name } }
+        library.search(surveyedPrefixTable().channelName(name).let { listOfNotNull(it.country, it.name).joinToString(" ") }, english, "en").last().channels.first { it.variants.any { variant -> variant.name == name } }
 
     private fun names(on: Library = library) = on.profiles.value.all.map { it.name }
 

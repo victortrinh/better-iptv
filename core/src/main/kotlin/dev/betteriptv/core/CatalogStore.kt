@@ -1541,6 +1541,25 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** The email of the Account the device is signed in to, as the cloud last said; null when none. */
+    fun accountEmail(): String? = meta(ACCOUNT_EMAIL)
+
+    fun saveAccountEmail(email: String?) = synchronized(writer) {
+        if (email == null) {
+            writer.prepare("DELETE FROM meta WHERE key = ?").use {
+                it.bindText(1, ACCOUNT_EMAIL)
+                it.step()
+            }
+        } else {
+            writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+                it.bindText(1, ACCOUNT_EMAIL)
+                it.bindText(2, email)
+                it.step()
+            }
+        }
+        Unit
+    }
+
     private fun meta(key: String): String? = synchronized(reader) {
         reader.prepare("SELECT value FROM meta WHERE key = ?").use {
             it.bindText(1, key)
@@ -1659,6 +1678,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val PENDING_REMATCHED = "pending_sync_rematched_listings"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
+        const val ACCOUNT_EMAIL = "account_email"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
         const val LAST_FEATURED = "last_featured_"

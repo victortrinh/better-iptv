@@ -1,7 +1,8 @@
 name: Unknown Prefixes
 
 # Lists the Prefixes devices reported in the last 30 days that the Prefix table doesn't know, in one
-# issue, so they get added to core/src/main/resources/dev/betteriptv/core/prefix-table.txt. A Prefix the
+# issue, so they get added to the Base table (core/src/main/resources/dev/betteriptv/core/prefix-table.txt)
+# when most Providers share them, or to the Provider's hand file in cloud/provider-tables/. A Prefix the
 # table has learned stops being reported and drops off the list; with none left, the issue is closed.
 
 on:
@@ -48,7 +49,7 @@ jobs:
           fi
           {
             echo "Devices' Syncs found these Prefixes that the Prefix table doesn't know, in the last 30 days."
-            echo "Add each to \`core/src/main/resources/dev/betteriptv/core/prefix-table.txt\`; the Viewer never sees this list."
+            echo "Add each to the Base table, \`core/src/main/resources/dev/betteriptv/core/prefix-table.txt\`, when most Providers share it, or else to the Provider's hand file in \`cloud/provider-tables/\`; the Viewer never sees this list."
             echo
             echo "| Prefix | Listings | Example | First seen |"
             echo "| --- | ---: | --- | --- |"

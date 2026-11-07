@@ -3,7 +3,7 @@
     <string name="login_title">Connectez-vous à votre fournisseur</string>
     <string name="login_private">Vos identifiants restent sur cet appareil, chiffrés.</string>
     <string name="login_address">Adresse du fournisseur</string>
-    <string name="login_address_hint">p. ex. http://example.com:8080</string>
+    <string name="login_address_hint">p. ex. http://example.com:8080 ou une URL M3U</string>
     <string name="login_username">Nom d\'utilisateur</string>
     <string name="login_password">Mot de passe</string>
     <string name="login_button">Se connecter</string>
@@ -361,6 +361,17 @@
     <string name="update_allow_fire">Si les paramètres s\'ouvrent ailleurs : Paramètres → Ma Fire TV → Options pour les développeurs → Installer des applis inconnues → Zugig : activé.</string>
     <string name="update_allow_old">Paramètres → Ma Fire TV → Options pour les développeurs → Applications de sources inconnues : activé, puis revenez ici.</string>
     <string name="update_open_settings">Ouvrir les paramètres</string>
+
+    <string name="settings_account">Compte</string>
+    <string name="settings_sign_in">Se connecter</string>
+    <string name="settings_sign_in_detail">Gardez votre historique sur tous les téléviseurs de la maison</string>
+    <string name="settings_signed_in_as">Connecté en tant que %1$s</string>
+    <string name="sign_in_title">Se connecter à Zugig</string>
+    <string name="sign_in_steps">Sur votre téléphone, scannez le QR ou allez sur %1$s. Tapez ce code et votre adresse e-mail, puis touchez le lien que nous vous envoyons.</string>
+    <string name="sign_in_waiting">En attente de votre téléphone…</string>
+    <string name="sign_in_unavailable">Zugig est injoignable pour le moment. Nouvel essai…</string>
+    <string name="sign_in_new_code">Nouveau code</string>
+    <string name="sign_in_qr">Code QR de la page de connexion</string>
 
     <string name="settings_catalog">Catalogue</string>
     <string name="catalog_counts">%1$s · %2$s</string>
