@@ -55,7 +55,7 @@ sealed interface UpdateState {
     /** [downloaded] of [update]'s bytes are here. */
     data class Downloading(val update: AppUpdate, val downloaded: Long) : UpdateState
 
-    /** Android's installer was opened on [update]; installing replaces the running app. */
+    /** Android's installer was opened on [update]; installing replaces the running app, backing out offers it again. */
     data class Installing(val update: AppUpdate) : UpdateState
 
     /** Downloading [update], opening the installer or installing failed, for [problem]. Asking again starts over. */
@@ -147,6 +147,12 @@ class AppUpdates(
             // The installer couldn't be opened (no activity for it, a missing file provider).
             _state.value = UpdateState.Failed(update, e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    /** The Viewer backed out of Android's installer: the build is offered again, and confirming opens the installer again. */
+    fun installAborted() {
+        val update = (_state.value as? UpdateState.Installing)?.update ?: return
+        _state.value = UpdateState.Available(update)
     }
 
     /** Android's installer refused the offered build, for [problem]. Asking again starts over. */
