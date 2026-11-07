@@ -45,7 +45,7 @@ import java.time.LocalDate
  * in the Provider's order, each with the two teams and the date read off its name, so the Replays
  * row and a Game's page find them without reading the names again.
  */
-internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
+internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStore {
     private val driver = BundledSQLiteDriver()
     private val writer: SQLiteConnection = driver.open(path).apply {
         execSQL("PRAGMA journal_mode=WAL")
@@ -103,6 +103,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, kids INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
                 "used_at INTEGER NOT NULL)",
         )
+        // The Household PIN (#437), one row: the household's, not the catalog's, so a new catalog shape keeps it.
+        execSQL("CREATE TABLE IF NOT EXISTS household_pin (id INTEGER PRIMARY KEY CHECK (id = 1), hash TEXT NOT NULL, failures INTEGER NOT NULL, locked_until INTEGER)")
         execSQL("BEGIN")
         // Each Viewer's table is kept per Profile. One kept before Profiles is rebuilt with its rows as the first Profile's.
         for ((table, shape) in PROFILE_TABLES) {
@@ -1561,6 +1563,23 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             if (writer.inTransaction()) writer.execSQL("ROLLBACK")
             throw e
         }
+    }
+
+    override fun householdPin(): StoredPin? = synchronized(reader) {
+        reader.prepare("SELECT hash, failures, locked_until FROM household_pin").use {
+            if (it.step()) StoredPin(it.getText(0), it.getLong(1).toInt(), if (it.isNull(2)) null else Instant.ofEpochMilli(it.getLong(2))) else null
+        }
+    }
+
+    override fun saveHouseholdPin(pin: StoredPin) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO household_pin VALUES (1, ?, ?, ?)").use {
+            it.bindText(1, pin.hash)
+            it.bindLong(2, pin.failures.toLong())
+            val until = pin.lockedUntil
+            if (until == null) it.bindNull(3) else it.bindLong(3, until.toEpochMilli())
+            it.step()
+        }
+        Unit
     }
 
     override fun deviceToken(): String? = meta(DEVICE_TOKEN)

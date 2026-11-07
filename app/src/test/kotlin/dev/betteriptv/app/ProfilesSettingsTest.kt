@@ -62,6 +62,8 @@ class ProfilesSettingsTest {
     private var profiles by mutableStateOf(Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID))
     private var nextId = Profile.FIRST_ID + 1
     private val changes = mutableListOf<ProfileChange>()
+    // The household has its PIN already: adding a Kids profile then asks none (HouseholdPinTest has the first one).
+    private val pin = FakePin("2580")
 
     private fun change(change: ProfileChange) {
         changes += change
@@ -86,6 +88,7 @@ class ProfilesSettingsTest {
             onTab = {},
             profiles = profiles,
             onProfile = ::change,
+            pin = pin,
             catalogLanguages = { listOf("en") },
             catalog = {},
         )
@@ -179,8 +182,10 @@ class ProfilesSettingsTest {
         listOf("Add a profile", "App language", "Content languages", "Region", "Leagues", "Quality cap", "Account", "Catalog", "App version").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
-        // OK on another Profile switches to it at once: there is no page to rename or delete from.
+        // OK on another Profile switches to it once the Household PIN is typed: there is no page to rename or delete from.
         press(listOf(Key.DirectionUp, Key.DirectionCenter))
+        "2580".forEach { compose.onNodeWithText(it.toString()).performClick() }
+        compose.waitForIdle()
         assertEquals(listOf<ProfileChange>(ProfileChange.Switch(first)), changes)
         compose.onNodeWithText("Rename").assertDoesNotExist()
     }

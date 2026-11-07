@@ -292,6 +292,21 @@
     <string name="profile_kids_label">Kids</string>
     <string name="profile_kids">Kids profile</string>
     <string name="profile_kids_detail">Sees only movies, shows and channels for kids</string>
+    <string name="pin_title">Household PIN</string>
+    <string name="pin_to_watch_as">Enter it to watch as %1$s</string>
+    <string name="pin_choose">Choose a Household PIN</string>
+    <string name="pin_choose_detail">Four digits that let someone leave a Kids profile</string>
+    <string name="pin_again">Enter it again</string>
+    <string name="pin_mismatch">Those didn\'t match. Choose a PIN again.</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">Wrong PIN. %1$d try left</item>
+        <item quantity="other">Wrong PIN. %1$d tries left</item>
+    </plurals>
+    <string name="pin_locked">Too many wrong tries. Try again in %1$d s</string>
+    <string name="pin_change">Change PIN</string>
+    <string name="pin_change_detail">The Household PIN lets someone leave a Kids profile</string>
+    <string name="pin_current">Enter the current PIN</string>
+    <string name="pin_new">Choose a new PIN</string>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>
