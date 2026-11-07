@@ -100,6 +100,10 @@ A Version whose Prefix names a Source but no language. A streaming service's or 
 **Audio-description Version**:
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.
 
+**Original audio**:
+A Version attribute: its audio is in the Title's original language (TMDB's). Confirmed by a Header read or Playback, or Likely for an Untagged Version. A Version whose Prefix names another language can still have it: `NL - The Shadow's Edge` carries Mandarin with Dutch, German and English subtitles.
+_Avoid_: Undubbed, original-language Version, OV
+
 **Sports replay**:
 A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its TMDB ID, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own. It plays as its Listing's Version alone, kept apart from the Titles as an Unmatched Movie's would be, so where the Viewer stopped is remembered.
 _Avoid_: Highlight (a highlights show is not a Replay)
@@ -150,6 +154,10 @@ _Avoid_: User, customer
 **Content language**:
 A language whose Versions the Viewer wants to see when browsing; Versions in other languages stay in search and in a Title's Versions list.
 _Avoid_: Filter language, audio preference
+
+**Prefer original audio**:
+The Viewer's setting that a Title plays with Original audio when any Version has it, ahead of a Version in a Content language at any quality; quality decides among those. When the audio isn't in a Content language, subtitles in the first Content language come on, from the file when it has them, else downloaded.
+_Avoid_: Original version mode, subtitles mode
 
 **App language**:
 The language of the app's own interface and of Title metadata (titles, descriptions, posters).
