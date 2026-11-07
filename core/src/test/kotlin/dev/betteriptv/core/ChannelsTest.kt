@@ -29,7 +29,7 @@ class ChannelsTest {
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials())
+        library = openSurveyedLibrary(folder.root.resolve("catalog.db").path, InMemoryCredentials())
         library.logIn(provider.login)
         Unit
     }
@@ -44,7 +44,7 @@ class ChannelsTest {
     /** The Channels found by [query], as their variants' Listing names, in the order found. */
     private suspend fun channels(query: String) = library.search(query, english, "en").last().channels.flatMap { it.variants.map { variant -> variant.name } }
 
-    private val table = PrefixTable.bundled()
+    private val table = surveyedPrefixTable()
 
     /** The Channel whose variant is the Listing named [name], searched for by the Channel's name (a Listing's quality words aren't indexed). */
     private suspend fun channel(name: String): Channel {
@@ -56,7 +56,7 @@ class ChannelsTest {
     private suspend fun favouritesRow() = library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(PrefixTable.bundled().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
 
     // Clutter
 

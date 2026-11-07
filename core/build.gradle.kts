@@ -36,6 +36,14 @@ dependencies {
     testImplementation(libs.coroutines.test)
 }
 
+// The hand-written Provider tables ship with the app, by host hash, until the cloud serves them (#431).
+tasks.processResources {
+    from(rootProject.file("cloud/provider-tables")) {
+        include("*.txt")
+        into("dev/betteriptv/core/provider-tables")
+    }
+}
+
 tasks.test {
     // Small on purpose: Sync must stream the catalog, never hold a whole JSON document in memory.
     maxHeapSize = "128m"

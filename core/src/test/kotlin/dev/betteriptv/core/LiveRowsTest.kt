@@ -29,7 +29,7 @@ class LiveRowsTest {
         provider.close()
     }
 
-    private val table = PrefixTable.bundled()
+    private val table = surveyedPrefixTable()
 
     /** The Channel whose variant is the Listing named [name], searched for by the Channel's name (a Listing's quality words aren't indexed). */
     private suspend fun channel(name: String): Channel {
@@ -41,7 +41,7 @@ class LiveRowsTest {
     private fun List<HomeRow>.favourites() = filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(PrefixTable.bundled().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
 
     @Test fun `without Favourites the Live tab has only the Channels row`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")

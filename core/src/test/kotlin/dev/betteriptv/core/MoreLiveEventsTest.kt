@@ -28,7 +28,7 @@ class MoreLiveEventsTest {
     private val stick = DeviceProfile(maxHeight = 2160, hdr = emptySet(), videoDecoders = setOf("video/avc", "video/hevc"))
 
     @Before fun logIn() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
+        library = openSurveyedLibrary(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
         library.logIn(provider.login)
         provider.movieListOverride = "[]"
         provider.showListOverride = "[]"

@@ -29,7 +29,7 @@ class SearchIndexBenchmark {
         val store = CatalogStore(folder.root.resolve("catalog.db").path)
         fill(store)
 
-        val prefixTable = PrefixTable.bundled()
+        val prefixTable = surveyedPrefixTable()
         val gc = ManagementFactory.getGarbageCollectorMXBeans()
         val runtime = Runtime.getRuntime()
         repeat(3) { run ->

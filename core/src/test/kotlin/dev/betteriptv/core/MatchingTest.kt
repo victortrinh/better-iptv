@@ -19,7 +19,7 @@ class MatchingTest {
     private val libraries = mutableListOf<Library>()
     private lateinit var library: Library
 
-    private fun openLibrary() = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url).also { libraries += it }
+    private fun openLibrary() = openSurveyedLibrary(folder.root.resolve("catalog.db").path, credentials, cloud.url).also { libraries += it }
 
     @Before fun logIn() = runBlocking {
         // What TMDB makes of the fixture's odd names.
