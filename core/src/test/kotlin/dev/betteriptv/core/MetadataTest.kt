@@ -85,16 +85,15 @@ class MetadataTest {
         assertFalse(plan.isOriginal(Track("eng")))
     }
 
-    @Test fun `a card and the details show TMDB's name, poster and art in the App language, but not its description, genres, cast or trailer`() = runBlocking {
+    @Test fun `the details show TMDB's art, but not its name, poster, description, genres, cast or trailer`() = runBlocking {
         cloud.title("fr", leParrain.plus("trailers" to listOf(trailer("fr-official", "fr"))))
 
+        // A card is named and pictured by its Listings (#474), never by TMDB.
         card(godfather, "fr").let {
-            assertEquals("Le Parrain", it.name)
-            assertEquals(1972, it.year)
-            assertEquals("https://image.tmdb.org/t/p/w342/parrain.jpg", it.image)
+            assertFalse(it.image.orEmpty().startsWith("https://image.tmdb.org/"))
         }
         details(godfather, "fr").let {
-            assertEquals("Le Parrain", it.name)
+            assertFalse(it.image.orEmpty().startsWith("https://image.tmdb.org/"))
             assertEquals("https://image.tmdb.org/t/p/w1280/godfather-backdrop.jpg", it.backdrop)
             assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", it.logo)
             assertTrue(it.fromTmdb)
@@ -110,54 +109,12 @@ class MetadataTest {
         assertEquals("fr", details(godfather, "fr").languages.first().language)
     }
 
-    @Test fun `without a translation in the App language, the name is in English`() = runBlocking {
-        cloud.title(
-            "fr",
-            tmdbTitle(
-                541671,
-                "Ballerina",
-                titles = listOf(Triple("en", "US", "From the World of John Wick: Ballerina"), Triple("de", "DE", "Ballerina")),
-                descriptions = listOf(Triple("en", "US", "Taking place during the events of John Wick: Chapter 3…")),
-                genres = listOf("Action"),
-            ),
-        )
-
-        assertEquals("From the World of John Wick: Ballerina", card(ballerina, "fr").name)
-        // The description is the Provider's plot now (#473), never TMDB's.
-        assertNull(details(ballerina, "fr").description)
-    }
-
     @Test fun `an SVG logo is asked for as a PNG, and a Title without one has no logo`() = runBlocking {
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg"))
         cloud.title("fr", tmdbTitle(541671, "Ballerina"))
 
         assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
         assertNull(details(ballerina, "fr").logo)
-    }
-
-    @Test fun `a Home card lays its logo over a textless poster, which it takes only with a logo`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg", textlessPosterPath = "/godfather-plain.jpg"))
-        cloud.title("fr", tmdbTitle(541671, "Ballerina", textlessPosterPath = "/ballerina-plain.jpg"))
-        val cards = library.homeRows(french, "fr").filterIsInstance<HomeRow.NewOnYourService>().single().titles
-
-        val about = cards.first { it.id == godfather }.about!!
-        assertEquals("https://image.tmdb.org/t/p/w300/parrain-logo.png", about.logo)
-        assertEquals("https://image.tmdb.org/t/p/w342/godfather-plain.jpg", about.textlessPoster)
-        // Without a logo, the card keeps the poster with the name printed on it.
-        assertNull(cards.first { it.id == ballerina }.about!!.textlessPoster)
-    }
-
-    @Test fun `a card grows into a card-sized textless backdrop, on the rows and in Search`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg", textlessBackdropPath = "/godfather-wide.jpg"))
-        cloud.title("fr", tmdbTitle(541671, "Ballerina"))
-        val cards = library.homeRows(french, "fr").filterIsInstance<HomeRow.NewOnYourService>().single().titles
-
-        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", cards.first { it.id == godfather }.about!!.textlessBackdrop)
-        assertNull(cards.first { it.id == ballerina }.about!!.textlessBackdrop)
-        // Search's cards, read through the same summaries, grow too.
-        val found = card(godfather, "fr").about!!
-        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", found.textlessBackdrop)
-        assertEquals("https://image.tmdb.org/t/p/w300/parrain-logo.png", found.logo)
     }
 
     @Test fun `the details fill the screen with the picture a card grew into, at the screen's size`() = runBlocking {
@@ -174,7 +131,7 @@ class MetadataTest {
         card(godfather, "fr")
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png", textlessBackdropPath = "/godfather-wide.jpg"))
 
-        assertEquals("https://image.tmdb.org/t/p/w780/godfather-wide.jpg", card(godfather, "fr").about!!.textlessBackdrop)
+        assertEquals("https://image.tmdb.org/t/p/w1280/godfather-wide.jpg", details(godfather, "fr").backdrop)
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
         // Once it has the field, even null, it is kept for the week.
         card(godfather, "fr")
@@ -193,29 +150,6 @@ class MetadataTest {
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
     }
 
-    @Test fun `a Title with no translation at all keeps the name it was released under`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", descriptions = listOf(Triple("en", "US", "Spanning…"))))
-
-        assertEquals("The Godfather", card(godfather, "fr").name)
-    }
-
-    @Test fun `a Québec Viewer gets Québec's translation where TMDB has one`() = runBlocking {
-        cloud.title(
-            "fr",
-            tmdbTitle(
-                238,
-                "The Godfather",
-                titles = listOf(Triple("fr", "FR", "Le Parrain"), Triple("fr", "CA", "Le Parrain (Québec)")),
-                descriptions = listOf(Triple("fr", "FR", "En France…"), Triple("fr", "CA", "Au Québec…")),
-            ),
-        )
-
-        assertEquals("Le Parrain (Québec)", card(godfather, "fr-CA").name)
-        assertEquals("Le Parrain", card(godfather, "fr-FR").name)
-        // The cloud is asked in French either way.
-        assertEquals(setOf("movie/238/fr"), cloud.metadataAsked.filter { it.startsWith("movie/238/") }.toSet())
-    }
-
     @Test fun `metadata is kept on the device, so showing a Title again doesn't reach the cloud`() = runBlocking {
         cloud.title("fr", leParrain)
         card(godfather, "fr")
@@ -226,7 +160,7 @@ class MetadataTest {
         // Also after the app restarts, and for a Title TMDB doesn't have.
         library.close()
         library = openLibrary()
-        assertEquals("Le Parrain", card(godfather, "fr").name)
+        card(godfather, "fr")
         assertEquals(1, cloud.metadataAsked.count { it == "movie/238/fr" })
         assertEquals(1, cloud.metadataAsked.count { it == "movie/541671/fr" })
 

@@ -42,34 +42,26 @@ class TabRowsTest {
 
     private fun show(tmdbId: Long) = TitleId.Tmdb(TitleKind.Show, tmdbId)
 
-    /**
-     * Syncs these movie Listings, newest first, numbered from 1, each a Title of its own TMDB ID,
-     * filed under `MOVIES` unless [filed] names another Category for that TMDB ID.
-     */
-    private suspend fun syncMovies(vararg listings: Pair<String, Long>, filed: Map<Long, String> = emptyMap()) {
-        val categories = (listOf("MOVIES") + filed.values).distinct()
-        provider.movieCategoriesOverride = categories.withIndex().joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":"$name"}""" }
+    /** Syncs these movie Listings, newest first, numbered from 1, each a Title of its own TMDB ID. */
+    private suspend fun syncMovies(vararg listings: Pair<String, Long>) {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
         provider.movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            val category = categories.indexOf(filed[listing.second] ?: "MOVIES") + 1
-            """{"stream_id":${i + 1},"name":"${listing.first}","tmdb":"${listing.second}","category_id":"$category","added":"${1_700_000_000 - i}"}"""
+            """{"stream_id":${i + 1},"name":"${listing.first}","tmdb":"${listing.second}","category_id":"1","added":"${1_700_000_000 - i}"}"""
         }
         library.sync()
     }
 
-    /** Serves these show Listings at the next Sync, newest first, numbered from 1, each a Title of its own TMDB ID, with the genre field [genres] gives its TMDB ID. */
-    private fun serveShows(vararg listings: Pair<String, Long>, genres: Map<Long, String> = emptyMap()) {
+    /** Serves these show Listings at the next Sync, newest first, numbered from 1, each a Title of its own TMDB ID. */
+    private fun serveShows(vararg listings: Pair<String, Long>) {
         provider.showCategoriesOverride = """[{"category_id":"2","category_name":"SERIES"}]"""
         provider.showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            val genre = genres[listing.second]?.let { ""","genre":"$it"""" }.orEmpty()
-            """{"series_id":${i + 1},"name":"${listing.first}","tmdb":"${listing.second}","category_id":"2","last_modified":"${1_700_000_000 - i}"$genre}"""
+            """{"series_id":${i + 1},"name":"${listing.first}","tmdb":"${listing.second}","category_id":"2","last_modified":"${1_700_000_000 - i}"}"""
         }
     }
 
-    /** Files each of [ids] under the Category [name], for [syncMovies]. */
-    private fun under(name: String, ids: Iterable<Long>) = ids.associateWith { name }
-
     /** Serves TMDB's metadata of a movie [tmdbId] named [name]. */
-    private fun tmdb(tmdbId: Long, name: String) = cloud.title("en", tmdbTitle(tmdbId, name))
+    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0) =
+        cloud.title("en", tmdbTitle(tmdbId, name, popularity = popularity))
 
     private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english, region: String = "CA") =
         library.tabRows(kind, contentLanguages, appLanguage = "en", region = region, now = Instant.now())
@@ -92,8 +84,8 @@ class TabRowsTest {
     }
 
     /** Syncs these movie Listings after 40 newer ones, which New movies picks from, so these are left to the genre rows. */
-    private suspend fun syncOlderMovies(vararg listings: Pair<String, Long>, filed: Map<Long, String> = emptyMap()) =
-        syncMovies(*((1L..40L).map { "EN - Filler $it (2025)" to 9000 + it } + listings).toTypedArray(), filed = filed)
+    private suspend fun syncOlderMovies(vararg listings: Pair<String, Long>) =
+        syncMovies(*((1L..40L).map { "EN - Filler $it (2025)" to 9000 + it } + listings).toTypedArray())
 
     private fun List<HomeRow>.genre(name: String) = filterIsInstance<HomeRow.Genre>().singleOrNull { it.name == name }?.titles?.map { it.name }
 
@@ -101,27 +93,36 @@ class TabRowsTest {
 
     private fun numbered(name: String, ids: LongRange) = ids.mapIndexed { i, id -> "EN - $name ${i + 1} (2010)" to id }.toTypedArray()
 
-    @Test fun `genre rows follow New, the genres with the most of the Provider's Titles first, each newest first`() = runBlocking {
-        syncOlderMovies(
-            *numbered("Laugh", 1L..6L), *numbered("Fright", 11L..15L), "FR - Frisson (2010)" to 16, *numbered("Tear", 21L..24L),
-            filed = under("EN - COMEDY", 1L..6L) + under("EN - HORROR", 11L..15L) + under("FR - HORREUR", listOf(16L)) + under("EN - DRAMA", 21L..24L),
-        )
+    @Test fun `genre rows follow New, the genres with the most of the Provider's Titles in a Content language first`() = runBlocking {
+        syncOlderMovies(*numbered("Laugh", 1L..6L), *numbered("Fright", 11L..15L), "FR - Frisson (2010)" to 16, *numbered("Tear", 21L..25L))
+        // Horror lists 8, but the Provider has 6 of them and one is in French: 5, as many as Drama, listed after it.
+        cloud.genre(TitleKind.Movie, "Horror", 16, 15, 14, 13, 12, 11, 99, 98)
+        cloud.genre(TitleKind.Movie, "Comedy", 1, 2, 3, 4, 5, 6)
+        cloud.genre(TitleKind.Movie, "Drama", 21, 22, 23, 24, 25)
+        cloud.genre(TitleKind.Show, "Sitcom", 1, 2, 3, 4, 5, 6, 7)
 
         val rows = rows()
-        // Horror has 6 Titles, one in French; Comedy 6 too, and the table lists it first; Drama's 4 make no row.
-        assertEquals(listOf("New Movie", "Comedy", "Horror"), rows.names())
-        assertEquals((1..5).map { "Fright $it" }, rows.genre("Horror"))
-        assertEquals((1..6).map { "Laugh $it" }, rows.genre("Comedy"))
+        assertEquals(listOf("New Movie", "Comedy", "Horror", "Drama"), rows.names())
+        assertEquals(listOf("Fright 5", "Fright 4", "Fright 3", "Fright 2", "Fright 1"), rows.genre("Horror"))
+    }
+
+    @Test fun `a genre row puts TMDB's most popular across the whole catalog first`() = runBlocking {
+        syncOlderMovies(*numbered("Laugh", 1L..5L))
+        tmdb(1, "Laugh 1", popularity = 99.0)
+        tmdb(3, "Laugh 3", popularity = 1.0)
+        cloud.genre(TitleKind.Movie, "Comedy", 3, 5, 1, 2, 4)
+
+        assertEquals(listOf("Laugh 3", "Laugh 5", "Laugh 1", "Laugh 2", "Laugh 4"), rows().genre("Comedy"))
     }
 
     @Test fun `genre rows skip the Titles shown above them, and a genre left with fewer than 5 is left out`() = runBlocking {
-        syncOlderMovies(
-            *numbered("Laugh", 1L..10L), *numbered("Fright", 11L..14L), *numbered("Other", 21L..22L),
-            // Filler 1 is on New movies; Laugh 5 to 7 are Comedy and Horror, Comedy the bigger genre, so Horror is left with 4.
-            filed = under("EN - COMEDY", (1L..4L) + (8L..10L) + 9001L) + under("EN - COMEDY HORROR", 5L..7L) + under("EN - HORROR", 11L..14L),
-        )
+        syncOlderMovies(*numbered("Laugh", 1L..10L), *numbered("Fright", 11L..14L), *numbered("Other", 21L..22L))
         cloud.charts("CA", movies = listOf(1, 2, 3))
         cloud.trending(movie(4), movie(21), movie(22))
+        // Filler 1 is on New movies.
+        cloud.genre(TitleKind.Movie, "Comedy", 9001, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+        // Laugh 5 to 7 go to Comedy, the bigger genre, so Horror is left with 4.
+        cloud.genre(TitleKind.Movie, "Horror", 5, 6, 7, 11, 12, 13, 14)
 
         val rows = rows()
         assertTrue("Filler 1" in rows.newNames())
@@ -133,25 +134,41 @@ class TabRowsTest {
         // Wikidata says which language each Untagged Title was released in; the device learns it at the Sync (#476).
         cloud.titleFacts(movie(5), originalLanguage = "en")
         cloud.titleFacts(movie(6), originalLanguage = "fr")
-        syncOlderMovies("4K - Untagged French (2010)" to 6, "4K - Untagged English (2010)" to 5, *numbered("Laugh", 1L..4L), filed = under("EN - COMEDY", 1L..6L))
+        syncOlderMovies(*numbered("Laugh", 1L..4L), "4K - Untagged English (2010)" to 5, "4K - Untagged French (2010)" to 6)
+        tmdb(5, "Untagged English")
+        tmdb(6, "Untagged French")
+        cloud.genre(TitleKind.Movie, "Comedy", 6, 5, 1, 2, 3, 4)
 
         assertEquals(listOf("Untagged English", "Laugh 1", "Laugh 2", "Laugh 3", "Laugh 4"), rows().genre("Comedy"))
     }
 
-    @Test fun `the Shows tab has the show genres, from their Listings' genre field, the Movies tab the movie ones`() = runBlocking {
-        serveShows(*((1L..40L).map { "EN - Show filler $it (2025)" to 9000 + it } + numbered("Saga", 1L..5L)).toTypedArray(), genres = (1L..5L).associateWith { "Drama" })
-        syncMovies(*((1L..40L).map { "EN - Filler $it (2025)" to 9000 + it } + numbered("Laugh", 1L..5L)).toTypedArray(), filed = under("EN - COMEDY", 1L..5L))
+    @Test fun `the Shows tab has the show genres, the Movies tab the movie ones`() = runBlocking {
+        serveShows(*((1L..40L).map { "EN - Show filler $it (2025)" to 9000 + it } + numbered("Saga", 1L..5L)).toTypedArray())
+        syncMovies(*((1L..40L).map { "EN - Filler $it (2025)" to 9000 + it } + numbered("Laugh", 1L..5L)).toTypedArray())
+        cloud.genre(TitleKind.Movie, "Comedy", 1, 2, 3, 4, 5)
+        cloud.genre(TitleKind.Show, "Drama", 1, 2, 3, 4, 5)
 
         assertEquals(listOf("Comedy"), rows(TitleKind.Movie).genres())
         assertEquals(listOf("Drama"), rows(TitleKind.Show).genres())
         assertEquals((1..5).map { "Saga $it" }, rows(TitleKind.Show).genre("Drama"))
     }
 
-    @Test fun `genre rows need no cloud`() = runBlocking {
-        cloud.down = true
-        syncOlderMovies(*numbered("Laugh", 1L..5L), filed = under("EN - COMEDY", 1L..5L))
+    @Test fun `Home's genre rows don't come from the tabs' genres`() = runBlocking {
+        syncOlderMovies(*numbered("Laugh", 1L..5L))
+        cloud.genre(TitleKind.Movie, "Comedy", 1, 2, 3, 4, 5)
 
-        assertEquals((1..5).map { "Laugh $it" }, rows().genre("Comedy"))
+        assertEquals(listOf("Comedy"), rows().genres())
+        assertTrue(library.homeRows(english, "en", "CA").none { it is HomeRow.Genre })
+    }
+
+    @Test fun `the genre rows kept on the device stand while the cloud can't answer`() = runBlocking {
+        syncOlderMovies(*numbered("Laugh", 1L..5L))
+        cloud.genre(TitleKind.Movie, "Comedy", 1, 2, 3, 4, 5)
+        assertEquals(listOf("Comedy"), rows().genres())
+
+        cloud.down = true
+        val later = library.tabRows(TitleKind.Movie, english, "en", "CA", Instant.now().plusSeconds(2 * 3600))
+        assertEquals((1..5).map { "Laugh $it" }, later.genre("Comedy"))
     }
 
     @Test fun `the Movies tab shows Top movies, Trending movies, then New movies`() = runBlocking {
@@ -181,18 +198,14 @@ class TabRowsTest {
         assertEquals(setOf("Show 7", "Show 8", "Show 9"), rows.newNames().toSet())
     }
 
-    @Test fun `New movies lists the newest movies in a Content language first, two added the same second by the Provider's rating`() = runBlocking {
-        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
-        provider.movieListOverride = """[
-            {"stream_id":1,"name":"EN - Old (2020)","tmdb":"1","category_id":"1","added":"1600000000","rating":"9.9"},
-            {"stream_id":2,"name":"EN - Tie low (2025)","tmdb":"2","category_id":"1","added":"1700000100","rating":"6.1"},
-            {"stream_id":3,"name":"EN - Tie high (2025)","tmdb":"3","category_id":"1","added":"1700000100","rating":"8.5"},
-            {"stream_id":4,"name":"FR - Français (2025)","tmdb":"4","category_id":"1","added":"1700000300"},
-            {"stream_id":5,"name":"EN - Newest (2025)","tmdb":"5","category_id":"1","added":"1700000200"}
-        ]"""
-        library.sync()
+    @Test fun `New movies puts the most popular of the newest movies in a Content language first`() = runBlocking {
+        syncMovies("EN - Quiet (2025)" to 1, "EN - Hit (2025)" to 2, "FR - Français (2025)" to 3, "EN - Middling (2025)" to 4)
+        tmdb(1, "Quiet", popularity = 2.0)
+        tmdb(2, "Hit", popularity = 90.0)
+        tmdb(3, "Français", popularity = 99.0)
+        tmdb(4, "Middling", popularity = 30.0)
 
-        assertEquals(listOf("Newest", "Tie high", "Tie low", "Old"), rows().newNames())
+        assertEquals(listOf("Hit", "Middling", "Quiet"), rows().newNames())
     }
 
     @Test fun `a tab's Top row keeps the Provider's Titles in a Content language, ranked in order, in the Region`() = runBlocking {
@@ -242,6 +255,14 @@ class TabRowsTest {
         assertEquals(listOf("Film 1", "Film 2", "Film 3"), home.chartNames(ChartList.TopMovies))
         assertEquals(listOf("Film 1", "Film 2", "Film 3"), movies.chartNames(ChartList.TopMovies))
         assertEquals(listOf("Film 4"), movies.newNames())
+    }
+
+    @Test fun `without the cloud and no genres kept, a tab has no genre rows`() = runBlocking {
+        syncOlderMovies(*numbered("Laugh", 1L..5L))
+        cloud.genre(TitleKind.Movie, "Comedy", 1, 2, 3, 4, 5)
+        cloud.down = true
+
+        assertEquals(listOf("New Movie"), rows().names())
     }
 
     @Test fun `without the cloud and no Charts kept, a tab still has New`() = runBlocking {

@@ -37,8 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
 import dev.betteriptv.app.ui.components.NumeralStyle
 import dev.betteriptv.app.ui.components.Numerals
 import dev.betteriptv.app.ui.components.RankedCard
@@ -125,7 +123,7 @@ fun HomePrototype(focusCard: Boolean, numerals: NumeralStyle = Numerals.style) {
                         itemsIndexed(row.titles) { index, title ->
                             val first = if (rowIndex == 0 && index == 0) Modifier.focusRequester(firstCard) else Modifier
                             if (row.ranked) {
-                                // A Top row's card, as Home draws it: unnamed under the card, growing into its still (#379).
+                                // A Top row's card, as Home draws it: unnamed under the card (#379).
                                 RankedCard(index + 1, first, style = numerals) {
                                     TitleCard(
                                         painterResource(title.poster),
@@ -133,7 +131,6 @@ fun HomePrototype(focusCard: Boolean, numerals: NumeralStyle = Numerals.style) {
                                         title.badges,
                                         onClick = {},
                                         named = false,
-                                        grown = { Image(painterResource(title.still), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop) },
                                     )
                                 }
                             } else {

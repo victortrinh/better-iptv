@@ -20,12 +20,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.app.ui.components.NUMERAL_TAG
@@ -47,9 +47,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * A Top row card (#379): its numeral is a vector drawing, and its poster, focused, grows from its
+ * A Top row card (#379): its numeral is a vector drawing, and its poster, focused, lifts from its
  * left edge and casts its shadow down and to the right, so neither covers the numeral. A poster on
- * any other row still grows from its centre.
+ * any other row still lifts from its centre.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -78,33 +78,30 @@ class RankedCardTest {
     private val focus = FocusRequester()
 
     @Composable
-    private fun Poster(grows: Boolean) {
+    private fun Poster() {
         // As on a TV: in touch mode a card can't take focus.
         val input = LocalInputModeManager.current
         SideEffect { input.requestInputMode(InputMode.Keyboard) }
         TitleCard(
-            image = null,
+            image = ColorPainter(Color.White),
             name = "Title",
             badges = emptyList(),
             onClick = {},
             modifier = Modifier.focusRequester(focus),
             named = false,
-            // Drawn inside the card's focus layer, so its bounds are the card's as seen, lifted.
-            art = { Box(Modifier.matchParentSize().testTag("face")) },
-            grown = if (grows) ({ Box(Modifier.matchParentSize().background(Color.White).testTag("face")) }) else null,
         )
     }
 
-    /** A Top row's card at rank [rank] on a white ground, its poster growing into its backdrop when [grows]. */
-    private fun ranked(rank: Int = 3, grows: Boolean = true) {
+    /** A Top row's card at rank [rank] on a white ground. */
+    private fun ranked(rank: Int = 3) {
         compose.setContent {
             Box(Modifier.fillMaxSize().background(Color.White).padding(start = 48.dp, top = 120.dp)) {
-                RankedCard(rank) { Poster(grows) }
+                RankedCard(rank) { Poster() }
             }
         }
     }
 
-    private fun poster(): Rect = compose.onNodeWithTag("face", useUnmergedTree = true).getBoundsInRoot().let { Rect(it.left.value, it.top.value, it.right.value, it.bottom.value) }
+    private fun poster(): Rect = compose.onNodeWithContentDescription("Title", useUnmergedTree = true).getBoundsInRoot().let { Rect(it.left.value, it.top.value, it.right.value, it.bottom.value) }
 
     private fun focused(): Rect {
         compose.runOnIdle { focus.requestFocus() }
@@ -145,18 +142,8 @@ class RankedCardTest {
     }
 
     @Test
-    fun aFocusedTopRowPosterGrowsFromItsLeftEdge() {
+    fun aFocusedTopRowPosterLiftsFromItsLeftEdge() {
         ranked()
-        val resting = poster()
-        val lifted = focused()
-        assertEquals(resting.left, lifted.left, 0.5f)
-        assertTrue("it grows", lifted.width > Cards.grownWidth.value)
-        assertEquals((resting.top + resting.bottom) / 2, (lifted.top + lifted.bottom) / 2, 0.5f)
-    }
-
-    @Test
-    fun aFocusedTopRowPosterThatDoesNotGrowStillLiftsFromItsLeftEdge() {
-        ranked(grows = false)
         val resting = poster()
         val lifted = focused()
         assertEquals(resting.left, lifted.left, 0.5f)
@@ -164,9 +151,9 @@ class RankedCardTest {
     }
 
     @Test
-    fun aPosterOnAnyOtherRowStillGrowsFromItsCentre() {
+    fun aPosterOnAnyOtherRowStillLiftsFromItsCentre() {
         compose.setContent {
-            Row(Modifier.fillMaxSize().padding(start = 120.dp, top = 120.dp)) { Poster(grows = false) }
+            Row(Modifier.fillMaxSize().padding(start = 120.dp, top = 120.dp)) { Poster() }
         }
         val resting = poster()
         val lifted = focused()

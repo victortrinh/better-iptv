@@ -995,39 +995,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
-    /**
-     * What names every Title's genres, one Listing at a time: the Title, its place in its kind's list
-     * (1 the newest), the Listing's Category, and the Provider's genre field (a Show's from its
-     * Listing at Sync, a Movie's from its details once read; null otherwise), when the Provider added the
-     * Listing and its rating. What genre rows are made of (#478).
-     */
-    fun forEachGenreSource(each: (id: TitleId, position: Int, category: String, genre: String?, added: Long?, rating: Double?) -> Unit) = synchronized(reader) {
-        reader.prepare(
-            """
-            SELECT t.key, t.position, l.category, CASE WHEN l.kind = 'movie' THEN d.genre ELSE l.genre END, l.added, l.rating
-            FROM listing l JOIN title t ON t.kind = l.kind AND t.position = l.title
-            LEFT JOIN movie_details d ON l.kind = 'movie' AND d.listing_id = l.id
-            """.trimIndent(),
-        ).use {
-            val ids = HashMap<String, TitleId>()
-            while (it.step()) {
-                val key = it.getText(0)
-                each(
-                    ids.getOrPut(key) { titleId(key) }, it.getLong(1).toInt(), it.getText(2), if (it.isNull(3)) null else it.getText(3),
-                    if (it.isNull(4)) null else it.getLong(4), if (it.isNull(5)) null else it.getDouble(5),
-                )
-            }
-        }
-    }
-
-    /** A mark that changes whenever movie details with a genre field are kept, so what's worked out from them is worked out again. */
-    fun movieGenresMark(): Long = synchronized(reader) {
-        reader.prepare("SELECT count(*) * 31 + coalesce(max(fetched_at), 0) FROM movie_details WHERE genre IS NOT NULL").use {
-            it.step()
-            it.getLong(0)
-        }
-    }
-
     /** The Title [id] with its Listings, or null when the catalog doesn't have it. */
     fun title(id: TitleId): StoredTitle? = synchronized(reader) {
         reader.prepare(
