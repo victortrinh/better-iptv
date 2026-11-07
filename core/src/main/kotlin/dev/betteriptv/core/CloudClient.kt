@@ -396,34 +396,6 @@ data class AccountDevice(val id: String, val model: String?, val signedInAt: Ins
 /** A subtitle file the cloud found for a Movie or Episode, in [language] (ISO 639-1), named by its [release]. */
 data class SubtitleOffer(val id: String, val language: String, val release: String, val hearingImpaired: Boolean)
 
-/**
- * Whether a subtitle file's [release] name says it was ripped from [source] (a Version's Source,
- * as the Prefix table names it): it carries one of the tags release groups give that service,
- * such as `NF` for Netflix, as a whole word. Tags that are also common title words (`MAX`) aren't
- * counted, and a Source without a tag of its own (a studio) matches nothing.
- */
-internal fun fromSource(release: String, source: String): Boolean {
-    val tags = SOURCE_TAGS[source] ?: return false
-    val words = release.uppercase().replace("BLU-RAY", "BLURAY").split(Regex("[^A-Z0-9+]+"))
-    return words.any { it in tags }
-}
-
-private val SOURCE_TAGS = mapOf(
-    "Netflix" to setOf("NF", "NFLX"),
-    "Disney+" to setOf("DSNP", "DSNY", "DNSP", "DISNEY+"),
-    "Marvel" to setOf("DSNP", "DSNY", "DNSP", "DISNEY+"),
-    "Prime Video" to setOf("AMZN"),
-    "Apple TV+" to setOf("ATVP", "ATV+", "APTV"),
-    "Max" to setOf("HMAX"),
-    "Paramount+" to setOf("PMTP", "PMNP"),
-    "Peacock" to setOf("PCOK"),
-    "Showtime" to setOf("SHO"),
-    "Crunchyroll" to setOf("CR"),
-    "Discovery+" to setOf("DSCP"),
-    "Joyn" to setOf("JOYN"),
-    "Blu-ray" to setOf("BLURAY", "BDRIP", "BRRIP", "BDREMUX"),
-)
-
 /** A downloaded subtitle file: its [text], in its [format] (`srt`, `vtt` or `ass`). */
 class DownloadedSubtitle(val format: String, val text: String)
 
