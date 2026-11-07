@@ -78,6 +78,30 @@ class SubtitleDownloadsTest {
         assertNull(library.downloadSubtitle(SubtitleOffer("opensubtitles:fr:404", "fr", "gone", false)))
     }
 
+    @Test fun `a subtitle ripped from the Version's Source comes first in its language`() = runBlocking {
+        cloud.subtitle(1, "en", "Movie.2025.1080p.BluRay.x264")
+        val netflix = cloud.subtitle(1, "en", "Movie.2025.1080p.NF.WEB-DL.DDP5.1")
+        val amazon = cloud.subtitle(1, "en", "Movie 2025 2160p AMZN WEB-DL")
+        val fromNetflix = plan(listOf("en")).let { it.copy(version = it.version.copy(attributes = it.version.attributes.copy(source = Known("Netflix", Provenance.Likely)))) }
+
+        val offers = library.subtitleOffers(fromNetflix, listOf("en")).map { it.release }
+        assertEquals(listOf(netflix.release, "Movie.2025.1080p.BluRay.x264", amazon.release), offers)
+
+        val fromAmazon = fromNetflix.copy(version = fromNetflix.version.copy(attributes = fromNetflix.version.attributes.copy(source = Known("Prime Video", Provenance.Likely))))
+        assertEquals(amazon.release, library.subtitleOffers(fromAmazon, listOf("en")).first().release)
+        // Without a Source, the cloud's order stands.
+        assertEquals("Movie.2025.1080p.BluRay.x264", library.subtitleOffers(plan(listOf("en")), listOf("en")).first().release)
+    }
+
+    @Test fun `a Source's tag counts only as a whole word of the release`() {
+        assertEquals(true, fromSource("The.Movie.2025.720p.NF.WEB-DL", "Netflix"))
+        assertEquals(true, fromSource("Movie (2025) [Blu-ray] 1080p", "Blu-ray"))
+        assertEquals(true, fromSource("Movie.2025.DSNP.WEB-DL", "Marvel"))
+        assertEquals(false, fromSource("Mad.Max.Fury.Road.2015.1080p.WEB-DL", "Max"))
+        assertEquals(false, fromSource("Movie.2025.NFO.WEB", "Netflix"))
+        assertEquals(false, fromSource("Movie.2025.WEB", "Universal"))
+    }
+
     @Test fun `without the cloud, or a TMDB ID, the Viewer plays on without downloads`() = runBlocking {
         cloud.subtitle(1, "fr", "Movie.2025.WEB")
         cloud.down = true

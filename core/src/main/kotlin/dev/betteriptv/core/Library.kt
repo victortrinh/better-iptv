@@ -1549,14 +1549,19 @@ class Library private constructor(
 
     /**
      * The subtitles that can be downloaded for [plan]'s Movie or Episode in [languages] (ISO 639-1),
-     * the best few in each language first. Empty for a Title without a TMDB ID, or when the cloud
-     * can't answer: the Viewer plays on without them.
+     * the best few in each language first. A file ripped from the Version's Source (a Netflix
+     * release for a Netflix copy) goes first in its language, as it is timed to that copy; files for
+     * the hard of hearing stay after the others. Empty for a Title without a TMDB ID, or when the
+     * cloud can't answer: the Viewer plays on without them.
      */
     suspend fun subtitleOffers(plan: PlayPlan, languages: List<String>): List<SubtitleOffer> = withContext(Dispatchers.IO) {
         val id = plan.titleId as? TitleId.Tmdb
         if (cloud == null || id == null || languages.isEmpty()) return@withContext emptyList()
         try {
-            cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+            val offers = cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+            val source = plan.version.attributes.source?.value ?: return@withContext offers
+            val order = offers.map { it.language }.distinct()
+            offers.sortedWith(compareBy({ order.indexOf(it.language) }, { it.hearingImpaired }, { !fromSource(it.release, source) }))
         } catch (e: CloudException) {
             emptyList()
         }
