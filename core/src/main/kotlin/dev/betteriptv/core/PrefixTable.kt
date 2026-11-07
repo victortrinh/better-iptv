@@ -173,6 +173,26 @@ internal class PrefixTable private constructor(
         return ChannelName(key, cleaned, country, quality, hevc)
     }
 
+    /**
+     * The word a live Listing named [name] would lose were it a Tier tag, uppercase, with the key of the
+     * Channel it would then be a variant of: the one word before the first colon at the start of the
+     * name that is neither a Tier tag nor a country tag (`PLUS: TNT SPORT 1 HD` is PLUS, then the
+     * Channel "TNT SPORT 1"; `UK PLUS: SKY ONE` is PLUS, then "UK: SKY ONE"). Null when there is no
+     * such word, or more than one. Whether the word is a candidate Tier tag depends on the other live
+     * Listings ([CandidateTierTags]); nothing here applies it.
+     */
+    fun tierTagWord(name: String): Pair<String, String>? {
+        val normalised = withoutSmallCapitals(Normalizer.normalize(name, Normalizer.Form.NFKC))
+        val head = HEAD.find(normalised) ?: return null
+        val words = head.groupValues[1].split(' ')
+        val others = words.filter { it.uppercase(Locale.ROOT) !in tierTags && !COUNTRY_CODE.matches(it) }
+        val word = others.singleOrNull() ?: return null
+        val kept = words - word
+        val rest = normalised.substring(head.range.last + 1)
+        val without = if (kept.isEmpty()) rest else "${kept.joinToString(" ")}: $rest"
+        return word.uppercase(Locale.ROOT) to channelName(without).key
+    }
+
     private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) { matchingHints(category).map { it.rule } }
 
     private fun matchingHints(category: String): List<Hint> {

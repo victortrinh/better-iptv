@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 
 export const PROVIDER_TABLES_DIR = fileURLToPath(new URL("../provider-tables/", import.meta.url));
 
+/** The app's Base table, the text every Provider table merges into. */
+export const readBaseTable = () => readFileSync(new URL("../../core/src/main/resources/dev/betteriptv/core/prefix-table.txt", import.meta.url), "utf8");
+
 /** The hand files in [dir], by Provider hash. Throws on a file not named by a hash. */
 export function readProviderTables(dir = PROVIDER_TABLES_DIR) {
   const files = {};

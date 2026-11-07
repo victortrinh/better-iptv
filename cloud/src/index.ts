@@ -10,7 +10,7 @@ import { fillGames, games } from "./games";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
 import { providerTable } from "./provider-tables";
-import { isUnknownPrefix, MAX_PREFIX_BATCH, saveUnknownPrefixes, type UnknownPrefix } from "./prefixes";
+import { isCandidateTierTag, isUnknownPrefix, MAX_PREFIX_BATCH, MAX_TIER_TAG_BATCH, saveCandidateTierTags, saveUnknownPrefixes, type CandidateTierTag, type UnknownPrefix } from "./prefixes";
 import { isLeague, type League, LEAGUES } from "./schedule";
 import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
@@ -43,8 +43,9 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}, "prefix": "SC",
  *   "hints": ["MULTI-SUBS"]}]}`: keeps those reads, `204`, and learns from their Prefixes (ADR 0014).
  * - `POST /v1/unknown-prefixes`, with `{"provider": "…", "prefixes": [{"prefix": "BR", "listingCount": 260,
- *   "example": "BR - Cold Pursuit (2019)"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't
- *   know, for the developer to add, `204`.
+ *   "example": "BR - Cold Pursuit (2019)"}], "tierTags": [{"word": "PLUS", "listingCount": 40, "example":
+ *   "PLUS: TNT SPORT 1 HD"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't know, and its
+ *   candidate Tier tags (optional, #439), for the developer to add, `204`.
  * - `POST /v1/provider-table`, with `{"provider": "…"}`: that Provider's Provider table, as text in the
  *   Base table's format (`text/plain`): its hand lines, then its learned lines under `[learned prefixes]`,
  *   empty for a Provider the cloud has never seen (ADR 0014).
@@ -194,6 +195,7 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const asked = await unknownPrefixesRequest(request);
     if (typeof asked === "string") return problem(400, asked);
     await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
+    await saveCandidateTierTags(env.DB, asked.provider, asked.tierTags);
     return new Response(null, { status: 204 });
   }
   if (request.method === "POST" && pathname === "/v1/provider-table") {
@@ -440,18 +442,20 @@ async function fileReadsRequest(request: Request, part: "listings" | "files"): P
 }
 
 /** Reads an unknown Prefixes report, or says what's wrong with it. */
-async function unknownPrefixesRequest(request: Request): Promise<{ provider: string; prefixes: UnknownPrefix[] } | string> {
+async function unknownPrefixesRequest(request: Request): Promise<{ provider: string; prefixes: UnknownPrefix[]; tierTags: CandidateTierTag[] } | string> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return "The body must be JSON.";
   }
-  const { provider, prefixes } = (body ?? {}) as { provider?: unknown; prefixes?: unknown };
+  const { provider, prefixes, tierTags = [] } = (body ?? {}) as { provider?: unknown; prefixes?: unknown; tierTags?: unknown };
   if (!isProviderKey(provider)) return "provider must be the SHA-256 of the Provider's host, in lowercase hex.";
   if (!Array.isArray(prefixes) || prefixes.length > MAX_PREFIX_BATCH) return `prefixes must be a list of at most ${MAX_PREFIX_BATCH}.`;
   if (!prefixes.every(isUnknownPrefix)) return "Each Prefix must be {\"prefix\": 1 to 32 characters, \"listingCount\": a positive integer, \"example\": a Listing's name}.";
-  return { provider, prefixes };
+  if (!Array.isArray(tierTags) || tierTags.length > MAX_TIER_TAG_BATCH) return `tierTags must be a list of at most ${MAX_TIER_TAG_BATCH}.`;
+  if (!tierTags.every(isCandidateTierTag)) return "Each Tier tag must be {\"word\": one word of 1 to 5 letters, digits or +, \"listingCount\": a positive integer, \"example\": a Listing's name}.";
+  return { provider, prefixes, tierTags };
 }
 
 /** Reads a subtitle search request, or says what's wrong with it. */

@@ -341,6 +341,13 @@ data class VersionAttributes(
 /** A Prefix the Prefix table doesn't know, seen on [listingCount] Listings such as [example]. */
 data class UnknownPrefix(val prefix: String, val listingCount: Int, val example: String)
 
+/**
+ * A candidate Tier tag (#439): a [word] before the colon at the start of live Listings' names whose
+ * removal makes [listingCount] of them the same Channel as another live Listing, such as [example].
+ * Reported to the cloud for the curator, never applied: it is a Tier tag only once a hand line says so.
+ */
+data class CandidateTierTag(val word: String, val listingCount: Int, val example: String)
+
 sealed interface LoginResult
 
 data class LoggedIn(val expiresOn: Instant?) : LoginResult
@@ -367,7 +374,8 @@ enum class SyncStep { Channels, Movies, Shows, Saving }
 /**
  * A finished Sync. [movieListingCount] and [showListingCount] count the movie and show lists, which
  * leave out Clutter and Sports replays, and [channelListingCount] the Channel variants; [unknownPrefixes]
- * are the Prefixes to add to the Prefix table, most common first. [duration] runs from the Sync's start
+ * are the Prefixes to add to the Prefix table, most common first, and [candidateTierTags] the words
+ * that may be Tier tags (most merging first). [duration] runs from the Sync's start
  * to the end of its swap; for a held catalog, the time it took to compute plus the time its swap took.
  * [rematchedListings] counts the Listings Matched by name instead of by their Provider ID:
  * Mismatches, and Listings without an ID that TMDB found. It grows after the Sync finishes, as
@@ -381,6 +389,7 @@ data class CompletedSync(
     val rematchedListings: Int = 0,
     val showListingCount: Int = 0,
     val channelListingCount: Int = 0,
+    val candidateTierTags: List<CandidateTierTag> = emptyList(),
 )
 
 /**

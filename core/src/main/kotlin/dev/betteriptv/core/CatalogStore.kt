@@ -77,6 +77,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             execSQL("DROP TABLE IF EXISTS staging_channel")
             execSQL("DROP TABLE IF EXISTS staging_live_category")
             execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
+            execSQL("DROP TABLE IF EXISTS staging_tier_tag")
             execSQL("DELETE FROM meta")
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
@@ -87,6 +88,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         execSQL(REPLAY_TABLE.format("replay"))
         INDEXES.forEach { execSQL(it) }
         execSQL(UNKNOWN_PREFIX_TABLE.format("unknown_prefix"))
+        execSQL(TIER_TAG_TABLE.format("tier_tag"))
         // Favourites an older app kept by stream id wait for the next Sync's catalog to be looked up in. An older
         // app run again before that Sync makes a new table by stream id, which joins the ones waiting.
         if (prepare("SELECT count(*) FROM pragma_table_info('favourite') WHERE name = 'id'").use { it.step(); it.getLong(0) } > 0) {
@@ -315,6 +317,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("DROP TABLE IF EXISTS staging_title")
             writer.execSQL("DROP TABLE IF EXISTS staging_replay")
             writer.execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
+            writer.execSQL("DROP TABLE IF EXISTS staging_tier_tag")
             writer.execSQL(REPLAY_TABLE.format("staging_replay"))
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
@@ -324,6 +327,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
             writer.execSQL(UNKNOWN_PREFIX_TABLE.format("staging_unknown_prefix"))
+            writer.execSQL(TIER_TAG_TABLE.format("staging_tier_tag"))
             try {
                 writer.execSQL("BEGIN")
                 val staging = TitleStaging(writer)
@@ -374,6 +378,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 writer.prepare("INSERT INTO staging_unknown_prefix VALUES (?, ?, ?)").use { insert ->
                     sync.unknownPrefixes.forEach {
                         insert.bindText(1, it.prefix)
+                        insert.bindLong(2, it.listingCount.toLong())
+                        insert.bindText(3, it.example)
+                        insert.stepAndReset()
+                    }
+                }
+                writer.prepare("INSERT INTO staging_tier_tag VALUES (?, ?, ?)").use { insert ->
+                    sync.candidateTierTags.forEach {
+                        insert.bindText(1, it.word)
                         insert.bindLong(2, it.listingCount.toLong())
                         insert.bindText(3, it.example)
                         insert.stepAndReset()
@@ -507,6 +519,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("DELETE FROM unknown_prefix")
         writer.execSQL("INSERT INTO unknown_prefix SELECT * FROM staging_unknown_prefix")
         writer.execSQL("DROP TABLE staging_unknown_prefix")
+        writer.execSQL("DELETE FROM tier_tag")
+        writer.execSQL("INSERT INTO tier_tag SELECT * FROM staging_tier_tag")
+        writer.execSQL("DROP TABLE staging_tier_tag")
         val computed = meta(PENDING_SYNC_MILLIS)!!.toLong()
         val swapped = Duration.ofNanos(System.nanoTime() - swapStarted).toMillis()
         writeMeta(
@@ -531,6 +546,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("DROP TABLE IF EXISTS staging_title")
         writer.execSQL("DROP TABLE IF EXISTS staging_replay")
         writer.execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
+        writer.execSQL("DROP TABLE IF EXISTS staging_tier_tag")
     }
 
     private fun tableExists(name: String): Boolean =
@@ -564,6 +580,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             meta(LAST_SYNC_REMATCHED)?.toInt() ?: 0,
             meta(LAST_SYNC_SHOW_LISTINGS)?.toInt() ?: 0,
             meta(LAST_SYNC_CHANNELS)?.toInt() ?: 0,
+            candidateTierTags(),
         )
     }
 
@@ -641,6 +658,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         if (moved == 0L) return null
         truncateLog()
         lastSync()
+    }
+
+    private fun candidateTierTags(): List<CandidateTierTag> = synchronized(reader) {
+        reader.prepare("SELECT word, listings, example FROM tier_tag ORDER BY listings DESC, word").use {
+            buildList { while (it.step()) add(CandidateTierTag(it.getText(0), it.getLong(1).toInt(), it.getText(2))) }
+        }
     }
 
     private fun unknownPrefixes(): List<UnknownPrefix> = synchronized(reader) {
@@ -2041,6 +2064,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "(SELECT CASE WHEN a.tmdb_id IS NULL THEN kind || '/listing/' || id ELSE kind || '/' || a.tmdb_id END FROM match_answer a WHERE a.key = match_key)"
         const val UNKNOWN_PREFIX_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (prefix TEXT PRIMARY KEY, listings INTEGER NOT NULL, example TEXT NOT NULL)"
+        /** A Sync's candidate Tier tags (#439), kept like its unknown Prefixes. */
+        const val TIER_TAG_TABLE =
+            "CREATE TABLE IF NOT EXISTS %s (word TEXT PRIMARY KEY, listings INTEGER NOT NULL, example TEXT NOT NULL)"
         const val LAST_SYNC_AT = "last_sync_at"
         const val LAST_SYNC_MILLIS = "last_sync_millis"
         const val LAST_SYNC_LISTINGS = "last_sync_movie_listings"
