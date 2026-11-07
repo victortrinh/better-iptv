@@ -2487,14 +2487,23 @@ class Library private constructor(
         return found
     }
 
-    /** Shares the file reads the cloud doesn't have yet; those it doesn't take are shared next time. */
+    /**
+     * Shares the file reads the cloud doesn't have yet, each with its Listing's Prefix and matched
+     * Category hints (ADR 0014), on every device, Unlocked or not; those the cloud doesn't take are
+     * shared next time.
+     */
     private fun shareFileReads(provider: String) {
         if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
         try {
+            val table = prefixTable
             store.unsharedFileReads().entries.chunked(CloudClient.MAX_BATCH).forEach { batch ->
-                val files = batch.associate { it.key to it.value }
+                val sources = store.fileReadSources(batch.map { it.key })
+                val files = batch.map { (id, file) ->
+                    val reported = sources[id]?.let { (name, category) -> table.reported(name, category) }
+                    CloudClient.SharedFileRead(id, file, reported?.prefix, reported?.hints.orEmpty())
+                }
                 cloud.shareFileReads(provider, files)
-                store.markFileReadsShared(files.keys)
+                store.markFileReadsShared(files.map { it.listingId })
             }
         } catch (e: CloudException) {
             cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER

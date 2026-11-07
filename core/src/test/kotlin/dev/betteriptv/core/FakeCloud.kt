@@ -67,6 +67,10 @@ class FakeCloud : Closeable {
     val searchAsked: List<String>
         get() = received.filter { it.path == "/v1/search" }.map { (read(it.body) as Map<*, *>)["query"] as String }
 
+    /** Each file read devices reported, as sent: `listingId`, `file`, `prefix` and `hints`. */
+    val fileReadReports: List<Map<*, *>>
+        get() = received.filter { it.path == "/v1/file-reads" }.flatMap { request -> ((read(request.body) as Map<*, *>)["files"] as List<*>).map { it as Map<*, *> } }
+
     /** The file reads devices shared, by `<provider key>/<listing id>`. */
     val fileReads = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val matches = HashMap<String, Long?>()

@@ -5,7 +5,7 @@ import {
 } from "./accounts";
 import { deviceOf, register } from "./devices";
 import type { Env } from "./env";
-import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
+import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { fillGames, games } from "./games";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
@@ -40,13 +40,14 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * - `POST /v1/file-reads/lookup`, with `{"provider": "<SHA-256 of the Provider's host>", "listings":
  *   [123]}`: `{"files": [{"listingId": 123, "file": {…}}]}`, what Viewers of that Provider read of
  *   those movie Listings' files. Listings nobody read are left out.
- * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}}]}`:
- *   keeps those reads, `204`.
+ * - `POST /v1/file-reads`, with `{"provider": "…", "files": [{"listingId": 123, "file": {…}, "prefix": "SC",
+ *   "hints": ["MULTI-SUBS"]}]}`: keeps those reads, `204`, and learns from their Prefixes (ADR 0014).
  * - `POST /v1/unknown-prefixes`, with `{"provider": "…", "prefixes": [{"prefix": "BR", "listingCount": 260,
  *   "example": "BR - Cold Pursuit (2019)"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't
  *   know, for the developer to add, `204`.
  * - `POST /v1/provider-table`, with `{"provider": "…"}`: that Provider's Provider table, as text in the
- *   Base table's format (`text/plain`), empty for a Provider the cloud has never seen (ADR 0014).
+ *   Base table's format (`text/plain`): its hand lines, then its learned lines under `[learned prefixes]`,
+ *   empty for a Provider the cloud has never seen (ADR 0014).
  * - `POST /v1/subtitles`, with `{"kind": "movie", "tmdbId": 238, "season": null, "episode": null,
  *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
  *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
@@ -429,10 +430,13 @@ async function fileReadsRequest(request: Request, part: "listings" | "files"): P
     if (!asked.every(isListingId)) return "Each Listing must be a positive integer id.";
     return { provider, listings: [...new Set(asked as number[])], files: [] };
   }
-  for (const file of asked as { listingId?: unknown; file?: unknown }[]) {
-    if (!isListingId(file?.listingId) || !isFile(file.file)) return "Each file must be {\"listingId\": a positive integer, \"file\": an object of at most 8 KB}.";
+  for (const file of asked as { listingId?: unknown; file?: unknown; prefix?: unknown; hints?: unknown }[]) {
+    if (!isListingId(file?.listingId) || !isFile(file.file) || !isReportedPrefix(file.prefix) || !isReportedHints(file.hints)) {
+      return "Each file must be {\"listingId\": a positive integer, \"file\": an object of at most 8 KB, \"prefix\": a Prefix code or null, \"hints\": a list of Category hint words}.";
+    }
   }
-  return { provider, listings: [], files: asked as FileRead[] };
+  const kept = (asked as FileRead[]).map(({ listingId, file, prefix, hints }) => ({ listingId, file, prefix: prefix ?? null, hints: hints ?? [] }));
+  return { provider, listings: [], files: kept };
 }
 
 /** Reads an unknown Prefixes report, or says what's wrong with it. */
