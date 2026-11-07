@@ -181,6 +181,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         (DETAILS_COLUMNS + listOf("runtime" to "INTEGER", "added" to "INTEGER")).forEach { (column, type) ->
             if (!hasColumn("movie_details", column)) execSQL("ALTER TABLE movie_details ADD COLUMN $column $type")
         }
+        // Backdrops the app refused once decoded (a poster handed over as one, #475): they count as none from then on.
+        execSQL("CREATE TABLE IF NOT EXISTS refused_backdrop (url TEXT PRIMARY KEY)")
         execSQL(
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
                 "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, container TEXT, still TEXT, duration INTEGER, PRIMARY KEY (listing_id, id))",
@@ -1129,6 +1131,19 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO remembered_track VALUES ($profile, ?, ?)").use {
             it.bindText(1, kind)
             it.bindText(2, value)
+            it.step()
+        }
+        Unit
+    }
+
+    /** The backdrops the app refused ([Library.refuseBackdrop]). */
+    fun refusedBackdrops(): Set<String> = synchronized(reader) {
+        reader.prepare("SELECT url FROM refused_backdrop").use { buildSet { while (it.step()) add(it.getText(0)) } }
+    }
+
+    fun refuseBackdrop(url: String) = synchronized(writer) {
+        writer.prepare("INSERT OR IGNORE INTO refused_backdrop VALUES (?)").use {
+            it.bindText(1, url)
             it.step()
         }
         Unit

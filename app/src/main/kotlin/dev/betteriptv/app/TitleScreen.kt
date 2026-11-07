@@ -77,7 +77,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * A Title's page, in two levels (DESIGN.md, Details). The page itself holds the Title and what to do
- * with it: the logo, the metadata line (year · runtime · genres · rating, as the Provider gives them,
+ * with it: its name in Display type, the metadata line (year · runtime · genres · rating, as the Provider gives them,
  * ADR 0014) with its badges, two lines of the Provider's plot and the actions,
  * Play first, then Restart, "Remove from Continue watching" and Versions, whose value says what Play
  * starts ("English · 1080p · 9 Versions"). A Movie's fits on one screen. OK on Versions opens the
@@ -90,8 +90,10 @@ import kotlinx.coroutines.withContext
  * opens [TitleSection.Episodes], the Episode picker ([EpisodesContent]): seasons on the left, the
  * picked season's Episodes on the right with the Provider's stills, opening on the next Episode to
  * watch; choosing one plays it.
- * TMDB's backdrop fills the screen. Without one, the poster sits beside the header instead: a
- * poster blown up as a backdrop is too blurry and too bright to keep text on it readable.
+ * The Provider's backdrop fills the screen. Without one, or with one refused once decoded (a poster
+ * handed over as a backdrop, [rememberBackdrop]), the page keeps the ground and the poster sits at
+ * the right of the header instead: a poster blown up as a backdrop is too blurry and too bright to
+ * keep text on it readable.
  *
  * Play starts the Best playable Version for this stick and TV ([deviceProfile] is read when the
  * screen opens); choosing a Version row plays that one instead. On a Movie the Viewer stopped in,
@@ -101,8 +103,8 @@ import kotlinx.coroutines.withContext
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode; with nothing to play, focus goes to the Episodes action.
  *
- * The page arrives whole ([TitlePage]): opened from a card grown into its textless backdrop
- * ([openedOn]), it opens on that picture and gathers the details, the plan and a Show's Episodes
+ * The page arrives whole ([TitlePage]): opened from the featured hero's Details, on the hero's
+ * backdrop ([openedOn]), it opens on that picture and gathers the details, the plan and a Show's Episodes
  * before its content fades in.
  */
 @Composable
@@ -145,7 +147,7 @@ fun TitleScreen(
     LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) { if (readable) library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own backdrop, already in memory.
-    val start = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
+    val start = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop) }) }
     // Play lets the Header read in flight finish and plays what that settles, from where this plan starts (Restart's start included).
     val play = { plan: PlayPlan, name: String ->
         scope.launch {
@@ -189,8 +191,8 @@ fun TitleScreen(
  * ([loaded]), and on a Show its Episodes and their plan ([show]), each null until read. Screen tests
  * drive it.
  *
- * It arrives whole (DESIGN.md, Motion). Opened from a card that had grown into its textless
- * backdrop ([openedOn]), its first frame is that card's copy of the picture, from memory, and the
+ * It arrives whole (DESIGN.md, Motion). Opened from the featured hero, on its backdrop
+ * ([openedOn]), its first frame is the hero's copy of the picture, from memory, and the
  * screen-sized one fades in over it once read: the same picture, so the swap can't be seen. The
  * header and actions wait for the details, the plan and a Show's Episodes, up to
  * [Motion.pageArrivalMillis], then fade in together. A Show whose Episodes take longer shows Play
@@ -235,8 +237,8 @@ internal fun TitlePage(
     LaunchedEffect(arrived) { if (arrived) fade.animateTo(1f, tween(Motion.screenFadeMillis)) }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
         val first = rememberArtworkInMemory(openedOn)
-        val backdrop = rememberArtwork(title?.backdrop)
-        if (backdrop != null) Backdrop(backdrop, under = first) else if (first != null) Backdrop(first)
+        val backdrop = rememberBackdrop(title?.backdrop)
+        if (backdrop != null || first != null) Box(Modifier.fillMaxSize().testTag(PAGE_BACKDROP)) { if (backdrop != null) Backdrop(backdrop, under = first) else Backdrop(first!!) }
         if (arrived) {
             val plan = loaded.second ?: show?.second
             checkNotNull(title)
@@ -244,7 +246,7 @@ internal fun TitlePage(
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
                     TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, title.fromTmdb, onChoose = { onChoose(it, title.name) }, checking = checking)
-                    TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
+                    TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
                     null -> TitleContent(
                         if (kids) title.copy(trailer = null) else title, plan, show?.first,
@@ -303,7 +305,6 @@ private fun TitleContent(
 ) {
     val context = LocalContext.current
     val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
-    val logo = rememberArtwork(title.logo)
     val play = remember { FocusRequester() }
     val versionsAction = remember { FocusRequester() }
     val episodesAction = remember { FocusRequester() }
@@ -347,7 +348,7 @@ private fun TitleContent(
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {
-            TitleName(title.name, logo)
+            TitleName(title.name)
             Spacer(Modifier.height(Spacing.s))
             // The badges go under the line when both don't fit, so a long rank badge ("#1 in movies in
             // United States") doesn't cut the genres off (#208).
@@ -461,11 +462,17 @@ private fun TitleContent(
                 image,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.width(Cards.posterWidth).aspectRatio(2f / 3f).clip(RoundedCornerShape(Corners.card)),
+                modifier = Modifier.width(Cards.posterWidth).aspectRatio(2f / 3f).clip(RoundedCornerShape(Corners.card)).testTag(HEADER_POSTER),
             )
         }
     }
 }
+
+/** The Title page's backdrop, filling the screen behind it. */
+internal const val PAGE_BACKDROP = "page backdrop"
+
+/** The poster at the right of a Title page's header, there when the Title has no backdrop. */
+internal const val HEADER_POSTER = "header poster"
 
 /** Why a Show whose Episodes are read has none to offer, or null when it has some. */
 private fun ShowEpisodes?.note(context: Context): String? = when {

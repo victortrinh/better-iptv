@@ -90,8 +90,7 @@ fun HomePrototype(focusCard: Boolean, numerals: NumeralStyle = Numerals.style) {
             }
             item {
                 Column(Modifier.onFocusChanged { if (it.hasFocus || heroFocused != null || focusCard) heroFocused = it.hasFocus }.padding(start = Spacing.screenX, top = 96.dp, bottom = 28.dp).width(440.dp)) {
-                    // The sample films have no TMDB logo, so the name shows as text.
-                    TitleName(featured.name, logo = null)
+                    TitleName(featured.name)
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${featured.year} · ${featured.runtime} · ${featured.genres}", style = Type.body, color = Colors.inkMuted)

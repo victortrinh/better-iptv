@@ -33,28 +33,29 @@ import dev.betteriptv.core.FeaturedTitle
 
 /** The art the player shows while a Version starts, until its first frame. */
 sealed interface StartingArt {
-    /** A Title's (a Movie's, or the Show of an Episode): its backdrop, dimmed, with its logo over it. */
-    data class Title(val backdrop: String?, val logo: String?) : StartingArt
+    /** A Title's (a Movie's, or the Show of an Episode): its backdrop, dimmed, with its name over it. */
+    data class Title(val backdrop: String?) : StartingArt
 
     /** A Channel's, a Game's Feed's included: its logo on glass. */
     data class Channel(val logo: String?) : StartingArt
 }
 
-/** What the featured hero's Play starts on: the very backdrop and logo the hero drew, so they come from memory. */
-internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Title(backdrop, logo)
+/** What the featured hero's Play starts on: the very backdrop the hero drew, so it comes from memory. */
+internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Title(backdrop)
 
 /**
  * What covers the picture while a Version starts, so waiting isn't a black screen: a Title's
- * backdrop dimmed by a `veil`, with its logo (its [name] without one) in the middle, or a Channel's
+ * backdrop dimmed by a `veil`, with its [name] in Display type in the middle, or a Channel's
  * logo on a glass card. The player's starting label sits over it. Once the engine shows its first
  * frame ([pictured]), it fades away over [Motion.screenFadeMillis] of frames ([Fade]) to the picture under it, and
  * leaves the screen. Without [art] (a Sports replay) it is the bare `ground`.
  *
  * Once the session has [failed], the cover is back at full strength whether or not a frame showed (VLC
- * can show its picture and still fail), without its logo or glass card, so the failure's message reads
+ * can show its picture and still fail), without its name or glass card, so the failure's message reads
  * in the centre over the dimmed backdrop instead of on black.
  *
- * The backdrop is the one the Title page drew, so it comes from memory and shows on the first frame.
+ * The backdrop is the one the Title page drew, so it comes from memory and shows on the first frame;
+ * one refused as it was decoded ([rememberBackdrop]) leaves the ground under the veil.
  */
 @Composable
 internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, failed: Boolean = false) {
@@ -71,12 +72,12 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, f
     Box(Modifier.fillMaxSize().testTag(STARTING_COVER).graphicsLayer { this.alpha = if (failed) 1f else alpha.value }.background(Colors.ground)) {
         when (art) {
             is StartingArt.Title -> {
-                rememberArtwork(art.backdrop)?.let { backdrop ->
+                rememberBackdrop(art.backdrop)?.let { backdrop ->
                     Image(backdrop, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().testTag(STARTING_BACKDROP))
                 }
-                // Dimmed, so the logo and the starting label read over any backdrop.
+                // Dimmed, so the name and the starting label read over any backdrop.
                 Box(Modifier.fillMaxSize().background(Colors.veil))
-                if (!failed) TitleName(name, rememberArtwork(art.logo), Modifier.align(Alignment.Center))
+                if (!failed) TitleName(name, Modifier.align(Alignment.Center).padding(horizontal = Spacing.screenX), TextAlign.Center)
             }
             is StartingArt.Channel -> if (!failed) Box(
                 Modifier.align(Alignment.Center).width(Cards.continueWidth).aspectRatio(16f / 9f)

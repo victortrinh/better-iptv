@@ -75,8 +75,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withTimeoutOrNull
+import coil3.PlatformContext
 import coil3.compose.LocalPlatformContext
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -249,7 +249,7 @@ fun RowsScreen(
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
-    feature: (suspend () -> FeaturedTitle?)? = null,
+    feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
@@ -313,13 +313,14 @@ internal fun RowsLayout(
     onPlayReplay: (RowCard, LeagueReplay) -> Unit = { _, _ -> },
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
-    feature: (suspend () -> FeaturedTitle?)? = null,
+    feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val reader by rememberUpdatedState(read)
     val featurer by rememberUpdatedState(feature)
     val context = LocalPlatformContext.current
+    val backdrops = LocalBackdrops.current
     // Entered (by its tab, or as the app starts), not come back to from a page it opened.
     val entering = remember { restoreFocus == null }
     // Each entry features the Title read for it during the last one; the hero shows from the top,
@@ -369,18 +370,25 @@ internal fun RowsLayout(
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
     LaunchedEffect(reading) {
         val before = state.rows
-        // The first entry's hero is read beside the rows, its backdrop and logo as soon as it is, and
-        // they show together (#386): the rows wait up to the page arrival time for the Title and its
-        // art, so the hero arrives whole instead of its text first. A Title read later than that is
-        // kept for the next entry; art that arrives later fades in as it comes.
+        // The first entry's hero is read beside the rows, its backdrop as soon as it is, and they show
+        // together (#386): the rows wait up to the page arrival time for the Title and its backdrop,
+        // so the hero arrives whole instead of its text first. A Title read later than that is kept
+        // for the next entry; a backdrop that arrives later fades in as it comes, checked then
+        // ([rememberBackdrop]). One refused in time (a poster handed over as a backdrop) gives way to
+        // a Title whose backdrop is kept, read with no Provider call.
         val choose = !checked && entering && !state.upNextRead
-        val chosen = if (choose) featurer?.let { feature -> async { feature() } } else null
-        val art = chosen?.let { async { it.await()?.let { title -> awaitAll(async { loadArtwork(context, title.backdrop) }, async { loadArtwork(context, title.logo) }) } } }
+        val feature = featurer
+        val chosen = if (choose && feature != null) async { feature(true) } else null
+        val art = chosen?.let { async { it.await()?.let { title -> loadBackdrop(context, title.backdrop, backdrops) } } }
         val fresh = reader().withUniqueCards()
         if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await() }
         val late = chosen != null && !chosen.isCompleted
         state.held = null
-        if (chosen != null) state.featured = if (late) null else chosen.await()
+        if (chosen != null && feature != null) state.featured = when {
+            late -> null
+            art!!.isCompleted && art.await() == false -> feature(false)?.also { preloadArtwork(context, it.backdrop) }
+            else -> chosen.await()
+        }
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
@@ -398,9 +406,8 @@ internal fun RowsLayout(
         checked = true
         // The next entry's hero, read now with its art so it shows at once then.
         if (first && entering) featurer?.let { next ->
-            state.upNext = if (late) chosen!!.await() else next()
+            state.upNext = if (late && art!!.await() != false) chosen!!.await() else featureChecked(context, backdrops, next)
             state.upNextRead = true
-            state.upNext?.let { preloadArtwork(context, it.backdrop); preloadArtwork(context, it.logo) }
         }
     }
     // Once focus leaves the row a reading held back, the row takes it.
@@ -601,8 +608,10 @@ internal fun RowsLayout(
                                     onScreen(title.id)
                                     val poster = @Composable {
                                         // A poster carries its printed title, so nothing is laid over it (#474).
+                                        // Continue watching's still is the Title's backdrop, else (none, or refused once decoded) its poster.
+                                        val still = resume?.still.takeIf { wide }?.takeUnless { it == title.image }
                                         TitleCard(
-                                            image = rememberArtwork(resume?.still.takeIf { wide } ?: title.image, card = true),
+                                            image = still?.let { rememberBackdrop(it, card = true) } ?: rememberArtwork(title.image, card = true),
                                             name = title.name,
                                             badges = emptyList(),
                                             onClick = { onOpen(card, title.id, null) },
@@ -932,3 +941,15 @@ internal const val WAITING = "waiting"
 /** The checklist step's size: the dot alone, not beside a caption. */
 private val WAITING_DOT_SIZE = 10.dp
 
+/**
+ * The Title [feature] picks for the hero, with its backdrop loaded into memory and checked once
+ * decoded ([loadBackdrop]). One refused (a poster handed over as a backdrop) is remembered as none,
+ * and the next Title is picked from those whose backdrop is already kept, so the entry still reads
+ * the Provider's details once at most. Null when none qualifies.
+ */
+internal suspend fun featureChecked(context: PlatformContext, backdrops: Backdrops, feature: suspend (readDetails: Boolean) -> FeaturedTitle?): FeaturedTitle? {
+    val first = feature(true) ?: return null
+    if (loadBackdrop(context, first.backdrop, backdrops)) return first
+    val other = feature(false) ?: return null
+    return other.takeIf { loadBackdrop(context, it.backdrop, backdrops) }
+}

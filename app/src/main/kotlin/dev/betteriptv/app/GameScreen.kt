@@ -155,7 +155,7 @@ private fun GameContent(
         item {
             Row(Modifier.padding(top = Spacing.xl, bottom = Spacing.xl)) {
                 Column(Modifier.width(HEADER_WIDTH)) {
-                    TitleName(context.matchup(game), null)
+                    TitleName(context.matchup(game))
                     Spacer(Modifier.height(Spacing.s))
                     Text(
                         listOfNotNull(context.gameLeague(game), context.gameCaption(game), context.mainCardCaption(game), context.feedCount(entry)).joinToString(" · "),

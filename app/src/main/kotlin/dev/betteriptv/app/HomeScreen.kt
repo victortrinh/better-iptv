@@ -127,7 +127,7 @@ fun HomeScreen(
                 }
             }
         } else null,
-        feature = { library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region) },
+        feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region, readDetails) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
