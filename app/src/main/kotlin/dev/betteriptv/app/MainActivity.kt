@@ -113,11 +113,13 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         val appLanguage = settings.appLanguage
         // Saved, so the Viewer stays in Settings when changing the App language recreates the screen.
         var tab by rememberSaveable { mutableStateOf(Browse.Home) }
-        // Each screen keeps its scroll position while another is shown.
-        val home = remember { RowsState() }
-        val movies = remember { TitlesState() }
-        val shows = remember { TitlesState() }
-        val live = remember { RowsState() }
+        // Each screen keeps its scroll position while another is shown, and starts over on another Profile, whose rows are its own.
+        val profile by app.library.profiles.collectAsStateWithLifecycle()
+        val profileId = profile.currentId
+        val home = remember(profileId) { RowsState() }
+        val movies = remember(profileId) { TitlesState() }
+        val shows = remember(profileId) { TitlesState() }
+        val live = remember(profileId) { RowsState() }
         // The query stays while a Title found by it is open, so Back returns to the same results.
         var query by remember { mutableStateOf("") }
         var opened by remember { mutableStateOf<OpenedTitle?>(null) }
@@ -282,7 +284,11 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         onPlayReplay = { playReplay(it, it.heading) },
                     )
                 }
-                Browse.Settings -> SettingsScreen(app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab)
+                Browse.Settings -> SettingsScreen(
+                    app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab,
+                    profiles = profile,
+                    onProfile = app::changeProfiles,
+                )
                 Browse.Movies, Browse.Shows -> {
                     val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
                     // Each tab its own screen, so the card to focus on one isn't looked for on the other.
