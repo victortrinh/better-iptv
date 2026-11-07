@@ -8,7 +8,7 @@ import { FakeTmdb } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 let email: FakeEmail;
 beforeEach(async () => {
-  await env.DB.batch(["device", "account", "sign_in_code", "sign_in_miss", "magic_link", "unknown_prefix"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+  await env.DB.batch(["device", "account", "sign_in_code", "sign_in_miss", "magic_link", "delete_link", "delete_request", "unknown_prefix"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   tmdb = new FakeTmdb();
   email = new FakeEmail(tmdb);
 });
@@ -46,8 +46,8 @@ async function registerDevice(): Promise<string> {
   return ((await response.json()) as { token: string }).token;
 }
 
-async function signInCode(token: string): Promise<{ code: string; url: string; expiresIn: number }> {
-  const response = await call("POST", "/v1/sign-in", {}, token);
+async function signInCode(token: string, model?: string): Promise<{ code: string; url: string; expiresIn: number }> {
+  const response = await call("POST", "/v1/sign-in", model === undefined ? {} : { model }, token);
   expect(response.status).toBe(200);
   return (await response.json()) as { code: string; url: string; expiresIn: number };
 }
@@ -317,5 +317,232 @@ describe("a signed-in device", () => {
     expect(await account(token)).toBeNull();
     const row = await env.DB.prepare("SELECT account_id, signed_in_at FROM device").first();
     expect(row).toEqual({ account_id: null, signed_in_at: null });
+  });
+});
+
+interface ListedDevice {
+  id: string;
+  model: string | null;
+  signedInAt: string;
+  thisDevice: boolean;
+}
+
+async function devices(token: string): Promise<ListedDevice[]> {
+  const response = await call("POST", "/v1/account/devices", {}, token);
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { devices: ListedDevice[] }).devices;
+}
+
+/** A registered TV of [model], signed in to [address]'s Account. */
+async function signedInTv(address: string, model?: string): Promise<string> {
+  const token = await registerDevice();
+  await phoneSignsIn((await signInCode(token, model)).code, address);
+  return token;
+}
+
+describe("the Account's device list", () => {
+  it("lists every device signed in to the Account with its model and sign-in date, this one marked", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-11-03T20:00:00Z"), toFake: ["Date"] });
+    const living = await signedInTv("home@example.com", "Fire TV Stick 4K Max");
+    vi.setSystemTime(Date.parse("2026-11-05T09:30:00Z"));
+    const bedroom = await signedInTv("home@example.com", "Fire TV Cube");
+    await signedInTv("elsewhere@example.com", "Chromecast with Google TV");
+    await registerDevice();
+
+    const listed = await devices(living);
+    expect(listed.map(({ model, signedInAt, thisDevice }) => ({ model, signedInAt, thisDevice }))).toEqual([
+      { model: "Fire TV Stick 4K Max", signedInAt: "2026-11-03T20:00:00.000Z", thisDevice: true },
+      { model: "Fire TV Cube", signedInAt: "2026-11-05T09:30:00.000Z", thisDevice: false },
+    ]);
+    expect((await devices(bedroom)).map((d) => d.thisDevice)).toEqual([false, true]);
+    expect((await devices(bedroom)).map((d) => d.id)).toEqual(listed.map((d) => d.id));
+  });
+
+  it("names a device by an opaque id, never its token or the token's hash", async () => {
+    const token = await signedInTv("home@example.com", "Fire TV Stick 4K Max");
+    const [listed] = await devices(token);
+    const hash = (await env.DB.prepare("SELECT token_hash FROM device").first<{ token_hash: string }>())!.token_hash;
+    expect(listed.id).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).not.toContain(listed.id);
+    expect(listed.id).not.toBe(token.slice(0, 16));
+  });
+
+  it("is empty for a device that isn't signed in", async () => {
+    expect(await devices(await registerDevice())).toEqual([]);
+  });
+
+  it("keeps the model from the sign-in, trimmed to a line, and none when the TV sent none", async () => {
+    const plain = await signedInTv("home@example.com");
+    await signedInTv("home@example.com", `  ${"Fire TV ".repeat(20)}\n`);
+    const [first, second] = await devices(plain);
+    expect(first.model).toBeNull();
+    expect(second.model!.length).toBeLessThanOrEqual(60);
+    expect(second.model).not.toMatch(/\s$|\n/);
+  });
+
+  it("refuses a sign-in whose model isn't text", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/sign-in", { model: 42 }, token)).status).toBe(400);
+  });
+});
+
+describe("signing a device out", () => {
+  it("of this device clears its link at once", async () => {
+    const token = await signedInTv("home@example.com", "Fire TV Stick 4K Max");
+    const out = await call("POST", "/v1/account/sign-out", {}, token);
+    expect(out.status).toBe(204);
+    expect(out.headers.get("Zugig-Account")).toBe("none");
+    expect(await account(token)).toBeNull();
+    expect(await env.DB.prepare("SELECT account_id, signed_in_at, model FROM device").first()).toEqual({ account_id: null, signed_in_at: null, model: null });
+  });
+
+  it("of another device clears it in the cloud, and that device hears it on its next request", async () => {
+    const living = await signedInTv("home@example.com", "Fire TV Stick 4K Max");
+    const bedroom = await signedInTv("home@example.com", "Fire TV Cube");
+    const before = await call("POST", "/v1/games", { leagues: ["nhl"] }, bedroom);
+    expect(before.headers.get("Zugig-Account")).toBe("signed-in");
+
+    const other = (await devices(living)).find((d) => !d.thisDevice)!;
+    expect((await call("POST", "/v1/account/sign-out", { device: other.id }, living)).status).toBe(204);
+
+    const after = await call("POST", "/v1/games", { leagues: ["nhl"] }, bedroom);
+    expect(after.status).toBe(200);
+    expect(after.headers.get("Zugig-Account")).toBe("none");
+    expect(await account(bedroom)).toBeNull();
+    expect(await account(living)).toBe("home@example.com");
+    expect((await devices(living)).map((d) => d.model)).toEqual(["Fire TV Stick 4K Max"]);
+  });
+
+  it("can't reach a device on another Account", async () => {
+    const mine = await signedInTv("home@example.com");
+    const theirs = await signedInTv("elsewhere@example.com");
+    const [their] = await devices(theirs);
+    expect((await call("POST", "/v1/account/sign-out", { device: their.id }, mine)).status).toBe(404);
+    expect(await account(theirs)).toBe("elsewhere@example.com");
+  });
+
+  it("is refused without being signed in, or with an id that isn't one", async () => {
+    expect((await call("POST", "/v1/account/sign-out", {}, await registerDevice())).status).toBe(404);
+    const mine = await signedInTv("home@example.com");
+    expect((await call("POST", "/v1/account/sign-out", { device: 7 }, mine)).status).toBe(400);
+  });
+
+  it("leaves the device registered, so it signs in again with the same token", async () => {
+    const token = await signedInTv("home@example.com");
+    await call("POST", "/v1/account/sign-out", {}, token);
+    await phoneSignsIn((await signInCode(token)).code, "home@example.com");
+    expect(await account(token)).toBe("home@example.com");
+  });
+
+  it("says on every answer to a device that never signed in that it isn't", async () => {
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/games", { leagues: ["nhl"] }, token)).headers.get("Zugig-Account")).toBe("none");
+  });
+});
+
+/** The phone asks for a "Delete my account" link for [address] on the page; the page's answer. */
+const askToDelete = (address: string, ip = PHONE) => form("/delete-account", { email: address }, ip);
+
+/** Opens a delete link on the phone and confirms it; the page's answer. */
+async function tapDeleteLink(link: string): Promise<Response> {
+  const url = new URL(link);
+  const page = await call("GET", url.pathname + url.search);
+  expect(page.status).toBe(200);
+  expect(await page.text()).toContain('<form method="post" action="/delete-account/link">');
+  return form(url.pathname, { token: url.searchParams.get("token")! });
+}
+
+describe("Delete my account", () => {
+  it("is offered from the sign-in page, with the privacy note", async () => {
+    expect(await (await call("GET", "/sign-in")).text()).toContain('href="/delete-account"');
+    const page = await call("GET", "/delete-account");
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('<form method="post" action="/delete-account">');
+    expect(html).toContain("never keep your TV service's login");
+  });
+
+  it("emails a link, and tapping it deletes the Account; every device goes anonymous at its next contact", async () => {
+    const living = await signedInTv("home@example.com", "Fire TV Stick 4K Max");
+    const bedroom = await signedInTv("home@example.com", "Fire TV Cube");
+    const other = await signedInTv("elsewhere@example.com");
+
+    const asked = await askToDelete("Home@Example.com");
+    expect(asked.status).toBe(200);
+    expect(await asked.text()).toContain("home@example.com");
+    const link = email.lastDeleteLinkTo("home@example.com");
+    expect(link).toMatch(/^https:\/\/zugig\.example\/delete-account\/link\?token=[A-Za-z0-9_-]{43}$/);
+    // Asking alone deletes nothing.
+    expect(await account(living)).toBe("home@example.com");
+
+    const done = await tapDeleteLink(link!);
+    expect(done.status).toBe(200);
+    expect(await done.text()).toContain("deleted");
+
+    for (const tv of [living, bedroom]) {
+      const next = await call("POST", "/v1/games", { leagues: ["nhl"] }, tv);
+      expect(next.status).toBe(200);
+      expect(next.headers.get("Zugig-Account")).toBe("none");
+      expect(await account(tv)).toBeNull();
+    }
+    expect(await account(other)).toBe("elsewhere@example.com");
+    expect(await env.DB.prepare("SELECT email FROM account").all()).toMatchObject({ results: [{ email: "elsewhere@example.com" }] });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM magic_link WHERE email = 'home@example.com'").first()).toEqual({ n: 0 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM device WHERE model IS NOT NULL").first()).toEqual({ n: 0 });
+  });
+
+  it("asks for a tap before deleting, so a mail scanner opening the link deletes nothing", async () => {
+    const tv = await signedInTv("home@example.com");
+    await askToDelete("home@example.com");
+    const url = new URL(email.lastDeleteLinkTo("home@example.com")!);
+    expect((await call("GET", url.pathname + url.search)).status).toBe(200);
+    expect(await account(tv)).toBe("home@example.com");
+  });
+
+  it("works once, for 15 minutes", async () => {
+    await signedInTv("home@example.com");
+    await askToDelete("home@example.com");
+    const link = email.lastDeleteLinkTo("home@example.com")!;
+    expect((await tapDeleteLink(link)).status).toBe(200);
+    expect((await tapDeleteLink(link)).status).toBe(410);
+
+    vi.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+    await signedInTv("home@example.com");
+    await askToDelete("home@example.com");
+    vi.setSystemTime(Date.now() + 15 * 60_000 + 1);
+    const late = await tapDeleteLink(email.lastDeleteLinkTo("home@example.com")!);
+    expect(late.status).toBe(410);
+    expect(await late.text()).toContain("expired");
+  });
+
+  it("answers the same for an address with no Account, and emails nobody", async () => {
+    await signedInTv("home@example.com");
+    const sentBefore = email.sent.length;
+    const asked = await askToDelete("nobody@example.com");
+    expect(asked.status).toBe(200);
+    expect(await asked.text()).toContain("nobody@example.com");
+    expect(email.sent.length).toBe(sentBefore);
+  });
+
+  it("sends at most 3 links an address and 5 a phone in 15 minutes", async () => {
+    await signedInTv("home@example.com");
+    for (let i = 0; i < 3; i++) expect((await askToDelete("home@example.com")).status).toBe(200);
+    expect((await askToDelete("home@example.com", "198.51.100.1")).status).toBe(429);
+    for (let i = 0; i < 2; i++) expect((await askToDelete(`x${i}@example.com`)).status).toBe(200);
+    expect((await askToDelete("y@example.com")).status).toBe(429);
+  });
+
+  it("refuses an address that isn't one", async () => {
+    expect((await askToDelete("not an address")).status).toBe(400);
+  });
+
+  it("keeps only hashes of the link and of who asked", async () => {
+    await signedInTv("home@example.com");
+    await askToDelete("home@example.com");
+    const token = new URL(email.lastDeleteLinkTo("home@example.com")!).searchParams.get("token")!;
+    const kept = JSON.stringify([await env.DB.prepare("SELECT * FROM delete_link").all(), await env.DB.prepare("SELECT * FROM delete_request").all()]);
+    expect(kept).not.toContain(token);
+    expect(kept).not.toContain(PHONE);
+    expect(kept).not.toContain("home@example.com");
   });
 });
