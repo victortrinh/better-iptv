@@ -159,6 +159,82 @@ class Library private constructor(
 
     val isLoggedIn: Boolean get() = credentials.load() != null
 
+    private val _profiles = MutableStateFlow(readProfiles())
+
+    /**
+     * The household's Profiles on this device and the one it is on (#428). Everything a Viewer
+     * keeps, where they stopped and what they Watched, Favourites, "Not this game" marks and what
+     * they chose in the player, is the current Profile's; the catalog, the login and the Provider's
+     * reads are the device's. The device stays on the Profile it was last on, across launches.
+     */
+    val profiles: StateFlow<Profiles> = _profiles.asStateFlow()
+
+    /** The current Profile's id, which every Viewer's read and write goes to. */
+    private val profile: Long get() = _profiles.value.current.id
+
+    private fun readProfiles(): Profiles {
+        val kept = store.profiles()
+        return Profiles(kept.map { Profile(it.id, it.name, it.kids) }, kept.maxWith(compareBy({ it.usedAt }, { -it.id })).id)
+    }
+
+    /**
+     * Makes a Profile named [name] (trimmed), with nothing watched, no Favourites and no choices,
+     * and gives it, or null when the household already has [MAX_PROFILES]. The device stays on the
+     * Profile it is on.
+     */
+    suspend fun addProfile(name: String, kids: Boolean = false): Profile? = withContext(Dispatchers.IO) {
+        require(name.isNotBlank()) { "A Profile needs a name" }
+        synchronized(_profiles) {
+            if (_profiles.value.all.size >= MAX_PROFILES) return@withContext null
+            val id = store.addProfile(name.trim(), kids, Instant.now())
+            _profiles.value = readProfiles()
+            _profiles.value.all.single { it.id == id }
+        }
+    }
+
+    /** Names Profile [id] [name] (trimmed). */
+    suspend fun renameProfile(id: Long, name: String) = withContext(Dispatchers.IO) {
+        require(name.isNotBlank()) { "A Profile needs a name" }
+        synchronized(_profiles) {
+            store.renameProfile(id, name.trim())
+            _profiles.value = readProfiles()
+        }
+    }
+
+    /** Puts the device on Profile [id]: from now on every Viewer's read and write is its. */
+    suspend fun switchProfile(id: Long) = withContext(Dispatchers.IO) {
+        synchronized(_profiles) {
+            require(_profiles.value.all.any { it.id == id }) { "No Profile $id" }
+            if (id == profile) return@withContext
+            store.useProfile(id, Instant.now())
+            forgetProfileCaches()
+            _profiles.value = readProfiles()
+        }
+    }
+
+    /**
+     * Deletes Profile [id] with everything kept for it, and says whether it did: the household's
+     * last Profile is never deleted. Deleting the current one puts the device on the one used last
+     * of the others.
+     */
+    suspend fun deleteProfile(id: Long): Boolean = withContext(Dispatchers.IO) {
+        synchronized(_profiles) {
+            val profiles = _profiles.value
+            if (profiles.all.none { it.id == id } || profiles.all.size == 1) return@withContext false
+            val current = id == profile
+            store.deleteProfile(id)
+            if (current) forgetProfileCaches()
+            _profiles.value = readProfiles()
+            true
+        }
+    }
+
+    /** What is held in memory for the Profile the device was on, so the next one's is read instead. */
+    private fun forgetProfileCaches() {
+        remembered = null
+        guideFavourites = emptyList()
+    }
+
     /** Checks [login] with the Provider and keeps it only if the Provider accepts it. */
     suspend fun logIn(login: ProviderLogin): LoginResult = withContext(Dispatchers.IO) {
         try {
@@ -596,7 +672,7 @@ class Library private constructor(
     private fun foundChannels(index: SearchIndex, query: String): List<Channel> {
         val hits = index.findChannels(query).sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { it.index })).take(CHANNELS_FOUND * 4)
         // Finished Event channels drop out, so a few more are read than are shown.
-        val on = store.channels(hits.map { index.channels[it.index] }, Instant.now() - EVENT_FINISHED_AFTER)
+        val on = store.channels(profile, hits.map { index.channels[it.index] }, Instant.now() - EVENT_FINISHED_AFTER)
         return hits.mapNotNull { hit -> on[index.channels[hit.index]]?.let { hit to it } }
             .sortedWith(compareBy({ it.first.distance }, { !it.second.favourite }, { it.first.index }))
             .map { it.second }
@@ -604,10 +680,10 @@ class Library private constructor(
     }
 
     /** The Viewer's Favourites that are on, in the order they were added. */
-    suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(Instant.now() - EVENT_FINISHED_AFTER) }
+    suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER) }
 
     /** Saves the Channel keyed [channel] ([Channel.key]) as a Favourite, or removes it when [favourite] is false. */
-    suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(channel, favourite, Instant.now()) }
+    suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(profile, channel, favourite, Instant.now()) }
 
     /** The live Categories the last Sync stored, in the Provider's order, with their normalised names and kinds. */
     suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
@@ -645,7 +721,7 @@ class Library private constructor(
      * are left out, as everywhere.
      */
     suspend fun categoryChannels(category: BrowsedCategory): List<Channel> = withContext(Dispatchers.IO) {
-        store.categoryChannels(category.categoryIds, Instant.now() - EVENT_FINISHED_AFTER)
+        store.categoryChannels(profile, category.categoryIds, Instant.now() - EVENT_FINISHED_AFTER)
     }
 
     /**
@@ -1008,7 +1084,7 @@ class Library private constructor(
         }
         val original = originalLanguage(id)
         val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id) }
-        val played = store.episodeProgress(id)
+        val played = store.episodeProgress(profile, id)
         val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
         val merged = mergeEpisodes(shows, contentLanguages, reads, originalAudioLanguage(original, contentLanguages, preferOriginalAudio), expected(title, contentLanguages))
         val seasons = withUpcomingAndProgress(merged, upcoming.await(), played, LocalDate.now())
@@ -1118,7 +1194,7 @@ class Library private constructor(
         if (id.kind != TitleKind.Show) return null
         val byEpisode = episodeCandidates(id, contentLanguages) ?: return null
         val remembered = rememberedTracks()
-        val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
+        val stopped = store.episodeProgress(profile, id).filter { !it.watched }.associateBy { it.episode }
         val originalLanguage = originalLanguage(id)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
         // The Show's: what the Viewer chose in one Episode carries to the next.
@@ -1157,7 +1233,7 @@ class Library private constructor(
             val version = withBackups(chosen, candidates)
             val remembered = rememberedTracks()
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
-            val at = store.episodeProgress(id).firstOrNull { it.episode == episode && !it.watched }
+            val at = store.episodeProgress(profile, id).firstOrNull { it.episode == episode && !it.watched }
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
                 remembered, at?.duration, originalLanguage(id), titleChoices(id), preferOriginalAudio,
@@ -1170,9 +1246,9 @@ class Library private constructor(
 
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
-        val subtitles = store.rememberedTrack(SUBTITLES)
+        val subtitles = store.rememberedTrack(profile, SUBTITLES)
         RememberedTracks(
-            store.rememberedTrack(AUDIO),
+            store.rememberedTrack(profile, AUDIO),
             subtitles?.takeIf { it != SUBTITLES_OFF && it != CLOSED_CAPTIONS },
             subtitlesOff = subtitles == SUBTITLES_OFF,
             closedCaptions = subtitles == CLOSED_CAPTIONS,
@@ -1181,26 +1257,26 @@ class Library private constructor(
 
     /** Remembers that the Viewer picked audio in [language] (a BCP 47 tag), so it plays next time, and its Versions rank first. */
     suspend fun rememberAudio(language: String) = withContext(Dispatchers.IO) {
-        store.rememberTrack(AUDIO, language)
+        store.rememberTrack(profile, AUDIO, language)
         remembered = rememberedTracks().copy(audio = language)
     }
 
     /** Remembers that the Viewer picked subtitles in [language], or turned them off when null, so the next file starts the same. */
     suspend fun rememberSubtitles(language: String?) = withContext(Dispatchers.IO) {
-        store.rememberTrack(SUBTITLES, language ?: SUBTITLES_OFF)
+        store.rememberTrack(profile, SUBTITLES, language ?: SUBTITLES_OFF)
         remembered = rememberedTracks().copy(subtitles = language, subtitlesOff = language == null, closedCaptions = false)
     }
 
     /** Remembers that the Viewer turned on a Channel's closed captions, so they stay on in the other player and on the next Channel. */
     suspend fun rememberClosedCaptions() = withContext(Dispatchers.IO) {
-        store.rememberTrack(SUBTITLES, CLOSED_CAPTIONS)
+        store.rememberTrack(profile, SUBTITLES, CLOSED_CAPTIONS)
         remembered = rememberedTracks().copy(subtitles = null, subtitlesOff = false, closedCaptions = true)
     }
 
     @Volatile private var remembered: RememberedTracks? = null
 
     /** What the Viewer chose the last time [id] played (#291); nothing, when they never chose anything in it. */
-    fun titleChoices(id: TitleId): TitleChoices = store.titleChoices(id)?.let(::titleChoices) ?: TitleChoices()
+    fun titleChoices(id: TitleId): TitleChoices = store.titleChoices(profile, id)?.let(::titleChoices) ?: TitleChoices()
 
     /**
      * Keeps what the Viewer chose while [plan] plays, so the Title starts the same next time: a
@@ -1208,7 +1284,7 @@ class Library private constructor(
      */
     suspend fun saveChoices(plan: PlayPlan, choices: TitleChoices) = withContext(Dispatchers.IO) {
         val id = plan.titleId ?: return@withContext
-        store.saveTitleChoices(id, choices.toJson(), Instant.now())
+        store.saveTitleChoices(profile, id, choices.toJson(), Instant.now())
     }
 
     /**
@@ -1257,7 +1333,7 @@ class Library private constructor(
     }
 
     /** Where Play starts in [id]: where the Viewer stopped, or null for the start once they finished it. */
-    private fun stopped(id: TitleId): StoredProgress? = store.progress(id)?.takeUnless { it.watched }
+    private fun stopped(id: TitleId): StoredProgress? = store.progress(profile, id)?.takeUnless { it.watched }
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
@@ -1267,7 +1343,7 @@ class Library private constructor(
     internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveProgress(id, if (watched) 0 else position, duration, watched, Instant.now())
+        store.saveProgress(profile, id, if (watched) 0 else position, duration, watched, Instant.now())
     }
 
     /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
@@ -1276,21 +1352,21 @@ class Library private constructor(
         val episode = plan.episode ?: return saveProgress(id, position, duration)
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveEpisodeProgress(id, episode, if (watched) 0 else position, duration, watched, Instant.now())
+        store.saveEpisodeProgress(profile, id, episode, if (watched) 0 else position, duration, watched, Instant.now())
     }
 
     /** Records that the Viewer played [id] to its end. */
-    internal fun finished(id: TitleId) = store.saveProgress(id, 0, null, watched = true, Instant.now())
+    internal fun finished(id: TitleId) = store.saveProgress(profile, id, 0, null, watched = true, Instant.now())
 
     /** Records that the Viewer played what [plan] plays to its end. */
     internal fun finished(plan: PlayPlan) {
         val id = plan.titleId ?: return
         val episode = plan.episode ?: return finished(id)
-        store.saveEpisodeProgress(id, episode, 0, null, watched = true, Instant.now())
+        store.saveEpisodeProgress(profile, id, episode, 0, null, watched = true, Instant.now())
     }
 
     /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
-    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(id) }
+    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(profile, id) }
 
     /**
      * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
@@ -1314,7 +1390,7 @@ class Library private constructor(
         // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
         val liveNow = matchedGames(leagues, contentLanguages, region, now, waitForCloud = false).current.filter { it.game.state == GameState.Live && it.best != null }
         val resumes = continueWatching(contentLanguages)
-        val favourites = store.favourites(Instant.now() - EVENT_FINISHED_AFTER)
+        val favourites = store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
         val charts = charts(region, appLanguage, now)
@@ -1376,8 +1452,8 @@ class Library private constructor(
      * they Watched to its end is left out.
      */
     private fun continueWatching(contentLanguages: List<String>): List<Pair<StoredTitle, Any>> {
-        val progress = store.inProgress(ROW_SIZE).associateBy { it.id }
-        return store.lastPlayed(ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
+        val progress = store.inProgress(profile, ROW_SIZE).associateBy { it.id }
+        return store.lastPlayed(profile, ROW_SIZE).map { it.first }.distinct().mapNotNull { id ->
             val title = store.title(id) ?: return@mapNotNull null
             if (id.kind == TitleKind.Show) showInProgress(title, contentLanguages)?.let { title to it } else progress[id]?.let { title to it }
         }
@@ -1463,7 +1539,7 @@ class Library private constructor(
         liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
 
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
-        val favourites = store.favourites(now - EVENT_FINISHED_AFTER)
+        val favourites = store.favourites(profile, now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
         val matchedGames = matchedGames(leagues, contentLanguages, region, now)
         val matched = matchedGames.current
@@ -1551,7 +1627,7 @@ class Library private constructor(
      * named Feed is dropped, the League network joins, as it does for a Game with none.
      */
     suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Instant.now()): GameFeeds = withContext(Dispatchers.IO) {
-        store.dropFeed(entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
+        store.dropFeed(profile, entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
         // Matched again, so the League network joins once every named Feed is dropped.
         matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
             ?: entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
@@ -1576,12 +1652,12 @@ class Library private constructor(
      */
     private fun matchedFeeds(games: List<Game>, contentLanguages: List<String>, region: String, now: Instant): MatchedGames {
         val categories = store.liveCategories().associateBy { it.id }
-        val events = store.eventChannels(now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
+        val events = store.eventChannels(profile, now - EVENT_WINDOW_BEHIND, now + EVENT_WINDOW_AHEAD).map { (channel, start) ->
             EventChannelListing(channel, start, channel.categoryIds.firstNotNullOfOrNull { categories[it] })
         }
         if (games.isEmpty()) return MatchedGames(emptyList(), events)
-        val dropped = store.droppedFeeds(games.map { "${it.league}/${it.id}" })
-        return MatchedGames(matchFeeds(games, events, store.channelsNamed(broadcasterChannelNames(games)), contentLanguages, now, dropped, region), events)
+        val dropped = store.droppedFeeds(profile, games.map { "${it.league}/${it.id}" })
+        return MatchedGames(matchFeeds(games, events, store.channelsNamed(profile, broadcasterChannelNames(games)), contentLanguages, now, dropped, region), events)
     }
 
     /** What [matchedGames] found: [all] the Games with their Feeds, finished ones included, and the Event channels in the matching window. */
@@ -1712,7 +1788,7 @@ class Library private constructor(
     private fun showInProgress(title: StoredTitle, contentLanguages: List<String>): ShowInProgress? {
         val read = store.showDetails(title.listings.map { it.id })
         val shows = title.listings.filter { it.id in read }.map { candidates(it) to read.getValue(it.id).episodes }
-        val played = store.episodeProgress(title.id)
+        val played = store.episodeProgress(profile, title.id)
         val seasons = withUpcomingAndProgress(mergeEpisodes(shows, contentLanguages), emptyList(), played, LocalDate.now())
         val next = nextEpisode(seasons, played) ?: return null
         val episode = seasons.flatMap { it.episodes }.single { it.id == next }
@@ -1896,7 +1972,7 @@ class Library private constructor(
      */
     private fun nextBackgroundRead(contentLanguages: List<String>, preferOriginalAudio: Boolean): BackgroundRead? {
         val newest = store.titles(TitleKind.Movie, 0, NEW_MOVIES).filter { inContentLanguages(candidates(it), contentLanguages, null) }.map { it.id }
-        val order = cardsOnScreen.asSequence() + store.inProgress(ROW_SIZE).asSequence().map { it.id } + newest.asSequence()
+        val order = cardsOnScreen.asSequence() + store.inProgress(profile, ROW_SIZE).asSequence().map { it.id } + newest.asSequence()
         return order.filter { it.kind == TitleKind.Movie }.distinct().firstNotNullOfOrNull { id ->
             val title = store.title(id) ?: return@firstNotNullOfOrNull null
             val candidates = candidates(title, contentLanguages)
@@ -2205,6 +2281,9 @@ class Library private constructor(
     }
 
     companion object {
+        /** The most Profiles a household keeps (#428). */
+        const val MAX_PROFILES = 5
+
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
         /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */

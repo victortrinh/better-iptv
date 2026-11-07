@@ -222,6 +222,21 @@
     <string name="tmdb_attribution">Détails et illustrations des titres fournis par TMDB. Ce produit utilise l\'API TMDB, mais n\'est ni approuvé ni certifié par TMDB.</string>
 
     <string name="settings_title">Paramètres</string>
+    <string name="settings_profiles">Profils</string>
+    <string name="profile_add">Ajouter un profil</string>
+    <string name="profile_add_full">%1$d profils au plus</string>
+    <string name="profile_switch">Regarder en tant que %1$s</string>
+    <string name="profile_switch_detail">Reprendre, Favoris, ligues et langues sont propres à ce profil</string>
+    <string name="profile_rename">Renommer</string>
+    <string name="profile_rename_title">Renommer %1$s</string>
+    <string name="profile_delete">Supprimer le profil</string>
+    <string name="profile_delete_last">Le dernier profil ne peut pas être supprimé</string>
+    <string name="profile_delete_confirm">Supprimer %1$s ?</string>
+    <string name="profile_delete_detail">Son historique, ses favoris et ses réglages sont supprimés de ce téléviseur.</string>
+    <string name="profile_delete_yes">Supprimer</string>
+    <string name="profile_cancel">Annuler</string>
+    <string name="profile_name">Nom</string>
+    <string name="profile_save">Enregistrer</string>
     <string name="settings_languages">Langues</string>
     <string name="settings_app_language">Langue de l\'appli</string>
     <string name="settings_app_language_detail">Menus, titres et descriptions</string>

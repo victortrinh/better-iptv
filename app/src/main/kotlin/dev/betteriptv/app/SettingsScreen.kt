@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +56,7 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.Profiles
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleKind
@@ -74,7 +76,10 @@ import java.time.Duration
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
  * App, which offers the [update] when there is one ([onUpdate]). Content languages and Region
  * each open a list, and Leagues its logo grid ([LeaguePicker]), in place of the column; Back returns to the row that opened it.
- * [focusTab]: reached by picking its tab, which keeps focus.
+ * Above them, the household's [profiles] ([profilesSection]): a Profile's row opens its page, to watch as it, rename it or
+ * delete it, and "Add a profile" its name; each asks [onProfile]. The Languages and "Play next Episode" are the current
+ * Profile's, the rest the device's.
+ * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
  */
 @Composable
 fun SettingsScreen(
@@ -86,8 +91,41 @@ fun SettingsScreen(
     onSyncNow: () -> Unit,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
+    profiles: Profiles,
+    onProfile: (ProfileChange) -> Unit,
+) = SettingsContent(
+    settings, update, onChange, onUpdate, focusTab, onTab, profiles, onProfile,
+    catalogLanguages = library::catalogLanguages,
+    catalog = {
+        item { SyncRow(library, onSyncNow) }
+        item { MatchingRow(library) }
+    },
+)
+
+/**
+ * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
+ * the Catalog section's rows from [catalog].
+ */
+@Composable
+internal fun SettingsContent(
+    settings: ViewerSettings,
+    update: UpdateState,
+    onChange: ((ViewerSettings) -> ViewerSettings) -> Unit,
+    onUpdate: () -> Unit,
+    focusTab: Boolean,
+    onTab: (Browse) -> Unit,
+    profiles: Profiles,
+    onProfile: (ProfileChange) -> Unit,
+    catalogLanguages: suspend () -> List<String>,
+    catalog: LazyListScope.() -> Unit,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
+    // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
+    var profileId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val profileRows = remember { HashMap<Long, FocusRequester>() }
+    val profileRow = { id: Long -> profileRows.getOrPut(id) { FocusRequester() } }
+    val addProfileRow = remember { FocusRequester() }
+    val picked = profiles.all.find { it.id == profileId }
     val appLanguageRow = remember { FocusRequester() }
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
@@ -102,7 +140,7 @@ fun SettingsScreen(
         Box(Modifier.weight(1f).fillMaxWidth()) { when (picking) {
             Picker.ContentLanguages -> {
                 BackHandler { picking = null }
-                ContentLanguagesList(library, settings.contentLanguages, onChange = { languages -> onChange { it.copy(contentLanguages = languages) } })
+                ContentLanguagesList(catalogLanguages, settings.contentLanguages, onChange = { languages -> onChange { it.copy(contentLanguages = languages) } })
             }
             Picker.Region -> {
                 BackHandler { picking = null }
@@ -115,11 +153,70 @@ fun SettingsScreen(
                 BackHandler { picking = null }
                 LeaguePicker(settings.leaguesOn, onChange = { leagues -> onChange { it.copy(leagues = leagues) } })
             }
+            Picker.Profile -> if (picked == null) {
+                // Deleted meanwhile: back to the list.
+                LaunchedEffect(Unit) { picking = null }
+            } else {
+                BackHandler { picking = null }
+                ProfilePage(
+                    picked,
+                    current = picked.id == profiles.currentId,
+                    last = profiles.all.size == 1,
+                    onSwitch = {
+                        onProfile(ProfileChange.Switch(picked.id))
+                        picking = null
+                    },
+                    onRename = { picking = Picker.ProfileName },
+                    onDelete = { picking = Picker.DeleteProfile },
+                )
+            }
+            Picker.ProfileName -> {
+                // Back from adding returns to "Add a profile", from renaming to the Profile's page.
+                val back = { picking = if (picked == null) null else Picker.Profile }
+                BackHandler(onBack = back)
+                ProfileNamePage(
+                    if (picked == null) stringResource(R.string.profile_add) else stringResource(R.string.profile_rename_title, picked.shownName()),
+                    initial = picked?.name.orEmpty(),
+                    onSave = { name ->
+                        onProfile(if (picked == null) ProfileChange.Add(name) else ProfileChange.Rename(picked.id, name))
+                        back()
+                    },
+                )
+            }
+            Picker.DeleteProfile -> if (picked == null) {
+                LaunchedEffect(Unit) { picking = null }
+            } else {
+                BackHandler { picking = Picker.Profile }
+                DeleteProfilePage(
+                    picked,
+                    onDelete = {
+                        onProfile(ProfileChange.Delete(picked.id))
+                        profileId = null
+                        picking = null
+                    },
+                    onCancel = { picking = Picker.Profile },
+                )
+            }
             null -> LazyColumn(
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.width(COLUMN_WIDTH),
+                modifier = Modifier.width(SETTINGS_WIDTH),
             ) {
+                profilesSection(
+                    profiles,
+                    rows = profileRow,
+                    addRow = addProfileRow,
+                    onOpen = { profile ->
+                        profileId = profile.id
+                        returnTo = Picker.Profile
+                        picking = Picker.Profile
+                    },
+                    onAdd = {
+                        profileId = null
+                        returnTo = Picker.ProfileName
+                        picking = Picker.ProfileName
+                    },
+                )
                 item { Heading(stringResource(R.string.settings_languages)) }
                 item {
                     Labelled(stringResource(R.string.settings_app_language), stringResource(R.string.settings_app_language_detail)) {
@@ -223,8 +320,7 @@ fun SettingsScreen(
                     }
                 }
                 item { Heading(stringResource(R.string.settings_catalog)) }
-                item { SyncRow(library, onSyncNow) }
-                item { MatchingRow(library) }
+                catalog()
                 item { Heading(stringResource(R.string.settings_app)) }
                 item {
                     val offered = update.offered
@@ -249,8 +345,11 @@ fun SettingsScreen(
                 Picker.ContentLanguages -> contentLanguagesRow
                 Picker.Region -> regionRow
                 Picker.Leagues -> leaguesRow
+                // Back to the Profile's row; once it's deleted, to the current one's.
+                Picker.Profile, Picker.DeleteProfile -> profileRow(picked?.id ?: profiles.currentId)
+                Picker.ProfileName -> addProfileRow
                 // Reached by its tab, which keeps focus.
-                null -> appLanguageRow.takeUnless { focusTab }
+                null -> profileRow(profiles.currentId).takeUnless { focusTab }
             }?.requestFocus()
         }
     }
@@ -299,7 +398,18 @@ private fun MatchingRow(library: Library) {
 /** How often the Sync row's "ago" is worded again while Settings is open. */
 private val AGO_REFRESH: Duration = Duration.ofMinutes(1)
 
-private enum class Picker { ContentLanguages, Region, Leagues }
+private enum class Picker {
+    ContentLanguages, Region, Leagues,
+
+    /** A Profile's page, or Back to its row. */
+    Profile,
+
+    /** A Profile's name, to add one (no Profile picked) or rename one. */
+    ProfileName,
+
+    /** The question before deleting a Profile. */
+    DeleteProfile,
+}
 
 /**
  * The catalog's languages to turn on and off as Content languages, the chosen ones first in the
@@ -307,8 +417,8 @@ private enum class Picker { ContentLanguages, Region, Leagues }
  * turned off.
  */
 @Composable
-private fun ContentLanguagesList(library: Library, chosen: List<String>, onChange: (List<String>) -> Unit) {
-    val catalog by produceState(emptyList<String>()) { value = library.catalogLanguages() }
+private fun ContentLanguagesList(catalogLanguages: suspend () -> List<String>, chosen: List<String>, onChange: (List<String>) -> Unit) {
+    val catalog by produceState(emptyList<String>()) { value = catalogLanguages() }
     // Kept from opening, so a language turned off doesn't jump away from under focus.
     val order = remember(catalog) { (chosen + catalog).distinct() }
     val first = remember { FocusRequester() }
@@ -316,7 +426,7 @@ private fun ContentLanguagesList(library: Library, chosen: List<String>, onChang
     LazyColumn(
         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.width(COLUMN_WIDTH),
+        modifier = Modifier.width(SETTINGS_WIDTH),
     ) {
         item { Heading(stringResource(R.string.settings_content_languages)) }
         items(order, key = { it }) { language ->
@@ -379,7 +489,7 @@ private fun RegionList(region: String, appLanguage: String, contentLanguages: Li
             state = list,
             contentPadding = PaddingValues(end = Spacing.screenX, top = 20.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.width(COLUMN_WIDTH),
+            modifier = Modifier.width(SETTINGS_WIDTH),
         ) {
             @Composable
             fun Country(country: String, modifier: Modifier) {
@@ -426,9 +536,7 @@ private fun LetterKey(letter: Char, onClick: () -> Unit, modifier: Modifier) {
 internal fun countryName(code: String, appLanguage: String): String = Locale("", code).getDisplayCountry(Locale.forLanguageTag(appLanguage))
 
 @Composable
-private fun Heading(text: String) {
-    Text(text, style = Type.headline, color = Colors.ink, modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
-}
+private fun Heading(text: String) = SettingsHeading(text)
 
 /** An exclusive setting: its label and detail in the label column, the choices beside them. */
 @Composable
@@ -444,9 +552,9 @@ private fun Labelled(label: String, detail: String, content: @Composable () -> U
     Spacer(Modifier.height(2.dp))
 }
 
-private val COLUMN_WIDTH = 760.dp
+internal val SETTINGS_WIDTH = 760.dp
 
 private val LETTER = 36.dp
 
 /** The value of a chosen row in a list. */
-private const val CHOSEN = "✓"
+internal const val CHOSEN = "✓"

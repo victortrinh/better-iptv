@@ -244,7 +244,7 @@ A scheduled sports contest from schedule data, including races and fights. The h
 _Avoid_: Event, match, fixture
 
 **Feed**:
-One way of watching a Game: a Channel or an Event channel carrying it, with a language and, where known, a Broadcaster. The best Feed is in a Content language, dedicated to the Game (an Event channel) rather than a network that may show another game, then of the best quality; the League network is a Feed only when the Game has no other left. The Viewer can mark a Feed "Not this game" to drop it for that Game on their device: it stays listed, last and marked, and is never started by Play. On the Game page a Feed is named by what tells it apart, its service then its broadcast ("ESPN+ · Sabres broadcast"); the player names it as the Provider does.
+One way of watching a Game: a Channel or an Event channel carrying it, with a language and, where known, a Broadcaster. The best Feed is in a Content language, dedicated to the Game (an Event channel) rather than a network that may show another game, then of the best quality; the League network is a Feed only when the Game has no other left. The Viewer can mark a Feed "Not this game" to drop it for that Game in their Profile: it stays listed, last and marked, and is never started by Play. On the Game page a Feed is named by what tells it apart, its service then its broadcast ("ESPN+ · Sabres broadcast"); the player names it as the Provider does.
 _Avoid_: Stream, source, link
 
 **Broadcaster**:

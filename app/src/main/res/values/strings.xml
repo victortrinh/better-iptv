@@ -268,6 +268,21 @@
     <string name="tmdb_attribution">Title details and artwork from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
 
     <string name="settings_title">Settings</string>
+    <string name="settings_profiles">Profiles</string>
+    <string name="profile_add">Add a profile</string>
+    <string name="profile_add_full">Up to %1$d profiles</string>
+    <string name="profile_switch">Watch as %1$s</string>
+    <string name="profile_switch_detail">Continue watching, Favourites, Leagues and languages are this profile\'s own</string>
+    <string name="profile_rename">Rename</string>
+    <string name="profile_rename_title">Rename %1$s</string>
+    <string name="profile_delete">Delete profile</string>
+    <string name="profile_delete_last">The last profile can\'t be deleted</string>
+    <string name="profile_delete_confirm">Delete %1$s?</string>
+    <string name="profile_delete_detail">Their Continue watching, Favourites and settings are deleted from this TV.</string>
+    <string name="profile_delete_yes">Delete</string>
+    <string name="profile_cancel">Cancel</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_save">Save</string>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>
