@@ -11,7 +11,7 @@ class CardArtTest {
     private val logo = "https://image.tmdb.org/t/p/w300/logo.png"
 
     private fun about(logo: String? = null, textlessPoster: String? = null, textlessBackdrop: String? = null) =
-        TitleAbout("A film.", listOf("Drama"), 95, logo, textlessPoster, textlessBackdrop)
+        TitleAbout(listOf("Drama"), 6.6, logo, textlessPoster, textlessBackdrop)
 
     @Test
     fun aTitleWithATextlessBackdropAndALogoGrowsIntoTheBackdropNamedByItsLogo() {

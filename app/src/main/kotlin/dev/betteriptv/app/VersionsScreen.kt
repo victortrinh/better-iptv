@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,13 +77,14 @@ internal data class VersionsList(
  * action, over the same backdrop under a `ground` veil at 85% ([Colors.veilDeep]). It holds the
  * Confirmed/Likely legend, the Version table ([versionTable]: empty cells left blank, an Audio cell
  * only where it says more than its language heading, columns with nothing in them hidden, Backups
- * under their Version in muted type), Other languages, the [cast] and, with TMDB data, its notice.
+ * under their Version in muted type), Other languages, the [cast] and [directors] the Provider names
+ * and, with TMDB's art on the page, its notice.
  * Focus opens on the first Version; choosing a row plays that one ([onChoose]). Back is the
  * caller's, and returns to the Versions action. While Header reads are [checking] Versions, the
  * legend says so ([CheckingVersions]).
  */
 @Composable
-internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmdb: Boolean, onChoose: (Version) -> Unit, checking: Boolean = false) {
+internal fun VersionsContent(versions: VersionsList, cast: List<String>, directors: List<String>, fromTmdb: Boolean, onChoose: (Version) -> Unit, checking: Boolean = false) {
     val context = LocalContext.current
     var showOthers by rememberSaveable(versions.heading) { mutableStateOf(false) }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -143,6 +145,14 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
                     Column(Modifier.padding(top = Spacing.xl)) {
                         Text(stringResource(R.string.cast_title), style = Type.title, color = Colors.ink)
                         Text(cast.joinToString(", "), style = Type.body, color = Colors.inkMuted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Spacing.xs))
+                    }
+                }
+            }
+            if (directors.isNotEmpty()) {
+                item(key = "directors") {
+                    Column(Modifier.padding(top = if (cast.isEmpty()) Spacing.xl else Spacing.m)) {
+                        Text(pluralStringResource(R.plurals.director_title, directors.size), style = Type.title, color = Colors.ink)
+                        Text(directors.joinToString(", "), style = Type.body, color = Colors.inkMuted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Spacing.xs))
                     }
                 }
             }

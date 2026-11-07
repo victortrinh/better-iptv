@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import java.time.LocalDate
 import java.util.Locale
 import java.util.SortedMap
 
@@ -11,7 +10,8 @@ import java.util.SortedMap
  * Prefix table says about its show Listing, with what the Provider's Episode details say Confirmed.
  * What Header reads and Playback found in an Episode's file ([reads], by Episode id) is Confirmed over
  * both. An Episode's Version is named after its show Listing: Providers title Episodes inconsistently
- * (` - S01E01 - Der Lohn der Sünde`, the Show left out). [original] is the Show's original language
+ * (` - S01E01 - Der Lohn der Sünde`, the Show left out); its still and runtime come from the same
+ * Version's details, else from any Version's that has them. [original] is the Show's original language
  * when Prefer original audio acts on it ([originalAudioLanguage]), whose group joins the Viewer's;
  * [expect] says which languages a read may move a Version to ([confirmedBy]).
  */
@@ -28,25 +28,18 @@ internal fun mergeEpisodes(
         val (languages, otherLanguages) = groupByLanguage(versions.map { it.candidate }, contentLanguages, original)
         // Its name is in the language its show Listing's Prefix names, whatever its audio.
         val named = versions.sortedWith(compareBy<EpisodeVersion> { it.show.attributes.language?.value?.let(::primaryLanguage) !in wanted }.thenBy(BEST_FIRST) { it.candidate })
-        Episode(key.first, key.second, named.firstNotNullOfOrNull { episodeName(it.title) }, languages, otherLanguages)
+        Episode(
+            key.first, key.second, named.firstNotNullOfOrNull { episodeName(it.title) }, languages, otherLanguages,
+            still = named.firstNotNullOfOrNull { it.episode.still },
+            runtimeMinutes = named.firstNotNullOfOrNull { it.episode.runtimeMinutes },
+        )
     }.map { (season, episodes) -> Season(season, episodes) }
 }
 
-/**
- * [seasons] with the Episodes TMDB lists ([upcoming]) as airing after [today] and that no Version
- * has yet, named as TMDB names them, and with how far the Viewer got in each ([played]).
- */
-internal fun withUpcomingAndProgress(seasons: List<Season>, upcoming: List<UpcomingEpisode>, played: List<StoredEpisodeProgress>, today: LocalDate): List<Season> {
+/** [seasons] with how far the Viewer got in each Episode ([played]). */
+internal fun withProgress(seasons: List<Season>, played: List<StoredEpisodeProgress>): List<Season> {
     val progress = played.associateBy { it.episode }
-    val byNumber = sortedMapOf<Int, MutableMap<Int, Episode>>(compareBy({ it == 0 }, { it }))
-    seasons.forEach { season -> byNumber[season.number] = season.episodes.associateByTo(sortedMapOf()) { it.number } }
-    upcoming.filter { it.airDate.isAfter(today) }.forEach { coming ->
-        val season = byNumber.getOrPut(coming.episode.season) { sortedMapOf() }
-        if (coming.episode.number !in season) season[coming.episode.number] = Episode(coming.episode.season, coming.episode.number, coming.name, emptyList(), emptyList(), availableOn = coming.airDate)
-    }
-    return byNumber.map { (number, episodes) ->
-        Season(number, episodes.values.map { episode -> progress[episode.id]?.let { episode.withProgress(it) } ?: episode })
-    }
+    return seasons.map { season -> Season(season.number, season.episodes.map { episode -> progress[episode.id]?.let { episode.withProgress(it) } ?: episode }) }
 }
 
 private fun Episode.withProgress(played: StoredEpisodeProgress): Episode = when {
@@ -89,14 +82,16 @@ private fun byEpisode(versions: List<Pair<Candidate, List<ProviderEpisode>>>, re
             // Ranked like a Listing: its show Listing's name and Category, the Episode's own date.
             val listing = StoredListing(episode.id, show.listing.name, show.listing.category, episode.added ?: show.listing.added, image = null)
             val attributes = confirmed(show.attributes, episode, expect).let { provider -> reads[episode.id]?.let { provider.confirmedBy(it, expect) } ?: provider }
-            byEpisode.getOrPut(episode.season to episode.number) { mutableListOf() } += EpisodeVersion(Candidate(listing, attributes), show, episode.title)
+            byEpisode.getOrPut(episode.season to episode.number) { mutableListOf() } += EpisodeVersion(Candidate(listing, attributes), show, episode)
         }
     }
     return byEpisode
 }
 
-/** One Version of an Episode, from the [show] Listing whose show details give it this [title]. */
-private class EpisodeVersion(val candidate: Candidate, val show: Candidate, val title: String)
+/** One Version of an Episode, from the [show] Listing whose show details list it as [episode]. */
+private class EpisodeVersion(val candidate: Candidate, val show: Candidate, val episode: ProviderEpisode) {
+    val title: String get() = episode.title
+}
 
 /**
  * A show Listing's Likely attributes, with the Episode's resolution Confirmed where the Provider's

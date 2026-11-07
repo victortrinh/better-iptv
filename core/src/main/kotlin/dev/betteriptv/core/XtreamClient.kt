@@ -96,11 +96,12 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
 
     /**
      * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, TMDB ID,
-     * image URL, file extension). A TMDB ID that isn't a positive number (empty, `0`, an IMDb `tt…`
-     * ID) is null, and so is an extension that isn't a short word (`mkv`, `mp4`).
+     * image URL, file extension, the Provider's rating). A TMDB ID that isn't a positive number (empty,
+     * `0`, an IMDb `tt…` ID) is null, and so is an extension that isn't a short word (`mkv`, `mp4`).
+     * The rating is on a 10 scale; absent or zero is null.
      */
     fun movieListings(
-        each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?) -> Unit,
+        each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?, rating: Double?) -> Unit,
     ) = api("get_vod_streams") { json ->
         json.eachObject {
             var id: Long? = null
@@ -110,6 +111,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             var tmdbId: Long? = null
             var image: String? = null
             var container: String? = null
+            var rating: Double? = null
             while (hasNext()) when (nextName()) {
                 "stream_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
@@ -118,17 +120,20 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
                 "container_extension" -> container = nextScalar()?.trim()?.lowercase()?.takeIf { CONTAINER.matches(it) }
+                "rating" -> rating = rating(nextScalar())
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image, container)
+            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image, container, rating)
         }
     }
 
     /**
-     * Streams the show Listings as (Provider show id, name, category id, last changed in epoch
-     * seconds, TMDB ID, image URL). The Provider changes a Show when it adds Episodes to it.
+     * Streams the show Listings ([ProviderShowListing]): the Provider show id, name, category id, last
+     * changed in epoch seconds (the Provider changes a Show when it adds Episodes to it), TMDB ID,
+     * image URL, and what the Listing says of the Show: plot, genre, cast, director, rating, release
+     * date, backdrops and trailer key.
      */
-    fun showListings(each: (id: Long, name: String, categoryId: String?, modified: Long?, tmdbId: Long?, image: String?) -> Unit) = api("get_series") { json ->
+    fun showListings(each: (ProviderShowListing) -> Unit) = api("get_series") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
@@ -136,6 +141,14 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             var modified: Long? = null
             var tmdbId: Long? = null
             var image: String? = null
+            var plot: String? = null
+            var genre: String? = null
+            var cast: String? = null
+            var director: String? = null
+            var rating: Double? = null
+            var releaseDate: String? = null
+            var backdrops: List<String> = emptyList()
+            var trailer: String? = null
             while (hasNext()) when (nextName()) {
                 "series_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
@@ -143,10 +156,30 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "last_modified" -> modified = nextScalar()?.toLongOrNull()
                 "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "cover" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                "plot" -> plot = cleanText(nextScalar())
+                "genre" -> genre = cleanText(nextScalar())
+                "cast" -> cast = cleanText(nextScalar())
+                "director" -> director = cleanText(nextScalar())
+                "rating" -> rating = rating(nextScalar())
+                "releaseDate", "release_date" -> releaseDate = releaseDate(nextScalar()) ?: releaseDate
+                "backdrop_path" -> backdrops = readImages()
+                "youtube_trailer" -> trailer = trailerKey(nextScalar())
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, modified, tmdbId, image)
+            if (id != null && name != null) {
+                each(ProviderShowListing(id, name, categoryId, modified, tmdbId, image, ProviderDetails(plot, genre, releaseDate, null, director, cast, rating, backdrops.firstOrNull(), trailer, backdrops)))
+            }
         }
+    }
+
+    /** A list of image URLs (`backdrop_path`), or the one URL some Providers send bare; blanks left out. */
+    private fun JsonReader.readImages(): List<String> = when (peek()) {
+        JsonReader.Token.BEGIN_ARRAY -> buildList {
+            beginArray()
+            while (hasNext()) nextScalar()?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+            endArray()
+        }
+        else -> listOfNotNull(nextScalar()?.trim()?.takeIf { it.isNotEmpty() })
     }
 
     /**
@@ -204,6 +237,9 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         var height: Int? = null
         var audioLanguage: String? = null
         var container: String? = null
+        var still: String? = null
+        var durationSeconds: Int? = null
+        var durationText: String? = null
         beginObject()
         while (hasNext()) when (nextName()) {
             "id" -> id = nextScalar()?.toLongOrNull()
@@ -226,6 +262,9 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                     "audio" -> readObject { field ->
                         if (field == "tags") readObject { tag -> if (tag == "language") audioLanguage = nextScalar() else skipValue() } else skipValue()
                     }
+                    "movie_image" -> still = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                    "duration_secs" -> durationSeconds = nextScalar()?.trim()?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                    "duration" -> durationText = nextScalar()
                     else -> skipValue()
                 }
                 endObject()
@@ -235,7 +274,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         endObject()
         val inSeason = season ?: filedUnder
         if (id == null || number == null || inSeason == null) return null
-        return ProviderEpisode(id, inSeason, number, title.orEmpty(), added, width, height, audioLanguage, container)
+        return ProviderEpisode(id, inSeason, number, title.orEmpty(), added, width, height, audioLanguage, container, still, durationSeconds ?: clockSeconds(durationText))
     }
 
     /** Reads an object's fields with [field], or skips the value when it isn't an object. */
@@ -247,16 +286,76 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     }
 
     /**
-     * The bitrate in bits per second the Provider's movie details give for movie Listing [id], from
-     * its own reading of the file; null when they don't say. The details give kilobits per second.
+     * The Provider's movie details for movie Listing [id] (`get_vod_info`): what it says of the Movie
+     * (plot, genre, release date, runtime, director, cast, rating, backdrop, trailer key), and the
+     * bitrate in bits per second from its own reading of the file (the details give kilobits per
+     * second), each null when it doesn't say. A movie without details has `"info": []`.
      */
-    fun movieBitrate(id: Long): Long? = api("get_vod_info", "vod_id" to id.toString()) { json ->
+    fun movieDetails(id: Long): ProviderMovieDetails = api("get_vod_info", "vod_id" to id.toString()) { json ->
         var bitrate: Long? = null
-        // A movie without details has `"info": []`.
+        var plot: String? = null
+        var genre: String? = null
+        var releaseDate: String? = null
+        var director: String? = null
+        var cast: String? = null
+        var actors: String? = null
+        var rating: Double? = null
+        var backdrops: List<String> = emptyList()
+        var trailer: String? = null
+        var durationText: String? = null
+        var durationSeconds: Int? = null
+        var runTime: Int? = null
         json.readObject { field ->
-            if (field == "info") readObject { info -> if (info == "bitrate") bitrate = nextScalar()?.toLongOrNull()?.takeIf { it > 0 }?.times(1000) else skipValue() } else skipValue()
+            if (field != "info") return@readObject skipValue()
+            readObject { info ->
+                when (info) {
+                    "bitrate" -> bitrate = nextScalar()?.toLongOrNull()?.takeIf { it > 0 }?.times(1000)
+                    "plot", "description" -> plot = cleanText(nextScalar()) ?: plot
+                    "genre" -> genre = cleanText(nextScalar())
+                    "releasedate", "release_date", "releaseDate" -> releaseDate = releaseDate(nextScalar()) ?: releaseDate
+                    "director" -> director = cleanText(nextScalar())
+                    "cast" -> cast = cleanText(nextScalar())
+                    "actors" -> actors = cleanText(nextScalar())
+                    "rating" -> rating = rating(nextScalar())
+                    "backdrop_path" -> backdrops = readImages()
+                    "youtube_trailer" -> trailer = trailerKey(nextScalar())
+                    "duration" -> durationText = nextScalar()
+                    "duration_secs" -> durationSeconds = nextScalar()?.trim()?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                    "episode_run_time" -> runTime = nextScalar()?.trim()?.toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                    else -> skipValue()
+                }
+            }
         }
-        bitrate
+        // The surveyed Provider's `duration_secs` is sometimes minutes (`"110"` beside `"01:50:00"`): the clock reads first.
+        val minutes = clockSeconds(durationText)?.let { (it + 30) / 60 }?.takeIf { it > 0 } ?: runTime ?: durationSeconds?.let { (it + 30) / 60 }?.takeIf { it > 0 }
+        ProviderMovieDetails(bitrate, ProviderDetails(plot, genre, releaseDate, minutes, director, cast ?: actors, rating, backdrops.firstOrNull(), trailer, backdrops))
+    }
+
+    /** The Provider's `rating`, on a 10 scale; null when absent, unreadable or zero. */
+    private fun rating(raw: String?): Double? = raw?.trim()?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 && it <= 10 }
+
+    /** A release date as `yyyy-mm-dd`, from the Provider's `2011-04-17 (USA - UK)` or a bare year; null when it names none. */
+    private fun releaseDate(raw: String?): String? = raw?.trim()?.let { DATE.find(it)?.value }
+
+    /** `01:52:02` as seconds; null when the text isn't a clock. */
+    private fun clockSeconds(raw: String?): Int? {
+        val match = CLOCK.matchEntire(raw?.trim().orEmpty()) ?: return null
+        val (hours, minutes, seconds) = match.destructured
+        return (hours.toInt() * 3600 + minutes.toInt() * 60 + seconds.toInt()).takeIf { it > 0 }
+    }
+
+    /**
+     * A YouTube video ID from the Provider's `youtube_trailer`: the ID itself, or the one in a
+     * YouTube link (`https://www.youtube.com/watch?v=…`, `https://youtu.be/…`); null when it is blank
+     * or isn't one.
+     */
+    private fun trailerKey(raw: String?): String? {
+        val text = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val key = when {
+            "://" !in text -> text
+            else -> runCatching { text.toHttpUrl() }.getOrNull()?.let { url -> url.queryParameter("v") ?: url.pathSegments.lastOrNull { it.isNotEmpty() } }
+        }
+        return key?.takeIf { YOUTUBE_ID.matches(it) }
     }
 
     /** Where movie Listing [id]'s file streams from. It holds the login, so it goes to the player engine only. */
@@ -371,6 +470,9 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
 
     companion object {
         private val CONTAINER = Regex("""[a-z0-9]{1,5}""")
+        private val DATE = Regex("""\d{4}(-\d{2}(-\d{2})?)?""")
+        private val CLOCK = Regex("""(\d{1,3}):(\d{2}):(\d{2})(?:\.\d+)?""")
+        private val YOUTUBE_ID = Regex("""[A-Za-z0-9_-]{6,20}""")
 
         /** Accepts a bare host, host:port, or a pasted player link, like the survey script. */
         fun baseUrl(raw: String): HttpUrl {
@@ -390,7 +492,8 @@ internal class ProviderException(val problem: ProviderProblem) : IOException(pro
 /**
  * One Episode in a show Listing's show details. [width], [height] and [audioLanguage] (the first
  * audio Track's, as the Provider writes it: ISO 639-2 `ger` or `deu`, or `und`) come from the
- * Provider reading the file; null when it didn't say.
+ * Provider reading the file; null when it didn't say. [still] is the Episode's picture URL
+ * (`movie_image`) and [durationSeconds] its length, as the Provider's details give them; null without.
  */
 internal class ProviderEpisode(
     val id: Long,
@@ -403,6 +506,56 @@ internal class ProviderEpisode(
     val audioLanguage: String?,
     /** The file's extension (`mkv`, `mp4`), which its location needs. */
     val container: String? = null,
+    val still: String? = null,
+    val durationSeconds: Int? = null,
+) {
+    /** The Episode's runtime in whole minutes, rounded; null when the Provider gave no length. */
+    val runtimeMinutes: Int? get() = durationSeconds?.let { (it + 30) / 60 }?.takeIf { it > 0 }
+}
+
+/**
+ * What the Provider says of a Title, on a show Listing or in a Movie's details (ADR 0014): its
+ * [plot], its [genre] field as written (`Sci-Fi & Fantasy / Drama`, mapped to genres by the Prefix
+ * table), its [releaseDate] (`yyyy-mm-dd`, or just the year), its [runtimeMinutes], its [director]
+ * and [cast] as written (comma-separated names), its [rating] on a 10 scale (null when absent or
+ * zero), its [backdrop] (the first of its [backdrops]) and its YouTube [trailer] key. Each null when
+ * the Provider doesn't say.
+ */
+internal data class ProviderDetails(
+    val plot: String? = null,
+    val genre: String? = null,
+    val releaseDate: String? = null,
+    val runtimeMinutes: Int? = null,
+    val director: String? = null,
+    val cast: String? = null,
+    val rating: Double? = null,
+    val backdrop: String? = null,
+    val trailer: String? = null,
+    val backdrops: List<String> = emptyList(),
+) {
+    /** The release year, from [releaseDate]. */
+    val year: Int? get() = releaseDate?.take(4)?.toIntOrNull()
+
+    /** Whether the Provider said anything at all. */
+    val isEmpty: Boolean get() = this == NONE
+
+    companion object {
+        val NONE = ProviderDetails()
+    }
+}
+
+/** A Movie's details as the Provider gives them (`get_vod_info`): what it says of the Movie, and the file's [bitrate] in bits per second. */
+internal class ProviderMovieDetails(val bitrate: Long?, val details: ProviderDetails)
+
+/** One show Listing as the Provider lists it (`get_series`), with what it says of the Show in [details]. */
+internal class ProviderShowListing(
+    val id: Long,
+    val name: String,
+    val categoryId: String?,
+    val modified: Long?,
+    val tmdbId: Long?,
+    val image: String?,
+    val details: ProviderDetails,
 )
 
 /** Reads any JSON scalar as text: the Provider sends ids and dates as strings or numbers, inconsistently. */

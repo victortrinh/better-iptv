@@ -753,7 +753,7 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
 
 /**
  * What the info under a rail tells about [title]: where the Viewer is when they're in it ([resume]),
- * else its year, runtime and genres and its description.
+ * else one line: its year, its genre and the Provider's rating ([aboutLine]).
  */
 private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo {
     if (resume != null) {
@@ -768,9 +768,7 @@ private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo
             ?: getString(R.string.details_episode, number.season, number.number)
         return CardInfo.InProgress(heading, if (episode.started) left else getString(R.string.start_next_episode))
     }
-    val about = title.about
-    val metadata = listOfNotNull(title.year?.toString(), about?.runtimeMinutes?.let(::runtime), about?.genres?.take(2)?.joinToString(", ")?.ifEmpty { null })
-    return CardInfo.About(metadata.joinToString(" · "), about?.description)
+    return CardInfo.About(aboutLine(title.year, title.about?.genres.orEmpty(), title.about?.rating))
 }
 
 private val HomeRow.titles: List<TitleSummary>

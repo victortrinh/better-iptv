@@ -145,17 +145,21 @@ class HomeRowsTest {
         assertEquals(listOf("Foreign", "First"), resumes.map { it.title.name })
     }
 
-    @Test fun `a card carries what the info area under it shows`() = runBlocking {
-        syncMovies("EN - Described (2025)" to 1, "EN - Unknown (2025)" to 2)
-        cloud.title(
-            "en",
-            tmdbTitle(1, "Described", descriptions = listOf(Triple("en", "", "A film.")), genres = listOf("Drama"), runtimeMinutes = 95),
-        )
+    @Test fun `a card carries what the info area under it shows, from the Provider's Category and rating alone`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - DRAMA"},{"category_id":"2","category_name":"MOVIES"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"EN - Described (2025)","tmdb":"1","category_id":"1","added":"1700000000","rating":"6.6"},
+            {"stream_id":2,"name":"EN - Unknown (2025)","tmdb":"2","category_id":"2","added":"1699999999","rating":"0"}
+        ]"""
+        library.sync()
+        // TMDB's description, genres and runtime no longer feed the info (#473).
+        cloud.title("en", tmdbTitle(1, "Described", descriptions = listOf(Triple("en", "", "A film.")), genres = listOf("Comedy"), runtimeMinutes = 95))
+        provider.onRequest = { action -> check(action != "get_vod_info") { "a row made a details call" } }
 
         val cards = rows().filterIsInstance<HomeRow.NewOnYourService>().single().titles.associateBy { it.name }
-        assertEquals(TitleAbout("A film.", listOf("Drama"), 95), cards.getValue("Described").about)
-        // Without TMDB metadata there is nothing to tell.
-        assertEquals(null, cards.getValue("Unknown").about)
+        assertEquals(TitleAbout(listOf("Drama"), 6.6), cards.getValue("Described").about)
+        // A Category naming no genre and a rating of zero: nothing to tell.
+        assertEquals(TitleAbout(), cards.getValue("Unknown").about)
     }
 
     @Test fun `without anything started there's no Continue watching row`() = runBlocking {

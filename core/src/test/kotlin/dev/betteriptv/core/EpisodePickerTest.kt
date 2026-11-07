@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -11,7 +12,8 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * What the Episode picker (#347) reads from the Library: the Show's usual language set, an Episode's
- * languages only where they differ from it, and each season's TMDB stills and runtimes.
+ * languages only where they differ from it, and each Episode's still and runtime from the Provider's
+ * show details (#473).
  */
 class EpisodePickerTest {
     @get:Rule val folder = TemporaryFolder()
@@ -78,31 +80,30 @@ class EpisodePickerTest {
         assertEquals(emptyList<String>(), show.languagesNamed(episodes[4]))
     }
 
-    @Test fun `an Episode not out yet doesn't count towards the usual set`() {
-        val english = LanguageGroup("en", listOf(Version(1, "EN - Show", VersionAttributes())))
-        val aired = Episode(1, 1, null, listOf(english), emptyList())
-        val coming = (2..4).map { Episode(1, it, null, emptyList(), emptyList(), availableOn = java.time.LocalDate.of(2026, 12, 1)) }
+    @Test fun `an Episode's still and runtime come from the Provider's show details, and nothing is asked of the cloud`() = runBlocking {
+        library.sync()
+        cloud.received.clear()
 
-        assertEquals(setOf("en"), ShowEpisodes(listOf(Season(1, listOf(aired) + coming)), 0).usualLanguages)
+        // The fixture's Der Scheich: eight Episodes, each with a still and a length (#473).
+        val show = library.episodes(TitleId.Tmdb(TitleKind.Show, 216963), listOf("de")) ?: throw AssertionError("no Show")
+
+        val first = show.episode(1, 1)
+        assertEquals("Die Natur lügt nicht", first.name)
+        assertTrue(first.still!!, first.still!!.startsWith("https://stills.example/"))
+        // 3,031 s, rounded to the minute.
+        assertEquals(51, first.runtimeMinutes)
+        assertEquals(8, show.seasons.single().episodes.size)
+        assertTrue(show.seasons.single().episodes.all { it.still != null && it.runtimeMinutes != null })
+        assertTrue(cloud.received.none { "/v1/season" in it.path || "/v1/upcoming" in it.path })
     }
 
-    @Test fun `a season's stills and runtimes come from the cloud in the App language, once a run`() = runBlocking {
+    @Test fun `an Episode whose details give no still or length has none`() = runBlocking {
         syncLoveIsBlind()
-        cloud.season(loveIsBlind.tmdbId, 2, "fr", Triple(1, "/one.jpg", 52), Triple(2, null, null))
 
-        val stills = library.seasonStills(loveIsBlind, 2, appLanguage = "fr-CA")
-        library.seasonStills(loveIsBlind, 2, appLanguage = "fr-CA")
+        val show = library.episodes(loveIsBlind, listOf("fr", "en")) ?: throw AssertionError("no Show")
 
-        assertEquals(EpisodeStill(1, "https://image.tmdb.org/t/p/w300/one.jpg", 52), stills[1])
-        assertEquals(EpisodeStill(2, null, null), stills[2])
-        assertEquals(listOf("123250/2/fr"), cloud.seasonsAsked)
-    }
-
-    @Test fun `a Show TMDB doesn't know has no stills, and nothing is asked`() = runBlocking {
-        val stills = library.seasonStills(TitleId.Unmatched(TitleKind.Show, 1), 1)
-
-        assertTrue(stills.isEmpty())
-        assertTrue(cloud.seasonsAsked.isEmpty())
+        assertNull(show.episode(1, 1).still)
+        assertNull(show.episode(1, 1).runtimeMinutes)
     }
 
     private fun details(episodes: List<String>) = """{"seasons":[],"info":{},"episodes":[${episodes.joinToString(",")}]}"""

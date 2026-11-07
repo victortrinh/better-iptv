@@ -14,7 +14,7 @@ class NeighbourBackdropsTest {
     private fun backdrop(i: Int) = "https://image.tmdb.org/t/p/w780/backdrop$i.jpg"
 
     private fun title(i: Int, textless: Boolean = true) =
-        TitleSummary(TitleId.Unmatched(TitleKind.Movie, i.toLong()), "Film$i", 2024, null, VersionAttributes(), TitleAbout(null, emptyList(), null, textlessBackdrop = backdrop(i).takeIf { textless }))
+        TitleSummary(TitleId.Unmatched(TitleKind.Movie, i.toLong()), "Film$i", 2024, null, VersionAttributes(), TitleAbout(textlessBackdrop = backdrop(i).takeIf { textless }))
 
     private val row = HomeRow.Genre("Action", (0 until 10).map { title(it) })
     private fun card(i: Int) = RowCard("genre/Action", title(i).id.toString())

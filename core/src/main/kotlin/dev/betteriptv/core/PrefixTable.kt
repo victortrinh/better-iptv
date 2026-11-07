@@ -25,8 +25,8 @@ internal class PrefixTable private constructor(
     private val qualityWords: Map<String, Rule>,
     /** The live Category country codes that aren't countries (`AR`, `EX YU`), uppercase, to the name the browser shows for them. */
     private val countryAliases: Map<String, String>,
-    /** Each genre Category word, as a whole-word pattern over the folded name, with its genre's place in the genre list. */
-    private val genreWords: List<Pair<Regex, Int>>,
+    /** Each genre word of the `[genre categories]` section, in the table's order. */
+    private val genreWords: List<GenreWord>,
     /** The genre list's Kids words, as whole-word patterns over the folded name: what files a Title in the Kids catalog. */
     private val kidsWords: List<Regex>,
     /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
@@ -46,12 +46,46 @@ internal class PrefixTable private constructor(
     /**
      * Where a browsed Category named [name] (`SPORTS · FR`, `ACTUALITÉS`) stands in the table's genre
      * list, 0 for the first genre, or null when it names no genre: a service bucket (`AT&T`, `PRIME`,
-     * `NETFLIX ON AIR`). A name with words of two genres takes the earlier one.
+     * `NETFLIX ON AIR`). A name with words of two genres takes the earlier one. Only the Channel
+     * genres count ([Genres.ranksChannels]): a Title genre's word (`DRAMA`) says nothing of a Channel.
      */
     fun genreRank(name: String): Int? {
         val folded = fold(name)
-        return genreWords.filter { (word, _) -> word.containsMatchIn(folded) }.minOfOrNull { (_, rank) -> rank }
+        return genreWords.filter { Genres.ranksChannels(it.genre) && it.pattern.containsMatchIn(folded) }.minOfOrNull { it.rank }
     }
+
+    /**
+     * The genres of a Title filed under a Category named [name] (`FR - FANTASTIQUE AVENTURE`, `EN -
+     * DRAMA MOVIES`), by the genre words in it, in the table's order, each as [Genres] names it in
+     * English (ADR 0014): what a Movie's genre rows start from before its details are read. A word of
+     * a Channel genre (`MOVIES`, `SERIES`, `GENERAL`) says nothing of a Title. Empty when none is named.
+     */
+    fun titleGenres(name: String): List<String> = namedGenres(fold(name)).mapNotNull { Genres.titleGenre(it) }.distinct()
+
+    /** The genres whose words are in the [folded] text, in the order they come, each once. */
+    private fun namedGenres(folded: String): List<String> =
+        genreWords.mapNotNull { word -> word.pattern.find(folded)?.let { it.range.first to word.genre } }.sortedBy { it.first }.map { it.second }.distinct()
+
+    /**
+     * The genres the Provider's genre [field] names (`Sci-Fi & Fantasy / Drama`, `Komödie, Drama`),
+     * split on its separators and each piece mapped through the genre words to one genre as [Genres]
+     * names it in English, so `Drame`, `Komödie` and `Comedia` fold into `Drama` and `Comedy`. A
+     * piece that is a genre word as a whole is that genre; one holding genre words is each of them
+     * in order (`Action & Adventure`); one the table doesn't know is kept as written.
+     */
+    fun genres(field: String?): List<String> {
+        if (field.isNullOrBlank()) return emptyList()
+        return field.split(GENRE_SEPARATORS).mapNotNull { cleanText(it) }.flatMap { piece ->
+            val folded = fold(piece)
+            val whole = genreWords.firstOrNull { it.folded == folded }
+            if (whole != null) return@flatMap listOfNotNull(Genres.titleGenre(whole.genre) ?: whole.genre)
+            val named = namedGenres(folded).map { Genres.titleGenre(it) ?: it }
+            named.ifEmpty { listOf(piece) }
+        }.distinct()
+    }
+
+    /** One word of the `[genre categories]` section: as written, [folded], as a whole-word [pattern] over a folded name, its [genre] and the genre's [rank] in the list. */
+    internal class GenreWord(val word: String, val folded: String, val pattern: Regex, val genre: String, val rank: Int)
 
     /**
      * Whether a Category named [name] (`EN - KIDS`, `GR| ΓΙΑ ΠΑΙΔΙΑ/KIDS`, `FR - DESSINS ANIMÉS`) is a
@@ -62,6 +96,9 @@ internal class PrefixTable private constructor(
         val folded = fold(name)
         return kidsWords.any { it.containsMatchIn(folded) }
     }
+
+    /** The genres the table's words name, in its order, as [Genres.titleGenre] names them: the genre rows a Provider can have (#478). */
+    val titleGenreNames: List<String> get() = genreWords.sortedBy { it.rank }.mapNotNull { Genres.titleGenre(it.genre) }.distinct()
 
     /** Why a Listing is left out of the movie list. */
     enum class Hidden { Clutter, SportsReplay }
@@ -335,6 +372,8 @@ internal class PrefixTable private constructor(
         private val SPACES = Regex("""\s+""")
 
         private val MARKS = Regex("""\p{Mn}+""")
+        /** What the Provider separates the genres of a genre field with: `Drama / Mystery`, `Drama, Crime`, `Drama | Crime`. */
+        private val GENRE_SEPARATORS = Regex("""\s*[/,|;]\s*""")
 
         /** The words before a colon at the start of a live Listing's name: `VIP:`, `CA FR:`, `TR VIP:`, up to three short codes. */
         private val HEAD = Regex("""^\s*([A-Za-z0-9+]{1,5}(?: [A-Za-z0-9+]{1,5}){0,2}):\s*""")
@@ -478,7 +517,7 @@ internal class PrefixTable private constructor(
                 // A hand line over a learned line over Base (ADR 0014).
                 learnedPrefixes.forEach { (key, learned) -> if (key !in handPrefixes) prefixes[key] = (prefixes[key] ?: Rule()).learned(learned) }
                 val genres = LinkedHashMap<String, Int>()
-                val ranked = genreWords.map { (word, genre) -> wholeWord(word) to genres.getOrPut(genre) { genres.size } }
+                val ranked = genreWords.map { (word, genre) -> GenreWord(word, fold(word), wholeWord(word), genre, genres.getOrPut(genre) { genres.size }) }
                 return PrefixTable(
                     prefixes, hints.map { (phrase, rule) -> Hint(phrase, wholeWord(phrase), rule) }, clutterNames, liveClutterNames, emptyEventSlots,
                     tierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map(::wholeWord), eventTimeZone ?: ZoneOffset.UTC,

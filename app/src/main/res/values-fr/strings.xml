@@ -122,6 +122,11 @@
     <string name="versions_title">Versions</string>
     <string name="versions_checking">Vérification des versions…</string>
     <string name="cast_title">Distribution</string>
+    <plurals name="director_title">
+        <item quantity="one">Réalisation</item>
+        <item quantity="many">Réalisation</item>
+        <item quantity="other">Réalisation</item>
+    </plurals>
     <string name="play">Lecture</string>
     <string name="play_continue">Reprendre à %1$s</string>
     <string name="details">Détails</string>
@@ -212,7 +217,6 @@
     </plurals>
     <string name="episode_number">Épisode %1$d</string>
     <string name="episode_named">%1$d. %2$s</string>
-    <string name="episode_available">Disponible le %1$s</string>
     <string name="other_languages">Autres langues</string>
     <string name="other_languages_show">Afficher %1$d</string>
     <string name="other_languages_hide">Masquer</string>
