@@ -96,6 +96,9 @@ fun SettingsScreen(
     val leaguesRow = remember { FocusRequester() }
     val accountRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
+    // Kept while a list or the Sign-in screen replaces the column, so Back lands with the row that
+    // opened it composed: the Account row is below the first screenful.
+    val settingsList = rememberLazyListState()
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
 
@@ -123,6 +126,7 @@ fun SettingsScreen(
                 SignInScreen(library, onSignedIn = { picking = null })
             }
             null -> LazyColumn(
+                state = settingsList,
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.width(COLUMN_WIDTH),

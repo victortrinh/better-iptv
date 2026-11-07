@@ -190,8 +190,8 @@ private fun Qr(url: String, size: Dp, modifier: Modifier = Modifier) {
 internal fun qrMatrix(url: String): BitMatrix =
     QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.MARGIN to 0, EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M))
 
-/** The sign-in page's address as a Viewer would type it: `zugig.app/sign-in`. */
-internal fun typedAddress(url: String): String = URI(url).let { it.host + it.path }
+/** The sign-in page's address as a Viewer would type it: `zugig.app/sign-in`, with a port only when it has one. */
+internal fun typedAddress(url: String): String = URI(url).let { it.host + (if (it.port == -1) "" else ":${it.port}") + it.path }
 
 /** A code with a thin gap between its halves, `K7M 2QX`, read more easily from the sofa. */
 private fun spaced(code: String) = if (code.length == 6) "${code.take(3)} ${code.drop(3)}" else code

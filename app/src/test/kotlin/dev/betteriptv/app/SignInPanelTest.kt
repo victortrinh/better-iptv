@@ -88,5 +88,6 @@ class SignInPanelTest {
 
     @Test fun `names the page as a Viewer would type it`() {
         assertEquals("zugig.app/sign-in", typedAddress("https://zugig.app/sign-in?code=K7M2QX"))
+        assertEquals("10.0.2.2:8787/sign-in", typedAddress("http://10.0.2.2:8787/sign-in?code=K7M2QX"))
     }
 }
