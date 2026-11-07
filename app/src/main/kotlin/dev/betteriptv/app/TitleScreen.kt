@@ -114,6 +114,7 @@ fun TitleScreen(
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan, String, StartingArt) -> Unit,
+    preferOriginalAudio: Boolean = true,
     openedOn: String? = null,
     section: TitleSection? = null,
     returnedFrom: TitleSection? = null,
@@ -125,26 +126,36 @@ fun TitleScreen(
     // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
     var removals by remember(id) { mutableIntStateOf(0) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, appLanguage, region, qualityCap, reads, removals) {
-        val details = library.title(id, contentLanguages, appLanguage, region) ?: return@produceState
-        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap)
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, region, qualityCap, reads, removals) {
+        val details = library.title(id, contentLanguages, appLanguage, region, preferOriginalAudio) ?: return@produceState
+        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap, preferOriginalAudio)
     }
     // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
-    val show by produceState<Pair<ShowEpisodes, PlayPlan?>?>(null, id, contentLanguages, appLanguage, qualityCap, reads) {
+    val show by produceState<Pair<ShowEpisodes, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, qualityCap, reads) {
         if (id.kind != TitleKind.Show) return@produceState
-        val episodes = library.episodes(id, contentLanguages, appLanguage) ?: return@produceState
+        val episodes = library.episodes(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
         val device = withContext(Dispatchers.Default) { deviceProfile() }
-        value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap) }
+        value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio) }
     }
     // A Show's reads need its show details, so they start once its Episodes are in.
     val readable = id.kind == TitleKind.Movie || show != null
-    LaunchedEffect(id, contentLanguages, readable) { if (readable) library.readHeaders(id, contentLanguages) { reads++ } }
+    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) { if (readable) library.readHeaders(id, contentLanguages, preferOriginalAudio) { reads++ } }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own backdrop, already in memory.
-    val play = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
+    val start = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
+    // Play lets the Header read in flight finish and plays what that settles, from where this plan starts (Restart's start included).
+    val play = { plan: PlayPlan, name: String ->
+        scope.launch {
+            val device = withContext(Dispatchers.Default) { deviceProfile() }
+            val settled = library.pressPlay(id, contentLanguages, device, qualityCap, preferOriginalAudio, plan.episode) ?: plan
+            start(settled.copy(from = plan.from, length = plan.length), name)
+        }
+        Unit
+    }
     TitlePage(
         id, openedOn, loaded, show,
         onPlay = play,
+        contentLanguages = contentLanguages,
         section = section,
         returnedFrom = returnedFrom,
         onSection = onSection,
@@ -154,16 +165,16 @@ fun TitleScreen(
             scope.launch {
                 // A Show's Versions are those of the Episode its Play starts (versionsOf), else of its next Episode.
                 val episode = show?.second?.episode ?: show?.first?.next
-                val plan = if (id.kind == TitleKind.Show) episode?.let { library.chosenEpisodePlayPlan(id, it, version.listingId, contentLanguages) }
-                else library.chosenPlayPlan(id, version.listingId, contentLanguages)
-                plan?.let { play(it, name) }
+                val plan = if (id.kind == TitleKind.Show) episode?.let { library.chosenEpisodePlayPlan(id, it, version.listingId, contentLanguages, preferOriginalAudio) }
+                else library.chosenPlayPlan(id, version.listingId, contentLanguages, preferOriginalAudio)
+                plan?.let { start(it, name) }
             }
         },
         stillsOf = { season -> library.seasonStills(id, season, appLanguage) },
         onEpisode = { episode, name ->
             scope.launch {
                 val device = withContext(Dispatchers.Default) { deviceProfile() }
-                library.episodePlayPlan(id, EpisodeNumber(episode.season, episode.number), contentLanguages, device, qualityCap)?.let { play(it, name) }
+                library.pressPlay(id, contentLanguages, device, qualityCap, preferOriginalAudio, EpisodeNumber(episode.season, episode.number))?.let { start(it, name) }
             }
         },
     )
@@ -199,6 +210,7 @@ internal fun TitlePage(
     onChoose: (Version, String) -> Unit = { _, _ -> },
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
     stillsOf: suspend (Int) -> Map<Int, EpisodeStill> = { emptyMap() },
+    contentLanguages: List<String> = emptyList(),
 ) {
     val title = loaded?.first
     var waited by remember(id) { mutableStateOf(false) }
@@ -216,7 +228,7 @@ internal fun TitlePage(
         if (backdrop != null) Backdrop(backdrop, under = first) else if (first != null) Backdrop(first)
         if (arrived) {
             val plan = loaded.second ?: show?.second
-            val versions = versionsOf(title!!, plan, show?.first)
+            val versions = versionsOf(title!!, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
                     TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) })
@@ -250,13 +262,15 @@ enum class TitleSection { Versions, Episodes, Trailer }
  * Episodes aren't read yet, or that has none to play.
  */
 @Composable
-private fun versionsOf(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?): VersionsList? {
-    if (title.id.kind != TitleKind.Show) return VersionsList(title.name, title.languages, title.otherLanguages)
+private fun versionsOf(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?, contentLanguages: List<String>): VersionsList? {
+    // The details name the original language only when Prefer original audio acts on the Title.
+    val original = title.originalLanguage
+    if (title.id.kind != TitleKind.Show) return VersionsList(title.name, title.languages, title.otherLanguages, contentLanguages, original)
     val number = plan?.episode ?: episodes?.next ?: return null
     val episode = episodes?.seasons?.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } ?: return null
     val named = episode.name?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
         ?: stringResource(R.string.details_episode, number.season, number.number)
-    return VersionsList("${title.name} · $named", episode.languages, episode.otherLanguages)
+    return VersionsList("${title.name} · $named", episode.languages, episode.otherLanguages, contentLanguages, original)
 }
 
 @Composable

@@ -18,6 +18,8 @@ import java.util.Locale
  */
 data class ViewerSettings(
     val contentLanguages: List<String>,
+    /** Prefer original audio: a Title plays with Original audio when any Version has it, ahead of a Version in a Content language at any quality. */
+    val preferOriginalAudio: Boolean = true,
     val appLanguage: String,
     val region: String,
     val qualityCap: QualityCap,
@@ -106,6 +108,7 @@ class ViewerSettingsStore(context: Context) {
         val new = change(_settings.value)
         prefs.edit()
             .putString(CONTENT_LANGUAGES, new.contentLanguages.joinToString(","))
+            .putBoolean(PREFER_ORIGINAL_AUDIO, new.preferOriginalAudio)
             .putString(APP_LANGUAGE, new.appLanguage)
             .putString(REGION, new.region)
             .putString(QUALITY_CAP, new.qualityCap.name)
@@ -132,6 +135,7 @@ class ViewerSettingsStore(context: Context) {
         return ViewerSettings(
             contentLanguages = prefs.getString(CONTENT_LANGUAGES, null)?.split(',')?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(device.language),
+            preferOriginalAudio = prefs.getBoolean(PREFER_ORIGINAL_AUDIO, true),
             appLanguage = prefs.getString(APP_LANGUAGE, null) ?: device.language.takeIf { it in APP_LANGUAGES } ?: "en",
             region = prefs.getString(REGION, null) ?: device.country.takeIf { it.length == 2 } ?: Library.DEFAULT_REGION,
             qualityCap = prefs.getString(QUALITY_CAP, null)?.let { name -> QualityCap.entries.find { it.name == name } } ?: QualityCap.UHD,
@@ -158,6 +162,7 @@ class ViewerSettingsStore(context: Context) {
 
     private companion object {
         const val CONTENT_LANGUAGES = "content_languages"
+        const val PREFER_ORIGINAL_AUDIO = "prefer_original_audio"
         const val APP_LANGUAGE = "app_language"
         const val REGION = "region"
         const val QUALITY_CAP = "quality_cap"

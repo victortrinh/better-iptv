@@ -28,6 +28,17 @@ class ViewerSettingsStoreTest {
     }
 
     @Test
+    fun preferOriginalAudioIsOnUntilTurnedOff() {
+        assertEquals(true, ViewerSettingsStore(context).settings.value.preferOriginalAudio)
+
+        ViewerSettingsStore(context).update { it.copy(preferOriginalAudio = false) }
+        assertEquals(false, ViewerSettingsStore(context).settings.value.preferOriginalAudio)
+
+        ViewerSettingsStore(context).update { it.copy(preferOriginalAudio = true) }
+        assertEquals(true, ViewerSettingsStore(context).settings.value.preferOriginalAudio)
+    }
+
+    @Test
     fun leaguesAreTheRegionsDefaultsUntilChosen() {
         val store = ViewerSettingsStore(context)
         store.update { it.copy(region = "CA") }

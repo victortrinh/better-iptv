@@ -41,6 +41,47 @@ internal fun inContentLanguages(candidates: List<Candidate>, contentLanguages: L
     }
 }
 
+/** The language a Title was released in, as a primary subtag; null when TMDB names none, or "xx" ("No Language"). */
+internal fun namedOriginalLanguage(originalLanguage: String?): String? =
+    originalLanguage?.takeIf { it.isNotBlank() && it != "xx" }?.let(::primaryLanguage)
+
+/**
+ * The language Original audio is sought in when Prefer original audio ([preferOriginalAudio]) acts on
+ * a Title released in [originalLanguage]: null when the setting is off, when TMDB names no language,
+ * or when the original is one of the Viewer's [contentLanguages], in which case the Title plays
+ * exactly as it would without the setting.
+ */
+internal fun originalAudioLanguage(originalLanguage: String?, contentLanguages: List<String>, preferOriginalAudio: Boolean): String? {
+    if (!preferOriginalAudio) return null
+    val original = namedOriginalLanguage(originalLanguage) ?: return null
+    return original.takeIf { it !in contentLanguages.map(::primaryLanguage) }
+}
+
+/**
+ * Whether a Version has Original audio, its audio being in the Title's [original] language (a
+ * primary subtag): Confirmed when its audio languages have been seen and hold it, else Likely when
+ * its main language is the original, as an Untagged Version's is ([likelyInOriginalLanguage]).
+ */
+internal fun VersionAttributes.hasOriginalAudio(original: String): Boolean {
+    val heard = audioLanguages?.value
+    if (heard != null) return original in heard
+    return language?.value?.let(::primaryLanguage) == original
+}
+
+/** Whether a Version's audio is Confirmed to be in [original] (a primary subtag). */
+internal fun VersionAttributes.hasConfirmedOriginalAudio(original: String): Boolean =
+    audioLanguages?.let { it.provenance == Provenance.Confirmed && original in it.value } == true
+
+/**
+ * The one language a Version's Confirmed audio is in when that is neither one of the Viewer's
+ * [contentLanguages] nor the Title's [original] language: what choosing it costs ("German only").
+ * Null otherwise.
+ */
+internal fun VersionAttributes.onlyAudioLanguage(contentLanguages: List<String>, original: String?): String? {
+    val heard = audioLanguages?.takeIf { it.provenance == Provenance.Confirmed }?.value?.singleOrNull() ?: return null
+    return heard.takeIf { it != original && it !in contentLanguages.map(::primaryLanguage) }
+}
+
 /**
  * [candidates] with each Untagged one, whose Prefix names a Source but no language (`D+`, `NF`,
  * `TOP`), Likely in the language the Title was released in ([originalLanguage], TMDB's): a streaming
@@ -58,13 +99,14 @@ internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLangu
 }
 
 /**
- * Groups [candidates] by language:the Viewer's [contentLanguages] in their order, then Untagged
- * Versions (which may well be in the Viewer's language), then the other languages, most Versions
- * first. Within a group the best Version leads, and Versions equivalent to a better one (same
- * language and quality) become its Backups.
+ * Groups [candidates] by language: the Viewer's [contentLanguages] in their order, then the Title's
+ * [original] language's when Prefer original audio acts on it ([originalAudioLanguage]), then
+ * Untagged Versions (which may well be in the Viewer's language), then the other languages, most
+ * Versions first. Within a group the best Version leads, and Versions equivalent to a better one
+ * (same language and quality) become its Backups.
  */
-internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List<String>): Pair<List<LanguageGroup>, List<LanguageGroup>> {
-    val wanted = contentLanguages.map(::primaryLanguage).distinct()
+internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List<String>, original: String? = null): Pair<List<LanguageGroup>, List<LanguageGroup>> {
+    val wanted = (contentLanguages.map(::primaryLanguage) + listOfNotNull(original)).distinct()
     val groups = candidates.sortedWith(BEST_FIRST)
         .groupBy { it.primaryLanguage }
         .map { (language, versions) -> LanguageGroup(language, leadersWithBackups(versions)) }
@@ -75,24 +117,87 @@ internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List
 }
 
 /**
- * The playable Versions of a Title for Play, best first: those in the Viewer's [contentLanguages]
- * (in their order) ahead of the rest, then [BEST_FIRST]. CAM Versions rank after every other
- * language, and Audio-description ones and those the [device] can't display are left out. Versions
- * above the [qualityCap] rank after every other language too, the lowest quality first, so they play
- * only when the Title has nothing within it.
+ * The playable Versions of a Title for Play, best first: those in the language the Viewer last
+ * picked ([remembered]), then, when Prefer original audio acts on the Title ([original], from
+ * [originalAudioLanguage]), those with Original audio ([hasOriginalAudio]), then those in the
+ * Viewer's [contentLanguages] (in their order), then the rest, each [BEST_FIRST]. Among the
+ * Versions with Original audio, one whose file is Confirmed to carry subtitles in a Content language
+ * beats one that isn't at the same picture, so its own subtitles show rather than downloaded ones.
+ * CAM Versions rank after every other language, and Audio-description ones and those the [device]
+ * can't display are left out. Versions above the [qualityCap] rank after every other language too,
+ * the lowest quality first, so they play only when the Title has nothing within it.
  */
-internal fun playable(candidates: List<Candidate>, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): List<Candidate> {
+internal fun playable(
+    candidates: List<Candidate>,
+    contentLanguages: List<String>,
+    device: DeviceProfile,
+    qualityCap: QualityCap = QualityCap.UHD,
+    remembered: String? = null,
+    original: String? = null,
+): List<Candidate> {
     val wanted = contentLanguages.map(::primaryLanguage).distinct()
+    val picked = remembered?.let(::primaryLanguage)
     val overCap = { candidate: Candidate -> candidate.attributes.quality?.value?.let { it > qualityCap.quality } == true }
+    val isOriginal = { candidate: Candidate -> original != null && candidate.attributes.hasOriginalAudio(original) }
+    fun tier(candidate: Candidate): Int = when {
+        picked != null && candidate.primaryLanguage == picked -> 0
+        isOriginal(candidate) -> 1
+        else -> 2 + (wanted.indexOf(candidate.primaryLanguage).takeIf { i -> i >= 0 } ?: wanted.size)
+    }
+    val subtitled = { candidate: Candidate -> isOriginal(candidate) && candidate.attributes.hasConfirmedSubtitlesIn(wanted) }
     return candidates.filter { !it.attributes.audioDescription && device.canDisplay(it.attributes) }
         .sortedWith(
             compareBy<Candidate>(
                 { it.attributes.cam },
                 overCap,
                 { if (overCap(it)) it.attributes.quality?.value else null },
-                { wanted.indexOf(it.primaryLanguage).takeIf { i -> i >= 0 } ?: wanted.size },
-            ).then(BEST_FIRST),
+                ::tier,
+            ).thenByDescending { it.attributes.quality?.value }
+                .thenByDescending { it.attributes.hdr?.value }
+                .thenBy { !subtitled(it) }
+                .then(BEST_FIRST),
         )
+}
+
+private fun VersionAttributes.hasConfirmedSubtitlesIn(languages: List<String>): Boolean =
+    subtitles?.let { it.provenance == Provenance.Confirmed && it.value.any { language -> primaryLanguage(language) in languages } } == true
+
+/**
+ * The languages whose markets subtitle rather than dub, so a copy filed under one of them (`NL`,
+ * the Nordic `SC`) is the likeliest to carry a Title's Original audio.
+ */
+private val SUBTITLE_CULTURES = setOf("nl", "da", "sv", "no", "nb", "fi", "is")
+
+/**
+ * The Versions a Title's details page Header reads, in order: the best Version not yet [read] (by
+ * Listing id) in each language, the Viewer's [contentLanguages] first, then Untagged Versions, then
+ * the other languages, most Versions first.
+ *
+ * When Prefer original audio acts on the Title ([original], from [originalAudioLanguage]), the
+ * order is that of how likely each is to carry Original audio: Untagged Versions (a Source but no
+ * language); the subtitle cultures' copies (`SC`, which names no language or Source, then `NL` and
+ * the Nordic languages); the highest-quality Version whose language is neither a Content language
+ * nor the original, so the app learns whether the best picture carries the original audio; the
+ * Content languages in their order; then the rest.
+ */
+internal fun readOrder(candidates: List<Candidate>, read: Set<Long>, contentLanguages: List<String>, original: String? = null): List<Candidate> {
+    val wanted = contentLanguages.map(::primaryLanguage).distinct()
+    val byLanguage = candidates.sortedWith(BEST_FIRST).groupBy { it.primaryLanguage }
+    fun firstUnread(group: List<Candidate>?) = group?.firstOrNull { it.listing.id !in read }
+    val others = byLanguage.keys.filterNotNull().filter { it !in wanted && it != original }
+        .sortedWith(compareByDescending<String> { byLanguage.getValue(it).size }.thenBy { it })
+    if (original == null) {
+        return (wanted + listOf(null) + others).distinct().mapNotNull { firstUnread(byLanguage[it]) }
+    }
+    val unnamed = byLanguage[null].orEmpty()
+    val untagged = firstUnread(unnamed.filter { it.attributes.source != null })
+    val subtitleCultures = listOfNotNull(firstUnread(unnamed.filter { it.attributes.source == null })) +
+        others.filter { it in SUBTITLE_CULTURES }.mapNotNull { firstUnread(byLanguage[it]) }
+    val outside = others.filter { it !in SUBTITLE_CULTURES }.mapNotNull { firstUnread(byLanguage[it]) }
+    val bestOutside = outside.minWithOrNull(BEST_FIRST)
+    val content = wanted.mapNotNull { firstUnread(byLanguage[it]) }
+    val rest = outside.filter { it !== bestOutside } + listOfNotNull(firstUnread(byLanguage[original]))
+    return listOfNotNull(untagged) + subtitleCultures + listOfNotNull(bestOutside) + content + rest
 }
 
 /** [chosen] with the Versions equivalent to it among [candidates] as its Backups, best first. */

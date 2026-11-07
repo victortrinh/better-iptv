@@ -144,6 +144,15 @@ fun SettingsScreen(
                     )
                 }
                 item {
+                    Labelled(stringResource(R.string.settings_prefer_original_audio), stringResource(R.string.settings_prefer_original_audio_detail)) {
+                        ChoiceRow(
+                            listOf(stringResource(R.string.settings_on), stringResource(R.string.settings_off)),
+                            selected = if (settings.preferOriginalAudio) 0 else 1,
+                            onSelect = { index -> onChange { it.copy(preferOriginalAudio = index == 0) } },
+                        )
+                    }
+                }
+                item {
                     SettingRow(
                         stringResource(R.string.settings_region),
                         countryName(settings.region, settings.appLanguage),

@@ -168,6 +168,12 @@ data class TitleDetails(
     val fromTmdb: Boolean = false,
     /** The YouTube video ID of its trailer, in the App language, else English, else the first TMDB lists (ADR 0012); null when it has none. */
     val trailer: String? = null,
+    /**
+     * The language the Title was released in (TMDB's, a primary subtag), when Prefer original audio
+     * acts on it: the setting is on, TMDB names the language and it is no Content language. Its
+     * group then sits among [languages]. Null otherwise.
+     */
+    val originalLanguage: String? = null,
 )
 
 /**
@@ -296,6 +302,11 @@ data class VersionAttributes(
     /** The main audio's language. Null for an Untagged Version. */
     val language: Known<String>? = null,
     val subtitles: Known<Set<String>>? = null,
+    /**
+     * Every language the audio Tracks are in, Confirmed by a Header read, Playback or the Provider's
+     * Episode details (which name the first Track's only). Null until one of those has seen the file.
+     */
+    val audioLanguages: Known<Set<String>>? = null,
     val quality: Known<Quality>? = null,
     val hdr: Known<Hdr>? = null,
     /** The streaming service the Version was copied from, such as "Netflix". */

@@ -4,11 +4,13 @@ import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
@@ -74,7 +76,9 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
  * [originalLanguage] is the language the Title was released in (TMDB's, ISO 639-1), when known.
  * [choices] is what the Viewer chose the last time this Title played (#291), which wins over
- * [remembered] for the Tracks the file still has.
+ * [remembered] for the Tracks the file still has. With [preferOriginalAudio] (the Viewer's Prefer
+ * original audio setting), the audio Track in the original language is chosen when it is no
+ * Content language, with subtitles in the first Content language.
  */
 data class PlayPlan(
     val titleId: TitleId?,
@@ -87,6 +91,7 @@ data class PlayPlan(
     val length: Long? = null,
     val originalLanguage: String? = null,
     val choices: TitleChoices = TitleChoices(),
+    val preferOriginalAudio: Boolean = false,
 ) {
     /** How far in the Viewer stopped, for a progress bar; null at the start or without the file's length. */
     val progress: Float? get() = length?.takeIf { it > 0 && from > 0 }?.let { (from.toFloat() / it).coerceIn(0f, 1f) }
@@ -101,13 +106,15 @@ data class PlayPlan(
      * Which of the file's [audio] and [subtitles] Tracks to play on [device]: the Tracks the Viewer
      * chose the last time this Title played ([choices]), when the file still has them (an Episode's
      * choice carries to the next, whose file has the same Tracks); else the audio in the
-     * language the Viewer last picked, else in the first Content language the file has. Among that
-     * language's Tracks, one that passes through or plays on the stick's decoder beats one decoded
-     * in software (a Blu-ray rip's Dolby Digital Track over its TrueHD one, without a soundbar), and
-     * audio nothing on the device plays is never chosen. Subtitles are the ones the Viewer last
-     * picked (or none, when they last turned them off) when the file has them; otherwise there are
-     * none, unless no audio is in any of those languages: then the file's default audio plays with
-     * subtitles in the first Content language, when the file has them.
+     * language the Viewer last picked, else, with [preferOriginalAudio] on a Title released outside
+     * the Content languages, in the Title's [originalLanguage] (wherever that Track sits), else in
+     * the first Content language the file has. Among that language's Tracks, one that passes
+     * through or plays on the stick's decoder beats one decoded in software (a Blu-ray rip's Dolby
+     * Digital Track over its TrueHD one, without a soundbar), and audio nothing on the device plays
+     * is never chosen. Subtitles are the ones the Viewer last picked (or none, when they last turned
+     * them off) when the file has them; otherwise there are none, unless the audio is in none of
+     * the Viewer's languages (the original, or no language at all): then it plays with subtitles in
+     * the first Content language, when the file has them.
      *
      * Where the file lacks the subtitles that would show, [TrackChoice.downloaded] names the language
      * to show downloaded ones in instead: the ones the Viewer chose for this Title (by their file,
@@ -121,11 +128,16 @@ data class PlayPlan(
         remembered: RememberedTracks = this.remembered,
         choices: TitleChoices = this.choices,
     ): TrackChoice {
-        val wanted = rankingLanguages(remembered, contentLanguages).map(::primaryLanguage)
+        val viewers = rankingLanguages(remembered, contentLanguages).map(::primaryLanguage)
+        val original = originalAudioLanguage(originalLanguage, viewers, preferOriginalAudio)
+        val wanted = listOfNotNull(remembered.audio?.let(::primaryLanguage), original) + viewers
         val outputs = audio.map { device.audioOutput(it.mimeType) }
-        val audioIndex = choices.audio?.find(audio)?.takeIf { outputs[it] != null } ?: wanted.firstNotNullOfOrNull { language ->
+        val chosenAudio = choices.audio?.find(audio)?.takeIf { outputs[it] != null }
+        val audioIndex = chosenAudio ?: wanted.firstNotNullOfOrNull { language ->
             audio.indices.filter { audio[it].isIn(language) && outputs[it] != null }.minByOrNull { outputs[it]!!.ordinal }
         }
+        // Original audio outside the Viewer's languages plays with subtitles, as audio in no language of theirs does.
+        val heard = audioIndex != null && (chosenAudio != null || viewers.any { audio[audioIndex].isIn(it) })
         val chosenSubtitles = choices.subtitles
         when (chosenSubtitles) {
             ChosenSubtitles.Off -> return TrackChoice(audioIndex, null)
@@ -139,10 +151,10 @@ data class PlayPlan(
             remembered.closedCaptions -> subtitles.indexOfFirst { it.isClosedCaptions }.takeIf { it >= 0 }
             picked != null -> picked
             remembered.subtitles != null -> return TrackChoice(audioIndex, null, downloaded = primaryLanguage(remembered.subtitles))
-            audioIndex != null -> null
+            heard -> null
             else -> contentLanguages.firstOrNull()?.let { language ->
                 subtitles.indexOfFirst { it.isIn(primaryLanguage(language)) }.takeIf { it >= 0 }
-                    ?: return TrackChoice(null, null, downloaded = primaryLanguage(language))
+                    ?: return TrackChoice(audioIndex, null, downloaded = primaryLanguage(language))
             }
         }
         return TrackChoice(audioIndex, subtitle)
@@ -382,21 +394,38 @@ class Connection internal constructor(val location: String, private val lease: C
 internal val PROVIDER_RELEASE_GRACE = 500.milliseconds
 
 /**
+ * How long Play lets the Header read in flight finish before cutting it off, from the press: reads
+ * took 0.5 to 1.6 s on a Mac and about 1.1 s an MKV on the stick (#414).
+ */
+internal val PLAY_WAITS_FOR_READ = 1_500.milliseconds
+
+/** How long after Play is pressed no new Header read starts, should the plan it was pressed for never connect. */
+private val PLAY_HOLDS_READS = 5_000.milliseconds
+
+/**
  * Enforces the Connection limit on the device: one lease at a time, so a second stream is never
  * opened while one is in use. [lease] waits until the current lease is closed, and then for
- * [releaseGrace], because the Provider counts a closed stream as open for a moment after.
+ * [releaseGrace], because the Provider counts a closed stream as open for a moment after. A Header
+ * read holding the connection is let finish for up to [readBound] from the press of Play
+ * ([finishRead]), then cancelled; reads not yet started are dropped.
  */
-internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELEASE_GRACE) {
+internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELEASE_GRACE, private val readBound: Duration = PLAY_WAITS_FOR_READ) {
     private val semaphore = Semaphore(1)
 
     @Volatile private var releasedAt: TimeMark? = null
 
-    /** Cancels the Header read holding the connection, if one is. */
-    @Volatile private var preempt: (() -> Unit)? = null
+    /** The Header read holding the connection, if one is: cancelling it frees the connection at once. */
+    @Volatile private var reading: Job? = null
 
+    /** Set when Play is pressed, until its stream leases the connection: no Header read starts meanwhile. */
+    @Volatile private var playPressedAt: TimeMark? = null
+
+    /**
+     * Takes the connection for playback. A Header read in flight is let finish, within [readBound]
+     * of the press ([finishRead] counts the time already waited), and the reads behind it are dropped.
+     */
     suspend fun lease(): Lease {
-        // Playing comes first: a Header read gives the connection up at once.
-        preempt?.invoke()
+        finishRead()
         semaphore.acquire()
         try {
             releasedAt?.let { delay(releaseGrace - it.elapsedNow()) }
@@ -404,30 +433,46 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
             semaphore.release()
             throw e
         }
+        playPressedAt = null
         return Lease()
     }
 
-    /** Cancels the Header read holding the connection, if one is, as a [lease] would. */
+    /**
+     * Play was pressed: lets the Header read holding the connection, if one is, finish, for up to
+     * [readBound] from the first press, then cancels it, and keeps any further read from starting
+     * until the stream leases the connection (or for a while, should none come). What the read
+     * Confirmed is kept, so the play plan made after this names the Version it Confirmed.
+     */
+    suspend fun finishRead() {
+        val pressed = playPressedAt?.takeIf { it.elapsedNow() < PLAY_HOLDS_READS } ?: TimeSource.Monotonic.markNow().also { playPressedAt = it }
+        val read = reading ?: return
+        val left = readBound - pressed.elapsedNow()
+        if (left <= Duration.ZERO || withTimeoutOrNull(left) { read.join() } == null) read.cancel()
+    }
+
+    /** Cancels the Header read holding the connection, if one is, as Play once did. */
     fun cancelRead() {
-        preempt?.invoke()
+        reading?.cancel()
     }
 
     /**
-     * Runs [read] holding the connection if it is free right now, without waiting for it. A [lease]
-     * asked for meanwhile cancels [read] at once. Null when the connection was taken, before or during [read].
+     * Runs [read] holding the connection if it is free right now, without waiting for it, and no
+     * Play is on its way. A [lease] asked for meanwhile lets [read] finish within its bound, then
+     * cancels it. Null when the connection was taken, before or during [read].
      */
     suspend fun <T : Any> whileFree(read: suspend () -> T): T? {
+        if (playPressedAt?.let { it.elapsedNow() < PLAY_HOLDS_READS } == true) return null
         if (!semaphore.tryAcquire()) return null
         val lease = Lease()
         return try {
             coroutineScope {
-                val reading = async(start = CoroutineStart.LAZY) {
+                val job = async(start = CoroutineStart.LAZY) {
                     releasedAt?.let { delay(releaseGrace - it.elapsedNow()) }
                     read()
                 }
-                preempt = { reading.cancel() }
+                reading = job
                 try {
-                    reading.await()
+                    job.await()
                 } catch (e: CancellationException) {
                     // Rethrown when it's the caller that was cancelled, not the read.
                     ensureActive()
@@ -435,7 +480,7 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
                 }
             }
         } finally {
-            preempt = null
+            reading = null
             lease.close()
         }
     }

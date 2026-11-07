@@ -119,15 +119,15 @@ fun Context.versionLine(version: Version, playing: Version? = null, backup: Bool
 
 /**
  * What a row of the Versions screen's table shows ([versionTable]): unknown cells empty, the Audio
- * cell only when it says more than the language heading, and a Backup's cells in muted type, noted
- * "Backup" where the bitrate goes.
+ * cell only when it says more than the language heading, or what choosing the Version costs
+ * ("German only", [audioOnly]), and a Backup's cells in muted type, noted "Backup" where the bitrate goes.
  */
 fun Context.versionLine(row: VersionTableRow): VersionLine {
     val attributes = row.version.attributes
     return VersionLine(
         badges = attributes.versionBadges(),
         source = attributes.source?.value.orEmpty(),
-        audio = row.audio?.let(::languageName).orEmpty(),
+        audio = row.only?.let(::audioOnly) ?: row.audio?.let(::languageName).orEmpty(),
         subtitles = attributes.subtitles?.value?.joinToString(", ") { if (it == "mul") getString(R.string.subtitles_many) else languageName(it) }.orEmpty(),
         bitrate = attributes.bitrate?.value?.let { getString(R.string.version_bitrate_value, it / 1e6) },
         backup = if (row.backup) getString(R.string.version_backup) else null,
@@ -139,6 +139,16 @@ fun Context.versionLine(row: VersionTableRow): VersionLine {
         noteIsCaution = true,
         muted = row.backup,
     )
+}
+
+/**
+ * A Version whose only audio is in [language] (a primary subtag), neither one of the Viewer's nor the
+ * Title's original: "German only", the language named in the App language so the cost reads plainly.
+ */
+fun Context.audioOnly(language: String): String {
+    val app = resources.configuration.locales[0]
+    val name = Locale.forLanguageTag(language).getDisplayLanguage(app).replaceFirstChar { it.titlecase(app) }
+    return getString(R.string.version_audio_only, name)
 }
 
 /**

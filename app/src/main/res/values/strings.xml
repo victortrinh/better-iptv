@@ -164,6 +164,7 @@
     <!-- The Versions screen's heading over the Versions whose language no Prefix, Category or TMDB names (#388). -->
     <string name="versions_untagged">More versions</string>
     <string name="version_backup">Backup</string>
+    <string name="version_audio_only">%1$s only</string>
 
     <string name="versions_title">Versions</string>
     <string name="cast_title">Cast</string>
@@ -276,6 +277,8 @@
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>
     <string name="settings_content_languages">Content languages</string>
     <string name="settings_content_languages_detail">Cards and Play pick Versions in these first</string>
+    <string name="settings_prefer_original_audio">Prefer original audio</string>
+    <string name="settings_prefer_original_audio_detail">Plays a title in the language it was made in, with subtitles in your first content language, when a copy has it</string>
     <string name="settings_region">Region</string>
     <string name="settings_region_detail">Sets the Top 10 and the default leagues</string>
     <string name="settings_region_suggested">Suggested</string>

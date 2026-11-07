@@ -143,6 +143,30 @@ class EpisodeHeaderReadTest {
         assertEquals(1, cloud.fileReads.size)
     }
 
+    @Test fun `an Episode whose details name the Show's original language has Original audio, and plays ahead of an EN copy`() = runBlocking {
+        cloud.title("en", tmdbTitle(1399, "Squid Game", kind = "show", originalLanguage = "ko"))
+        // The Asian copy names Korean for the first Episode and English for the second; the English copy the other way round.
+        syncShow(
+            "EN - Squid Game" to listOf(201L to "eng", 202L to "kor"),
+            "AS - Squid Game" to listOf(301L to "kor", 302L to "eng"),
+        )
+        library.title(show, listOf("en"), "en")
+        library.episodes(show, listOf("en"))
+
+        val first = library.episodePlayPlan(show, EpisodeNumber(1, 1), listOf("en"), fullHdTv)!!
+        assertEquals(301L, first.version.listingId)
+        assertEquals(Known(setOf("ko"), Provenance.Confirmed), first.version.attributes.audioLanguages)
+        assertEquals(Known("ko", Provenance.Confirmed), first.version.attributes.language)
+        assertEquals(TrackChoice(audio = 0, subtitle = 1), first.chooseTracks(listOf(Track("kor"), Track("eng")), listOf(Track("kor"), Track("eng")), fullHdTv))
+        // An Episode whose languages differ from the Show's usual picks by its own.
+        assertEquals(202L, library.episodePlayPlan(show, EpisodeNumber(1, 2), listOf("en"), fullHdTv)!!.version.listingId)
+        // With the setting off, the English copy plays.
+        assertEquals(201L, library.episodePlayPlan(show, EpisodeNumber(1, 1), listOf("en"), fullHdTv, preferOriginalAudio = false)!!.version.listingId)
+        // The Korean group sits with the Viewer's on the Episode's Versions.
+        val episode = library.episodes(show, listOf("en"))!!.seasons.single().episodes.first()
+        assertEquals(listOf("en", "ko"), episode.languages.map { it.language })
+    }
+
     /** An engine that plays a file to its end at once, having seen [seen] in it. */
     private class SeeingEngine(override val engine: Engine, override val seen: FileContents) : PlayerEngine {
         override val position = 0L
