@@ -42,7 +42,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * Left and Right along a rail of growing posters, as Home's rows are laid out: the focused card
+ * Left and Right along a rail of posters, as Home's rows are laid out: the focused card
  * slides to the left margin exactly once (#341). Watched frame by frame on the test clock, it never
  * goes past the margin, and it ends on it.
  */
@@ -71,7 +71,7 @@ class RailGlideTest {
     val compose = createComposeRule()
 
     /**
-     * A rail of [cards] posters that grow on focus, as RowsScreen draws it, with the card at [first]
+     * A rail of [cards] posters that lift on focus, as RowsScreen draws it, with the card at [first]
      * focused at the margin. A [ranked] rail is a Top row, its posters beside their numerals.
      */
     private fun rail(cards: Int, ranked: Boolean = false, first: Int = 0) {
@@ -104,7 +104,6 @@ class RailGlideTest {
                             modifier = modifier,
                             named = false,
                             onFocus = { scope.launch { rail.glideTo(place, resting) } },
-                            grown = { Box(Modifier) },
                         )
                     }
                     if (ranked) RankedCard(index + 1, tag) { poster(Modifier) } else poster(tag)
