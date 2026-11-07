@@ -86,7 +86,6 @@ class FakeCloud : Closeable {
     val providerTables = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val metadata = HashMap<String, Map<String, Any?>>()
-    private val searches = HashMap<String, Map<String, Any?>>()
     private val charts = HashMap<String, Map<String, Any?>>()
     private val games = HashMap<String, List<Map<String, Any?>>>()
     @Volatile private var trending: List<TitleId.Tmdb> = emptyList()
@@ -100,9 +99,6 @@ class FakeCloud : Closeable {
     val gamesAsked: List<List<String>>
         get() = received.filter { it.path == "/v1/games" }.map { ((read(it.body) as Map<*, *>)["leagues"] as List<*>).map { league -> league as String } }
 
-    /** The queries the device sent to `/v1/search`, as sent. */
-    val searchAsked: List<String>
-        get() = received.filter { it.path == "/v1/search" }.map { (read(it.body) as Map<*, *>)["query"] as String }
 
     /** Each file read devices reported, as sent: `listingId`, `file`, `prefix` and `hints`. */
     val fileReadReports: List<Map<*, *>>
@@ -143,20 +139,6 @@ class FakeCloud : Closeable {
     /** Offers [text] as a downloadable subtitle for the Movie [tmdbId] (or its [season]'s [episode]) in [language]. */
     fun subtitle(tmdbId: Long, language: String, release: String, text: String = "1\n00:00:01,000 --> 00:00:02,000\n$release\n", kind: String = "movie", season: Int? = null, episode: Int? = null) =
         Subtitle(kind, tmdbId, season, episode, language, release, text).also { subtitles += it }
-
-    /**
-     * Answers a TMDB search for [query] (any case) with [titles] (TMDB ID and popularity) and [people]
-     * (name and their Titles). Other queries find nothing.
-     */
-    fun search(query: String, titles: List<Pair<TitleId.Tmdb, Double>> = emptyList(), people: List<Pair<String, List<TitleId.Tmdb>>> = emptyList()) {
-        val key = { id: TitleId.Tmdb -> mapOf("kind" to if (id.kind == TitleKind.Movie) "movie" else "show", "tmdbId" to id.tmdbId) }
-        synchronized(searches) {
-            searches[query.lowercase()] = mapOf(
-                "titles" to titles.map { (id, popularity) -> key(id) + ("popularity" to popularity) },
-                "people" to people.map { (name, ids) -> mapOf("name" to name, "titles" to ids.map(key)) },
-            )
-        }
-    }
 
     /**
      * Answers `/v1/charts` for [region] with Netflix's Top 10 [movies] and [shows] (TMDB IDs in rank
@@ -323,12 +305,6 @@ class FakeCloud : Closeable {
                     fileReads["$provider/$listing"]?.let { mapOf("listingId" to listing, "file" to it) }
                 }
                 respond(exchange, 200, mapOf("files" to files))
-            }
-            "/v1/search" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                val query = ((read(body) as Map<*, *>)["query"] as String).lowercase()
-                respond(exchange, 200, synchronized(searches) { searches[query] } ?: mapOf("titles" to emptyList<Any>(), "people" to emptyList<Any>()))
             }
             "/v1/metadata" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")

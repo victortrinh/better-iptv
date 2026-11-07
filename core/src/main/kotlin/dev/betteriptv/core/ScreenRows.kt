@@ -28,5 +28,8 @@ internal class ScreenRows {
         return if (left.size < min) emptyList() else left.take(size).also(::show)
     }
 
+    /** Whether Title [id] is on a row already. */
+    fun shows(id: TitleId): Boolean = id in shown
+
     private fun show(titles: List<StoredTitle>) = titles.forEach { shown += it.id }
 }

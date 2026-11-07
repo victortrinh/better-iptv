@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import com.squareup.moshi.Moshi
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -12,8 +11,9 @@ import kotlin.random.Random
 
 /**
  * Times building the search index of a catalog the size of the real one (#106): about 58,000 Titles
- * with TMDB metadata cached for each, in about 145,000 Listings, and 45,000 Channels. Skipped unless
- * run with `-Pbenchmark`; prints each part's time and what the garbage collector did.
+ * in about 145,000 Listings, each Show's Listing and each Movie's details naming 12 cast and a few
+ * genres as the Provider does, and 45,000 Channels. Skipped unless run with `-Pbenchmark`; prints
+ * each part's time and what the garbage collector did.
  */
 class SearchIndexBenchmark {
     @get:Rule val folder = TemporaryFolder()
@@ -60,11 +60,14 @@ class SearchIndexBenchmark {
         store.close()
     }
 
-    /** Titles 1 to 58,000 (one in four a Show), two or three Listings each, all with metadata; then the Channels. */
+    /** Titles 1 to 58,000 (one in four a Show), two or three Listings each, every Listing with the Provider's cast and genres; then the Channels. */
     private fun fill(store: CatalogStore) {
         val titles = 58_000
         val cast = List(150_000) { name(2) }
         var listingId = 0L
+        val genres = listOf("Drama", "Comedy", "Thriller", "Action & Adventure", "Crime", "Komödie", "Drame")
+        val details = { ProviderDetails(genre = List(3) { genres.random(random) }.joinToString(" / "), cast = List(12) { cast.random(random) }.joinToString(", ")) }
+        val movieListings = mutableListOf<Long>()
         store.stageChannels { staging ->
             repeat(45_000) {
                 val country = listOf("US", "CA", "FR", "UK", "AR").random(random)
@@ -79,8 +82,8 @@ class SearchIndexBenchmark {
                 staging.category(TitleKind.Movie, "1", "EN | MOVIES")
                 staging.category(TitleKind.Movie, "2", "FR | FILMS")
                 staging.category(TitleKind.Show, "3", "EN | SERIES")
-                for (tmdbId in 1L..titles) {
-                    val kind = if (tmdbId % 4 == 0L) TitleKind.Show else TitleKind.Movie
+                for (number in 1L..titles) {
+                    val kind = if (number % 4 == 0L) TitleKind.Show else TitleKind.Movie
                     val name = name(random.nextInt(1, 5))
                     val year = random.nextInt(1950, 2026)
                     repeat(random.nextInt(2, 4)) { version ->
@@ -90,7 +93,8 @@ class SearchIndexBenchmark {
                             else -> listOf("EN", "4K-EN", "NF").random(random) to "1"
                         }
                         val listing = "$prefix - $name ($year)"
-                        staging.listing(kind, ++listingId, listing, category, listingId, null, false, tmdbId, year)
+                        if (kind == TitleKind.Movie) movieListings += listingId + 1
+                        staging.listing(kind, ++listingId, listing, category, listingId, null, false, number, year, details = if (kind == TitleKind.Show) details() else null)
                     }
                 }
             },
@@ -98,26 +102,7 @@ class SearchIndexBenchmark {
             completed = { movies, shows, _ -> CompletedSync(Instant.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
         )
         store.swapTitles()
-        // Shaped like the cloud's answers: titles in each translation, a few other names, English and French descriptions, 12 cast.
-        val json = Moshi.Builder().build().adapter(Any::class.java)
-        for (batch in (1L..titles).chunked(2_000)) {
-            val bodies = batch.associate { tmdbId ->
-                val kind = if (tmdbId % 4 == 0L) TitleKind.Show else TitleKind.Movie
-                val original = name(random.nextInt(1, 5))
-                val translations = List(random.nextInt(5, 40)) { Triple(listOf("fr", "de", "es", "it", "pt", "ru", "ja", "zh", "ar", "nl").random(random), "XX", if (random.nextBoolean()) original else name(3)) }
-                val body = tmdbTitle(
-                    tmdbId, original, kind = kind.name.lowercase(),
-                    titles = listOf(Triple("en", "US", original)) + translations,
-                    descriptions = listOf("en", "fr").map { Triple(it, "", (1..60).joinToString(" ") { word() }) },
-                    genres = listOf("Drama", "Comedy", "Thriller"),
-                    releaseDate = "2001-02-03", runtimeMinutes = 104, posterPath = "/poster$tmdbId.jpg", backdropPath = "/backdrop$tmdbId.jpg",
-                    cast = List(12) { cast.random(random) },
-                    popularity = random.nextDouble(0.0, 200.0),
-                    alternativeTitles = List(random.nextInt(0, 12)) { name(3) },
-                )
-                TitleId.Tmdb(kind, tmdbId) to json.toJson(body)
-            }
-            store.saveMetadata("en", bodies, emptyList(), Instant.now())
-        }
+        // As if every Movie's page had been opened: its details kept with their cast and genres.
+        movieListings.forEach { store.saveMovieDetails(it, ProviderMovieDetails(null, details()), it, Instant.now()) }
     }
 }
