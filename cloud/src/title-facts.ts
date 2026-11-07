@@ -12,6 +12,14 @@ import type { Kind, TitleKey } from "./tmdb";
 /** At most this many Titles per request: the survey's batch size, which the Query Service answers in a few seconds. */
 export const MAX_FACTS_BATCH = 300;
 
+/**
+ * The most Titles cached a UTC day. D1's free plan allows 100k rows written a day, a cached Title
+ * costs two (its row and its key), and the Games cron needs its share: a first Sync of a 58k-Title
+ * catalog once spent 130k in an hour. Past it, the day's remaining answers are given but not kept,
+ * and Wikidata is asked about those Titles again another day.
+ */
+export const FACTS_CACHED_A_DAY = 25_000;
+
 /** How long one Wikidata query may take before the batch is answered from the cache alone. The service's own limit is 60 s. */
 const WIKIDATA_TIMEOUT_MS = 25_000;
 
@@ -43,7 +51,8 @@ const PROPERTY: Record<Kind, string> = { movie: "P4947", show: "P4983" };
 
 /**
  * The facts of [keys], from the cache or else from Wikidata in one query. What Wikidata answers (an
- * item or none) is cached before returning, so a repeat request doesn't reach it.
+ * item or none) is cached before returning, so a repeat request doesn't reach it, up to
+ * [FACTS_CACHED_A_DAY] Titles a day.
  */
 export async function titleFacts(env: Env, keys: TitleKey[]): Promise<TitleFactsBatch> {
   const cached = await readCache(env.DB, keys);
@@ -51,15 +60,21 @@ export async function titleFacts(env: Env, keys: TitleKey[]): Promise<TitleFacts
   const fetched = missing.length === 0 ? new Map<string, TitleFacts | null>() : await fetchFacts(env, missing);
   if (fetched !== null && fetched.size > 0) {
     const now = Date.now();
-    const insert = env.DB.prepare(
-      "INSERT OR REPLACE INTO title_facts (kind, tmdb_id, found, original_language, imdb_id, enwiki, frwiki, fetched_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-    );
-    await env.DB.batch(
-      missing.map((key) => {
-        const facts = fetched.get(id(key)) ?? null;
-        return insert.bind(key.kind, key.tmdbId, facts ? 1 : 0, facts?.originalLanguage ?? null, facts?.imdbId ?? null, facts?.enwiki ?? null, facts?.frwiki ?? null, now);
-      }),
-    );
+    const day = new Date(now).toISOString().slice(0, 10);
+    const used = (await env.DB.prepare("SELECT titles FROM facts_cached WHERE day = ?1").bind(day).first<{ titles: number }>())?.titles ?? 0;
+    const kept = missing.slice(0, Math.max(0, FACTS_CACHED_A_DAY - used));
+    if (kept.length > 0) {
+      const insert = env.DB.prepare(
+        "INSERT OR REPLACE INTO title_facts (kind, tmdb_id, found, original_language, imdb_id, enwiki, frwiki, fetched_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+      );
+      await env.DB.batch([
+        ...kept.map((key) => {
+          const facts = fetched.get(id(key)) ?? null;
+          return insert.bind(key.kind, key.tmdbId, facts ? 1 : 0, facts?.originalLanguage ?? null, facts?.imdbId ?? null, facts?.enwiki ?? null, facts?.frwiki ?? null, now);
+        }),
+        env.DB.prepare("INSERT INTO facts_cached (day, titles) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET titles = titles + excluded.titles").bind(day, kept.length),
+      ]);
+    }
   }
   const batch: TitleFactsBatch = { titles: [], notFound: [], unavailable: [] };
   for (const key of keys) {
