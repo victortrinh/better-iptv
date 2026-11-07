@@ -152,6 +152,28 @@ Settled 2026-11-06 only this far: a paid app is commercial use under TMDB's term
 
 What is known going in. Grouping keeps the Provider's TMDB IDs (94% of Listings) as the Title key with no API call; the 6% looked up by name and the Mismatch check move to Wikidata. Subtitles are unaffected: OpenSubtitles and Subdl are searched by TMDB ID. Details come from the Provider's own calls (`get_vod_info`, `get_series_info`: plot, cast, genre, release date, runtime, trailer key, Episode stills, a poster per Listing), one Title per call when focused or opened, kept on the device forever. Lost unless the session finds a source: textless backdrops and title logos, Charts (the Netflix Top 10 goes anyway, M7), the featured hero's rule, "New on your service" by popularity, search by person and by any-language name, upcoming Episodes, and the original language that drives Prefer original audio (Wikidata has it). ADR 0002 is amended by this milestone.
 
+### Survey A, 2026-11-07: Wikidata's coverage of the Provider's TMDB IDs
+
+Re-run with `python3 -I scripts/survey_wikidata.py` after `scripts/survey.py` (it reads the saved Listings, asks the Wikidata Query Service in batches of 300 with a pause, never the Provider, and writes `.survey/wikidata.md`). Every distinct TMDB ID in the 2026-10-24 catalog was asked: 53,865 movies (P4947), 14,818 shows (P4983). "Item" is a Wikidata item carrying that ID; the other columns are of the items found.
+
+| Sample | Titles | Item | EN label | FR label | IMDb ID | Original language | Label languages, median |
+|---|---|---|---|---|---|---|---|
+| Movies, all | 53,865 | 76% | 72% | 44% | 75% | 63% | 10 |
+| Movies, newest 500 | 500 | 76% | 72% | 53% | 76% | 66% | 16 |
+| Movies added this year, rated 7+ | 5,215 | 84% | 77% | 56% | 84% | 73% | 19 |
+| Movies, the 500 with most Listings | 500 | 100% | 86% | 93% | 100% | 100% | 47 |
+| Movies in today's Charts the Provider has | 302 | 97% | 80% | 79% | 97% | 93% | 44 |
+| Shows, all | 14,818 | 71% | 67% | 37% | 71% | 53% | 9 |
+| Shows, newest 500 | 500 | 80% | 75% | 53% | 79% | 67% | 14 |
+| Shows added this year, rated 7+ | 4,997 | 82% | 79% | 49% | 81% | 65% | 12 |
+| Shows, the 500 with most Listings | 500 | 99% | 98% | 92% | 99% | 93% | 21 |
+
+- What Wikidata misses is catalog filler with no article anywhere: Iranian, Telugu and Greek films, Danish, Dutch and Greek reality shows. What Home, the hero and the rows show, it has.
+- Wikidata holds 287,129 items with a TMDB movie ID and 67,252 with a TMDB show ID (2026-11-07). Its data is CC0.
+- Sitelinks (how many Wikipedias have an article), a popularity proxy: movies found have a median of 6 (90th percentile 29), shows 4 (22); 77% of movies and 75% of shows found have an English article, 55% and 44% a French one.
+- Wikipedia's 1,000 most viewed articles of 2026-11-06 (the free pageviews API, CC0) included 80 of the Provider's Titles on English Wikipedia (Jailer 3, xXx, Black Doves, MobLand, Godzilla Minus One, Slow Horses, The Diplomat, Dexter: Resurrection) and 51 on French (Star Academy 2026, Lupin, MobLand, Cat's Eyes), matched through their sitelinks: enough for a trending row.
+- Name lookup for Listings without a TMDB ID is weak on any source. Of the 9,592 movie Listings without one, 4,800 are Sports replays and music videos; of 150 of the rest, Wikidata's search found one item with a TMDB ID and the right year for 6% (`NF - The Greatest Showman`, `PK - Joyland (2022)`), and 3% of 150 show Listings. The cloud's own record of TMDB's lookups (D1 `title_lookup`, 11,605 names asked since M1) shows TMDB found 14% of movie names and 15% of show names.
+
 ## M7: Paying
 
 Settled 2026-11-06 in a grilling session against the code, the cloud README, ADRs 0001–0012 and TMDB's, Paddle's and TiviMate's public pages. The goal: hundreds of households, on any Provider, pay once. Costs are kept in [running-costs.md](running-costs.md); the terms are in CONTEXT.md under Paying.
