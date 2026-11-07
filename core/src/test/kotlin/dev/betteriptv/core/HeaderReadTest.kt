@@ -107,6 +107,44 @@ class HeaderReadTest {
         assertEquals(Provenance.Likely, version("EN - Movie (2025)").attributes.language?.provenance)
     }
 
+    @Test fun `the page hears how many Versions are left to check, down to none`() = runBlocking {
+        syncVersions(
+            "4K-EN - Movie (2025)" to "4K MOVIES" with "mkv",
+            "DE - Der Film (2025)" to "DE - FILME" with "mkv",
+        )
+        (1L..2L).forEach { provider.movieFiles[it] = matroskaFile(englishAndFrench) }
+
+        val left = mutableListOf<Int>()
+        library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
+
+        assertEquals(listOf(2, 1, 0), left)
+    }
+
+    @Test fun `a Title whose Versions are all Confirmed has nothing left to check`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv")
+        provider.movieFiles[1] = matroskaFile(englishAndFrench)
+        readHeaders()
+
+        val left = mutableListOf<Int>()
+        library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
+
+        assertTrue("never says it is checking: $left", left.none { it > 0 })
+    }
+
+    @Test fun `a refused read ends the checking`() = runBlocking {
+        syncVersions(
+            "4K-EN - Movie (2025)" to "4K MOVIES" with "mkv",
+            "DE - Der Film (2025)" to "DE - FILME" with "mkv",
+        )
+        (1L..2L).forEach { provider.movieFiles[it] = matroskaFile(englishAndFrench) }
+        provider.refuseRangesAfter = 0
+
+        val left = mutableListOf<Int>()
+        library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
+
+        assertEquals(0, left.last())
+    }
+
     @Test fun `an MP4 with its track index at the end is read at its start and its end`() = runBlocking {
         syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mp4")
         val file = mp4File(listOf(FileTrack("audio", "eng", "ec-3", channels = 6), FileTrack("subtitle", "spa", "tx3g")), seconds = 100, indexAtEnd = true)

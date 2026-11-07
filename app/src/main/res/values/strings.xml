@@ -168,6 +168,8 @@
     <string name="version_audio_only">%1$s only</string>
 
     <string name="versions_title">Versions</string>
+    <!-- Under a Title's actions and beside the Versions screen's legend while Header reads still Confirm Versions (#457). No count: a Show's can run to hundreds. -->
+    <string name="versions_checking">Checking Versions…</string>
     <string name="cast_title">Cast</string>
     <string name="play">Play</string>
     <string name="play_continue">Continue from %1$s</string>

@@ -120,6 +120,7 @@
     <string name="version_audio_only">%1$s seulement</string>
 
     <string name="versions_title">Versions</string>
+    <string name="versions_checking">Vérification des versions…</string>
     <string name="cast_title">Distribution</string>
     <string name="play">Lecture</string>
     <string name="play_continue">Reprendre à %1$s</string>
