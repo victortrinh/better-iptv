@@ -1,5 +1,6 @@
 package dev.betteriptv.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +32,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.tv.material3.Text
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -120,22 +124,23 @@ fun SignInScreen(library: Library, onSignedIn: (String) -> Unit) {
 }
 
 /**
- * The code and QR for [state], beside what to do with them: a heading, the steps, the page's address
- * to type when the QR won't scan, and the waiting dot. Reused by the first Sync's card (#438).
+ * The code and QR for [state], beside what to do with them: a heading ([title]), the steps, the page's
+ * address to type when the QR won't scan, and the waiting dot. Reused by the first Sync's card (#438),
+ * [compact]: the heading in headline type, the column and QR smaller, so it fits under the checklist.
  */
 @Composable
-fun SignInPanel(state: SignInState, modifier: Modifier = Modifier) {
+fun SignInPanel(state: SignInState, modifier: Modifier = Modifier, title: String = stringResource(R.string.sign_in_title), compact: Boolean = false) {
     val showing = state as? SignInState.Showing
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.width(PANEL_TEXT)) {
-            Text(stringResource(R.string.sign_in_title), style = Type.display, color = Colors.ink)
-            Spacer(Modifier.height(Spacing.m))
+        Column(Modifier.width(if (compact) CARD_TEXT else PANEL_TEXT)) {
+            Text(title, style = if (compact) Type.headline else Type.display, color = Colors.ink)
+            Spacer(Modifier.height(if (compact) Spacing.s else Spacing.m))
             Text(
                 stringResource(R.string.sign_in_steps, showing?.code?.url?.let(::typedAddress) ?: ""),
                 style = Type.body,
                 color = Colors.inkMuted,
             )
-            Spacer(Modifier.height(Spacing.xl))
+            Spacer(Modifier.height(if (compact) Spacing.m else Spacing.xl))
             Text(
                 showing?.code?.code?.let(::spaced) ?: "",
                 style = Type.display.copy(letterSpacing = Type.display.fontSize * 0.12f),
@@ -143,9 +148,10 @@ fun SignInPanel(state: SignInState, modifier: Modifier = Modifier) {
                 maxLines = 1,
                 modifier = Modifier.testTag("sign-in-code"),
             )
-            Spacer(Modifier.height(Spacing.l))
+            Spacer(Modifier.height(if (compact) Spacing.s else Spacing.l))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state !is SignInState.Unavailable) {
+                // Signed in, nothing is waited for any more: the line alone.
+                if (state !is SignInState.Unavailable && state !is SignInState.SignedIn) {
                     PulsingDot(6.dp)
                     Spacer(Modifier.width(Spacing.s))
                 }
@@ -160,11 +166,56 @@ fun SignInPanel(state: SignInState, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Spacer(Modifier.width(Spacing.xxl))
-        Box(Modifier.size(QR_TILE)) {
-            showing?.let { Qr(it.code.url, QR_TILE, Modifier.testTag("sign-in-qr")) }
+        Spacer(Modifier.width(if (compact) Spacing.xl else Spacing.xxl))
+        val tile = if (compact) CARD_QR_TILE else QR_TILE
+        Box(Modifier.size(tile)) {
+            showing?.let { Qr(it.code.url, tile, Modifier.testTag("sign-in-qr")) }
         }
     }
+}
+
+/**
+ * The first Sync's sign-in card (#438), under its checklist: "Sign in to Zugig to keep your history
+ * across devices" with the code and QR inline ([SignInPanel], compact) on a `glass` slab with `card`
+ * corners. It never takes focus; Back or Home dismisses it ([firstSyncSignIn]).
+ */
+@Composable
+fun SignInCard(state: SignInState, modifier: Modifier = Modifier) {
+    Box(modifier.background(Colors.surface, RoundedCornerShape(Corners.card)).padding(CARD_PADDING).testTag(SIGN_IN_CARD_TAG)) {
+        SignInPanel(state, title = stringResource(R.string.sign_in_card_title), compact = true)
+    }
+}
+
+/**
+ * Whether the first Sync's sign-in card shows, and what it shows (#438). [offered] is read when the
+ * screen opens ([Library.offersSignInCard]: a cloud, no Account, never dismissed or used on this
+ * device), and the card shows while [firstSync] lasts. While it shows it polls as the Sign-in screen
+ * does ([runSignIn] with [start] and [check]); the state is the screen's, not a slot's, so the code
+ * stays the same when the card moves from under the checklist to under the rows. Once the phone signs
+ * the TV in it reads "Signed in as …" until the Sync ends. Back dismisses it, and so does Home (the app
+ * leaving the front): [onDismiss], and it never comes back on this device; Settings keeps its row.
+ */
+@Composable
+fun firstSyncSignIn(
+    offered: Boolean,
+    firstSync: Boolean,
+    start: suspend () -> SignInCode?,
+    check: suspend () -> String?,
+    onDismiss: () -> Unit,
+): SignInState? {
+    var open by rememberSaveable { mutableStateOf(offered) }
+    val shown = open && firstSync
+    var state by remember { mutableStateOf<SignInState>(SignInState.Asking) }
+    val dismiss = {
+        open = false
+        onDismiss()
+    }
+    if (shown) {
+        LaunchedEffect(Unit) { runSignIn(start, check) { state = it } }
+        BackHandler(onBack = dismiss)
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP, onEvent = dismiss)
+    }
+    return state.takeIf { shown }
 }
 
 /**
@@ -198,6 +249,11 @@ private fun spaced(code: String) = if (code.length == 6) "${code.take(3)} ${code
 
 private val PANEL_TEXT = 440.dp
 private val QR_TILE = 200.dp
+private val CARD_TEXT = 400.dp
+private val CARD_QR_TILE = 144.dp
+private val CARD_PADDING = 20.dp
+
+const val SIGN_IN_CARD_TAG = "sign-in-card"
 /** The quiet zone round the modules the QR standard asks for. */
 private const val QUIET_MODULES = 4
 private val QR_LIGHT get() = Colors.ink

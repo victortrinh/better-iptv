@@ -233,8 +233,27 @@ class Library private constructor(
             if (_profiles.value.all.size >= MAX_PROFILES) return@withContext null
             val id = store.addProfile(name.trim(), kids, Instant.now())
             _profiles.value = readProfiles()
+            // The first second Profile: the chip appears, and pulses once so the household notices it.
+            if (store.profileChipPulse() == null) {
+                store.saveProfileChipPulse(PULSE_PENDING)
+                _profileChipPulse.value = true
+            }
             _profiles.value.all.single { it.id == id }
         }
+    }
+
+    private val _profileChipPulse = MutableStateFlow(store.profileChipPulse() == PULSE_PENDING)
+
+    /**
+     * Whether the profile chip is to pulse once (#438): set the first time a second Profile is made on
+     * this device, kept across launches until the chip has pulsed ([profileChipPulsed]), never set again.
+     */
+    val profileChipPulse: StateFlow<Boolean> = _profileChipPulse.asStateFlow()
+
+    /** The chip has pulsed: it never does again on this device. */
+    suspend fun profileChipPulsed() = withContext(Dispatchers.IO) {
+        store.saveProfileChipPulse(PULSE_DONE)
+        _profileChipPulse.value = false
     }
 
     /** Names Profile [id] [name] (trimmed). */
@@ -1158,6 +1177,21 @@ class Library private constructor(
      */
     val account: StateFlow<String?> = _account.asStateFlow()
 
+    private val _offersSignInCard = MutableStateFlow(cloud != null && _account.value == null && !store.signInCardDone())
+
+    /**
+     * Whether the first Sync's checklist offers the sign-in card (#438): with a cloud, no Account and
+     * the card neither dismissed ([dismissSignInCard]) nor used to sign in on this device. Once either,
+     * never again, signed out or not.
+     */
+    val offersSignInCard: StateFlow<Boolean> = _offersSignInCard.asStateFlow()
+
+    /** Back or Home on the sign-in card: it never shows again on this device; Settings keeps its row. */
+    suspend fun dismissSignInCard() = withContext(Dispatchers.IO) {
+        store.saveSignInCardDone()
+        _offersSignInCard.value = false
+    }
+
     /**
      * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
      * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
@@ -1184,6 +1218,10 @@ class Library private constructor(
         if (email != _account.value) {
             store.saveAccountEmail(email)
             _account.value = email
+        }
+        if (email != null && _offersSignInCard.value) {
+            store.saveSignInCardDone()
+            _offersSignInCard.value = false
         }
         email
     }
@@ -2389,6 +2427,9 @@ class Library private constructor(
     companion object {
         /** The most Profiles a household keeps (#428). */
         const val MAX_PROFILES = 5
+
+        private const val PULSE_PENDING = "pending"
+        private const val PULSE_DONE = "done"
 
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)

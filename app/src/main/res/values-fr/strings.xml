@@ -374,6 +374,7 @@
     <string name="sign_in_unavailable">Zugig est injoignable pour le moment. Nouvel essai…</string>
     <string name="sign_in_new_code">Nouveau code</string>
     <string name="sign_in_qr">Code QR de la page de connexion</string>
+    <string name="sign_in_card_title">Connectez-vous à Zugig pour garder votre historique sur tous vos appareils</string>
 
     <string name="settings_catalog">Catalogue</string>
     <string name="catalog_counts">%1$s · %2$s</string>

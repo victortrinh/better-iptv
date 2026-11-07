@@ -1577,6 +1577,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /** Whether the first Sync's sign-in card was dismissed, or the device signed in (#438): it never shows again. */
+    fun signInCardDone(): Boolean = meta(SIGN_IN_CARD) != null
+
+    fun saveSignInCardDone() = synchronized(writer) { writeMeta(mapOf(SIGN_IN_CARD to "done")) }
+
+    /** Whether the profile chip's one pulse is due ("pending"), has played ("done"), or neither yet (null) (#438). */
+    fun profileChipPulse(): String? = meta(PROFILE_CHIP_PULSE)
+
+    fun saveProfileChipPulse(value: String) = synchronized(writer) { writeMeta(mapOf(PROFILE_CHIP_PULSE to value)) }
+
     private fun meta(key: String): String? = synchronized(reader) {
         reader.prepare("SELECT value FROM meta WHERE key = ?").use {
             it.bindText(1, key)
@@ -1701,6 +1711,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val ACCOUNT_EMAIL = "account_email"
+        const val SIGN_IN_CARD = "sign_in_card"
+        const val PROFILE_CHIP_PULSE = "profile_chip_pulse"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
         const val LAST_FEATURED = "last_featured_"

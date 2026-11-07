@@ -101,4 +101,36 @@ class SignInTest {
             assertNull(alone.account.value)
         }
     }
+
+    @Test fun `the first Sync's card is offered to a device with no Account, and asks the cloud for a code`() = runBlocking {
+        Library.open(folder.root.resolve("fresh.db").path, InMemoryCredentials(), cloud.url).use { fresh ->
+            assertTrue(fresh.offersSignInCard.value)
+            val signIn = fresh.startSignIn()!!
+            assertTrue(cloud.received.any { it.path == "/v1/sign-in" })
+            cloud.phoneSignsIn(signIn.code, "home@example.com")
+            assertEquals("home@example.com", fresh.checkSignIn())
+            assertFalse(fresh.offersSignInCard.value)
+        }
+        // Signed in, then out: the card still never comes back on this device.
+        Library.open(folder.root.resolve("fresh.db").path, InMemoryCredentials(), cloud.url).use { again ->
+            assertFalse(again.offersSignInCard.value)
+        }
+    }
+
+    @Test fun `a dismissed card never comes back on that device`() = runBlocking {
+        Library.open(folder.root.resolve("fresh.db").path, InMemoryCredentials(), cloud.url).use { fresh ->
+            fresh.dismissSignInCard()
+            assertFalse(fresh.offersSignInCard.value)
+        }
+        Library.open(folder.root.resolve("fresh.db").path, InMemoryCredentials(), cloud.url).use { again ->
+            assertFalse(again.offersSignInCard.value)
+        }
+        assertTrue(cloud.received.none { it.path == "/v1/sign-in" })
+    }
+
+    @Test fun `no card without a cloud`() {
+        Library.open(folder.root.resolve("alone.db").path, InMemoryCredentials()).use { alone ->
+            assertFalse(alone.offersSignInCard.value)
+        }
+    }
 }
