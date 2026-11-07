@@ -113,7 +113,7 @@ A Version whose Prefix names a Source but no language. A streaming service's or 
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.
 
 **Original audio**:
-A Version attribute: its audio is in the Title's original language (Wikidata's, when it names one). Confirmed by a Header read or Playback, or Likely for an Untagged Version. A Version whose Prefix names another language can still have it: `NL - The Shadow's Edge` carries Mandarin with Dutch, German and English subtitles.
+A Version attribute: its audio is in the Title's original language (Wikidata's, when it names one; otherwise only a Header read or Playback can tell). Confirmed by a Header read or Playback, or Likely for an Untagged Version. A Version whose Prefix names another language can still have it: `NL - The Shadow's Edge` carries Mandarin with Dutch, German and English subtitles.
 _Avoid_: Undubbed, original-language Version, OV
 
 **Sports replay**:
@@ -232,7 +232,7 @@ _Avoid_: Favourite team, followed team
 ### Discovery
 
 **Trending**:
-The Titles among the Provider's that Wikipedia's readers looked up most this week, in the App language's Wikipedia and English, filtered to the Viewer's Content languages. Unranked: no numerals, no rank shown anywhere.
+The Titles among the Provider's that Wikipedia's readers looked up most over the last seven days, in the App language's Wikipedia and English, filtered to the Viewer's Content languages. Unranked: no numerals, no rank shown anywhere.
 _Avoid_: Chart, top list, Top 10
 
 **Row**:
@@ -248,7 +248,7 @@ A Movie or Episode the Viewer played to the end, or stopped in its last 10% or i
 _Avoid_: Finished, completed, seen
 
 **New on your service**:
-Titles whose Listings the Provider added recently, ordered by popularity.
+Titles whose Listings the Provider added recently, newest first, ties by the Provider's rating.
 _Avoid_: Recently added, new releases
 
 ### Paying
