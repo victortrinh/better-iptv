@@ -283,6 +283,8 @@
     <string name="profile_cancel">Cancel</string>
     <string name="profile_name">Name</string>
     <string name="profile_save">Save</string>
+    <string name="who_is_watching">Who\'s watching?</string>
+    <string name="profile_kids_label">Kids</string>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>

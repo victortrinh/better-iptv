@@ -133,6 +133,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         // The screen was reached by picking its tab, which keeps focus there.
         var byTab by remember { mutableStateOf(false) }
         var playing by remember { mutableStateOf<NowPlaying?>(null) }
+        // "Add a profile" in "Who's watching?" opens Settings on the new Profile's name.
+        var addingProfile by remember { mutableStateOf(false) }
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val onTab = { selected: Browse ->
@@ -175,179 +177,193 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         // Sync's catalog, so rows change between screens, never under focus; leaving Settings after Sync now too.
         val topLevel = now == null && opened == null && openedGame == null && country == null
         LaunchedEffect(tab, topLevel) { if (topLevel) app.applyPendingCatalog() }
-        if (now != null) {
-            BackHandler { playing = null }
-            // Plays another of the Game's Feeds, a new plan for its Channel, as the Game page's Play does.
-            val playFeed = { entry: GameFeeds, feed: Feed ->
-                scope.launch {
-                    val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
-                    if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed), channel = feed.channel)
+        // With two Profiles or more, the tabs' chip opens "Who's watching?" over whichever browsing screen is shown (#432).
+        ProfileSwitcher(
+            profile,
+            onSwitch = { app.changeProfiles(ProfileChange.Switch(it)) },
+            onAdd = {
+                // Settings' add flow, under its own tabs: Back from it lands on "Add a profile".
+                tab = Browse.Settings
+                byTab = false
+                addingProfile = true
+            },
+        ) {
+            if (now != null) {
+                BackHandler { playing = null }
+                // Plays another of the Game's Feeds, a new plan for its Channel, as the Game page's Play does.
+                val playFeed = { entry: GameFeeds, feed: Feed ->
+                    scope.launch {
+                        val plan = withContext(Dispatchers.Default) { app.library.channelPlayPlan(feed.channel, contentLanguages, readDeviceProfile(context), settings.qualityCap) }
+                        if (playing == now) playing = NowPlaying(plan, now.name, game = PlayingFeed(entry, feed), channel = feed.channel)
+                    }
+                    Unit
                 }
-                Unit
-            }
-            PlayerScreen(
-                app.library, now.plan, now.name, settings,
-                deviceProfile = { readDeviceProfile(context) },
-                onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
-                inARow = now.inARow,
-                onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
-                onEnded = { playing = null },
-                playingFeed = now.game,
-                onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
-                channel = now.channel,
-                art = now.art ?: now.channel?.let { StartingArt.Channel(it.image) },
-                onNotThisGame = {
-                    now.game?.let { game ->
-                        scope.launch {
-                            val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages, settings.region)
-                            // The Game page under the player lists the Feed last and marked when Back returns to it.
-                            if (openedGame?.entry?.key == updated.key) openedGame = openedGame?.copy(entry = updated)
-                            // Only while the player still plays what was dropped: Back meanwhile must not reopen it.
-                            if (playing != now) return@launch
-                            val next = updated.best
-                            if (next == null) playing = null else playFeed(updated, next)
+                PlayerScreen(
+                    app.library, now.plan, now.name, settings,
+                    deviceProfile = { readDeviceProfile(context) },
+                    onSubtitleStyle = { style -> app.settings.update { it.copy(subtitleStyle = style) } },
+                    inARow = now.inARow,
+                    onPlay = { plan, inARow -> playing = now.copy(plan = plan, inARow = inARow) },
+                    onEnded = { playing = null },
+                    playingFeed = now.game,
+                    onFeed = { feed -> now.game?.let { playFeed(it.entry, feed) } },
+                    channel = now.channel,
+                    art = now.art ?: now.channel?.let { StartingArt.Channel(it.image) },
+                    onNotThisGame = {
+                        now.game?.let { game ->
+                            scope.launch {
+                                val updated = app.library.notThisGame(game.entry, game.feed, contentLanguages, settings.region)
+                                // The Game page under the player lists the Feed last and marked when Back returns to it.
+                                if (openedGame?.entry?.key == updated.key) openedGame = openedGame?.copy(entry = updated)
+                                // Only while the player still plays what was dropped: Back meanwhile must not reopen it.
+                                if (playing != now) return@launch
+                                val next = updated.best
+                                if (next == null) playing = null else playFeed(updated, next)
+                            }
                         }
-                    }
-                },
-            )
-        } else if (openedGame != null) {
-            val game = openedGame!!
-            BackHandler {
-                byTab = false
-                returnedTo = game.card
-                openedGame = null
-            }
-            GameScreen(
-                game.entry,
-                deviceProfile = { readDeviceProfile(context) },
-                planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
-                onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed), channel = feed.channel) },
-                replayFor = { app.library.gameReplay(it) },
-                replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
-                onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
-            )
-        } else if (country != null) {
-            BackHandler {
-                byTab = false
-                browsing = null
-            }
-            ChannelsScreen(app.library, country, appLanguage, channels, onWatch = watch)
-        } else when (val title = opened) {
-            null -> when (tab) {
-                Browse.Home -> HomeScreen(
-                    app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, home,
-                    restoreFocus = returnedTo,
-                    focusTab = byTab,
-                    onTab = onTab,
-                    onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
-                    onWatch = { card, channel ->
-                        // Back from the Channel comes back to its card.
-                        returnedTo = card
-                        watch(channel)
                     },
-                    // Back from the Game's page comes back to its card, or to what took its place once it ended.
-                    onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
-                    onPlay = playFeatured,
-                    onRetry = app::sync,
                 )
-                Browse.Live -> LiveScreen(
-                    // In Settings' order, which the League rows follow.
-                    app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, live,
-                    restoreFocus = returnedTo,
-                    focusTab = byTab,
-                    onTab = onTab,
-                    onWatch = { card, channel ->
-                        returnedTo = card
-                        watch(channel)
-                    },
-                    onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
-                    onOpenCountry = { card, picked ->
-                        // Back from the Channels screen comes back to the country's card.
-                        returnedTo = card
-                        channels.reset()
-                        browsing = picked
-                    },
-                    onPlayReplay = { card, entry ->
-                        returnedTo = card
-                        playReplay(entry.replay, context.matchup(entry))
-                    },
-                    onRetry = app::sync,
-                )
-                Browse.Search -> {
-                    BackHandler { onTab(Browse.Movies) }
-                    SearchScreen(
-                        app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
-                        focusTab = byTab,
-                        onTab = onTab,
-                        onOpen = { opened = OpenedTitle(it) },
-                        onWatch = watch,
-                        onPlayReplay = { playReplay(it, it.heading) },
-                    )
-                }
-                Browse.Settings -> SettingsScreen(
-                    app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab,
-                    profiles = profile,
-                    onProfile = app::changeProfiles,
-                )
-                Browse.Movies, Browse.Shows -> {
-                    val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
-                    // Each tab its own screen, so the card to focus on one isn't looked for on the other.
-                    key(kind) {
-                        TitlesScreen(
-                            app.library, kind, contentLanguages, appLanguage, settings.region, if (kind == TitleKind.Movie) movies else shows,
-                            restoreFocus = returnedTo,
-                            focusTab = byTab,
-                            onTab = onTab,
-                            onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
-                            onPlay = playFeatured,
-                            onRetry = app::sync,
-                        )
-                    }
-                }
-            }
-            else -> {
-                // Back from the Versions screen, the Episode picker or the Trailer screen returns to the Title page, on the action that opened it.
-                val closeSection = { opened = title.copy(section = null, returnedFrom = title.section) }
+            } else if (openedGame != null) {
+                val game = openedGame!!
                 BackHandler {
                     byTab = false
-                    if (title.section != null) {
-                        closeSection()
-                    } else {
-                        returnedTo = title.card
-                        opened = null
+                    returnedTo = game.card
+                    openedGame = null
+                }
+                GameScreen(
+                    game.entry,
+                    deviceProfile = { readDeviceProfile(context) },
+                    planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
+                    onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed), channel = feed.channel) },
+                    replayFor = { app.library.gameReplay(it) },
+                    replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
+                    onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
+                )
+            } else if (country != null) {
+                BackHandler {
+                    byTab = false
+                    browsing = null
+                }
+                ChannelsScreen(app.library, country, appLanguage, channels, onWatch = watch)
+            } else when (val title = opened) {
+                null -> when (tab) {
+                    Browse.Home -> HomeScreen(
+                        app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, home,
+                        restoreFocus = returnedTo,
+                        focusTab = byTab,
+                        onTab = onTab,
+                        onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
+                        onWatch = { card, channel ->
+                            // Back from the Channel comes back to its card.
+                            returnedTo = card
+                            watch(channel)
+                        },
+                        // Back from the Game's page comes back to its card, or to what took its place once it ended.
+                        onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
+                        onPlay = playFeatured,
+                        onRetry = app::sync,
+                    )
+                    Browse.Live -> LiveScreen(
+                        // In Settings' order, which the League rows follow.
+                        app.library, contentLanguages, appLanguage, settings.region, League.entries.filter { it in settings.leaguesOn }, live,
+                        restoreFocus = returnedTo,
+                        focusTab = byTab,
+                        onTab = onTab,
+                        onWatch = { card, channel ->
+                            returnedTo = card
+                            watch(channel)
+                        },
+                        onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
+                        onOpenCountry = { card, picked ->
+                            // Back from the Channels screen comes back to the country's card.
+                            returnedTo = card
+                            channels.reset()
+                            browsing = picked
+                        },
+                        onPlayReplay = { card, entry ->
+                            returnedTo = card
+                            playReplay(entry.replay, context.matchup(entry))
+                        },
+                        onRetry = app::sync,
+                    )
+                    Browse.Search -> {
+                        BackHandler { onTab(Browse.Movies) }
+                        SearchScreen(
+                            app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
+                            focusTab = byTab,
+                            onTab = onTab,
+                            onOpen = { opened = OpenedTitle(it) },
+                            onWatch = watch,
+                            onPlayReplay = { playReplay(it, it.heading) },
+                        )
+                    }
+                    Browse.Settings -> SettingsScreen(
+                        app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab,
+                        profiles = profile,
+                        onProfile = app::changeProfiles,
+                        addProfile = addingProfile,
+                        onAddProfileShown = { addingProfile = false },
+                    )
+                    Browse.Movies, Browse.Shows -> {
+                        val kind = if (tab == Browse.Movies) TitleKind.Movie else TitleKind.Show
+                        // Each tab its own screen, so the card to focus on one isn't looked for on the other.
+                        key(kind) {
+                            TitlesScreen(
+                                app.library, kind, contentLanguages, appLanguage, settings.region, if (kind == TitleKind.Movie) movies else shows,
+                                restoreFocus = returnedTo,
+                                focusTab = byTab,
+                                onTab = onTab,
+                                onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
+                                onPlay = playFeatured,
+                                onRetry = app::sync,
+                            )
+                        }
                     }
                 }
-                TitleScreen(
-                    app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
-                    preferOriginalAudio = settings.preferOriginalAudio,
-                    openedOn = title.backdrop,
-                    deviceProfile = { readDeviceProfile(context) },
-                    onPlay = { plan, name, art -> playing = NowPlaying(plan, name, art = art) },
-                    section = title.section,
-                    returnedFrom = title.returnedFrom,
-                    onSection = { opened = title.copy(section = it, returnedFrom = null) },
-                    // A trailer that ends, or opens in the YouTube app instead, closes its screen too.
-                    onCloseSection = closeSection,
-                )
+                else -> {
+                    // Back from the Versions screen, the Episode picker or the Trailer screen returns to the Title page, on the action that opened it.
+                    val closeSection = { opened = title.copy(section = null, returnedFrom = title.section) }
+                    BackHandler {
+                        byTab = false
+                        if (title.section != null) {
+                            closeSection()
+                        } else {
+                            returnedTo = title.card
+                            opened = null
+                        }
+                    }
+                    TitleScreen(
+                        app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
+                        preferOriginalAudio = settings.preferOriginalAudio,
+                        openedOn = title.backdrop,
+                        deviceProfile = { readDeviceProfile(context) },
+                        onPlay = { plan, name, art -> playing = NowPlaying(plan, name, art = art) },
+                        section = title.section,
+                        returnedFrom = title.returnedFrom,
+                        onSection = { opened = title.copy(section = it, returnedFrom = null) },
+                        // A trailer that ends, or opens in the YouTube app instead, closes its screen too.
+                        onCloseSection = closeSection,
+                    )
+                }
             }
+            // Each screen change fades the new screen in over the ground; the player opens and closes as a cut.
+            ScreenFade(
+                when {
+                    now != null -> PlayerShown
+                    openedGame != null -> GameShown(openedGame!!.entry.key)
+                    country != null -> country
+                    opened != null -> TitleShown(opened!!.id, opened!!.section)
+                    else -> tab
+                },
+                // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
+                // content still fades in (TitlePage). Its Versions screen and Episode picker, and the page again after them, fade in as any screen.
+                asIs = { shown ->
+                    val title = opened
+                    shown == PlayerShown || (shown is TitleShown && title != null && shown == TitleShown(title.id, null) &&
+                        title.section == null && title.returnedFrom == null && title.backdrop != null)
+                },
+            )
         }
-        // Each screen change fades the new screen in over the ground; the player opens and closes as a cut.
-        ScreenFade(
-            when {
-                now != null -> PlayerShown
-                openedGame != null -> GameShown(openedGame!!.entry.key)
-                country != null -> country
-                opened != null -> TitleShown(opened!!.id, opened!!.section)
-                else -> tab
-            },
-            // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
-            // content still fades in (TitlePage). Its Versions screen and Episode picker, and the page again after them, fade in as any screen.
-            asIs = { shown ->
-                val title = opened
-                shown == PlayerShown || (shown is TitleShown && title != null && shown == TitleShown(title.id, null) &&
-                    title.section == null && title.returnedFrom == null && title.backdrop != null)
-            },
-        )
     }
 }
 
