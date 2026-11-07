@@ -187,7 +187,8 @@ fun WhoIsWatching(profiles: Profiles, onPick: (Long) -> Unit, onAdd: () -> Unit,
                 )
             }
             val full = profiles.all.size >= Library.MAX_PROFILES
-            FocusSurface(
+            // A Kids profile switches and adds nothing, as in its Settings (#433).
+            if (!profiles.current.kids) FocusSurface(
                 onClick = { if (!full) onAdd() },
                 modifier = Modifier.fillMaxWidth().testTag("switcher:add"),
                 weight = FocusWeight.Row,

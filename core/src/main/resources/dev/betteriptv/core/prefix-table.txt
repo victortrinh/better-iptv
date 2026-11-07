@@ -75,6 +75,12 @@
 # appears here, as `word | genre`; the rest are the Provider's service buckets (`AT&T`, `PRIME`,
 # `TUBI`, `PEACOCK`, `NETFLIX ON AIR`), which follow by Channel count. A name with words of two
 # genres goes with the earlier genre.
+#
+# The Kids genre's words also make the Kids catalog (CONTEXT.md): a Title any of whose Listings sits
+# in a Category with one of them (`EN - KIDS`, `FR - DESSINS ANIMÉS`) is in a Kids profile's library,
+# and so is a Channel of a live Category with one; nothing is hidden from the other profiles by it.
+# A Provider table adds a Kids word with `word | Kids` and empties one with `word |`. ANIMEE stays
+# out: French panels file teen anime there.
 
 [prefixes]
 
@@ -321,6 +327,16 @@ JEUNESSE        | Kids
 FAMILLE         | Kids
 KINDER          | Kids
 INFANTIL        | Kids
+INFANTILES      | Kids
+FAMILIAS        | Kids
+ΠΑΙΔΙΚΑ         | Kids
+ΠΑΙΔΙΑ          | Kids
+COCUK           | Kids
+ÇOCUK           | Kids
+BARN            | Kids
+BØRN            | Kids
+کارتون          | Kids
+DESSINS ANIMÉS  | Kids
 CARTOONS        | Kids
 # Documentaries
 DOCUMENTARY     | Documentaries

@@ -114,7 +114,7 @@ class TrailerRowTest {
     private fun installFireTvYouTube() = installApp("com.amazon.firetv.youtube", "https", "www.youtube.com")
 
     /** The page as the main activity shows it: OK on an action opens its section, and Back, or the section itself, closes it onto the page. */
-    private fun open(details: TitleDetails) {
+    private fun open(details: TitleDetails, kids: Boolean = false) {
         // Read after the page's first frame, as the Library's answers are.
         var read by mutableStateOf(false)
         compose.setContent {
@@ -134,6 +134,7 @@ class TrailerRowTest {
                     returnedFrom = null
                 },
                 onCloseSection = close,
+                kids = kids,
             )
         }
         compose.waitForIdle()
@@ -180,6 +181,18 @@ class TrailerRowTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
+    }
+
+    @Test fun aKidsProfilesPageHasNoTrailerRowAndNoVersionsAndPlayStaysFirst() {
+        open(details(trailer = "KzSm2Q9h3nM"), kids = true)
+
+        compose.onNodeWithTag("play").assertIsFocused()
+        assertEquals(0, compose.onAllNodesWithTag("trailer action").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithTag("versions action").fetchSemanticsNodes().size)
+        assertFalse(shows("Trailer"))
+        assertFalse(shows("Versions"))
+        // Restart and Remove are there, as on any profile.
+        assertTrue(shows("Restart"))
     }
 
     @Test fun theTrailerRowComesAfterRestartAndRemoveAndPlaysTheTrailerInZugig() {

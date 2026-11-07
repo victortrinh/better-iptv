@@ -248,6 +248,7 @@ class HomeRowsTest {
             is HomeRow.Channels -> "channels"
             is HomeRow.Genre -> "genre"
             is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.MoreLiveEvents, is HomeRow.Replays -> "a Live row"
+            is HomeRow.NewForKids, is HomeRow.ForKids, is HomeRow.KidsChannels -> "a Kids profile's row"
         }
     }
 
