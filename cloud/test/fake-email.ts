@@ -40,4 +40,10 @@ export class FakeEmail {
     const message = [...this.sent].reverse().find((m) => m.to.includes(address.toLowerCase()));
     return message ? (/https:\/\/\S+\/delete-account\/link\?token=[A-Za-z0-9_-]+/.exec(message.text)?.[0] ?? null) : null;
   }
+
+  /** The "Reset the Household PIN" link in the last email to [address], if one was sent. */
+  lastResetPinLinkTo(address: string): string | null {
+    const message = [...this.sent].reverse().find((m) => m.to.includes(address.toLowerCase()));
+    return message ? (/https:\/\/\S+\/reset-pin\/link\?token=[A-Za-z0-9_-]+/.exec(message.text)?.[0] ?? null) : null;
+  }
 }

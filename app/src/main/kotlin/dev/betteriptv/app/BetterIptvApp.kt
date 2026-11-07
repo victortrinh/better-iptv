@@ -50,8 +50,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
         )
-        // On the Profile the device was last on: nobody is asked on launch.
-        settings = ViewerSettingsStore(this, library.profiles.value.currentId)
+        // On the Profile the device was last on: nobody is asked on launch. Its settings follow it.
+        settings = ViewerSettingsStore(this, library, scope)
         // The first search mustn't wait for the index (over a minute on the stick, #106), nor Home's first rows for its build.
         scope.launch {
             delay(SEARCH_INDEX_AFTER)
@@ -77,23 +77,16 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     /**
      * Adds, renames, switches to or deletes a Profile, as Settings' Profiles asked, on the app's
      * scope so a switch that changes the App language, and so recreates the screen, still finishes.
-     * A switch moves the library's history and Favourites and the settings' Profile half together;
-     * a delete takes the Profile's settings with its history, and is refused for the last one.
+     * A switch moves the library's history, Favourites and settings' Profile half together; a delete
+     * takes the Profile's settings with its history, and is refused for the last one.
      */
     fun changeProfiles(change: ProfileChange) {
         scope.launch {
             when (change) {
                 is ProfileChange.Add -> library.addProfile(change.name, change.kids)
                 is ProfileChange.Rename -> library.renameProfile(change.id, change.name)
-                is ProfileChange.Switch -> {
-                    library.switchProfile(change.id)
-                    settings.useProfile(library.profiles.value.currentId)
-                }
-                is ProfileChange.Delete -> if (library.deleteProfile(change.id)) {
-                    // Deleting the current Profile put the device on another: its settings come first.
-                    settings.useProfile(library.profiles.value.currentId)
-                    settings.forgetProfile(change.id)
-                }
+                is ProfileChange.Switch -> library.switchProfile(change.id)
+                is ProfileChange.Delete -> library.deleteProfile(change.id)
             }
         }
     }

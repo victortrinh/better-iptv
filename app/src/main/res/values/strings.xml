@@ -285,7 +285,7 @@
     <string name="profile_delete">Delete profile</string>
     <string name="profile_delete_last">The last profile can\'t be deleted</string>
     <string name="profile_delete_confirm">Delete %1$s?</string>
-    <string name="profile_delete_detail">Their Continue watching, Favourites and settings are deleted from this TV.</string>
+    <string name="profile_delete_detail">Their Continue watching, Favourites and settings are deleted, on every TV signed in to your account too.</string>
     <string name="profile_delete_yes">Delete</string>
     <string name="profile_cancel">Cancel</string>
     <string name="profile_name">Name</string>
@@ -309,6 +309,19 @@
     <string name="pin_change_detail">The Household PIN lets someone leave a Kids profile</string>
     <string name="pin_current">Enter the current PIN</string>
     <string name="pin_new">Choose a new PIN</string>
+    <string name="pin_reset_detail">The Household PIN was reset. Choose a new one to leave the Kids profile.</string>
+    <string name="keep_profiles_title">Keep which profiles?</string>
+    <string name="keep_profiles_detail">Signing in brings this TV\'s profiles and your account\'s together, and a household keeps up to %1$d. A profile you untick is deleted with its history, from every TV.</string>
+    <string name="keep_profiles_watching">Watching now, on this TV</string>
+    <string name="keep_profiles_both">On this TV and in your account</string>
+    <string name="keep_profiles_account">In your account</string>
+    <string name="keep_profiles_this_tv">On this TV</string>
+    <string name="keep_profiles_keep">Keep these</string>
+    <string name="keep_profiles_cancel">Don\'t sign in</string>
+    <plurals name="keep_profiles_over">
+        <item quantity="one">Untick %1$d more.</item>
+        <item quantity="other">Untick %1$d more.</item>
+    </plurals>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>
@@ -417,7 +430,7 @@
     <string name="account_unnamed_tv">A TV</string>
     <string name="account_signed_in_on">Signed in %1$s</string>
     <string name="account_sign_out_this_confirm">Sign out this TV?</string>
-    <string name="account_sign_out_this_detail">This TV keeps its catalog and your TV service\'s login, and plays as before. Your history stays with your account.</string>
+    <string name="account_sign_out_this_detail">This TV keeps its catalog and your TV service\'s login, and plays as before. Your profiles and history stay with your account.</string>
     <string name="account_sign_out_confirm">Sign out %1$s?</string>
     <string name="account_sign_out_other_detail">That TV is signed out the next time it goes online. It keeps its catalog and TV service login, and plays as before.</string>
     <string name="sign_in_title">Sign in to Zugig</string>

@@ -105,8 +105,25 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, kids INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
                 "used_at INTEGER NOT NULL)",
         )
+        // Each Profile's id for the Account (#440), the same on every TV once it syncs, and when its name or Kids flag last changed.
+        if (!hasColumn("profile", "uid")) execSQL("ALTER TABLE profile ADD COLUMN uid TEXT")
+        if (!hasColumn("profile", "changed_at")) execSQL("ALTER TABLE profile ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 0")
         // The Household PIN (#437), one row: the household's, not the catalog's, so a new catalog shape keeps it.
         execSQL("CREATE TABLE IF NOT EXISTS household_pin (id INTEGER PRIMARY KEY CHECK (id = 1), hash TEXT NOT NULL, failures INTEGER NOT NULL, locked_until INTEGER)")
+        // When it was set, so the latest set on any TV of the Account wins (#440); one set before is the oldest.
+        if (!hasColumn("household_pin", "changed_at")) execSQL("ALTER TABLE household_pin ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 1")
+        // The household's own settings (the Region), each with when it changed, synced with the Account (#440).
+        execSQL("CREATE TABLE IF NOT EXISTS household (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)")
+        // What the Account hasn't been sent yet, besides history, and what it answered that waits to land between screens
+        // (#440), by kind and Profile id (SyncEntry). A Profile deleted here takes its rows in neither: they name its id.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_outbox (kind TEXT NOT NULL, profile TEXT NOT NULL, provider TEXT NOT NULL, key TEXT NOT NULL, value TEXT, " +
+                "at INTEGER NOT NULL, PRIMARY KEY (kind, profile, provider, key))",
+        )
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_pulled (kind TEXT NOT NULL, profile TEXT NOT NULL, key TEXT NOT NULL, value TEXT, at INTEGER NOT NULL, " +
+                "PRIMARY KEY (kind, profile, key))",
+        )
         execSQL("BEGIN")
         // Each Viewer's table is kept per Profile. One kept before Profiles is rebuilt with its rows as the first Profile's.
         for ((table, shape) in PROFILE_TABLES) {
@@ -120,7 +137,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             }
         }
         val now = System.currentTimeMillis()
-        execSQL("INSERT INTO profile SELECT $FIRST_PROFILE, NULL, 0, $now, $now WHERE NOT EXISTS (SELECT 1 FROM profile)")
+        execSQL("INSERT INTO profile (id, name, kids, created_at, used_at) SELECT $FIRST_PROFILE, NULL, 0, $now, $now WHERE NOT EXISTS (SELECT 1 FROM profile)")
+        execSQL("UPDATE profile SET uid = lower(hex(randomblob(8))) WHERE uid IS NULL")
         execSQL("COMMIT")
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
@@ -1544,7 +1562,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("BEGIN")
         try {
             if (reset) {
-                writer.execSQL("DELETE FROM history_pulled WHERE profile = $profile")
+                writer.execSQL("DELETE FROM history_pulled")
                 writeMeta(HISTORY_RESET, "1")
             }
             writer.prepare(
@@ -1560,10 +1578,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
 
     /** Whether the Account's changes wait to land: any, or [id]'s. Read apart from the writer, which a Sync may hold for minutes. */
-    fun hasPulledHistory(profile: Long, id: TitleId? = null): Boolean {
-        if (meta(HISTORY_RESET) != null) return true
-        return synchronized(reader) { hasPulled(profile, id) }
-    }
+    fun hasPulledHistory(profile: Long, id: TitleId? = null): Boolean = synchronized(reader) { hasPulled(profile, id) }
+
+    /** Whether a reset answer waits to land ([stagePulledHistory]): every Profile's history not in it is forgotten. */
+    fun historyResetPending(): Boolean = meta(HISTORY_RESET) != null
+
+    fun clearHistoryReset() = synchronized(writer) { deleteMeta(HISTORY_RESET) }
 
     private fun hasPulled(profile: Long, id: TitleId?): Boolean =
         reader.prepare("SELECT 1 FROM history_pulled WHERE profile = $profile ${if (id == null) "" else "AND title_key = ?"} LIMIT 1").use {
@@ -1572,12 +1592,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
 
     /**
-     * Lands the Account's changes waiting for [profile] (only [id]'s, unless a reset waits), each
-     * where it is later than what the device has for its Movie or Episode, a removal as a removal.
-     * Says whether anything the screens show changed.
+     * Lands the Account's changes waiting for [profile] (only [id]'s, unless [reset]), each where it
+     * is later than what the device has for its Movie or Episode, a removal as a removal. A [reset]
+     * first forgets what the device kept that the Account's answer hasn't, unless it waits to be
+     * pushed. Says whether anything the screens show changed.
      */
-    fun applyPulledHistory(profile: Long, id: TitleId? = null): Boolean = synchronized(writer) {
-        val reset = writerMeta(HISTORY_RESET) != null
+    fun applyPulledHistory(profile: Long, id: TitleId? = null, reset: Boolean = false): Boolean = synchronized(writer) {
         val only = if (reset) null else id?.let(::key)
         writer.execSQL("BEGIN")
         try {
@@ -1593,7 +1613,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     )
                     changed = changed || writerChanges() > 0
                 }
-                deleteMeta(HISTORY_RESET)
             }
             val pulled = writer.prepare("SELECT $HISTORY_COLUMNS FROM history_pulled WHERE profile = $profile ${if (only == null) "" else "AND title_key = ?"}").use {
                 if (only != null) it.bindText(1, only)
@@ -1673,31 +1692,269 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
-    /** Takes [profile]'s history off the device, as signing out does: where they stopped, what they Watched, and what waits to sync. */
-    fun forgetHistory(profile: Long) = synchronized(writer) {
-        writer.execSQL("BEGIN")
-        for (table in listOf("progress", "episode_progress", "history_outbox", "history_pulled", "history_tombstone")) {
-            writer.execSQL("DELETE FROM $table WHERE profile = $profile")
-        }
-        listOf(HISTORY_PROFILE, HISTORY_CURSOR, HISTORY_PROVIDER, HISTORY_RESET).forEach(::deleteMeta)
-        writer.execSQL("COMMIT")
-    }
-
     /** Forgets removals made before [before]: the Account keeps its own as long. */
     fun forgetTombstones(before: Instant) = synchronized(writer) {
         writer.execSQL("DELETE FROM history_tombstone WHERE removed_at < ${before.toEpochMilli()}")
     }
 
-    /** Which Profile syncs with the Account, the cursor its last sync got, and the Provider key it was got for; null before the first sync. */
-    fun historyState(): HistoryState? {
-        val profile = meta(HISTORY_PROFILE)?.toLongOrNull() ?: return null
-        return HistoryState(profile, meta(HISTORY_CURSOR)?.toLongOrNull() ?: 0, meta(HISTORY_PROVIDER))
+    /** The cursor the last sync with the Account got, for which Provider key, and whether this TV's data is merged into it yet; null before. */
+    fun syncState(): SyncState? {
+        val cursor = meta(SYNC_CURSOR)?.toLongOrNull() ?: return null
+        return SyncState(cursor, meta(SYNC_PROVIDER), meta(SYNC_LINKED) != null)
     }
 
-    fun saveHistoryState(state: HistoryState) = synchronized(writer) {
-        writeMeta(HISTORY_PROFILE, state.profile.toString())
-        writeMeta(HISTORY_CURSOR, state.cursor.toString())
-        if (state.provider == null) deleteMeta(HISTORY_PROVIDER) else writeMeta(HISTORY_PROVIDER, state.provider)
+    fun forgetSyncState() = synchronized(writer) { listOf(SYNC_CURSOR, SYNC_PROVIDER, SYNC_LINKED).forEach(::deleteMeta) }
+
+    fun saveSyncState(state: SyncState) = synchronized(writer) {
+        writeMeta(SYNC_CURSOR, state.cursor.toString())
+        if (state.provider == null) deleteMeta(SYNC_PROVIDER) else writeMeta(SYNC_PROVIDER, state.provider)
+        if (state.linked) writeMeta(SYNC_LINKED, "1") else deleteMeta(SYNC_LINKED)
+    }
+
+    /**
+     * Takes the Account's data off the device, as signing out does (#440): every Profile with its
+     * history, Favourites, marks, settings and choices, the household's Region and PIN, and what waits
+     * to sync. The device is left one new Profile, unnamed, as a device that never had any; the catalog
+     * and the Provider login stay. Gives the new Profile's id.
+     */
+    fun forgetAccountData(at: Instant): Long = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            PROFILE_TABLES.forEach { (table, _) -> writer.execSQL("DELETE FROM $table") }
+            for (table in listOf("profile", "household", "household_pin", "sync_outbox", "sync_pulled")) writer.execSQL("DELETE FROM $table")
+            listOf(SYNC_CURSOR, SYNC_PROVIDER, SYNC_LINKED, HISTORY_RESET).forEach(::deleteMeta)
+            val id = addProfile(null, kids = false, at)
+            writer.execSQL("UPDATE profile SET used_at = ${at.toEpochMilli()}, changed_at = 0 WHERE id = $id")
+            writer.execSQL("COMMIT")
+            id
+        } catch (e: Throwable) {
+            if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** Queues [entry] for the Account, kept with [provider] ('' for one the same on every Provider), replacing the one queued for its key. */
+    fun queueEntry(entry: SyncEntry, provider: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO sync_outbox VALUES (?, ?, ?, ?, ?, ?)").use {
+            it.bindText(1, entry.kind)
+            it.bindText(2, entry.profile.orEmpty())
+            it.bindText(3, provider)
+            it.bindText(4, entry.key)
+            if (entry.value == null) it.bindNull(5) else it.bindText(5, entry.value)
+            it.bindLong(6, entry.at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /** The entries waiting to be pushed with Provider key [provider] (or none), oldest first, at most [limit]. */
+    fun queuedEntries(provider: String?, limit: Int): List<SyncEntry> = synchronized(writer) {
+        writer.prepare("SELECT kind, profile, key, value, at FROM sync_outbox WHERE provider IN ('', ?) ORDER BY at LIMIT $limit").use {
+            it.bindText(1, provider.orEmpty())
+            buildList { while (it.step()) add(it.syncEntry()) }
+        }
+    }
+
+    /** When the entry of [kind] and [key] queued for [profile] was made, if one waits: it is later than anything the Account answered meanwhile. */
+    fun queuedEntryAt(kind: String, profile: String?, key: String): Instant? = synchronized(writer) {
+        writer.prepare("SELECT max(at) FROM sync_outbox WHERE kind = ? AND profile = ? AND key = ?").use {
+            it.bindText(1, kind)
+            it.bindText(2, profile.orEmpty())
+            it.bindText(3, key)
+            if (it.step() && !it.isNull(0)) Instant.ofEpochMilli(it.getLong(0)) else null
+        }
+    }
+
+    /** Takes [pushed] off the queue, unless they changed again since. */
+    fun unqueueEntries(pushed: List<SyncEntry>) = synchronized(writer) {
+        writer.prepare("DELETE FROM sync_outbox WHERE kind = ? AND profile = ? AND key = ? AND at = ?").use { delete ->
+            pushed.forEach {
+                delete.bindText(1, it.kind)
+                delete.bindText(2, it.profile.orEmpty())
+                delete.bindText(3, it.key)
+                delete.bindLong(4, it.at.toEpochMilli())
+                delete.stepAndReset()
+            }
+        }
+    }
+
+    /** Forgets what waits to be pushed for the Profile [uid], once it is deleted: all but its deletion, unless [all]. */
+    fun unqueueProfile(uid: String, all: Boolean = false) = synchronized(writer) {
+        writer.prepare("DELETE FROM sync_outbox WHERE profile = ? ${if (all) "" else "AND kind != '${SyncEntry.PROFILE}'"}").use {
+            it.bindText(1, uid)
+            it.step()
+        }
+        Unit
+    }
+
+    /** Keeps the Account's [entries] until they land between screens, the latest per key. */
+    fun stagePulledEntries(entries: List<SyncEntry>) = synchronized(writer) {
+        writer.prepare(
+            "INSERT INTO sync_pulled VALUES (?, ?, ?, ?, ?) ON CONFLICT (kind, profile, key) DO UPDATE SET value = excluded.value, at = excluded.at " +
+                "WHERE excluded.at >= sync_pulled.at",
+        ).use { insert ->
+            entries.forEach {
+                insert.bindText(1, it.kind)
+                insert.bindText(2, it.profile.orEmpty())
+                insert.bindText(3, it.key)
+                if (it.value == null) insert.bindNull(4) else insert.bindText(4, it.value)
+                insert.bindLong(5, it.at.toEpochMilli())
+                insert.stepAndReset()
+            }
+        }
+    }
+
+    /** Whether any of the Account's entries waits to land. Read apart from the writer, which a Sync may hold for minutes. */
+    fun hasPulledEntries(): Boolean = synchronized(reader) { reader.prepare("SELECT 1 FROM sync_pulled LIMIT 1").use { it.step() } }
+
+    /** The Account's entries waiting to land, Profiles first, each kind oldest first. */
+    fun pulledEntries(): List<SyncEntry> = synchronized(writer) {
+        writer.prepare("SELECT kind, profile, key, value, at FROM sync_pulled ORDER BY kind != '${SyncEntry.PROFILE}', at").use {
+            buildList { while (it.step()) add(it.syncEntry()) }
+        }
+    }
+
+    fun unstagePulledEntry(entry: SyncEntry) = synchronized(writer) {
+        writer.prepare("DELETE FROM sync_pulled WHERE kind = ? AND profile = ? AND key = ? AND at = ?").use {
+            it.bindText(1, entry.kind)
+            it.bindText(2, entry.profile.orEmpty())
+            it.bindText(3, entry.key)
+            it.bindLong(4, entry.at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    private fun SQLiteStatement.syncEntry(): SyncEntry =
+        SyncEntry(getText(0), getText(1).ifEmpty { null }, getText(2), if (isNull(3)) null else getText(3), Instant.ofEpochMilli(getLong(4)))
+
+    /** [profile]'s settings as the app wrote them, by name, those taken back left out. */
+    fun profileSettings(profile: Long): Map<String, String> = synchronized(reader) {
+        reader.prepare("SELECT key, value FROM profile_setting WHERE profile = $profile AND value IS NOT NULL").use {
+            buildMap { while (it.step()) put(it.getText(0), it.getText(1)) }
+        }
+    }
+
+    /** [profile]'s settings with when each changed, those taken back as null. */
+    fun profileSettingRows(profile: Long): List<Triple<String, String?, Long>> = synchronized(reader) {
+        reader.prepare("SELECT key, value, updated_at FROM profile_setting WHERE profile = $profile").use {
+            buildList { while (it.step()) add(Triple(it.getText(0), if (it.isNull(1)) null else it.getText(1), it.getLong(2))) }
+        }
+    }
+
+    /**
+     * Keeps [profile]'s setting [key] as [value] (null: taken back), changed at [at], unless [onlyIfLater]
+     * and it changed later already. Says whether it kept it.
+     */
+    fun saveProfileSetting(profile: Long, key: String, value: String?, at: Instant, onlyIfLater: Boolean = false): Boolean = synchronized(writer) {
+        writer.prepare(
+            "INSERT INTO profile_setting VALUES ($profile, ?, ?, ?) ON CONFLICT (profile, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at " +
+                if (onlyIfLater) "WHERE excluded.updated_at > profile_setting.updated_at" else "",
+        ).use {
+            it.bindText(1, key)
+            if (value == null) it.bindNull(2) else it.bindText(2, value)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        writerChanges() > 0
+    }
+
+    /** Keeps the settings an older app kept for [profile] in its own file, unless the Profile has its own since: the oldest change, so the Account's win. */
+    fun importProfileSettings(profile: Long, values: Map<String, String>) = synchronized(writer) {
+        writer.prepare("INSERT OR IGNORE INTO profile_setting VALUES ($profile, ?, ?, 1)").use { insert ->
+            values.forEach { (key, value) ->
+                insert.bindText(1, key)
+                insert.bindText(2, value)
+                insert.stepAndReset()
+            }
+        }
+    }
+
+    /** The household's setting [key] (the Region) and when it changed; null when never set. */
+    fun household(key: String): Pair<String?, Instant>? = synchronized(reader) {
+        reader.prepare("SELECT value, updated_at FROM household WHERE key = ?").use {
+            it.bindText(1, key)
+            if (it.step()) (if (it.isNull(0)) null else it.getText(0)) to Instant.ofEpochMilli(it.getLong(1)) else null
+        }
+    }
+
+    fun householdRows(): List<Triple<String, String?, Long>> = synchronized(reader) {
+        reader.prepare("SELECT key, value, updated_at FROM household").use {
+            buildList { while (it.step()) add(Triple(it.getText(0), if (it.isNull(1)) null else it.getText(1), it.getLong(2))) }
+        }
+    }
+
+    /** Keeps the household's [key] as [value] at [at]; with [onlyIfLater], not over a later change; with [unlessKept], not over any. Says whether it kept it. */
+    fun saveHousehold(key: String, value: String?, at: Instant, onlyIfLater: Boolean = false, unlessKept: Boolean = false): Boolean = synchronized(writer) {
+        val conflict = when {
+            unlessKept -> "ON CONFLICT (key) DO NOTHING"
+            else -> "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at" +
+                if (onlyIfLater) " WHERE excluded.updated_at > household.updated_at" else ""
+        }
+        writer.prepare("INSERT INTO household VALUES (?, ?, ?) $conflict").use {
+            it.bindText(1, key)
+            if (value == null) it.bindNull(2) else it.bindText(2, value)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        writerChanges() > 0
+    }
+
+    /** [profile]'s Favourites by Channel key, with when each was added. */
+    fun favouriteRows(profile: Long): List<Pair<String, Long>> = synchronized(reader) {
+        reader.prepare("SELECT key, added_at FROM favourite WHERE profile = $profile").use { buildList { while (it.step()) add(it.getText(0) to it.getLong(1)) } }
+    }
+
+    /** [profile]'s "Not this game" marks: Game key, Channel key, when. */
+    fun notThisGameRows(profile: Long): List<Triple<String, String, Long>> = synchronized(reader) {
+        reader.prepare("SELECT game_key, channel_key, dropped_at FROM not_this_game WHERE profile = $profile").use {
+            buildList { while (it.step()) add(Triple(it.getText(0), it.getText(1), it.getLong(2))) }
+        }
+    }
+
+    /** Keeps or forgets the mark of [channelKey] for [gameKey], as another TV of the Account made or took it back. */
+    fun setFeedDropped(profile: Long, gameKey: String, channelKey: String, dropped: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare(if (dropped) "INSERT OR REPLACE INTO not_this_game VALUES ($profile, ?, ?, ?)" else "DELETE FROM not_this_game WHERE profile = $profile AND game_key = ? AND channel_key = ?").use {
+            it.bindText(1, gameKey)
+            it.bindText(2, channelKey)
+            if (dropped) it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /** [profile]'s player choices by Title key: the JSON and when it changed. */
+    fun titleChoiceRows(profile: Long): List<Triple<String, String, Long>> = synchronized(reader) {
+        reader.prepare("SELECT title_key, body, updated_at FROM title_choices WHERE profile = $profile").use {
+            buildList { while (it.step()) add(Triple(it.getText(0), it.getText(1), it.getLong(2))) }
+        }
+    }
+
+    /** Keeps the choices another TV made for the Title keyed [titleKey], unless this one chose later. Says whether it kept them. */
+    fun saveTitleChoicesIfLater(profile: Long, titleKey: String, body: String, at: Instant): Boolean = synchronized(writer) {
+        writer.prepare(
+            "INSERT INTO title_choices VALUES ($profile, ?, ?, ?) ON CONFLICT (profile, title_key) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at " +
+                "WHERE excluded.updated_at > title_choices.updated_at",
+        ).use {
+            it.bindText(1, titleKey)
+            it.bindText(2, body)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        writerChanges() > 0
+    }
+
+    /** [profile]'s remembered tracks by kind. */
+    fun rememberedTracks(profile: Long): Map<String, String> = synchronized(reader) {
+        reader.prepare("SELECT kind, value FROM remembered_track WHERE profile = $profile").use { buildMap { while (it.step()) put(it.getText(0), it.getText(1)) } }
+    }
+
+    fun forgetRememberedTrack(profile: Long, kind: String) = synchronized(writer) {
+        writer.prepare("DELETE FROM remembered_track WHERE profile = $profile AND kind = ?").use {
+            it.bindText(1, kind)
+            it.step()
+        }
+        Unit
     }
 
     private fun writeChange(table: String, profile: Long, change: HistoryChange) {
@@ -1838,26 +2095,56 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     /** The household's Profiles, in the order they were made. */
     fun profiles(): List<StoredProfile> = synchronized(reader) {
-        reader.prepare("SELECT id, name, kids, used_at FROM profile ORDER BY id").use {
-            buildList { while (it.step()) add(StoredProfile(it.getLong(0), if (it.isNull(1)) null else it.getText(1), it.getLong(2) != 0L, it.getLong(3))) }
+        reader.prepare("SELECT id, name, kids, used_at, uid, changed_at FROM profile ORDER BY id").use {
+            buildList {
+                while (it.step()) add(StoredProfile(it.getLong(0), if (it.isNull(1)) null else it.getText(1), it.getLong(2) != 0L, it.getLong(3), it.getText(4), it.getLong(5)))
+            }
         }
     }
 
-    /** Makes a Profile named [name] at [at], not yet used, and gives its id: never one a deleted Profile had, so nothing kept for that one comes back. */
-    fun addProfile(name: String, kids: Boolean, at: Instant): Long = synchronized(writer) {
-        writer.prepare("INSERT INTO profile (name, kids, created_at, used_at) VALUES (?, ?, ?, 0)").use {
-            it.bindText(1, name)
+    /**
+     * Makes a Profile named [name] at [at], not yet used, and gives its id: never one a deleted Profile
+     * had, so nothing kept for that one comes back. [uid] is its id for the Account: a new one, or the
+     * one another TV made for it.
+     */
+    fun addProfile(name: String?, kids: Boolean, at: Instant, uid: String = newProfileUid()): Long = synchronized(writer) {
+        writer.prepare("INSERT INTO profile (name, kids, created_at, used_at, uid, changed_at) VALUES (?, ?, ?, 0, ?, ?)").use {
+            if (name == null) it.bindNull(1) else it.bindText(1, name)
             it.bindLong(2, if (kids) 1 else 0)
             it.bindLong(3, at.toEpochMilli())
+            it.bindText(4, uid)
+            it.bindLong(5, at.toEpochMilli())
             it.step()
         }
         writer.prepare("SELECT last_insert_rowid()").use { it.step(); it.getLong(0) }
     }
 
-    fun renameProfile(profile: Long, name: String) = synchronized(writer) {
-        writer.prepare("UPDATE profile SET name = ? WHERE id = $profile").use {
-            it.bindText(1, name)
+    fun renameProfile(profile: Long, name: String?, at: Instant) = synchronized(writer) {
+        writer.prepare("UPDATE profile SET name = ?, changed_at = ? WHERE id = $profile").use {
+            if (name == null) it.bindNull(1) else it.bindText(1, name)
+            it.bindLong(2, at.toEpochMilli())
             it.step()
+        }
+        Unit
+    }
+
+    fun setProfileKids(profile: Long, kids: Boolean, at: Instant) = synchronized(writer) {
+        writer.execSQL("UPDATE profile SET kids = ${if (kids) 1 else 0}, changed_at = ${at.toEpochMilli()} WHERE id = $profile")
+    }
+
+    /** Gives [profile] the Account's id [uid], as signing in merges it into the Account's Profile of its name: what waits to sync for it follows. */
+    fun setProfileUid(profile: Long, uid: String) = synchronized(writer) {
+        val was = writer.prepare("SELECT uid FROM profile WHERE id = $profile").use { if (it.step()) it.getText(0) else null }
+        writer.prepare("UPDATE profile SET uid = ? WHERE id = $profile").use {
+            it.bindText(1, uid)
+            it.step()
+        }
+        if (was != null) {
+            writer.prepare("UPDATE OR REPLACE sync_outbox SET profile = ? WHERE profile = ?").use {
+                it.bindText(1, uid)
+                it.bindText(2, was)
+                it.step()
+            }
         }
         Unit
     }
@@ -1882,21 +2169,28 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
 
     override fun householdPin(): StoredPin? = synchronized(reader) {
-        reader.prepare("SELECT hash, failures, locked_until FROM household_pin").use {
-            if (it.step()) StoredPin(it.getText(0), it.getLong(1).toInt(), if (it.isNull(2)) null else Instant.ofEpochMilli(it.getLong(2))) else null
+        reader.prepare("SELECT hash, failures, locked_until, changed_at FROM household_pin").use {
+            if (it.step()) {
+                StoredPin(it.getText(0), it.getLong(1).toInt(), if (it.isNull(2)) null else Instant.ofEpochMilli(it.getLong(2)), Instant.ofEpochMilli(it.getLong(3)))
+            } else {
+                null
+            }
         }
     }
 
     override fun saveHouseholdPin(pin: StoredPin) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO household_pin VALUES (1, ?, ?, ?)").use {
+        writer.prepare("INSERT OR REPLACE INTO household_pin (id, hash, failures, locked_until, changed_at) VALUES (1, ?, ?, ?, ?)").use {
             it.bindText(1, pin.hash)
             it.bindLong(2, pin.failures.toLong())
             val until = pin.lockedUntil
             if (until == null) it.bindNull(3) else it.bindLong(3, until.toEpochMilli())
+            it.bindLong(4, pin.changedAt.toEpochMilli())
             it.step()
         }
         Unit
     }
+
+    override fun forgetHouseholdPin() = synchronized(writer) { writer.execSQL("DELETE FROM household_pin") }
 
     override fun deviceToken(): String? = meta(DEVICE_TOKEN)
 
@@ -2023,6 +2317,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "title_choices" to
                 "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, body TEXT NOT NULL, updated_at INTEGER NOT NULL, " +
                 "PRIMARY KEY (profile, title_key))",
+            // The settings each Profile keeps its own (#440): what the app writes by name (ProfileSetting), with when it changed;
+            // a null value is one the Viewer took back (no Leagues chosen), kept so the latest change still wins.
+            "profile_setting" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (profile, key))",
             // What the Viewer last picked in the player, by kind (`audio`, `subtitles`).
             "remembered_track" to "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (profile, kind))",
             // History sync (#435), by Title and Episode (a Movie's season and number are -1): the changes the Account hasn't
@@ -2104,9 +2402,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val PROFILE_CHIP_PULSE = "profile_chip_pulse"
         const val SIGN_OUT_PENDING = "account_sign_out_pending"
         /** History sync (#435): the Profile that syncs, the cursor of its last sync and the Provider key that was for, and a reset waiting to land. */
-        const val HISTORY_PROFILE = "history_profile"
-        const val HISTORY_CURSOR = "history_cursor"
-        const val HISTORY_PROVIDER = "history_provider"
+        const val SYNC_CURSOR = "sync_cursor"
+        const val SYNC_PROVIDER = "sync_provider"
+        const val SYNC_LINKED = "sync_linked"
         const val HISTORY_RESET = "history_reset"
         /** A Movie's season and number in the history tables, which key Movies and Episodes alike. */
         const val NO_EPISODE = -1
@@ -2138,7 +2436,7 @@ internal class StoredSuspect(val kind: TitleKind, val name: String, val category
 
 /** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
 /** A Profile as kept: [name] is null until the first Profile is renamed; [usedAt] is 0 for one never used. */
-internal class StoredProfile(val id: Long, val name: String?, val kids: Boolean, val usedAt: Long)
+internal class StoredProfile(val id: Long, val name: String?, val kids: Boolean, val usedAt: Long, val uid: String, val changedAt: Long)
 
 internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
 
@@ -2157,8 +2455,32 @@ internal data class HistoryChange(
     val at: Instant,
 )
 
-/** Which Profile syncs its history with the Account, from which [cursor], for which Provider key ([providerKey]). */
-internal data class HistoryState(val profile: Long, val cursor: Long, val provider: String?)
+/**
+ * Where the device is in syncing with the Account (#440): the [cursor] its last sync got, the
+ * Provider key it was got for, and whether the device's own data is [linked] into the Account yet
+ * (signing in merges it once).
+ */
+internal data class SyncState(val cursor: Long, val provider: String?, val linked: Boolean)
+
+/**
+ * One thing besides history the Account keeps, as the sync sends it (cloud/src/sync.ts): of [kind],
+ * of the Profile with Account id [profile] (null for the household's), keyed [key], [value] null for a
+ * removal, changed [at]. The latest change per key wins.
+ */
+internal data class SyncEntry(val kind: String, val profile: String?, val key: String, val value: String?, val at: Instant) {
+    companion object {
+        const val PROFILE = "profile"
+        const val FAVOURITE = "favourite"
+        const val NOT_THIS_GAME = "not_this_game"
+        const val SETTING = "setting"
+        const val TITLE_CHOICES = "title_choices"
+        const val HOUSEHOLD = "household"
+        /** A Profile's remembered track of a kind is a setting named so. */
+        const val TRACK = "track."
+        const val REGION = "region"
+        const val PIN = "pin"
+    }
+}
 
 /** A Title's key as the history sync sends it: `movie/238`, `show/1399` or `movie/listing/123`. */
 internal fun historyKey(id: TitleId): String = key(id)
@@ -2191,6 +2513,12 @@ private fun titleId(key: String): TitleId {
     val kind = kind(parts[0])
     return if (parts[1] == "listing") TitleId.Unmatched(kind, parts[2].toLong()) else TitleId.Tmdb(kind, parts[1].toLong())
 }
+
+private fun SQLiteConnection.hasColumn(table: String, column: String): Boolean =
+    prepare("SELECT count(*) FROM pragma_table_info('$table') WHERE name = '$column'").use { it.step(); it.getLong(0) > 0 }
+
+/** A new Profile id for the Account (#440): 16 hex digits, made on the device. */
+internal fun newProfileUid(): String = java.security.SecureRandom().let { random -> (1..8).joinToString("") { "%02x".format(random.nextInt(256)) } }
 
 private fun SQLiteStatement.stepAndReset() {
     step()

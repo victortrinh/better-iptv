@@ -1,5 +1,6 @@
 import type { Env } from "./env";
 import { randomToken, sha256 } from "./devices";
+import { resetHouseholdPin } from "./sync";
 
 /**
  * Signing a TV in to an Account (ADR 0015). The TV asks a Sign-in code ([startSignIn]) and shows it
@@ -7,7 +8,8 @@ import { randomToken, sha256 } from "./devices";
  * email's magic link, tapped, binds the TV's device token to that email's Account ([useMagicLink]),
  * creating the Account when the email is new; the TV, polling [accountOf], sees it. The Account lists
  * its devices ([devicesOf]), any of which signs any out ([signOut]), and is deleted behind a magic
- * link of its own ([requestDeletion], [useDeleteLink]). The cloud keeps
+ * link of its own ([requestDeletion], [useDeleteLink]); its Household PIN is reset behind another
+ * ([requestDeletion] with "reset-pin", [useResetPinLink], #440). The cloud keeps
  * the address, the codes for their 10 minutes, and only hashes of the magic tokens and of the IPs
  * that typed wrong codes.
  */
@@ -209,12 +211,16 @@ export type DeletionOutcome = { kind: "sent"; email: string } | { kind: "bad-ema
 export const DELETE_ASKS_PER_IP = 5;
 export const DELETE_SENDS_PER_EMAIL = 3;
 
+/** What an Account's own magic link does: delete the Account, or reset its Household PIN. */
+export type AccountLinkPurpose = "delete" | "reset-pin";
+
 /**
- * Emails a "Delete my account" link to [typedEmail], asked for on the page by the phone at [ip], when
- * an Account uses it. The page answers the same whether one does, so it can't be used to learn who
- * has an Account; an address with none is emailed nothing.
+ * Emails a "Delete my account" link (or, for [purpose] "reset-pin", a "Reset the Household PIN" one)
+ * to [typedEmail], asked for on the page by the phone at [ip], when an Account uses it. The page
+ * answers the same whether one does, so it can't be used to learn who has an Account; an address
+ * with none is emailed nothing. Both purposes count towards the same limits.
  */
-export async function requestDeletion(env: Env, site: string, typedEmail: string, ip: string): Promise<DeletionOutcome> {
+export async function requestDeletion(env: Env, site: string, typedEmail: string, ip: string, purpose: AccountLinkPurpose = "delete"): Promise<DeletionOutcome> {
   const now = Date.now();
   const email = typedEmail.trim().toLowerCase();
   if (!isEmail(email)) return { kind: "bad-email" };
@@ -231,10 +237,13 @@ export async function requestDeletion(env: Env, site: string, typedEmail: string
   if (owner === null) return { kind: "sent", email };
   const token = randomToken();
   const tokenHash = await sha256(token);
-  await env.DB.prepare("INSERT INTO delete_link (token_hash, account_id, expires_at) VALUES (?1, ?2, ?3)")
-    .bind(tokenHash, owner.id, now + LINK_LIFETIME_MS)
+  await env.DB.prepare("INSERT INTO delete_link (token_hash, account_id, expires_at, purpose) VALUES (?1, ?2, ?3, ?4)")
+    .bind(tokenHash, owner.id, now + LINK_LIFETIME_MS, purpose)
     .run();
-  if (!(await sendEmail(env, site, email, "Delete your Zugig account", deleteWords(`${site}/delete-account/link?token=${token}`)))) {
+  const sent = purpose === "delete"
+    ? await sendEmail(env, site, email, "Delete your Zugig account", deleteWords(`${site}/delete-account/link?token=${token}`))
+    : await sendEmail(env, site, email, "Reset your Household PIN", resetPinWords(`${site}/reset-pin/link?token=${token}`));
+  if (!sent) {
     await env.DB.prepare("DELETE FROM delete_link WHERE token_hash = ?1").bind(tokenHash).run();
     return { kind: "not-sent" };
   }
@@ -249,16 +258,10 @@ export type DeleteOutcome = { kind: "deleted" } | { kind: "used" } | { kind: "ex
  * in to it, each of which goes anonymous at its next request. A link works once, for [LINK_LIFETIME_MS].
  */
 export async function useDeleteLink(db: D1Database, token: string): Promise<DeleteOutcome> {
-  const now = Date.now();
   const tokenHash = await sha256(token);
-  const link = await db.prepare("SELECT account_id, expires_at, used_at FROM delete_link WHERE token_hash = ?1")
-    .bind(tokenHash)
-    .first<{ account_id: number; expires_at: number; used_at: number | null }>();
-  if (link === null || link.used_at !== null) return { kind: "used" };
-  if (link.expires_at <= now) return { kind: "expired" };
-  const claimed = await db.prepare("UPDATE delete_link SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL").bind(tokenHash, now).run();
-  if (claimed.meta.changes !== 1) return { kind: "used" };
-  const id = link.account_id;
+  const claim = await claimLink(db, tokenHash, "delete");
+  if (typeof claim !== "number") return claim;
+  const id = claim;
   // Devices first: they reference the Account. Every table the Account owns is emptied here
   // (history and profiles join this list when they move to the cloud).
   await db.batch([
@@ -268,6 +271,33 @@ export async function useDeleteLink(db: D1Database, token: string): Promise<Dele
     db.prepare("DELETE FROM account WHERE id = ?1").bind(id),
   ]);
   return { kind: "deleted" };
+}
+
+/** Claims the unused, unexpired link of [purpose] whose token hashes to [tokenHash], and says whose Account it is for. */
+async function claimLink(db: D1Database, tokenHash: string, purpose: AccountLinkPurpose): Promise<number | { kind: "used" } | { kind: "expired" }> {
+  const now = Date.now();
+  const link = await db.prepare("SELECT account_id, expires_at, used_at FROM delete_link WHERE token_hash = ?1 AND purpose = ?2")
+    .bind(tokenHash, purpose)
+    .first<{ account_id: number; expires_at: number; used_at: number | null }>();
+  if (link === null || link.used_at !== null) return { kind: "used" };
+  if (link.expires_at <= now) return { kind: "expired" };
+  const claimed = await db.prepare("UPDATE delete_link SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL").bind(tokenHash, now).run();
+  if (claimed.meta.changes !== 1) return { kind: "used" };
+  return link.account_id;
+}
+
+/** What the page tells the phone after its reset link was tapped. */
+export type ResetPinOutcome = { kind: "reset" } | { kind: "used" } | { kind: "expired" };
+
+/**
+ * Clears the Household PIN of the Account the link was sent for (#440): each TV forgets it at its
+ * next pull, and asks for a new one the next time a Kids profile is left. Works once, for [LINK_LIFETIME_MS].
+ */
+export async function useResetPinLink(db: D1Database, token: string): Promise<ResetPinOutcome> {
+  const claim = await claimLink(db, await sha256(token), "reset-pin");
+  if (typeof claim !== "number") return claim;
+  await resetHouseholdPin(db, claim);
+  return { kind: "reset" };
 }
 
 /** Whether [token] has a magic token's shape. */
@@ -295,6 +325,15 @@ const signInWords = (link: string) => ({
   html:
     `<p>Tap this link to sign in your TV to Zugig:</p><p><a href="${link}">Sign in the TV</a></p>` +
     "<p>It works once, for the next 15 minutes. If you didn't ask for it, ignore this email: nothing happens without the link.</p>",
+});
+
+const resetPinWords = (link: string) => ({
+  text:
+    `Tap this link to reset your Household PIN, the one that lets you leave a Kids profile:\n\n${link}\n\n` +
+    "It works once, for the next 15 minutes. Each TV then asks for a new PIN the next time someone leaves a Kids profile. If you didn't ask for it, ignore this email: nothing changes without the link.\n",
+  html:
+    `<p>Tap this link to reset your Household PIN, the one that lets you leave a Kids profile:</p><p><a href="${link}">Reset the Household PIN</a></p>` +
+    "<p>It works once, for the next 15 minutes. Each TV then asks for a new PIN the next time someone leaves a Kids profile. If you didn't ask for it, ignore this email: nothing changes without the link.</p>",
 });
 
 const deleteWords = (link: string) => ({

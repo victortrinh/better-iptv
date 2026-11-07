@@ -258,7 +258,7 @@ internal fun SettingsContent(
             } else {
                 BackHandler { picking = null }
                 PinPage {
-                    AskPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
+                    LeaveKidsPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
                         onProfile(ProfileChange.Switch(picked.id))
                         picking = null
                     })
@@ -266,7 +266,9 @@ internal fun SettingsContent(
             }
             Picker.ChangePin -> {
                 BackHandler { picking = null }
-                PinPage { AskPin(pin, stringResource(R.string.pin_current), detail = null, onRight = { picking = Picker.NewPin }) }
+                // Reset from the phone: there is no current PIN to ask.
+                if (!pinSet) LaunchedEffect(Unit) { picking = Picker.NewPin }
+                else PinPage { AskPin(pin, stringResource(R.string.pin_current), detail = null, onRight = { picking = Picker.NewPin }) }
             }
             Picker.NewPin -> {
                 BackHandler { picking = null }

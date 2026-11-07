@@ -1,7 +1,7 @@
 import { charts, fill, SUBREQUESTS } from "./charts";
 import {
-  accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink,
-  type DeleteOutcome, type LinkOutcome, type SendOutcome,
+  accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink, useResetPinLink,
+  type DeleteOutcome, type LinkOutcome, type ResetPinOutcome, type SendOutcome,
 } from "./accounts";
 import { deviceOf, register } from "./devices";
 import type { Env } from "./env";
@@ -18,7 +18,7 @@ import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type Subti
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
-import { confirmDeletePage, confirmPage, deletePage, htmlResponse, messagePage, signInPage } from "./page";
+import { confirmDeletePage, confirmPage, confirmResetPinPage, deletePage, htmlResponse, messagePage, resetPinPage, signInPage } from "./page";
 import { accountIdOf, readSyncRequest, sync } from "./sync";
 
 /**
@@ -95,7 +95,11 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * - `POST /v1/sync`, with `{"cursor": 0, "provider": "<SHA-256 of the Provider's host>", "progress": [{"title":
  *   "show/1399", "season": 1, "episode": 2, "position": 600000, "duration": 3600000, "watched": false, "removed":
  *   false, "at": 1762500000000}]}`: keeps the device's history changes, latest winning, and answers the Account's
- *   since the cursor, `{"cursor": 42, "reset": false, "progress": […]}` (#435). `403` when the device isn't signed in.
+ *   since the cursor, `{"cursor": 42, "reset": false, "progress": […], "entries": […]}` (#435). Since #440 each change
+ *   names its `"profile"` (the id its device made for it), the request says which Profile the device is on
+ *   (`"current"`), and `"entries"` carry the Profiles, Favourites, "Not this game" marks, per-Profile settings and
+ *   player choices, Region and the Household PIN's hash (`{"kind": "favourite", "profile": "…", "key": "…", "value":
+ *   "1", "at": …}`, see src/sync.ts). `403` when the device isn't signed in.
  *
  * Every `/v1/` answer to a registered device carries `Zugig-Account: signed-in` or `none`, so a
  * device signed out elsewhere goes anonymous at its next request (#434).
@@ -104,7 +108,8 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * (a code and an email: emails the magic link), `GET /sign-in/link?token=…` (the link: a button) and
  * `POST /sign-in/link` (the button: signs the TV in). "Delete my account": `GET /delete-account` (an
  * email), `POST /delete-account` (emails a delete link), `GET /delete-account/link?token=…` (a button)
- * and `POST /delete-account/link` (the button: deletes the Account). See src/accounts.ts.
+ * and `POST /delete-account/link` (the button: deletes the Account). "Reset the Household PIN" (#440), the
+ * same four under `/reset-pin`: the button clears the Account's PIN on every TV. See src/accounts.ts.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -115,6 +120,7 @@ export default {
     if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
     if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);
     if (pathname === "/delete-account" || pathname === "/delete-account/link") return deletePages(request, env, pathname);
+    if (pathname === "/reset-pin" || pathname === "/reset-pin/link") return resetPinPages(request, env, pathname);
     if (!pathname.startsWith("/v1/")) return problem(404, "No such endpoint.");
     const device = await deviceOf(env.DB, request);
     if (device === null) return problem(401, "A registered device token is required.");
@@ -158,7 +164,7 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     if (accountId === null) return problem(403, "This device isn't signed in to an Account.");
     const asked = readSyncRequest(await request.json().catch(() => null));
     if (typeof asked === "string") return problem(400, asked);
-    return json(await sync(env.DB, accountId, asked));
+    return json(await sync(env.DB, accountId, asked, device));
   }
   if (request.method === "POST" && pathname === "/v1/metadata") {
     const asked = await metadataRequest(request);
@@ -325,6 +331,45 @@ async function deletePages(request: Request, env: Env, pathname: string): Promis
     case "bad-email": return htmlResponse(deletePage({ text: "That doesn't look like an email address.", error: true }), 400);
     case "too-many": return htmlResponse(deletePage({ text: "Too many links asked for. Wait 15 minutes and try again.", error: true }), 429);
     case "not-sent": return htmlResponse(deletePage({ text: "We couldn't send the email right now. Try again in a moment.", error: true }), 503);
+  }
+}
+
+/** "Reset the Household PIN" and its magic links, for the phone (#440). */
+async function resetPinPages(request: Request, env: Env, pathname: string): Promise<Response> {
+  const url = new URL(request.url);
+  if (pathname === "/reset-pin" && request.method === "GET") return htmlResponse(resetPinPage());
+  if (pathname === "/reset-pin/link" && request.method === "GET") {
+    const token = url.searchParams.get("token");
+    if (!isMagicToken(token)) return htmlResponse(resetPinLinkPage({ kind: "used" }), 410);
+    return htmlResponse(confirmResetPinPage(token));
+  }
+  if (request.method !== "POST") return htmlResponse(messagePage("Not here", "This page only takes its own form."), 405);
+  const form = await request.formData().catch(() => null);
+  const field = (name: string) => {
+    const value = form?.get(name);
+    return typeof value === "string" ? value : "";
+  };
+  if (pathname === "/reset-pin/link") {
+    const token = field("token");
+    const outcome: ResetPinOutcome = isMagicToken(token) ? await useResetPinLink(env.DB, token) : { kind: "used" };
+    return htmlResponse(resetPinLinkPage(outcome), outcome.kind === "reset" ? 200 : 410);
+  }
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const outcome = await requestDeletion(env, site(request, env), field("email"), ip, "reset-pin");
+  switch (outcome.kind) {
+    case "sent":
+      return htmlResponse(messagePage("Check your email", `If an account uses ${outcome.email}, we sent it a link. Tap it within 15 minutes to reset the Household PIN.`));
+    case "bad-email": return htmlResponse(resetPinPage({ text: "That doesn't look like an email address.", error: true }), 400);
+    case "too-many": return htmlResponse(resetPinPage({ text: "Too many links asked for. Wait 15 minutes and try again.", error: true }), 429);
+    case "not-sent": return htmlResponse(resetPinPage({ text: "We couldn't send the email right now. Try again in a moment.", error: true }), 503);
+  }
+}
+
+function resetPinLinkPage(outcome: ResetPinOutcome): string {
+  switch (outcome.kind) {
+    case "reset": return messagePage("The Household PIN is reset", "Each TV signed in to your account forgets the PIN the next time it goes online. The next time someone leaves a Kids profile, the TV asks for a new one.");
+    case "used": return messagePage("This link doesn't work", "This link was already used or isn't one we sent. Ask for a new one on the Reset the Household PIN page.");
+    case "expired": return messagePage("This link doesn't work", "This link has expired: links work for 15 minutes. Ask for a new one on the Reset the Household PIN page.");
   }
 }
 

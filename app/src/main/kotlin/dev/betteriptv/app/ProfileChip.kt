@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -109,7 +111,7 @@ fun BoxScope.ProfileSwitcher(
     if (open && chip.shown && picked != null) {
         BackHandler { asking = null }
         OnVeil {
-            AskPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
+            LeaveKidsPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
                 onSwitch(picked.id)
                 close()
             })
@@ -202,7 +204,7 @@ fun BoxScope.TabsEnd(chip: ProfileChipState?, pill: (@Composable () -> Unit)?) {
  * straight on the veil let the screen's own rows show through them. Focus stays inside.
  */
 @Composable
-private fun OnVeil(content: @Composable () -> Unit) {
+internal fun OnVeil(content: @Composable () -> Unit) {
     Box(
         Modifier.fillMaxSize()
             .background(Colors.veil)
@@ -211,8 +213,10 @@ private fun OnVeil(content: @Composable () -> Unit) {
             .focusGroup(),
         contentAlignment = Alignment.Center,
     ) {
+        // Scrolls when it is taller than the screen: "Keep which profiles?" can list six (#440).
         Column(
-            Modifier.background(Colors.ground, RoundedCornerShape(Corners.card)).padding(Spacing.xl).width(SWITCHER_WIDTH),
+            Modifier.padding(vertical = Spacing.l).background(Colors.ground, RoundedCornerShape(Corners.card)).verticalScroll(rememberScrollState())
+                .padding(Spacing.xl).width(SWITCHER_WIDTH),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) { content() }
     }

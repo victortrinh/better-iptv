@@ -57,6 +57,8 @@ class HistorySyncTest {
     private suspend fun Library.signIn(email: String = "home@example.com") {
         assertTrue(cloud.phoneSignsIn(startSignIn()!!.code, email))
         assertEquals(email, checkSignIn())
+        // The merge into the Account runs in the background as sign-in completes: this waits for it.
+        syncHistory()
     }
 
     /** Stops [id] at [position] of 2 hours, then pushes, as the player does when the Viewer leaves it. */

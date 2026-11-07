@@ -57,7 +57,7 @@ class Library private constructor(
      */
     private val providerTables: (providerKey: String) -> String?,
     private val cloud: CloudClient?,
-) : Closeable {
+) : Closeable, KeptSettings {
     /**
      * The Prefix table for the Provider logged in to: the Base table with that Provider's Provider
      * table merged in, or the Base table alone before a login and for a Provider with no table. It
@@ -214,8 +214,13 @@ class Library private constructor(
      */
     val profiles: StateFlow<Profiles> = _profiles.asStateFlow()
 
-    /** The Household PIN (#437), which lets a Viewer leave a Kids profile. */
-    val householdPin: HouseholdPin = KeptHouseholdPin(store)
+    private val keptPin: KeptHouseholdPin = KeptHouseholdPin(store) { hash, at ->
+        accountSync.record(SyncEntry(SyncEntry.HOUSEHOLD, null, SyncEntry.PIN, hash, at))
+        accountSync.pushSoon()
+    }
+
+    /** The Household PIN (#437), which lets a Viewer leave a Kids profile: the same on every TV of the Account (#440). */
+    val householdPin: HouseholdPin = keptPin
 
     /** The current Profile's id, which every Viewer's read and write goes to. */
     private val profile: Long get() = _profiles.value.current.id
@@ -234,15 +239,17 @@ class Library private constructor(
         require(name.isNotBlank()) { "A Profile needs a name" }
         synchronized(_profiles) {
             if (_profiles.value.all.size >= MAX_PROFILES) return@withContext null
-            val id = store.addProfile(name.trim(), kids, Instant.now())
+            val at = Instant.now()
+            val id = store.addProfile(name.trim(), kids, at)
             _profiles.value = readProfiles()
+            accountSync.uidOf(id)?.let { accountSync.recordProfile(it, name.trim(), kids, deleted = false, at) }
             // The first second Profile: the chip appears, and pulses once so the household notices it.
             if (store.profileChipPulse() == null) {
                 store.saveProfileChipPulse(PULSE_PENDING)
                 _profileChipPulse.value = true
             }
             _profiles.value.all.single { it.id == id }
-        }
+        }.also { accountSync.pushSoon() }
     }
 
     private val _profileChipPulse = MutableStateFlow(store.profileChipPulse() == PULSE_PENDING)
@@ -259,13 +266,17 @@ class Library private constructor(
         saveLater { store.saveProfileChipPulse(PULSE_DONE) }
     }
 
-    /** Names Profile [id] [name] (trimmed). */
+    /** Names Profile [id] [name] (trimmed), on every TV of the Account too. */
     suspend fun renameProfile(id: Long, name: String) = withContext(Dispatchers.IO) {
         require(name.isNotBlank()) { "A Profile needs a name" }
         synchronized(_profiles) {
-            store.renameProfile(id, name.trim())
+            val at = Instant.now()
+            store.renameProfile(id, name.trim(), at)
             _profiles.value = readProfiles()
+            val renamed = _profiles.value.all.find { it.id == id } ?: return@withContext
+            accountSync.uidOf(id)?.let { accountSync.recordProfile(it, renamed.name, renamed.kids, deleted = false, at) }
         }
+        accountSync.pushSoon()
     }
 
     /** Puts the device on Profile [id]: from now on every Viewer's read and write is its. */
@@ -276,6 +287,7 @@ class Library private constructor(
             store.useProfile(id, Instant.now())
             forgetProfileCaches()
             _profiles.value = readProfiles()
+            readSettings()
         }
     }
 
@@ -289,11 +301,15 @@ class Library private constructor(
             val profiles = _profiles.value
             if (profiles.all.none { it.id == id } || profiles.all.size == 1) return@withContext false
             val current = id == profile
+            val uid = accountSync.uidOf(id)
             store.deleteProfile(id)
+            // Everywhere: the Account's other TVs delete it too, with its history.
+            uid?.let { accountSync.recordProfile(it, null, false, deleted = true, Instant.now()) }
             if (current) forgetProfileCaches()
             _profiles.value = readProfiles()
+            readSettings()
             true
-        }
+        }.also { accountSync.pushSoon() }
     }
 
     /** What is held in memory for the Profile the device was on, so the next one's is read instead. */
@@ -302,40 +318,114 @@ class Library private constructor(
         guideFavourites = emptyList()
     }
 
-    private val history = HistorySync(
+    private val accountSync: AccountSync = AccountSync(
         store,
         cloud,
+        keptPin,
+        MAX_PROFILES,
         signedIn = { _account.value != null },
         currentProfile = { profile },
-        profileExists = { id -> _profiles.value.all.any { it.id == id } },
         provider = { credentials.load()?.let(::providerKey) },
         onSignedOut = { accountIs(null) },
     )
 
     /**
-     * Pushes the history changes this device made and pulls the Account's (#435), when signed in:
-     * the app calls it on launch and on coming to the front, and it runs by itself after each stop.
-     * What it pulls lands between screens ([applyPendingHistory]), never under focus. The first
-     * sync after signing in merges the device's history into the Account. Says whether the cloud
-     * answered; while it can't, the changes stay queued for the next.
+     * Pushes the changes this device made and pulls the Account's (#435, #440), when signed in: every
+     * Profile's history, Favourites, "Not this game" marks, settings and player choices, the Profiles
+     * themselves, the Region and the Household PIN. The app calls it on launch and on coming to the
+     * front, and it runs by itself after each stop or change. What it pulls lands between screens
+     * ([applyPendingHistory]), never under focus. The first sync after signing in merges the device
+     * into the Account, unless that asks which Profiles to keep first ([profileChoice]). Says whether
+     * the cloud answered and the device is merged; while it can't, the changes stay queued for the next.
      */
-    suspend fun syncHistory(): Boolean = withContext(Dispatchers.IO) { history.sync() }
+    suspend fun syncHistory(): Boolean = withContext(Dispatchers.IO) { accountSync.sync() }
 
     /**
-     * Lands the history pulled from the Account, as a held catalog lands: on entering a top-level
-     * screen, never while one is on screen or the player is open. Says whether Continue watching
-     * may show something else, in which case the screens read again ([catalogChanges]).
+     * Set while signing in would bring the household past [MAX_PROFILES] Profiles, the Account's and
+     * this TV's: the TV asks which to keep ([keepProfiles]) before sign-in completes, and nothing of
+     * either syncs until then.
+     */
+    val profileChoice: StateFlow<ProfileChoice?> get() = accountSync.choice
+
+    /**
+     * Keeps the Profiles of [profileChoice] keyed [keys], the current one always, and merges the
+     * device into the Account with them: a Profile left out is deleted, from every TV of the Account
+     * when it is the Account's, with its history. Says whether the merge is done.
+     */
+    suspend fun keepProfiles(keys: Set<String>): Boolean = withContext(Dispatchers.IO) { accountSync.keep(keys) }
+
+    /**
+     * Lands what was pulled from the Account, as a held catalog lands: on entering a top-level screen,
+     * never while one is on screen or the player is open. Profiles added, renamed or deleted on another
+     * TV appear so here (one deleted while this TV was on it puts it on the one used last), and their
+     * settings change. Says whether what the screens show may have changed, in which case they read
+     * again ([catalogChanges]).
      */
     suspend fun applyPendingHistory(): Boolean = withContext(Dispatchers.IO) {
-        history.land().also { if (it) changed() }
+        if (!accountSync.hasPulled()) return@withContext false
+        val landed = synchronized(_profiles) {
+            val was = profile
+            accountSync.land().also {
+                if (it.profiles) {
+                    _profiles.value = readProfiles()
+                    if (profile != was) forgetProfileCaches()
+                }
+                // A remembered track may have landed too.
+                remembered = null
+                readSettings()
+            }
+        }
+        landed.any.also { if (it) changed() }
     }
 
     /** A stop, or the end of a Title: what changed is pushed to the Account in the background. */
-    internal fun stoppedPlaying() = history.pushSoon()
+    internal fun stoppedPlaying() = accountSync.pushSoon()
 
     /** Lands [id]'s pulled history before its page or Play reads where the Viewer stopped. */
     private fun landHistory(id: TitleId) {
-        if (history.landTitle(profile, id)) changed()
+        if (accountSync.landTitle(profile, id)) changed()
+    }
+
+    private val _profileSettings = MutableStateFlow(store.profileSettings(profile))
+    private val _region = MutableStateFlow(store.household(SyncEntry.REGION)?.first)
+
+    override val profileSettings: StateFlow<Map<String, String>> = _profileSettings.asStateFlow()
+
+    override val region: StateFlow<String?> = _region.asStateFlow()
+
+    /** Reads the current Profile's settings and the Region again, after a switch or what landed. */
+    private fun readSettings() {
+        _profileSettings.value = store.profileSettings(profile)
+        _region.value = store.household(SyncEntry.REGION)?.first
+    }
+
+    override fun saveProfileSettings(changed: Map<String, String?>) {
+        if (changed.isEmpty()) return
+        require(changed.keys.all { it in ProfileSetting.ALL }) { "Not a Profile's setting: ${changed.keys - ProfileSetting.ALL}" }
+        synchronized(_profiles) {
+            val at = Instant.now()
+            changed.forEach { (key, value) ->
+                store.saveProfileSetting(profile, key, value, at)
+                accountSync.record(profile, SyncEntry.SETTING, key, value, at)
+            }
+            _profileSettings.value = store.profileSettings(profile)
+        }
+        accountSync.pushSoon()
+    }
+
+    override fun saveRegion(region: String) {
+        val at = Instant.now()
+        store.saveHousehold(SyncEntry.REGION, region, at)
+        accountSync.record(SyncEntry(SyncEntry.HOUSEHOLD, null, SyncEntry.REGION, region, at))
+        _region.value = region
+        accountSync.pushSoon()
+    }
+
+    override fun importSettings(profile: Long, values: Map<String, String>, region: String?) {
+        // A deleted Profile's file may have outlived it.
+        if (_profiles.value.all.any { it.id == profile }) store.importProfileSettings(profile, values.filterKeys { it in ProfileSetting.ALL })
+        if (region != null) store.saveHousehold(SyncEntry.REGION, region, Instant.ofEpochMilli(1), unlessKept = true)
+        synchronized(_profiles) { readSettings() }
     }
 
     /** Checks [login] with the Provider and keeps it only if the Provider accepts it. */
@@ -814,7 +904,13 @@ class Library private constructor(
     suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER) }
 
     /** Saves the Channel keyed [channel] ([Channel.key]) as a Favourite, or removes it when [favourite] is false. */
-    suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) { store.setFavourite(profile, channel, favourite, Instant.now()) }
+    suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) {
+        val at = Instant.now()
+        store.setFavourite(profile, channel, favourite, at)
+        // Kept per Provider: a Channel key means nothing on another.
+        accountSync.record(profile, SyncEntry.FAVOURITE, channel, if (favourite) ON else null, at, perProvider = true)
+        accountSync.pushSoon()
+    }
 
     /** The live Categories the last Sync stored, in the Provider's order, with their normalised names and kinds. */
     suspend fun liveCategories(): List<LiveCategory> = withContext(Dispatchers.IO) { store.liveCategories() }
@@ -1333,10 +1429,16 @@ class Library private constructor(
         _account.value = email
         saveLater { store.saveAccountEmail(email) }
         if (was != null) {
-            history.signedOut()
+            synchronized(_profiles) {
+                if (accountSync.signedOut()) {
+                    forgetProfileCaches()
+                    _profiles.value = readProfiles()
+                    readSettings()
+                }
+            }
             changed()
         }
-        if (email != null) history.pushSoon()
+        if (email != null) accountSync.pushSoon()
     }
 
     /**
@@ -1546,23 +1648,30 @@ class Library private constructor(
 
     /** Remembers that the Viewer picked audio in [language] (a BCP 47 tag), so it plays next time, and its Versions rank first. */
     suspend fun rememberAudio(language: String) = withContext(Dispatchers.IO) {
-        store.rememberTrack(profile, AUDIO, language)
+        rememberTrack(AUDIO, language)
         remembered = rememberedTracks().copy(audio = language)
     }
 
     /** Remembers that the Viewer picked subtitles in [language], or turned them off when null, so the next file starts the same. */
     suspend fun rememberSubtitles(language: String?) = withContext(Dispatchers.IO) {
-        store.rememberTrack(profile, SUBTITLES, language ?: SUBTITLES_OFF)
+        rememberTrack(SUBTITLES, language ?: SUBTITLES_OFF)
         remembered = rememberedTracks().copy(subtitles = language, subtitlesOff = language == null, closedCaptions = false)
     }
 
     /** Remembers that the Viewer turned on a Channel's closed captions, so they stay on in the other player and on the next Channel. */
     suspend fun rememberClosedCaptions() = withContext(Dispatchers.IO) {
-        store.rememberTrack(profile, SUBTITLES, CLOSED_CAPTIONS)
+        rememberTrack(SUBTITLES, CLOSED_CAPTIONS)
         remembered = rememberedTracks().copy(subtitles = null, subtitlesOff = false, closedCaptions = true)
     }
 
     @Volatile private var remembered: RememberedTracks? = null
+
+    /** Keeps what the Viewer picked in the player, and sends it to the Account's other TVs. */
+    private fun rememberTrack(kind: String, value: String) {
+        store.rememberTrack(profile, kind, value)
+        accountSync.record(profile, SyncEntry.SETTING, SyncEntry.TRACK + kind, value, Instant.now())
+        accountSync.pushSoon()
+    }
 
     /** What the Viewer chose the last time [id] played (#291); nothing, when they never chose anything in it. */
     fun titleChoices(id: TitleId): TitleChoices = store.titleChoices(profile, id)?.let(::titleChoices) ?: TitleChoices()
@@ -1573,7 +1682,11 @@ class Library private constructor(
      */
     suspend fun saveChoices(plan: PlayPlan, choices: TitleChoices) = withContext(Dispatchers.IO) {
         val id = plan.titleId ?: return@withContext
-        store.saveTitleChoices(profile, id, choices.toJson(), Instant.now())
+        val at = Instant.now()
+        val body = choices.toJson()
+        store.saveTitleChoices(profile, id, body, at)
+        accountSync.record(profile, SyncEntry.TITLE_CHOICES, historyKey(id), body, at, perProvider = id is TitleId.Unmatched)
+        accountSync.pushSoon()
     }
 
     /**
@@ -1648,7 +1761,7 @@ class Library private constructor(
         val at = Instant.now()
         if (episode == null) store.saveProgress(profile, id, position, duration, watched, at)
         else store.saveEpisodeProgress(profile, id, episode, position, duration, watched, at)
-        history.record(profile, HistoryChange(id, episode, position, duration, watched, removed = false, at))
+        accountSync.recordHistory(profile, HistoryChange(id, episode, position, duration, watched, removed = false, at))
     }
 
     /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
@@ -1677,8 +1790,8 @@ class Library private constructor(
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) {
         val at = Instant.now()
         store.forgetProgress(profile, id, at)
-        history.record(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
-        history.pushSoon()
+        accountSync.recordHistory(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
+        accountSync.pushSoon()
     }
 
     /**
@@ -1954,6 +2067,8 @@ class Library private constructor(
      */
     suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Instant.now()): GameFeeds = withContext(Dispatchers.IO) {
         store.dropFeed(profile, entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
+        accountSync.record(profile, SyncEntry.NOT_THIS_GAME, "${entry.key}|${feed.channel.key}", ON, now, perProvider = true)
+        accountSync.pushSoon()
         // Matched again, so the League network joins once every named Feed is dropped.
         matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
             ?: entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
@@ -2798,7 +2913,7 @@ class Library private constructor(
         prefixTable.describe(listing.name, listing.category).let { Candidate(listing, it.attributes, it.unknownPrefix) }
 
     override fun close() {
-        history.close()
+        accountSync.close()
         gamesFetches.shutdownNow()
         signOuts.shutdownNow()
         fileReadLookUps.shutdownNow()
@@ -2813,6 +2928,8 @@ class Library private constructor(
         /** The most Profiles a household keeps (#428). */
         const val MAX_PROFILES = 5
 
+        /** A Favourite's or a "Not this game" mark's value, as the Account sync sends it. */
+        private const val ON = "1"
         private const val PULSE_PENDING = "pending"
         private const val PULSE_DONE = "done"
 

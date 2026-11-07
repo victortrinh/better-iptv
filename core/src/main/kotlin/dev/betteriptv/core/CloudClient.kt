@@ -249,33 +249,37 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
-     * Pushes [changes] (at most [MAX_HISTORY_BATCH]) to the Account and pulls its history changed
-     * since [cursor] (#435): TMDB-keyed for every Provider, Listing-keyed only for [provider] (a
-     * [providerKey], null before a login). Throws [NotSignedIn] when the device is in no Account.
+     * Pushes [changes] (at most [MAX_HISTORY_BATCH], each with its Profile's Account id) and
+     * [entries] (as many) to the Account, saying the device is on Profile [current], and pulls what
+     * changed since [cursor] (#435, #440): one request, one answer. Throws [NotSignedIn] when the
+     * device isn't signed in.
      */
-    fun sync(cursor: Long, provider: String?, changes: List<HistoryChange>): HistoryAnswer {
-        require(changes.size <= MAX_HISTORY_BATCH)
+    fun sync(cursor: Long, provider: String?, current: String?, changes: List<Pair<String, HistoryChange>>, entries: List<SyncEntry>): SyncAnswer {
+        require(changes.size <= MAX_HISTORY_BATCH && entries.size <= MAX_HISTORY_BATCH)
         val body = mapOf(
             "cursor" to cursor,
             "provider" to provider,
-            "progress" to changes.map {
+            "current" to current,
+            "progress" to changes.map { (profile, it) ->
                 mapOf(
-                    "title" to historyKey(it.id), "season" to it.episode?.season, "episode" to it.episode?.number, "position" to it.position,
+                    "profile" to profile, "title" to historyKey(it.id), "season" to it.episode?.season, "episode" to it.episode?.number, "position" to it.position,
                     "duration" to it.duration, "watched" to it.watched, "removed" to it.removed, "at" to it.at.toEpochMilli(),
                 )
             },
+            "entries" to entries.map { mapOf("kind" to it.kind, "profile" to it.profile, "key" to it.key, "value" to it.value, "at" to it.at.toEpochMilli()) },
         )
         val answer = authorized { token -> post("v1/sync", json.serializeNulls().toJson(body), token) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
         val next = (answer["cursor"] as? Number)?.toLong() ?: throw CloudException("The cloud's sync answer has no cursor.")
-        return HistoryAnswer(
+        return SyncAnswer(
             next,
             answer["reset"] == true,
             (answer["progress"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { change ->
+                val profile = change["profile"] as? String ?: return@mapNotNull null
                 val id = (change["title"] as? String)?.let(::historyTitleId) ?: return@mapNotNull null
                 val season = (change["season"] as? Number)?.toInt()
                 val number = (change["episode"] as? Number)?.toInt()
-                HistoryChange(
+                profile to HistoryChange(
                     id,
                     if (season != null && number != null) EpisodeNumber(season, number) else null,
                     (change["position"] as? Number)?.toLong() ?: return@mapNotNull null,
@@ -283,6 +287,15 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
                     change["watched"] == true,
                     change["removed"] == true,
                     Instant.ofEpochMilli((change["at"] as? Number)?.toLong() ?: return@mapNotNull null),
+                )
+            },
+            (answer["entries"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { entry ->
+                SyncEntry(
+                    entry["kind"] as? String ?: return@mapNotNull null,
+                    entry["profile"] as? String,
+                    entry["key"] as? String ?: return@mapNotNull null,
+                    entry["value"] as? String,
+                    Instant.ofEpochMilli((entry["at"] as? Number)?.toLong() ?: return@mapNotNull null),
                 )
             },
         )
@@ -409,7 +422,8 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 }
 
 /** What a history sync answered: the [cursor] to ask from next, and the Account's [changes] since (all of them when [reset]). */
-internal class HistoryAnswer(val cursor: Long, val reset: Boolean, val changes: List<HistoryChange>)
+/** What a sync answered: the cursor it is at now, whether it is everything ([reset]), and what changed, each change with its Profile's Account id. */
+internal class SyncAnswer(val cursor: Long, val reset: Boolean, val changes: List<Pair<String, HistoryChange>>, val entries: List<SyncEntry>)
 
 /** What the cloud answered: each found Title's metadata as JSON, and the Titles TMDB doesn't have. */
 internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound: List<TitleId.Tmdb>)
