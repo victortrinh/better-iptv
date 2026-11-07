@@ -57,6 +57,15 @@
             android:name=".UpdateInstallReceiver"
             android:exported="false" />
 
+        <!-- Reopens the app once an update it installed itself has landed (UpdateReopenReceiver). -->
+        <receiver
+            android:name=".UpdateReopenReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- After each update, asks the Amazon Appstore to save the new icon for Your Apps. -->
         <receiver
             android:name=".AppstoreTileReceiver"

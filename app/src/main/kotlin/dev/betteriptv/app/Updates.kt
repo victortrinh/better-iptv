@@ -3,6 +3,7 @@ package dev.betteriptv.app
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
@@ -71,8 +72,10 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
                 }
                 val answer = Intent(context, UpdateInstallReceiver::class.java)
                 val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+                ReopenAfterUpdate.mark(context)
                 session.commit(PendingIntent.getBroadcast(context, id, answer, PendingIntent.FLAG_UPDATE_CURRENT or mutable).intentSender)
             } catch (e: Exception) {
+                ReopenAfterUpdate.clear(context)
                 session.abandon()
                 throw e
             }
@@ -91,10 +94,16 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
 
 /**
  * Android's answers to an update's install session: the confirmation it needs from the Viewer, which
- * opens Android's installer, or why installing failed. Success replaces the running app.
+ * opens Android's installer, or why installing failed.
+ *
+ * Success replaces the running app, and isn't acted on here: Android delivers it to the old build's
+ * process a few milliseconds before force-stopping that process, so anything started from it dies
+ * with it (seen on Fire OS 7, 2026-11-06). [UpdateReopenReceiver] reopens the app instead, once the
+ * new build is in place.
  */
 class UpdateInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val updates = (context.applicationContext as? BetterIptvApp)?.updates
         when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
@@ -102,14 +111,64 @@ class UpdateInstallReceiver : BroadcastReceiver() {
             }
             PackageInstaller.STATUS_SUCCESS -> Unit
             // Backed out of the installer: the update is offered again.
-            PackageInstaller.STATUS_FAILURE_ABORTED -> (context.applicationContext as BetterIptvApp).updates?.installAborted()
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                ReopenAfterUpdate.clear(context)
+                updates?.installAborted()
+            }
             else -> {
+                ReopenAfterUpdate.clear(context)
                 val problem = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Android's installer answered $status."
                 Log.w(UPDATE_TAG, "Update not installed: $problem")
-                (context.applicationContext as BetterIptvApp).updates?.installFailed(problem)
+                updates?.installFailed(problem)
             }
         }
     }
+}
+
+/**
+ * Reopens the app once an update it installed itself has landed (ADR 0006).
+ *
+ * Installing an update closes the app: Android force-stops it when the install starts, and once more
+ * when the install finishes, 15–20 s later on the stick, where Fire OS compiles the build from its
+ * dex metadata in between. Nothing brought the app back, and a Viewer who opened it from Home in
+ * those seconds saw it close again at the second stop (#418). This receiver hears
+ * `MY_PACKAGE_REPLACED`, sent to the new build after that second stop, and starts [MainActivity]
+ * when [ReopenAfterUpdate] says the app committed the install itself: an `adb install` or any other
+ * installer leaves the app closed, as before.
+ *
+ * Android 10 and later don't let a receiver start an activity from the background, so there the
+ * attempt only logs a warning and the Viewer opens the app themselves.
+ */
+class UpdateReopenReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED || !ReopenAfterUpdate.take(context)) return
+        val reopen = Intent.makeMainActivity(ComponentName(context, MainActivity::class.java)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(reopen)
+        } catch (e: RuntimeException) {
+            Log.w(UPDATE_TAG, "The app wasn't reopened after its update", e)
+        }
+    }
+}
+
+/**
+ * A mark that the app committed an install of its own update, kept in a file so it outlives the
+ * process (Android force-stops the app while installing). Set as the install session is committed,
+ * cleared when the installer refuses it or the Viewer backs out, and taken by [UpdateReopenReceiver].
+ */
+internal object ReopenAfterUpdate {
+    private fun file(context: Context) = File(context.noBackupFilesDir, "reopen-after-update")
+
+    fun mark(context: Context) {
+        runCatching { file(context).writeText("") }
+    }
+
+    fun clear(context: Context) {
+        file(context).delete()
+    }
+
+    /** Whether the mark was set, clearing it. */
+    fun take(context: Context): Boolean = file(context).delete()
 }
 
 private const val UPDATE_TAG = "Updates"
@@ -163,6 +222,9 @@ fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) 
                 is UpdateState.Installing -> {
                     Heading(stringResource(R.string.update_title))
                     Body(stringResource(R.string.update_installing))
+                    // Installing closes the app for 15–20 s on the stick. UpdateReopenReceiver brings it back
+                    // on Android 9 and earlier; later Androids don't let it, so nothing is promised there.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) Caption(stringResource(R.string.update_installing_reopens))
                     // Android's installer opens over this; backing out of it offers the update again.
                     Buttons { NuageButton(stringResource(R.string.update_later), onLater, Modifier.focusRequester(first)) }
                 }
