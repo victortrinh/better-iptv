@@ -100,10 +100,6 @@
     <string name="search_start">Type two letters to find Movies, Shows, Channels and people.</string>
     <string name="search_searching">Searching…</string>
     <string name="search_none">Nothing matches \"%1$s\".</string>
-    <string name="search_movies">Movies · %1$d</string>
-    <string name="search_shows">Shows · %1$d</string>
-    <string name="search_channels">Channels · %1$d</string>
-    <string name="search_replays">Replays · %1$d</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
     <!-- The first-Sync checklist, centred where the rows will be: its title and its steps, in order. -->
