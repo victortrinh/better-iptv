@@ -23,7 +23,7 @@ import kotlin.time.TimeSource
 class OriginalAudioTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val cloud = FakeCloud()
+    private val cloud = FakeCloud().servingSurveyedTable(provider)
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {

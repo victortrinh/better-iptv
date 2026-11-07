@@ -284,7 +284,8 @@ internal class PrefixTable private constructor(
         /**
          * The hand-written Provider table shipped with the app for the Provider whose host hashes to
          * [providerKey] ([dev.betteriptv.core.providerKey]), or null for a Provider with none. The build
-         * copies them from cloud/provider-tables/ until the cloud serves them (#431).
+         * copies them from cloud/provider-tables/; a device uses one only until the cloud has answered
+         * for its Provider once (#431).
          */
         fun bundledProviderTable(providerKey: String): String? =
             if (PROVIDER_KEY.matches(providerKey)) resource("provider-tables/$providerKey.txt") else null

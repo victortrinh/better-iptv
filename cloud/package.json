@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy": "wrangler d1 migrations apply DB --remote && node scripts/provider-tables.mjs --remote && wrangler deploy",
+    "provider-tables": "node scripts/provider-tables.mjs --local",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
