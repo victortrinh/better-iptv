@@ -62,11 +62,13 @@ class ProfilesSettingsTest {
     private var profiles by mutableStateOf(Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID))
     private var nextId = Profile.FIRST_ID + 1
     private val changes = mutableListOf<ProfileChange>()
+    // The household has its PIN already: adding a Kids profile then asks none (HouseholdPinTest has the first one).
+    private val pin = FakePin("2580")
 
     private fun change(change: ProfileChange) {
         changes += change
         profiles = when (change) {
-            is ProfileChange.Add -> Profiles(profiles.all + Profile(nextId++, change.name), profiles.currentId)
+            is ProfileChange.Add -> Profiles(profiles.all + Profile(nextId++, change.name, change.kids), profiles.currentId)
             is ProfileChange.Rename -> Profiles(profiles.all.map { if (it.id == change.id) it.copy(name = change.name) else it }, profiles.currentId)
             is ProfileChange.Switch -> Profiles(profiles.all, change.id)
             is ProfileChange.Delete -> {
@@ -86,6 +88,7 @@ class ProfilesSettingsTest {
             onTab = {},
             profiles = profiles,
             onProfile = ::change,
+            pin = pin,
             catalogLanguages = { listOf("en") },
             catalog = {},
         )
@@ -144,6 +147,47 @@ class ProfilesSettingsTest {
         row("Add a profile").assertIsFocused()
         profileRow(second).assert(hasText("Alex Ma") and !hasText(CHOSEN))
         profileRow(first).assert(hasText(CHOSEN))
+    }
+
+    @Test fun addingAProfileOffersTheKidsSwitchOffUnlessChosen() {
+        settings()
+        press(listOf(Key.DirectionDown, Key.DirectionCenter))
+        type("sam")
+        compose.onNodeWithText("Kids profile").assertExists()
+        compose.onNodeWithText("On").performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf<ProfileChange>(ProfileChange.Add("Sam", kids = true)), changes)
+    }
+
+    @Test fun renamingAProfileOffersNoKidsSwitch() {
+        settings()
+        press(listOf(Key.DirectionCenter))
+        row("Rename").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Rename English").assertExists()
+        compose.onNodeWithText("Kids profile").assertDoesNotExist()
+    }
+
+    @Test fun aKidsProfilesSettingsOfferTheProfileSwitchAndTextSizeOnly() {
+        change(ProfileChange.Add("Sam", kids = true))
+        change(ProfileChange.Switch(second))
+        changes.clear()
+        settings()
+
+        profileRow(second).assertIsFocused()
+        compose.onNodeWithText("Text size").assertExists()
+        listOf("Add a profile", "App language", "Content languages", "Region", "Leagues", "Quality cap", "Account", "Catalog", "App version").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        // OK on another Profile switches to it once the Household PIN is typed: there is no page to rename or delete from.
+        press(listOf(Key.DirectionUp, Key.DirectionCenter))
+        "2580".forEach { compose.onNodeWithText(it.toString()).performClick() }
+        compose.waitForIdle()
+        assertEquals(listOf<ProfileChange>(ProfileChange.Switch(first)), changes)
+        compose.onNodeWithText("Rename").assertDoesNotExist()
     }
 
     @Test fun backFromTheNamePageAddsNothing() {

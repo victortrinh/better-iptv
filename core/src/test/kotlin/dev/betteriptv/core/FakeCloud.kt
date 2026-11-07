@@ -226,6 +226,8 @@ class FakeCloud : Closeable {
     /** What the phone does on "Delete my account" once it taps the link: every device on [email]'s Account goes anonymous. */
     fun deleteAccount(email: String) = synchronized(tokens) {
         accounts.entries.filter { it.value == email }.map { it.key }.forEach(::unbind)
+        synchronized(histories) { histories.remove(email) }
+        Unit
     }
 
     private fun unbind(token: String) {
@@ -236,6 +238,35 @@ class FakeCloud : Closeable {
 
     /** A listed device's id: like the real one, not its token. */
     private fun deviceId(token: String) = java.security.MessageDigest.getInstance("SHA-256").digest("device-id:$token".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
+
+    /** Signs every device out of [email]'s Account, as Sign out on another TV or the page would. */
+    fun signOut(email: String) = synchronized(tokens) {
+        accounts.entries.filter { it.value == email }.map { it.key }.forEach(::unbind)
+    }
+
+    /** One Account's history as the cloud keeps it (cloud/src/sync.ts): each row with the sequence number of the push that last changed it. */
+    private class SyncedHistory {
+        var seq = 0L
+        val rows = LinkedHashMap<String, Pair<Long, Map<*, *>>>()
+    }
+
+    private val histories = HashMap<String, SyncedHistory>()
+
+    /**
+     * Drops [email]'s history of [title] from the cloud, as purging a 30-day-old tombstone does, and
+     * answers the next sync of each device with everything, marked `reset`, as the cloud answers a
+     * cursor older than that tombstone.
+     */
+    fun purgeHistory(email: String, title: String) = synchronized(histories) {
+        histories.getValue(email).rows.keys.removeAll { it.split('|')[1] == title }
+        resetting += email
+    }
+
+    private val resetting = HashSet<String>()
+
+    /** The `/v1/sync` requests devices sent, as sent: cursor, provider and the progress pushed. */
+    val syncsAsked: List<Map<*, *>>
+        get() = received.filter { it.path == "/v1/sync" }.map { read(it.body) as Map<*, *> }
 
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
@@ -346,6 +377,32 @@ class FakeCloud : Closeable {
                     if (model != null) models[token] = model else models.remove(token)
                 }
                 respond(exchange, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
+            }
+            "/v1/sync" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val email = synchronized(tokens) { accounts[token] } ?: return respond(exchange, 403, mapOf("error" to "This device isn't signed in to an Account."))
+                val asked = read(body) as Map<*, *>
+                val provider = asked["provider"] as String?
+                val answer = synchronized(histories) {
+                    val history = histories.getOrPut(email) { SyncedHistory() }
+                    val changes = (asked["progress"] as List<*>).map { it as Map<*, *> }
+                    if (changes.isNotEmpty()) history.seq++
+                    changes.forEach { change ->
+                        val title = change["title"] as String
+                        val key = "${if ("/listing/" in title) provider else ""}|$title|${change["season"]}|${change["episode"]}"
+                        val kept = history.rows[key]
+                        if (kept == null || (change["at"] as Number).toLong() > (kept.second["at"] as Number).toLong()) {
+                            history.rows.remove(key)
+                            history.rows[key] = history.seq to change
+                        }
+                    }
+                    val reset = resetting.remove(email)
+                    val cursor = if (reset) 0 else (asked["cursor"] as Number).toLong()
+                    val since = history.rows.filter { (key, row) -> row.first > cursor && (key.startsWith("|") || key.startsWith("$provider|")) }
+                    mapOf("cursor" to history.seq, "reset" to reset, "progress" to since.values.sortedBy { it.first }.map { it.second })
+                }
+                respond(exchange, 200, answer)
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
             "/v1/provider-table" -> {

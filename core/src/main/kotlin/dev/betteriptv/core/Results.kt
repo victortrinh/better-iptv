@@ -96,6 +96,18 @@ sealed interface HomeRow {
      */
     data class NewOnYourService(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
+    /**
+     * On a Kids profile: the newest Titles of the Kids catalog, most popular on TMDB first: movies
+     * and shows on Home ([kind] null), one kind on its tab.
+     */
+    data class NewForKids(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
+
+    /** On a Kids profile: the Kids catalog's most popular Titles of [kind] (Movies for kids, Shows for kids). */
+    data class ForKids(val kind: TitleKind, val titles: List<TitleSummary>) : HomeRow
+
+    /** On Live on a Kids profile: the Channels of [country]'s Kids Categories, in the Provider's order. */
+    data class KidsChannels(val country: LiveCountry, val channels: List<Channel>) : HomeRow
+
     /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 

@@ -31,6 +31,11 @@
     <string name="row_trending_shows">Trending shows this week</string>
     <string name="row_new_movies">New movies</string>
     <string name="row_new_shows">New shows</string>
+    <string name="row_new_for_kids">New for kids</string>
+    <string name="row_new_movies_for_kids">New movies for kids</string>
+    <string name="row_new_shows_for_kids">New shows for kids</string>
+    <string name="row_movies_for_kids">Movies for kids</string>
+    <string name="row_shows_for_kids">Shows for kids</string>
     <string name="rank_movies">#%1$d in movies in %2$s</string>
     <string name="rank_shows">#%1$d in shows in %2$s</string>
     <string name="rank_movies_worldwide">#%1$d in movies worldwide</string>
@@ -285,6 +290,23 @@
     <string name="profile_save">Save</string>
     <string name="who_is_watching">Who\'s watching?</string>
     <string name="profile_kids_label">Kids</string>
+    <string name="profile_kids">Kids profile</string>
+    <string name="profile_kids_detail">Sees only movies, shows and channels for kids</string>
+    <string name="pin_title">Household PIN</string>
+    <string name="pin_to_watch_as">Enter it to watch as %1$s</string>
+    <string name="pin_choose">Choose a Household PIN</string>
+    <string name="pin_choose_detail">Four digits that let someone leave a Kids profile</string>
+    <string name="pin_again">Enter it again</string>
+    <string name="pin_mismatch">Those didn\'t match. Choose a PIN again.</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">Wrong PIN. %1$d try left</item>
+        <item quantity="other">Wrong PIN. %1$d tries left</item>
+    </plurals>
+    <string name="pin_locked">Too many wrong tries. Try again in %1$d s</string>
+    <string name="pin_change">Change PIN</string>
+    <string name="pin_change_detail">The Household PIN lets someone leave a Kids profile</string>
+    <string name="pin_current">Enter the current PIN</string>
+    <string name="pin_new">Choose a new PIN</string>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>

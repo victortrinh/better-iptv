@@ -209,7 +209,10 @@ class PlaybackSession internal constructor(
                 tried = engine
                 when (val outcome = attempt(queue.first(), engine)) {
                     Outcome.Ended -> {
-                        if (!plan.live) withContext(Dispatchers.IO) { library.finished(plan) }
+                        if (!plan.live) withContext(Dispatchers.IO) {
+                            library.finished(plan)
+                            library.stoppedPlaying()
+                        }
                         _state.value = PlaybackState.Ended
                         return
                     }
@@ -267,7 +270,11 @@ class PlaybackSession internal constructor(
             } finally {
                 resumeAt = player.position
                 // A quick write, made even while the Viewer leaving cancels playback.
-                if (!plan.live) library.saveProgress(plan, resumeAt, player.duration)
+                if (!plan.live) {
+                    library.saveProgress(plan, resumeAt, player.duration)
+                    // The Account's other TVs continue from here (#435).
+                    library.stoppedPlaying()
+                }
                 // The picture lets go of the engine before it is released.
                 _state.value = PlaybackState.Starting(version)
                 // A Channel's stream changes as it goes: there is no file to Confirm.

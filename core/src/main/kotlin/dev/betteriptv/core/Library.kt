@@ -214,6 +214,9 @@ class Library private constructor(
      */
     val profiles: StateFlow<Profiles> = _profiles.asStateFlow()
 
+    /** The Household PIN (#437), which lets a Viewer leave a Kids profile. */
+    val householdPin: HouseholdPin = KeptHouseholdPin(store)
+
     /** The current Profile's id, which every Viewer's read and write goes to. */
     private val profile: Long get() = _profiles.value.current.id
 
@@ -278,6 +281,42 @@ class Library private constructor(
     private fun forgetProfileCaches() {
         remembered = null
         guideFavourites = emptyList()
+    }
+
+    private val history = HistorySync(
+        store,
+        cloud,
+        signedIn = { _account.value != null },
+        currentProfile = { profile },
+        profileExists = { id -> _profiles.value.all.any { it.id == id } },
+        provider = { credentials.load()?.let(::providerKey) },
+        onSignedOut = { accountIs(null) },
+    )
+
+    /**
+     * Pushes the history changes this device made and pulls the Account's (#435), when signed in:
+     * the app calls it on launch and on coming to the front, and it runs by itself after each stop.
+     * What it pulls lands between screens ([applyPendingHistory]), never under focus. The first
+     * sync after signing in merges the device's history into the Account. Says whether the cloud
+     * answered; while it can't, the changes stay queued for the next.
+     */
+    suspend fun syncHistory(): Boolean = withContext(Dispatchers.IO) { history.sync() }
+
+    /**
+     * Lands the history pulled from the Account, as a held catalog lands: on entering a top-level
+     * screen, never while one is on screen or the player is open. Says whether Continue watching
+     * may show something else, in which case the screens read again ([catalogChanges]).
+     */
+    suspend fun applyPendingHistory(): Boolean = withContext(Dispatchers.IO) {
+        history.land().also { if (it) changed() }
+    }
+
+    /** A stop, or the end of a Title: what changed is pushed to the Account in the background. */
+    internal fun stoppedPlaying() = history.pushSoon()
+
+    /** Lands [id]'s pulled history before its page or Play reads where the Viewer stopped. */
+    private fun landHistory(id: TitleId) {
+        if (history.landTitle(profile, id)) changed()
     }
 
     /** Checks [login] with the Provider and keeps it only if the Provider accepts it. */
@@ -691,15 +730,19 @@ class Library private constructor(
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
-        if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages, appLanguage)))
+        // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
+        val forKids = if (kids) KidsSearch(kidsCatalog(region, appLanguage, Instant.now()).values.flatten().toHashSet(), kidsChannels(Instant.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
+        val inCatalog: (SearchIndex, Int) -> Boolean = if (forKids == null) { _, _ -> true } else { index, position -> index.titleId(position) in forKids.titles }
+        if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages, appLanguage, inCatalog)))
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
         val index = searchIndex()
-        val titles = index.findTitles(query).associateTo(HashMap()) { it.index to it.distance }
-        val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).toSet()) }
-        val channels = foundChannels(index, query)
-        val replays = foundReplays(index, query)
-        val ranks = topRanks(region, contentLanguages, appLanguage)
-        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks).copy(channels = channels, replays = replays))
+        val inIndex = { position: Int -> inCatalog(index, position) }
+        val titles = index.findTitles(query).filter { inIndex(it.index) }.associateTo(HashMap()) { it.index to it.distance }
+        val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).filterTo(HashSet(), inIndex)) }
+        val channels = foundChannels(index, query, forKids?.channels)
+        val replays = if (forKids == null) foundReplays(index, query) else emptyList()
+        val ranks = if (forKids == null) topRanks(region, contentLanguages, appLanguage) else emptyMap()
+        emit(searchResults(index, query, titles, people, emptyMap(), contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
 
         if (cloud == null || letters < TMDB_SEARCH_LETTERS) return@flow
         // The screen searches once typing pauses; TMDB is asked only once it has paused a little longer.
@@ -707,17 +750,20 @@ class Library private constructor(
         val found = tmdbSearch(query) ?: return@flow
         val popularity = HashMap<Int, Double>()
         for ((id, score) in found.titles) {
-            val position = index.position(id) ?: continue
+            val position = index.position(id)?.takeIf(inIndex) ?: continue
             // As a Title's word being typed: a Title's words are a step after its whole name.
             titles[position] = minOf(titles[position] ?: Int.MAX_VALUE, SearchIndex.STARTED_WORD + 1)
             popularity[position] = score
         }
-        val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNullTo(HashSet(), index::position)) }
+        val online = found.people.map { (name, ids) -> FoundPerson(name, 0, ids.mapNotNull(index::position).filterTo(HashSet(), inIndex)) }
         val merged = (people + online).groupBy { SearchIndex.words(it.name) }.values.map { same ->
             FoundPerson(same.first().name, same.minOf { it.distance }, same.flatMapTo(HashSet()) { it.titles })
         }
-        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks).copy(channels = channels, replays = replays))
+        emit(searchResults(index, query, titles, merged, popularity, contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
     }.flowOn(Dispatchers.IO)
+
+    /** What a Kids profile's search keeps: the Kids catalog's [titles] and the Channels of Kids Categories, by key. */
+    private class KidsSearch(val titles: Set<TitleId>, val channels: Set<String>)
 
     /** The Sports replays whose names match [query], closest first, then the newest by the date in the name, then in the Provider's order: every one, a highlights show as well as a game. */
     private fun foundReplays(index: SearchIndex, query: String): List<Replay> {
@@ -726,12 +772,12 @@ class Library private constructor(
         return hits.mapNotNull { replays[index.replays[it.index]] }
     }
 
-    /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order. */
-    private fun foundChannels(index: SearchIndex, query: String): List<Channel> {
-        val hits = index.findChannels(query).sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { it.index })).take(CHANNELS_FOUND * 4)
+    /** The Channels on now whose names match [query], closest first, then Favourites, then in the Provider's order; only those keyed in [only] when it is given. */
+    private fun foundChannels(index: SearchIndex, query: String, only: Set<String>? = null): List<Channel> {
+        val hits = index.findChannels(query).sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { it.index })).let { if (only == null) it.take(CHANNELS_FOUND * 4) else it }
         // Finished Event channels drop out, so a few more are read than are shown.
         val on = store.channels(profile, hits.map { index.channels[it.index] }, Instant.now() - EVENT_FINISHED_AFTER)
-        return hits.mapNotNull { hit -> on[index.channels[hit.index]]?.let { hit to it } }
+        return hits.mapNotNull { hit -> on[index.channels[hit.index]]?.takeIf { only == null || it.key in only }?.let { hit to it } }
             .sortedWith(compareBy({ it.first.distance }, { !it.second.favourite }, { it.first.index }))
             .map { it.second }
             .take(CHANNELS_FOUND)
@@ -882,9 +928,9 @@ class Library private constructor(
     private class FoundPerson(val name: String, val distance: Int, val titles: Set<Int>)
 
     /** The genres with the most Titles in the Viewer's [contentLanguages], named in the [appLanguage], to search before typing. */
-    private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>, appLanguage: String): List<String> {
+    private fun genreShortcuts(index: SearchIndex, contentLanguages: List<String>, appLanguage: String, inCatalog: (SearchIndex, Int) -> Boolean): List<String> {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
-        val inWanted = { titles: IntArray -> titles.count { position -> index.languages(position).any(wanted::contains) } }
+        val inWanted = { titles: IntArray -> titles.count { position -> inCatalog(index, position) && index.languages(position).any(wanted::contains) } }
         return index.genres.indices.map { Genres.named(index.genres[it], appLanguage) to inWanted(index.genreTitles[it]) }
             .filter { (_, count) -> count > 0 }
             .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
@@ -906,6 +952,7 @@ class Library private constructor(
         contentLanguages: List<String>,
         appLanguage: String,
         ranks: Map<TitleId, ChartRank>,
+        inCatalog: (Int) -> Boolean,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
         val popularityOf = { position: Int -> maxOf(index.popularity(position), popularity[position] ?: 0.0) }
@@ -921,9 +968,10 @@ class Library private constructor(
             .take(PEOPLE_FOUND)
             .map { person -> person.name to person.titles.map { SearchIndex.Hit(it, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
         val shownGenres = index.findGenres(query)
+            .filter { hit -> index.genreTitles[hit.index].any(inCatalog) }
             .sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { -index.genreTitles[it.index].size }))
             .take(GENRES_FOUND)
-            .map { Genres.named(index.genres[it.index], appLanguage) to index.genreTitles[it.index].map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
+            .map { Genres.named(index.genres[it.index], appLanguage) to index.genreTitles[it.index].filter(inCatalog).map { position -> SearchIndex.Hit(position, 0) }.sortedWith(byRank).take(TITLES_FOUND) }
         val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
             .map { index.titleId(it.index) }.distinct()
@@ -1142,6 +1190,7 @@ class Library private constructor(
         }
         val original = originalLanguage(id)
         val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id) }
+        landHistory(id)
         val played = store.episodeProgress(profile, id)
         val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
         val merged = mergeEpisodes(shows, contentLanguages, reads, originalAudioLanguage(original, contentLanguages, preferOriginalAudio), expected(title, contentLanguages))
@@ -1169,10 +1218,7 @@ class Library private constructor(
      */
     private fun accountHeard(signedIn: Boolean, sentAt: Long) {
         if (!signedIn && _account.value != null && sentAt > signedInSince) {
-            synchronized(_account) {
-                store.saveAccountEmail(null)
-                _account.value = null
-            }
+            accountIs(null)
         } else if (signedIn && _account.value == null && store.signOutPending()) {
             signOuts.execute {
                 if (!store.signOutPending()) return@execute
@@ -1222,12 +1268,25 @@ class Library private constructor(
                 signedInSince = sentAt
                 store.saveSignOutPending(false)
             }
-            if (email != _account.value) {
-                store.saveAccountEmail(email)
-                _account.value = email
-            }
+            accountIs(email)
         }
         email
+    }
+
+    /**
+     * Keeps [email] as the Account the device is in. Signing out takes the Account's history off
+     * the device; signing in syncs, merging the device's history into the Account.
+     */
+    private fun accountIs(email: String?): Unit = synchronized(_account) {
+        val was = _account.value
+        if (email == was) return
+        store.saveAccountEmail(email)
+        _account.value = email
+        if (was != null) {
+            history.signedOut()
+            changed()
+        }
+        if (email != null) history.pushSoon()
     }
 
     /**
@@ -1259,8 +1318,7 @@ class Library private constructor(
         }
         synchronized(_account) {
             store.saveSignOutPending(cloud != null)
-            store.saveAccountEmail(null)
-            _account.value = null
+            accountIs(null)
         }
         try {
             cloud?.signOut()
@@ -1373,6 +1431,7 @@ class Library private constructor(
         if (id.kind != TitleKind.Show) return null
         val byEpisode = episodeCandidates(id, contentLanguages) ?: return null
         val remembered = rememberedTracks()
+        landHistory(id)
         val stopped = store.episodeProgress(profile, id).filter { !it.watched }.associateBy { it.episode }
         val originalLanguage = originalLanguage(id)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
@@ -1412,6 +1471,7 @@ class Library private constructor(
             val version = withBackups(chosen, candidates)
             val remembered = rememberedTracks()
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
+            landHistory(id)
             val at = store.episodeProgress(profile, id).firstOrNull { it.episode == episode && !it.watched }
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
@@ -1512,7 +1572,10 @@ class Library private constructor(
     }
 
     /** Where Play starts in [id]: where the Viewer stopped, or null for the start once they finished it. */
-    private fun stopped(id: TitleId): StoredProgress? = store.progress(profile, id)?.takeUnless { it.watched }
+    private fun stopped(id: TitleId): StoredProgress? {
+        landHistory(id)
+        return store.progress(profile, id)?.takeUnless { it.watched }
+    }
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
@@ -1522,7 +1585,15 @@ class Library private constructor(
     internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveProgress(profile, id, if (watched) 0 else position, duration, watched, Instant.now())
+        record(id, null, if (watched) 0 else position, duration, watched)
+    }
+
+    /** Keeps where the Viewer is in [id] (an [episode] of it, for a Show), and queues it for the Account. */
+    private fun record(id: TitleId, episode: EpisodeNumber?, position: Long, duration: Long?, watched: Boolean) {
+        val at = Instant.now()
+        if (episode == null) store.saveProgress(profile, id, position, duration, watched, at)
+        else store.saveEpisodeProgress(profile, id, episode, position, duration, watched, at)
+        history.record(profile, HistoryChange(id, episode, position, duration, watched, removed = false, at))
     }
 
     /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
@@ -1531,21 +1602,29 @@ class Library private constructor(
         val episode = plan.episode ?: return saveProgress(id, position, duration)
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveEpisodeProgress(profile, id, episode, if (watched) 0 else position, duration, watched, Instant.now())
+        record(id, episode, if (watched) 0 else position, duration, watched)
     }
 
     /** Records that the Viewer played [id] to its end. */
-    internal fun finished(id: TitleId) = store.saveProgress(profile, id, 0, null, watched = true, Instant.now())
+    internal fun finished(id: TitleId) = record(id, null, 0, null, watched = true)
 
     /** Records that the Viewer played what [plan] plays to its end. */
     internal fun finished(plan: PlayPlan) {
         val id = plan.titleId ?: return
         val episode = plan.episode ?: return finished(id)
-        store.saveEpisodeProgress(profile, id, episode, 0, null, watched = true, Instant.now())
+        record(id, episode, 0, null, watched = true)
     }
 
-    /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
-    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(profile, id) }
+    /**
+     * Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it
+     * over: on every TV of the Account too, unless one of them plays it later.
+     */
+    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) {
+        val at = Instant.now()
+        store.forgetProgress(profile, id, at)
+        history.record(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
+        history.pushSoon()
+    }
 
     /**
      * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
@@ -1565,6 +1644,7 @@ class Library private constructor(
         homeRows(contentLanguages, appLanguage, region, leagues, Instant.now())
 
     internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, leagues: List<League>, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+        if (kids) return@withContext kidsHomeRows(contentLanguages, appLanguage, region, now)
         // Home gets one Games row, Live now, while a Game with a Feed is on (docs/roadmap.md, M3): the same Games and Feeds as the
         // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
         val liveNow = matchedGames(leagues, contentLanguages, region, now, waitForCloud = false).current.filter { it.game.state == GameState.Live && it.best != null }
@@ -1598,23 +1678,7 @@ class Library private constructor(
             }
         }
         buildList {
-            if (resumes.isNotEmpty()) {
-                add(
-                    HomeRow.ContinueWatching(
-                        resumes.map { (title, at) ->
-                            val played = when (at) {
-                                is StoredProgress -> at.position to at.duration
-                                is ShowInProgress -> at.played?.let { it.position to it.duration }
-                                else -> null
-                            }
-                            val duration = played?.second?.takeIf { it > 0 }
-                            val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
-                            val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
-                            InProgress(card(title), metadata[title.id]?.backdrop, fraction, left, (at as? ShowInProgress)?.next)
-                        },
-                    ),
-                )
-            }
+            continueWatchingRow(resumes, metadata, ::card)?.let(::add)
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
@@ -1623,6 +1687,24 @@ class Library private constructor(
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
             wantGuide(favourites = favourites)
         }
+    }
+
+    /** Continue watching's row of [resumes] ([continueWatching]), each with its [card], or null when there are none. */
+    private fun continueWatchingRow(resumes: List<Pair<StoredTitle, Any>>, metadata: Map<TitleId, TitleMetadata>, card: (StoredTitle) -> TitleSummary): HomeRow.ContinueWatching? {
+        if (resumes.isEmpty()) return null
+        return HomeRow.ContinueWatching(
+            resumes.map { (title, at) ->
+                val played = when (at) {
+                    is StoredProgress -> at.position to at.duration
+                    is ShowInProgress -> at.played?.let { it.position to it.duration }
+                    else -> null
+                }
+                val duration = played?.second?.takeIf { it > 0 }
+                val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
+                val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
+                InProgress(card(title), metadata[title.id]?.backdrop, fraction, left, (at as? ShowInProgress)?.next)
+            },
+        )
     }
 
     /**
@@ -1651,6 +1733,7 @@ class Library private constructor(
         featured(screen, contentLanguages, appLanguage, region, Instant.now())
 
     internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): FeaturedTitle? = withContext(Dispatchers.IO) {
+        if (kids) return@withContext kidsFeatured(screen, contentLanguages, appLanguage, region, now)
         val charts = charts(region, appLanguage, now)
         val lists = when (screen) {
             FeaturedScreen.Home -> listOf(charts.topMovies, charts.topShows)
@@ -1665,19 +1748,27 @@ class Library private constructor(
             val about = metadata[it.id]
             it.id !in started && about?.heroBackdrop != null && about.logo != null
         }
-        if (candidates.isEmpty()) return@withContext null
-        val key = screen.name.lowercase()
-        val last = lastFeatured[screen] ?: store.lastFeatured(key)
+        nextFeatured(screen.name.lowercase(), candidates, contentLanguages, appLanguage, metadata)
+    }
+
+    /**
+     * The hero's Title among [candidates] (each with a textless backdrop and a logo in [metadata]):
+     * the one after the Title featured last on the screen kept as [key], from the first again past
+     * the last, or null when there is none.
+     */
+    private fun nextFeatured(key: String, candidates: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): FeaturedTitle? {
+        if (candidates.isEmpty()) return null
+        val last = lastFeatured[key] ?: store.lastFeatured(key)
         val title = candidates[(candidates.indexOfFirst { it.id == last } + 1) % candidates.size]
-        lastFeatured[screen] = title.id
+        lastFeatured[key] = title.id
         saveLater { store.saveLastFeatured(key, title.id) }
         val about = metadata.getValue(title.id)
         val shown = shown(candidates(title), contentLanguages, about, appLanguage)
-        FeaturedTitle(title.id, shown.name, shown.year, about.runtimeMinutes, about.genres, about.description(appLanguage), about.heroBackdrop!!, about.logo!!, shown.best.attributes)
+        return FeaturedTitle(title.id, shown.name, shown.year, about.runtimeMinutes, about.genres, about.description(appLanguage), about.heroBackdrop!!, about.logo!!, shown.best.attributes)
     }
 
-    /** The Title featured last on each screen, as [featured] keeps it, so it needn't be read from the device again. */
-    private val lastFeatured = ConcurrentHashMap<FeaturedScreen, TitleId>()
+    /** The Title featured last on each screen, by the key [nextFeatured] keeps it under, so it needn't be read from the device again. */
+    private val lastFeatured = ConcurrentHashMap<String, TitleId>()
 
     /**
      * What a Title's Play starts, as its details' Play does: for a Movie, its [playPlan]; for a Show,
@@ -1718,6 +1809,7 @@ class Library private constructor(
         liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
 
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
+        if (kids) return@withContext kidsLiveRows(region, contentLanguages, now)
         val favourites = store.favourites(profile, now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
         val matchedGames = matchedGames(leagues, contentLanguages, region, now)
@@ -1861,6 +1953,7 @@ class Library private constructor(
         tabRows(kind, contentLanguages, appLanguage, region, Instant.now())
 
     internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+        if (kids) return@withContext kidsTabRows(kind, contentLanguages, appLanguage, region, now)
         val charts = charts(region, appLanguage, now)
         val movies = kind == TitleKind.Movie
         val topList = if (movies) ChartList.TopMovies else ChartList.TopShows
@@ -1885,6 +1978,173 @@ class Library private constructor(
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(cards(new), kind))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, cards(titles))) }
         }
+    }
+
+    /** Whether the device is on a Kids profile, which sees only the Kids catalog ([kidsCatalog]). */
+    val kids: Boolean get() = _profiles.value.current.kids
+
+    /**
+     * The Kids catalog (CONTEXT.md) by its Categories alone: the Titles of each kind, newest first,
+     * any of whose Listings is filed under a Category the Prefix table names with a Kids word
+     * ([PrefixTable.isKids]). It needs no cloud. Worked out once per catalog and Prefix table.
+     */
+    internal fun kidsCatalog(): Map<TitleKind, List<TitleId>> {
+        val table = prefixTable
+        val generation = catalogGeneration.get()
+        kidsByCategory?.takeIf { it.generation == generation && it.table === table }?.let { return it.titles }
+        val titles = store.titlesFiled(store.listingCategories().filter(table::isKids))
+        kidsByCategory = KidsByCategory(generation, table, titles)
+        return titles
+    }
+
+    private class KidsByCategory(val generation: Int, val table: PrefixTable, val titles: Map<TitleKind, List<TitleId>>)
+
+    @Volatile private var kidsByCategory: KidsByCategory? = null
+
+    /**
+     * The Kids catalog as a Kids profile browses it: [kidsCatalog], with TMDB's Animation and Family
+     * genres (Discover's lists of them the device keeps for the [region]) adding to it while TMDB is
+     * there, each kind newest first.
+     */
+    private fun kidsCatalog(region: String, appLanguage: String, now: Instant): Map<TitleKind, List<TitleId>> {
+        val byCategory = kidsCatalog()
+        val tmdb = charts(region, appLanguage, now).genres.filter { Genres.english(it.name) in KIDS_TMDB_GENRES }.flatMap { it.titles }.distinct()
+        if (tmdb.isEmpty()) return byCategory
+        val generation = catalogGeneration.get()
+        val table = prefixTable
+        kidsWithTmdb?.takeIf { it.generation == generation && it.table === table && it.tmdb == tmdb }?.let { return it.titles }
+        val titles = store.titlesFiled(store.listingCategories().filter(table::isKids), tmdb)
+        kidsWithTmdb = KidsWithTmdb(generation, table, tmdb, titles)
+        return titles
+    }
+
+    private class KidsWithTmdb(val generation: Int, val table: PrefixTable, val tmdb: List<TitleId>, val titles: Map<TitleKind, List<TitleId>>)
+
+    /** The Kids catalog with TMDB's Animation and Family lists, as last worked out, for the catalog, Prefix table and lists it was worked out for. */
+    @Volatile private var kidsWithTmdb: KidsWithTmdb? = null
+
+    /** The newest [count] of the Kids catalog's [ids], as stored, in their order. */
+    private fun newestKids(ids: List<TitleId>, count: Int): List<StoredTitle> {
+        val taken = ids.take(count)
+        val titles = store.titles(taken)
+        return taken.mapNotNull(titles::get)
+    }
+
+    /**
+     * Home's rows on a Kids profile: Continue watching, then New for kids (the newest Kids movies
+     * and shows, most popular on TMDB first), Movies for kids and Shows for kids (the most popular
+     * of the newest of each kind), then one row per TMDB genre over the Kids catalog, its most common
+     * first. No Charts, no Games, no Favourites. Each row shows only Titles the Viewer can watch in
+     * their [contentLanguages], and a Title once, in the highest row it fits.
+     */
+    private fun kidsHomeRows(contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> {
+        val catalog = kidsCatalog(region, appLanguage, now)
+        val resumes = continueWatching(contentLanguages)
+        val movies = newestKids(catalog.getValue(TitleKind.Movie), HOME_MOVIES)
+        val shows = newestKids(catalog.getValue(TitleKind.Show), HOME_SHOWS)
+        val metadata = metadata((resumes.map { it.first } + movies + shows).map { it.id }.distinct(), appLanguage)
+        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
+        val popularFirst = popularFirst(metadata)
+        val browsable = listOf(movies, shows).map { watchable(it, contentLanguages, metadata) }
+        val screen = ScreenRows()
+        val new = screen.row((browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst), ROW_SIZE)
+        val ofKind = TitleKind.entries.zip(browsable).map { (kind, titles) -> kind to screen.row(titles.sortedWith(popularFirst), ROW_SIZE) }
+        val genres = kidsGenres(browsable.flatten(), metadata, screen)
+        return buildList {
+            continueWatchingRow(resumes, metadata) { rowCard(it, contentLanguages, appLanguage, metadata) }?.let(::add)
+            if (new.isNotEmpty()) add(HomeRow.NewForKids(cards(new)))
+            ofKind.forEach { (kind, titles) -> if (titles.isNotEmpty()) add(HomeRow.ForKids(kind, cards(titles))) }
+            genres.forEach { (name, titles) -> add(HomeRow.Genre(name, cards(titles))) }
+        }
+    }
+
+    /** One row per TMDB genre of [titles] (by their [metadata]), the most common first, through [screen] so they skip what is shown above. */
+    private fun kidsGenres(titles: List<StoredTitle>, metadata: Map<TitleId, TitleMetadata>, screen: ScreenRows): List<Pair<String, List<StoredTitle>>> {
+        val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
+        titles.forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
+        return buildList {
+            for ((name, inGenre) in byGenre.entries.sortedByDescending { it.value.size }) {
+                if (size == GENRE_ROWS) break
+                val row = screen.row(inGenre.sortedWith(popularFirst(metadata)), ROW_SIZE, MIN_GENRE_SIZE)
+                if (row.isNotEmpty()) add(name to row)
+            }
+        }
+    }
+
+    /**
+     * The Movies or Shows tab on a Kids profile, for [kind]: New for kids (the newest Kids Titles of
+     * the kind, most popular on TMDB first), Movies (or Shows) for kids, then one row per TMDB genre
+     * over the Kids catalog. No Charts.
+     */
+    private fun kidsTabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> {
+        val catalog = kidsCatalog(region, appLanguage, now)
+        val titles = newestKids(catalog.getValue(kind), if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS)
+        val metadata = metadata(titles.map { it.id }, appLanguage)
+        val browsable = watchable(titles, contentLanguages, metadata)
+        val screen = ScreenRows()
+        val new = screen.row(browsable.take(TAB_NEW).sortedWith(popularFirst(metadata)), ROW_SIZE)
+        val popular = screen.row(browsable.sortedWith(popularFirst(metadata)), ROW_SIZE)
+        val genres = kidsGenres(browsable, metadata, screen)
+        fun cards(of: List<StoredTitle>) = of.map { rowCard(it, contentLanguages, appLanguage, metadata) }
+        return buildList {
+            if (new.isNotEmpty()) add(HomeRow.NewForKids(cards(new), kind))
+            if (popular.isNotEmpty()) add(HomeRow.ForKids(kind, cards(popular)))
+            genres.forEach { (name, inGenre) -> add(HomeRow.Genre(name, cards(inGenre))) }
+        }
+    }
+
+    /**
+     * The hero on a Kids profile: one of the most popular of the newest Kids Titles (movies and shows
+     * in turn on Home, a movie first; the kind's on its tab), skipping those in Continue watching and
+     * those without a textless backdrop or a logo, rotating as [featured] does.
+     */
+    private fun kidsFeatured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): FeaturedTitle? {
+        val catalog = kidsCatalog(region, appLanguage, now)
+        val kinds = when (screen) {
+            FeaturedScreen.Home -> listOf(TitleKind.Movie, TitleKind.Show)
+            FeaturedScreen.Movies -> listOf(TitleKind.Movie)
+            FeaturedScreen.Shows -> listOf(TitleKind.Show)
+        }
+        val lists = kinds.map { newestKids(catalog.getValue(it), if (it == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
+        val metadata = metadata(lists.flatten().map { it.id }, appLanguage)
+        val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
+        val tops = lists.map { titles ->
+            watchable(titles, contentLanguages, metadata).filter {
+                val about = metadata[it.id]
+                it.id !in started && about?.heroBackdrop != null && about.logo != null
+            }.sortedWith(popularFirst(metadata)).take(FEATURED_FROM)
+        }
+        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
+        return nextFeatured("kids/${screen.name.lowercase()}", candidates, contentLanguages, appLanguage, metadata)
+    }
+
+    /**
+     * Live on a Kids profile: the Profile's Favourites, then the Channels of Kids Categories as one
+     * row per country, in the Channel browser's order of countries ([orderedCountries]). No Games,
+     * Replays or Channel browser.
+     */
+    private fun kidsLiveRows(region: String, contentLanguages: List<String>, now: Instant): List<HomeRow> {
+        val favourites = store.favourites(profile, now - EVENT_FINISHED_AFTER)
+        val byCountry = kidsChannels(now)
+        val channels = byCountry.mapKeys { it.key.code }
+        return buildList {
+            if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
+            orderedCountries(byCountry.keys, region, contentLanguages).forEach { add(HomeRow.KidsChannels(it, channels.getValue(it.code))) }
+            wantGuide(favourites = favourites)
+        }
+    }
+
+    /** The Channels of the regular live Categories named with a Kids word, by the country their Categories' codes name ([browserCountry]). */
+    private fun kidsChannels(now: Instant): Map<LiveCountry, List<Channel>> {
+        val byCountry = LinkedHashMap<String, Pair<BrowserCountry, MutableList<String>>>()
+        store.liveCategories().filter { it.kind == CategoryKind.Regular && prefixTable.isKids(it.name) }.forEach { category ->
+            val where = category.country?.let(::browserCountry) ?: return@forEach
+            byCountry.getOrPut(where.code) { where to mutableListOf() }.second += category.id
+        }
+        return byCountry.values.mapNotNull { (where, ids) ->
+            val channels = store.categoryChannels(profile, ids, now - EVENT_FINISHED_AFTER)
+            if (channels.isEmpty()) null else LiveCountry(where.code, channels.size, where.alias) to channels
+        }.toMap()
     }
 
     /**
@@ -2469,6 +2729,7 @@ class Library private constructor(
         prefixTable.describe(listing.name, listing.category).let { Candidate(listing, it.attributes, it.unknownPrefix) }
 
     override fun close() {
+        history.close()
         gamesFetches.shutdownNow()
         signOuts.shutdownNow()
         fileReadLookUps.shutdownNow()
@@ -2531,6 +2792,9 @@ class Library private constructor(
 
         /** How far down each Chart the hero picks its Title from ([featured]). */
         private const val FEATURED_FROM = 5
+
+        /** TMDB's genres whose Titles join the Kids catalog while TMDB is there, by their English names ([Genres]). */
+        private val KIDS_TMDB_GENRES = setOf("Animation", "Family")
 
         /** A League row shows the week ahead: the cloud answers today and the next seven days. */
         private val WEEK_AHEAD: Duration = Duration.ofDays(7)
