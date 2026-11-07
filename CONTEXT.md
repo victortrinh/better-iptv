@@ -51,7 +51,7 @@ What a Prefix learns when most of its files carry two or more audio languages: i
 _Avoid_: Multilingual, dual audio
 
 **Sync**:
-Refreshing the device's copy of the Provider's catalog, in two Stages. Once its catalog lands, the cloud is asked about its Suspects under a status of its own.
+Refreshing the device's copy of the Provider's catalog, in two Stages.
 _Avoid_: Refresh, import, scan
 
 **Stage**:
@@ -73,8 +73,12 @@ _Avoid_: Junk
 ### Titles and versions
 
 **Title**:
-A film or show as one work, identified by its TMDB ID, regardless of how many Listings the Provider has for it.
+A film or show as one work, identified by its Title number, regardless of how many Listings the Provider has for it.
 _Avoid_: Content, media, item, movie (when a show is also meant)
+
+**Title number**:
+The number the Provider files a Listing under in its catalog, the same for every Listing of one work in every language (the Provider copies TMDB's numbering; movies and shows are separate number spaces). It is read from the Provider and never looked up anywhere: a Listing without one is Unmatched. It is also what subtitle services are asked by.
+_Avoid_: TMDB ID, external ID
 
 **Movie**:
 A Title that is a single film.
@@ -85,7 +89,7 @@ A Title made of seasons of Episodes.
 _Avoid_: Series, TV show
 
 **Episode**:
-One episode of a Show, identified by season and episode number. A Show's next Episode is the one the Viewer stopped in, else the one after the one they last Watched, else the first: its details' Play plays it ("Continue S1 E6"), and the Episode picker opens on it. An Episode names its languages only where they differ from the Show's usual set, the languages most of its Episodes have. An Episode TMDB lists as airing later that no Version has yet is shown with its air date and can't be played.
+One episode of a Show, identified by season and episode number. A Show's next Episode is the one the Viewer stopped in, else the one after the one they last Watched, else the first: its details' Play plays it ("Continue S1 E6"), and the Episode picker opens on it. An Episode names its languages only where they differ from the Show's usual set, the languages most of its Episodes have. The picker lists the Episodes the Provider has, and no others.
 
 **Credits**:
 The end of a Movie's or Episode's file: its last 10%, or its last 10 minutes when that is less (ADR 0008). Providers mark none, so this rule stands in: from here a Movie is Watched, and an Episode offers the next one.
@@ -104,28 +108,28 @@ The link between a Listing and its Title.
 _Avoid_: Merge, dedupe
 
 **Mismatch**:
-A Listing whose Provider-supplied TMDB ID points to the wrong Title (for example `FR - Trotro` carrying Game of Thrones' ID).
+A Listing whose Title number points to the wrong Title (for example `FR - Trotro` carrying Game of Thrones' number). It is told by its year: a Listing dated more than a year away from its sibling Listings' year is a Mismatch, and is kept apart as an Unmatched Title of its own.
 
-**Suspect**:
-A Listing whose Match is checked by name: it has no TMDB ID, or no sibling Listing with the same ID shares its name.
-_Avoid_: Candidate, orphan
+**Unmatched Title**:
+A Title of one Listing alone: the Listing has no Title number, or is a Mismatch. It is named and pictured by its Listing, and never grouped with another.
+_Avoid_: Orphan, suspect, candidate
 
 **Source**:
 The streaming service a Version was copied from, according to its Prefix (`NF` is Netflix, `D+` is Disney+).
 _Avoid_: Origin, platform
 
 **Untagged Version**:
-A Version whose Prefix names a Source but no language. A streaming service's or Blu-ray's copy keeps the original audio, so it is Likely in the Title's original language when TMDB names one.
+A Version whose Prefix names a Source but no language. A streaming service's or Blu-ray's copy keeps the original audio, so it is Likely in the Title's original language when Wikidata names one.
 
 **Audio-description Version**:
 A Version whose main audio narrates the picture for blind and low-vision viewers; never picked automatically.
 
 **Original audio**:
-A Version attribute: its audio is in the Title's original language (TMDB's). Confirmed by a Header read or Playback, or Likely for an Untagged Version. A Version whose Prefix names another language can still have it: `NL - The Shadow's Edge` carries Mandarin with Dutch, German and English subtitles.
+A Version attribute: its audio is in the Title's original language (Wikidata's, when it names one; otherwise only a Header read or Playback can tell). Confirmed by a Header read or Playback, or Likely for an Untagged Version. A Version whose Prefix names another language can still have it: `NL - The Shadow's Edge` carries Mandarin with Dutch, German and English subtitles.
 _Avoid_: Undubbed, original-language Version, OV
 
 **Sports replay**:
-A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its TMDB ID, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own. It plays as its Listing's Version alone, kept apart from the Titles as an Unmatched Movie's would be, so where the Viewer stopped is remembered.
+A Listing of a past game filed in the Provider's VOD catalog (Prefix `SOC`, or a sports Category), named after its two teams and dated. It is not a Title: its Title number, when it has one, is wrong. The hub shows the Replays of the Viewer's Leagues; a Game that is over shows its own. It plays as its Listing's Version alone, kept apart from the Titles as an Unmatched Movie's would be, so where the Viewer stopped is remembered.
 _Avoid_: Highlight (a highlights show is not a Replay)
 
 ### Tracks and quality
@@ -180,11 +184,11 @@ The Viewer's setting that a Title plays with Original audio when any Version has
 _Avoid_: Original version mode, subtitles mode
 
 **App language**:
-The language of the app's own interface and of Title metadata (titles, descriptions, posters).
+The language of the app's own interface, and the language whose Listing names and describes a Title when the Provider has one in it (else the English Listing's, else any).
 _Avoid_: UI language, locale
 
 **Region**:
-The country that sets the Top 10 Chart and the default leagues. Canada when the device doesn't say.
+The country that sets the default leagues. Canada when the device doesn't say.
 _Avoid_: Country, locale, market
 
 ### Household
@@ -269,12 +273,12 @@ _Avoid_: Favourite team, followed team
 
 ### Discovery
 
-**Chart**:
-An external ranked list of Titles (Netflix Top 10 for the Region, TMDB trending this week), filtered to Titles the Provider has in the Viewer's Content languages. The Top 10's Titles carry their rank, counted among the Titles left, so a missing Title leaves no gap; trending's carry none.
-_Avoid_: Trending list, top list
+**Trending**:
+The Titles among the Provider's that Wikipedia's readers looked up most over the last seven days, in the App language's Wikipedia and English, filtered to the Viewer's Content languages. Unranked: no numerals, no rank shown anywhere.
+_Avoid_: Chart, top list, Top 10
 
 **Row**:
-A row of cards on Home, Movies, Shows or Live: Continue watching, a Chart, New on your service, Favourites or a genre; on Live, Live now, Today, a League, More live events, Replays, Favourites and the Channels' countries. A Title, or a Game, shows in one row of a screen only, the highest it fits; a Chart keeps every Title it ranks, and the rows below it skip what it shows. Continue watching and Favourites stand apart.
+A row of cards on Home, Movies, Shows or Live: Continue watching, Trending, New on your service, Favourites or a genre; on Live, Live now, Today, a League, More live events, Replays, Favourites and the Channels' countries. A Title, or a Game, shows in one row of a screen only, the highest it fits; the rows below skip what a row above shows. Continue watching and Favourites stand apart.
 _Avoid_: Shelf, carousel, category
 
 **Continue watching**:
@@ -286,7 +290,7 @@ A Movie or Episode the Viewer played to the end, or stopped in its last 10% or i
 _Avoid_: Finished, completed, seen
 
 **New on your service**:
-Titles whose Listings the Provider added recently, ordered by popularity.
+Titles whose Listings the Provider added recently, newest first, ties by the Provider's rating.
 _Avoid_: Recently added, new releases
 
 ### Paying
