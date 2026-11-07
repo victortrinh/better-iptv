@@ -1803,7 +1803,9 @@ class Library private constructor(
      * in order of how likely each is to carry Original audio ([readOrder]). A Show's are of each
      * Episode's, from the show details [episodes] kept, in the Show's order: the Viewer's languages
      * first, and among them first the Versions whose first audio Track, as the Provider's details
-     * name it, disagrees with the Prefix. Pressing Play lets the read in flight finish (within
+     * name it, disagrees with the Prefix. In both, the Versions whose Prefix neither the Base table
+     * nor the Provider table knows come first, so what the app knows least about is Confirmed within
+     * the first seconds. Pressing Play lets the read in flight finish (within
      * [PLAY_WAITS_FOR_READ]) and ends the reads behind it, and the Provider refusing one ends them
      * too. Calls [changed] each time a Version's attributes change, so the page shows them. Results
      * are kept on the device and shared through the cloud, so a Version is never read twice.
@@ -1897,7 +1899,8 @@ class Library private constructor(
      * Background reading at [pace], until cancelled: a Header read of the Version a Movie's card
      * shows, one at a time and only while the connection is free, so never during Playback nor while
      * a details page reads. Cards on screen come first ([onScreen]), then Continue watching, then the
-     * newest Movies in the Viewer's [contentLanguages]. A dead file is kept as unreadable and passed
+     * newest Movies in the Viewer's [contentLanguages]; on each, a Version whose Prefix no table knows
+     * comes before the one its card shows. A dead file is kept as unreadable and passed
      * over; a Provider answering with another error stops it until the next day, and one not
      * answering pauses it for a quarter of an hour. Each read that Confirms a card's Version is
      * announced in [confirmations]. With [preferOriginalAudio], a Title released outside the Content
@@ -1941,9 +1944,10 @@ class Library private constructor(
     private class BackgroundRead(val id: TitleId, val listingId: Long, val container: String)
 
     /**
-     * The first Movie, in Background reading's order, whose card shows a Version not yet read; on a
-     * Title Prefer original audio acts on, the first Version of its details page's order not yet
-     * read, as long as none is Confirmed to carry Original audio.
+     * The first Movie, in Background reading's order, with a Version whose Prefix no table knows not
+     * yet read (one per such Prefix, [unknownPrefixFirst]) or whose card shows a Version not yet read,
+     * the unknown-Prefix one first; on a Title Prefer original audio acts on, the first Version of its
+     * details page's order not yet read, as long as none is Confirmed to carry Original audio.
      */
     private fun nextBackgroundRead(contentLanguages: List<String>, preferOriginalAudio: Boolean): BackgroundRead? {
         val newest = store.titles(TitleKind.Movie, 0, NEW_MOVIES).filter { inContentLanguages(candidates(it), contentLanguages, null) }.map { it.id }
@@ -1953,8 +1957,9 @@ class Library private constructor(
             val candidates = candidates(title, contentLanguages)
             val original = originalAudioLanguage(originalLanguage(id), contentLanguages, preferOriginalAudio)
             val next = if (original == null) {
+                val read = store.fileReads(title.listings.map { it.id }).keys
                 val shown = preferred(candidates, contentLanguages).firstOrNull()?.listing ?: return@firstNotNullOfOrNull null
-                shown.takeUnless { store.fileReads(listOf(it.id)).containsKey(it.id) }
+                unknownPrefixFirst(candidates, read).firstOrNull()?.listing ?: shown.takeUnless { it.id in read }
             } else {
                 if (candidates.any { it.attributes.hasConfirmedOriginalAudio(original) }) null
                 else readOrder(candidates, store.fileReads(title.listings.map { it.id }).keys, contentLanguages, original).firstOrNull()?.listing
@@ -1979,18 +1984,22 @@ class Library private constructor(
      * The Listings of the best Version not yet read in each language of each of [shows]' Episodes,
      * in the Show's order: the Viewer's [contentLanguages] (and, with [preferOriginalAudio], the
      * Show's original language) first, and among them first those whose first audio Track, as the
-     * Provider's details name it, disagrees with the Prefix.
+     * Provider's details name it, disagrees with the Prefix. Before all of them, the Episodes of a
+     * show Listing whose Prefix no table knows.
      */
     private fun unreadEpisodes(title: StoredTitle, shows: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>, preferOriginalAudio: Boolean): List<Long> {
         val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
         val disagreeing = shows.flatMap { (show, episodes) -> episodes.filter { firstTrackDisagrees(show.attributes, it) }.map { it.id } }.toSet()
+        val unknownPrefix = shows.filter { (show, _) -> show.unknownPrefix != null }.flatMap { (_, episodes) -> episodes.map { it.id } }.toSet()
         val original = originalAudioLanguage(originalLanguage(title.id), contentLanguages, preferOriginalAudio)
         val unread = mergeEpisodes(shows, contentLanguages, reads, original, expected(title, contentLanguages)).flatMap { it.episodes }.flatMap { episode ->
             episode.languages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to true } } +
                 episode.otherLanguages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to false } }
         }
         // A stable sort, so the Show's order stands within each.
-        return unread.sortedWith(compareBy({ (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing })).map { it.first.listingId }
+        return unread.sortedWith(
+            compareBy({ (version, _) -> version.listingId !in unknownPrefix }, { (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing }),
+        ).map { it.first.listingId }
     }
 
     private fun firstUnread(group: LanguageGroup, read: Set<Long>): Version? =
@@ -2227,7 +2236,7 @@ class Library private constructor(
             title.id to if (title.id.kind != TitleKind.Movie) plain else plain.map { candidate ->
                 val id = candidate.listing.id
                 val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
-                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate)
+                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate, candidate.unknownPrefix)
             }
         }
     }
@@ -2243,7 +2252,8 @@ class Library private constructor(
         return { language -> language in wanted || prefixTable.knowsLanguage(language) || namedOriginalLanguage(originalLanguage(title.id)) == language }
     }
 
-    private fun candidates(listing: StoredListing) = Candidate(listing, prefixTable.describe(listing.name, listing.category).attributes)
+    private fun candidates(listing: StoredListing) =
+        prefixTable.describe(listing.name, listing.category).let { Candidate(listing, it.attributes, it.unknownPrefix) }
 
     override fun close() {
         gamesFetches.shutdownNow()
