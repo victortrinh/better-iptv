@@ -14,6 +14,9 @@ import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 
 /**
  * A build newer than the installed one, as the update manifest CI publishes beside it describes it
@@ -94,6 +97,7 @@ class AppUpdates(
     private val downloads: File,
     private val installer: ApkInstaller,
     private val http: OkHttpClient = OkHttpClient(),
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Unknown)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
@@ -101,12 +105,31 @@ class AppUpdates(
     /** One check or update at a time, so a second press doesn't download twice. */
     private val busy = Mutex()
 
+    /** When [check] last read the manifest, or tried to; null before the first check. Only under [busy]. */
+    private var lastChecked: Instant? = null
+
     /**
      * Reads the manifest and offers its build if it is newer. When the manifest can't be read, a
      * build already offered stays offered and nothing else is. Leftover downloads of other builds
      * are deleted.
      */
-    suspend fun check() = busy.withLock {
+    suspend fun check() = busy.withLock { checkLocked() }
+
+    /**
+     * [check]s again when the last check is older than [after]: the app came back to the front, and
+     * a build may have been released while it sat in the background. Nothing while a build is
+     * downloading or installing, so the installer isn't pulled from under the Viewer. Says whether it checked.
+     */
+    suspend fun checkIfStale(after: Duration): Boolean = busy.withLock {
+        val last = lastChecked
+        if (last != null && Duration.between(last, clock.instant()) < after) return@withLock false
+        if (_state.value is UpdateState.Downloading || _state.value is UpdateState.Installing) return@withLock false
+        checkLocked()
+        true
+    }
+
+    private suspend fun checkLocked() {
+        lastChecked = clock.instant()
         withContext(Dispatchers.IO) {
             val update = try {
                 manifest()
