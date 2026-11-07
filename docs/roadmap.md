@@ -1,6 +1,6 @@
 # Roadmap
 
-Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled; on 2026-11-01 live and sports' details were settled; on 2026-11-03 polish's details were settled. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
+Settled 2026-10-24 in a design grilling session; on 2026-10-30 trending moved ahead of live and sports, and its details were settled; on 2026-11-01 live and sports' details were settled; on 2026-11-03 polish's details were settled; on 2026-11-06 paying was settled, and leaving TMDB was split out as its own milestone. Terms are defined in [CONTEXT.md](../CONTEXT.md); hard-to-reverse choices are in [docs/adr](adr/). Big decisions are made now for the whole roadmap; feature details are settled just before each milestone.
 
 Priorities, in order: a fast catalog with the best Version in the Viewer's language, subtitles and smooth playback of every format on a nice interface; then trending, so Home is worth opening every day; then live sports; then visual polish.
 
@@ -139,17 +139,40 @@ Settled 2026-11-06 in a grilling session against the stick's catalog and four He
 
 ## M5: For everyone
 
-- Accounts and history sync. Trakt sync as an option.
-- Any Provider, with a Prefix table per Provider.
+Partly settled 2026-11-06 in the paying grilling; profiles and onboarding are still to settle.
+
+- **Any Provider.** The Prefix table splits in two. The **Base table** ships with the app and holds the conventions most Xtream panels share (`EN -`, `FR -`, `4K`, `NF`, `D+`, `VIP:`). The **Provider table** is one Provider's own, served by the cloud per Provider host hash (the hash devices already send with Header reads and unknown Prefixes), and learned: after a Header read, a device reports per Prefix what the file Confirmed (language, quality), the cloud aggregates across that Provider's Viewers, and a Prefix's attribute is learned once about 10 reads agree at 90% or more, thresholds tuned in the cloud. A learned attribute shows as Likely, the outlined badge; there is no third certainty level. Curation by hand only where reads disagree. Clutter patterns, Tier tags, the Event time zone and country aliases can't be learned from files: the Base table's defaults stand, with per-Provider overrides by hand.
+- **Accounts.** Email with a magic link, no password. A TV signs in with the QR-and-code flow (the TV shows a short code and a QR, the phone finishes). History sync follows the account. Trakt sync only if Trakt's terms allow a paid app.
+- Header read results shared between Viewers of the same Provider (already in the cloud).
 - Onboarding, profiles and a kids mode.
-- Header read results shared between Viewers of the same Provider.
-- Commercial licences (TMDB, Trakt) if the app is ever paid.
+
+## M6: Without TMDB
+
+Settled 2026-11-06 only this far: a paid app is commercial use under TMDB's terms (149 USD a month under 1M USD revenue, from TMDB's site), there is no subscription, so TMDB leaves before the first sale, and the look of M4 must survive it. Its own grilling session settles the rest, starting with two surveys, both catalog calls that need the Viewer's OK before hitting the Provider's API: Wikidata's coverage of the Provider's TMDB IDs (names in each language, IMDb ID, original language; public domain, free for commercial use), and the Provider's poster and backdrop quality over a couple of hundred Titles.
+
+What is known going in. Grouping keeps the Provider's TMDB IDs (94% of Listings) as the Title key with no API call; the 6% looked up by name and the Mismatch check move to Wikidata. Subtitles are unaffected: OpenSubtitles and Subdl are searched by TMDB ID. Details come from the Provider's own calls (`get_vod_info`, `get_series_info`: plot, cast, genre, release date, runtime, trailer key, Episode stills, a poster per Listing), one Title per call when focused or opened, kept on the device forever. Lost unless the session finds a source: textless backdrops and title logos, Charts (the Netflix Top 10 goes anyway, M7), the featured hero's rule, "New on your service" by popularity, search by person and by any-language name, upcoming Episodes, and the original language that drives Prefer original audio (Wikidata has it). ADR 0002 is amended by this milestone.
+
+## M7: Paying
+
+Settled 2026-11-06 in a grilling session against the code, the cloud README, ADRs 0001–0012 and TMDB's, Paddle's and TiviMate's public pages. The goal: hundreds of households, on any Provider, pay once. Costs are kept in [running-costs.md](running-costs.md); the terms are in CONTEXT.md under Paying.
+
+- **Price and unit.** 29.99 CAD, once. No subscription, no second SKU, no add-on devices. Paddle is the merchant of record (about 5% + 0.50 USD a sale; it files GST/HST and foreign tax). A Purchase belongs to the Account (M5) and Unlocks up to 3 devices signed in; signing in a fourth asks which to sign out; Settings lists the devices. TiviMate's lifetime licence, the comparison every buyer makes, covers 5 devices for 20–40 USD.
+- **Paid features: the sports hub's schedules, subtitle search and download, and shared Header reads.** Everything on-device stays free: Sync, Matching, Versions and Backups, playback, Continue watching, Favourites, Prefer original audio, Background reading, the Quality cap, and trailers (the Provider's key, M6). The free tier is the full clean library on any Provider; the learned Provider table is free too, so the free app never looks like it knows nothing on a new Provider.
+- **The gate is the cloud, not the APK** ([ADR 0013](adr/0013-paid-features-enforced-by-the-cloud.md)): the repo is public, so a client check would be removed in one commit. A device that isn't Unlocked is refused the paid endpoints. A Locked feature shows a real teaser the cloud does serve, and locks the act: Live keeps Channels and Favourites and shows one row per League with counts ("NHL · 6 Games tonight") and no Games, since Playing a Feed is on-device and couldn't be enforced once the Games show; subtitle offers show and the download is Locked; a free device Header reads by itself instead of getting other households' results. **Locked** becomes a state in DESIGN.md's focus grammar: focusable, a lock mark where a Likely badge would sit, OK opens the Unlock screen; distinct from Disabled, which does nothing.
+- **Trial.** 14 days from the first Sync landing, during which everything is Unlocked. One per device, keyed on a SHA-256 of ANDROID_ID sent at registration: fixed per device and signing key since Android 8, it survives a reinstall and only a factory reset changes it. Device registration is rate-limited per IP with a Cloudflare rule. The Provider login is never fingerprinted (ADR 0001 stands).
+- **The Unlock screen.** A Settings row, "Unlock Zugig", whose value is the state ("Trial · 9 days left", "Unlocked · 2 of 3 devices", "Locked"), and the screen every Locked act opens: what's included, the price in the Viewer's currency fetched from the cloud, a QR and a short code the phone uses to pay or to sign in; the TV notices within seconds. No banners, no nag on launch, no countdown anywhere but Settings: a household member who didn't set the app up never meets one.
+- **Refunds.** Paddle's 14-day window. A refund or chargeback revokes the Purchase; every device goes Locked at its next cloud contact; nothing on the device is deleted; the Trial doesn't restart.
+- **Free-tier caps.** Per-device daily caps on the cloud, generous enough that no household notices, higher when Unlocked, so a bot can't spend the quotas.
+- **Before the first sale.** The repo and its issues go private (update.json served by the Worker; ADR 0010 amended); the package (`dev.betteriptv`), repo and Worker lose "IPTV" from their names, one reinstall for the household; Source names leave the UI (kept inside for Original audio and Untagged Versions) and PRODUCT.md's positioning is reworded away from "which streaming service the copy came from"; the Netflix Top 10 Chart is dropped (Netflix's data file, read without agreement); OpenSubtitles' Pro package is bought and Subdl's terms checked; a lawyer is consulted on the IPTV exposure, the data sources and Paddle's paperwork. Team and League logos stay until the lawyer says otherwise. Checked 2026-11-06: no Provider host and no catalog dump is in the repo; fonts are Inter under the Open Font License; icons are the app's own; TMDB's attribution shows.
+- **Not planned:** a subscription or yearly pass (decided against), a private repo with a client-side gate, Google Play Billing or Amazon IAP (both need store distribution, ADR 0006), a device-count upsell, a Provider-login fingerprint to catch factory resets.
 
 ## Still to decide, before the milestone that needs it
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
 - M2: matching Netflix's titles (names only, no TMDB IDs) to Titles.
-- M5: account model, Prefix tables for other Providers, profiles.
+- M5: profiles, kids mode, and how onboarding and signing in read on the TV.
+- M6: everything, in its own grilling, after the two surveys.
+- M7: the Unlock screen's layout and the device list, and the Locked state's exact look in DESIGN.md.
 
 ## Accounts the Viewer sets up
 

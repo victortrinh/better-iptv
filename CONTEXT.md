@@ -27,8 +27,16 @@ The code at the start of a Listing's name, such as `4K-FR-HDR` or `NF`, that enc
 _Avoid_: Tag, label
 
 **Prefix table**:
-A Provider's mapping from Prefixes and Category hints to Version attributes.
+What the app knows of a Provider's naming, its Base table and its Provider table together: the mapping from Prefixes and Category hints to Version attributes, and the Clutter, Tier tag, quality word and Event time rules.
 _Avoid_: Dictionary, naming rules
+
+**Base table**:
+The part of the Prefix table that holds the conventions most Providers share (`EN -`, `NF`, `VIP:`), shipped with the app and the same for every Provider.
+_Avoid_: Default table, generic table
+
+**Provider table**:
+The part of the Prefix table that is one Provider's own: what its Prefixes mean beyond the Base table, learned from what Header reads on that Provider Confirmed, or curated by hand where reads disagree.
+_Avoid_: Override, custom table
 
 **Sync**:
 Refreshing the device's copy of the Provider's catalog, in two Stages. Once its catalog lands, the cloud is asked about its Suspects under a status of its own.
@@ -238,3 +246,25 @@ _Avoid_: Finished, completed, seen
 **New on your service**:
 Titles whose Listings the Provider added recently, ordered by popularity.
 _Avoid_: Recently added, new releases
+
+### Paying
+
+**Purchase**:
+The one-time payment a household makes to Unlock Zugig on its devices.
+_Avoid_: Licence, subscription, premium, pro, upgrade
+
+**Unlocked**:
+A device on which the paid features work, because of a Purchase or during its Trial.
+_Avoid_: Paid, premium, activated, pro
+
+**Locked**:
+A paid feature on a device that isn't Unlocked: it shows what it offers, and OK opens the Unlock screen instead of acting. A disabled control, by contrast, shows why nothing can happen and OK does nothing.
+_Avoid_: Paywalled, gated, premium, blocked
+
+**Trial**:
+The days after a device first opens Zugig during which it is Unlocked without a Purchase. One per device: reinstalling doesn't start another.
+_Avoid_: Free period, demo
+
+**Unlock screen**:
+Where a device becomes Unlocked: it names the Purchase and what it includes, and shows the code a phone uses to pay or to add this device to a household's Purchase.
+_Avoid_: Paywall, checkout, store
