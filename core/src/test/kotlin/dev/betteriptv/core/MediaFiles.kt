@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 /** A Track to write into a test file: [kind] is `audio` or `subtitle`, [language] ISO 639-2 as muxers write it. */
@@ -39,8 +38,12 @@ fun matroskaFile(
     val tracksElement = ebml(0x1654AE6B, entries.fold(video) { acc, entry -> acc + entry })
     val segmentStart = header.size + 4 + 8
     val clusterHeader = 4 + 8
-    val clusterBody = ByteArray(size - segmentStart - info.size - tracksElement.size - clusterHeader)
-    return header + ebml(0x18538067, info + tracksElement + ebml(0x1F43B675, clusterBody))
+    val clusterBody = size - segmentStart - info.size - tracksElement.size - clusterHeader
+    // Written into one array of [size] bytes, the Cluster's zeros never copied: the files run to
+    // 15 MB, and building them by concatenation took several copies at once, more than the test
+    // JVM's 128 MB heap could hold beside the rest of a test (#475).
+    val start = header + ebmlHead(0x18538067, info.size + tracksElement.size + clusterHeader + clusterBody.toLong()) + info + tracksElement + ebmlHead(0x1F43B675, clusterBody.toLong())
+    return start.copyInto(ByteArray(size))
 }
 
 /**
@@ -89,18 +92,17 @@ private fun u32(value: Int) = u32(value.toLong())
 private fun u16(value: Int) = ByteBuffer.allocate(2).putShort(value.toShort()).array()
 
 /** An EBML element with an 8-byte size, as mkvmerge writes the large ones. */
-private fun ebml(id: Long, payload: ByteArray): ByteArray {
-    val out = ByteArrayOutputStream()
+private fun ebml(id: Long, payload: ByteArray): ByteArray = ebmlHead(id, payload.size.toLong()) + payload
+
+/** An EBML element's id and its 8-byte [size], without the payload that follows them. */
+private fun ebmlHead(id: Long, size: Long): ByteArray {
     var idBytes = id
     val ids = ArrayList<Byte>()
     while (idBytes > 0) {
         ids.add(0, (idBytes and 0xFF).toByte())
         idBytes = idBytes shr 8
     }
-    out.write(ids.toByteArray())
-    out.write(byteArrayOf(0x01) + ByteBuffer.allocate(8).putLong(payload.size.toLong()).array().copyOfRange(1, 8))
-    out.write(payload)
-    return out.toByteArray()
+    return ids.toByteArray() + byteArrayOf(0x01) + ByteBuffer.allocate(8).putLong(size).array().copyOfRange(1, 8)
 }
 
 private fun ebmlUint(id: Long, value: Long) = ebml(id, ByteBuffer.allocate(8).putLong(value).array())
