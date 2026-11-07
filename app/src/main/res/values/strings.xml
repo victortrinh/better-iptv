@@ -168,6 +168,8 @@
     <string name="version_audio_only">%1$s only</string>
 
     <string name="versions_title">Versions</string>
+    <!-- Under a Title's actions and beside the Versions screen's legend while Header reads still Confirm Versions (#457). No count: a Show's can run to hundreds. -->
+    <string name="versions_checking">Checking Versions…</string>
     <string name="cast_title">Cast</string>
     <string name="play">Play</string>
     <string name="play_continue">Continue from %1$s</string>
@@ -402,6 +404,10 @@
     <string name="update_downloading">Downloading… %1$d%%</string>
     <string name="update_installing">Confirm with Install on the next screen.</string>
     <string name="update_installing_reopens">Zugig closes while it updates and reopens by itself.</string>
+    <string name="update_opening_installer">Opening Android\'s installer…</string>
+    <string name="update_finishing_title">Finishing the update</string>
+    <string name="update_finishing_reopens">Zugig closes in a moment and reopens by itself.</string>
+    <string name="update_finishing">Zugig closes in a moment. Open it again once the update is in.</string>
     <string name="update_failed">The update didn\'t go through. %1$s</string>
     <string name="update_retry">Try again</string>
     <string name="update_allow_title">Allow Zugig to install its updates</string>

@@ -51,10 +51,16 @@ class AppUpdatesTest {
 
     private val installer = object : ApkInstaller {
         var allowed = true
+        var installing = false
         val installed = mutableListOf<ByteArray>()
         val installedDexMetadata = mutableListOf<ByteArray?>()
+        /** What the screen showed while the build was being handed over, read from [watched]. */
+        var watched: AppUpdates? = null
+        var stateWhileHandedOver: UpdateState? = null
         override fun canInstall() = allowed
+        override fun installing() = installing
         override fun install(apk: File, dexMetadata: File?) {
+            stateWhileHandedOver = watched?.state?.value
             installed += apk.readBytes()
             installedDexMetadata += dexMetadata?.readBytes()
         }
@@ -171,6 +177,33 @@ class AppUpdatesTest {
         updates.update()
         assertEquals(95L, (updates.state.value as UpdateState.Installing).update.versionCode)
         assertArrayEquals(apk, installer.installed.single())
+    }
+
+    @Test fun `the wait for Android's installer shows as soon as the build is downloaded`() = runBlocking {
+        // Copying the build into the install session takes seconds on the stick, and the installer
+        // comes up after that: the screen says it's on its way rather than "Downloading… 100%" (#452).
+        publish()
+        val updates = updates()
+        installer.watched = updates
+        updates.check()
+        updates.update()
+        assertEquals(95L, (installer.stateWhileHandedOver as UpdateState.Installing).update.versionCode)
+    }
+
+    @Test fun `opening the app while its update installs shows the update finishing, and reads nothing`() = runBlocking {
+        // Android closes the app again when the install it committed lands (#418, #452).
+        publish()
+        downloads.mkdirs()
+        val kept = downloads.resolve("update-95.apk").apply { writeBytes(apk) }
+        installer.installing = true
+        val updates = updates()
+        updates.check()
+        assertEquals(UpdateState.Finishing, updates.state.value)
+        assertTrue(requested.isEmpty())
+        assertTrue(kept.exists())
+        now += Duration.ofHours(1)
+        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertEquals(UpdateState.Finishing, updates.state.value)
     }
 
     @Test fun `the first update asks for the install permission, then carries on once it is allowed`() = runBlocking {

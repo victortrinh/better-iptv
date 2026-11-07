@@ -108,6 +108,9 @@ class TitleTwoLevelsTest {
 
     private var chosen: Version? = null
 
+    /** Whether the page's Header reads still have Versions to read, as the Library tells it. */
+    private var checking by mutableStateOf(false)
+
     /** The page as the main activity shows it: OK on an action opens its section, and Back closes it onto the page. */
     private fun open(id: TitleId = movie, loaded: Pair<TitleDetails, PlayPlan?> = details() to stopped, episodes: Pair<ShowEpisodes, PlayPlan?>? = null) {
         // Read after the page's first frame, as the Library's answers are.
@@ -128,6 +131,7 @@ class TitleTwoLevelsTest {
                     returnedFrom = null
                 },
                 onChoose = { version, _ -> chosen = version },
+                checking = checking,
             )
         }
         compose.waitForIdle()
@@ -156,6 +160,57 @@ class TitleTwoLevelsTest {
         repeat(3) { press(Key.DirectionDown) }
         focusedOn("Versions")
         press(Key.DirectionCenter)
+    }
+
+    private fun after(millis: Long) {
+        compose.mainClock.advanceTimeBy(millis)
+        compose.waitForIdle()
+    }
+
+    @Test fun whileVersionsAreCheckedThePageSaysSoUnderTheActionsWithoutMovingThem() {
+        open()
+        val versionsTop = compose.onNodeWithTag("versions action").fetchSemanticsNode().boundsInRoot.top
+
+        checking = true
+        // A beat first, so a single quick read doesn't flash.
+        after(500)
+        assertFalse(shows("Checking Versions"))
+        after(1_000)
+        assertTrue(shows("Checking Versions…"))
+        assertEquals(versionsTop, compose.onNodeWithTag("versions action").fetchSemanticsNode().boundsInRoot.top)
+        compose.onNodeWithTag("play").assertIsFocused()
+        // It fits on the screen with every action a stopped Movie has.
+        val bottom = compose.onNodeWithTag("checking versions").fetchSemanticsNode().boundsInRoot.bottom
+        val density = compose.activity.resources.displayMetrics.density
+        assertTrue("the line ends at ${bottom / density} dp", bottom / density <= 540 - 27)
+
+        checking = false
+        after(1_000)
+        assertFalse(shows("Checking Versions"))
+    }
+
+    @Test fun theVersionsScreenSaysVersionsAreStillCheckedBesideTheLegend() {
+        checking = true
+        open()
+        openVersions()
+        // Already running when the screen opens, so it shows at once.
+        after(400)
+
+        assertTrue(shows("Checking Versions…"))
+        compose.onNode(isFocused()).assert(showing("Netflix"))
+
+        checking = false
+        after(1_000)
+        assertFalse(shows("Checking Versions"))
+    }
+
+    @Test fun nothingSaysCheckingOnceEveryVersionIsChecked() {
+        open()
+        after(2_000)
+        assertFalse(shows("Checking Versions"))
+        openVersions()
+        after(2_000)
+        assertFalse(shows("Checking Versions"))
     }
 
     @Test fun aMoviesPageShowsNoVersionRowsAndFitsOnOneScreen() {

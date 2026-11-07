@@ -15,7 +15,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import dev.betteriptv.app.ui.components.PulsingDot
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,10 +78,11 @@ internal data class VersionsList(
  * only where it says more than its language heading, columns with nothing in them hidden, Backups
  * under their Version in muted type), Other languages, the [cast] and, with TMDB data, its notice.
  * Focus opens on the first Version; choosing a row plays that one ([onChoose]). Back is the
- * caller's, and returns to the Versions action.
+ * caller's, and returns to the Versions action. While Header reads are [checking] Versions, the
+ * legend says so ([CheckingVersions]).
  */
 @Composable
-internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmdb: Boolean, onChoose: (Version) -> Unit) {
+internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmdb: Boolean, onChoose: (Version) -> Unit, checking: Boolean = false) {
     val context = LocalContext.current
     var showOthers by rememberSaveable(versions.heading) { mutableStateOf(false) }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -111,6 +117,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
                         Text(stringResource(R.string.versions_title), style = Type.headline, color = Colors.ink)
                     }
                     Spacer(Modifier.width(Spacing.l))
+                    CheckingVersions(checking, Modifier.padding(end = Spacing.xl))
                     CertaintyLegend()
                 }
             }
@@ -189,3 +196,30 @@ private fun LazyListScope.languageGroup(
         }
     }
 }
+
+/**
+ * "Checking Versions…" in muted caption after a 6 dp [PulsingDot] (DESIGN.md, Details), while the
+ * Title page's Header reads are [checking] Versions (#457): what they Confirm changes badges and
+ * values in place, and this says why. No count, since a Show's can run to hundreds. Checking that
+ * starts after it is composed waits a beat ([APPEAR_AFTER]) so a single quick read doesn't flash;
+ * checking already under way (the Versions screen opened mid-check) shows at once. It fades out
+ * ([FADE_MILLIS]). It takes no focus and nothing moves for it.
+ */
+@Composable
+internal fun CheckingVersions(checking: Boolean, modifier: Modifier = Modifier) {
+    var visible by remember { mutableStateOf(checking) }
+    LaunchedEffect(checking) {
+        if (checking && !visible) delay(APPEAR_AFTER)
+        visible = checking
+    }
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(FADE_MILLIS), label = "checking")
+    if (!visible && alpha == 0f) return
+    Row(modifier.graphicsLayer { this.alpha = alpha }, verticalAlignment = Alignment.CenterVertically) {
+        PulsingDot(6.dp)
+        Spacer(Modifier.width(Spacing.s))
+        Text(stringResource(R.string.versions_checking), style = Type.caption, color = Colors.inkMuted, maxLines = 1)
+    }
+}
+
+private const val APPEAR_AFTER = 1_000L
+private const val FADE_MILLIS = 300
