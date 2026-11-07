@@ -1,5 +1,8 @@
 import { charts, fill, SUBREQUESTS } from "./charts";
-import { accountOf, isMagicToken, sendMagicLink, startSignIn, useMagicLink, type LinkOutcome, type SendOutcome } from "./accounts";
+import {
+  accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink,
+  type DeleteOutcome, type LinkOutcome, type SendOutcome,
+} from "./accounts";
 import { deviceOf, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
@@ -14,7 +17,7 @@ import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type Subti
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
-import { confirmPage, htmlResponse, messagePage, signInPage } from "./page";
+import { confirmDeletePage, confirmPage, deletePage, htmlResponse, messagePage, signInPage } from "./page";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves data that is the same for every Viewer, and signs TVs in to Accounts by email (ADR 0015);
@@ -77,10 +80,21 @@ import { confirmPage, htmlResponse, messagePage, signInPage } from "./page";
  * - `POST /v1/sign-in`: a fresh Sign-in code for this device, `{"code": "K7M2QX", "url":
  *   "https://zugig.app/sign-in?code=K7M2QX", "expiresIn": 600}`, the url for the TV's QR (ADR 0015).
  * - `POST /v1/account`: the Account this device is signed in to, `{"email": "…"}`, or `{"email": null}`.
+ *   `POST /v1/sign-in` may carry `{"model": "Fire TV Stick 4K Max"}`, the only time the model is sent.
+ * - `POST /v1/account/devices`: the devices signed in to this one's Account, `{"devices": [{"id":
+ *   "3f9a…", "model": "Fire TV Stick 4K Max", "signedInAt": "2026-11-03T20:00:00.000Z", "thisDevice":
+ *   true}]}`, by sign-in; `[]` when it is signed in to none.
+ * - `POST /v1/account/sign-out`, with `{}` for this device or `{"device": "3f9a…"}` for another on
+ *   its Account: clears that device's link, `204`; `404` when no such device is on the Account.
+ *
+ * Every `/v1/` answer to a registered device carries `Zugig-Account: signed-in` or `none`, so a
+ * device signed out elsewhere goes anonymous at its next request (#434).
  *
  * And the sign-in page, for the phone: `GET /sign-in` (the code from the QR filled in), `POST /sign-in`
  * (a code and an email: emails the magic link), `GET /sign-in/link?token=…` (the link: a button) and
- * `POST /sign-in/link` (the button: signs the TV in). See src/accounts.ts.
+ * `POST /sign-in/link` (the button: signs the TV in). "Delete my account": `GET /delete-account` (an
+ * email), `POST /delete-account` (emails a delete link), `GET /delete-account/link?token=…` (a button)
+ * and `POST /delete-account/link` (the button: deletes the Account). See src/accounts.ts.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -90,110 +104,16 @@ export default {
     }
     if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
     if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);
+    if (pathname === "/delete-account" || pathname === "/delete-account/link") return deletePages(request, env, pathname);
     if (!pathname.startsWith("/v1/")) return problem(404, "No such endpoint.");
     const device = await deviceOf(env.DB, request);
     if (device === null) return problem(401, "A registered device token is required.");
-    if (request.method === "POST" && pathname === "/v1/sign-in") {
-      const { code, expiresIn } = await startSignIn(env.DB, device);
-      return json({ code, url: `${site(request, env)}/sign-in?code=${code}`, expiresIn });
-    }
-    if (request.method === "POST" && pathname === "/v1/account") return json({ email: await accountOf(env.DB, device) });
-    if (request.method === "POST" && pathname === "/v1/metadata") {
-      const asked = await metadataRequest(request);
-      if (typeof asked === "string") return problem(400, asked);
-      return json(await metadata(env, asked.titles, asked.language));
-    }
-    if (request.method === "POST" && pathname === "/v1/match") {
-      const asked = await matchRequest(request);
-      if (typeof asked === "string") return problem(400, asked);
-      return json({ matches: await match(env, asked) });
-    }
-    if (request.method === "POST" && pathname === "/v1/search") {
-      const query = await searchRequest(request);
-      if (query === null) return problem(400, `query must be a name of 1 to ${MAX_QUERY} characters.`);
-      try {
-        return json(await search(env, query));
-      } catch (e) {
-        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't search right now.");
-        throw e;
-      }
-    }
-    if (request.method === "POST" && pathname === "/v1/file-reads/lookup") {
-      const asked = await fileReadsRequest(request, "listings");
-      if (typeof asked === "string") return problem(400, asked);
-      return json({ files: await fileReads(env.DB, asked.provider, asked.listings) });
-    }
-    if (request.method === "POST" && pathname === "/v1/file-reads") {
-      const asked = await fileReadsRequest(request, "files");
-      if (typeof asked === "string") return problem(400, asked);
-      await saveFileReads(env.DB, asked.provider, asked.files);
-      return new Response(null, { status: 204 });
-    }
-    if (request.method === "POST" && pathname === "/v1/unknown-prefixes") {
-      const asked = await unknownPrefixesRequest(request);
-      if (typeof asked === "string") return problem(400, asked);
-      await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
-      return new Response(null, { status: 204 });
-    }
-    if (request.method === "POST" && pathname === "/v1/subtitles") {
-      const asked = await subtitlesRequest(request);
-      if (typeof asked === "string") return problem(400, asked);
-      return json(await searchSubtitles(env, asked));
-    }
-    if (request.method === "POST" && pathname === "/v1/upcoming") {
-      const { tmdbId, language } = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; language?: unknown };
-      if (!Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
-        return problem(400, "tmdbId must be a Show's positive TMDB ID, and language an ISO 639-1 code, such as \"fr\".");
-      }
-      try {
-        return json({ episodes: await upcoming(env, tmdbId as number, language) });
-      } catch (e) {
-        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
-        throw e;
-      }
-    }
-    if (request.method === "POST" && pathname === "/v1/season") {
-      const asked = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; season?: unknown; language?: unknown };
-      const { tmdbId, language } = asked;
-      if (
-        !Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || !Number.isSafeInteger(asked.season) || (asked.season as number) < 0 ||
-        typeof language !== "string" || !/^[a-z]{2}$/.test(language)
-      ) {
-        return problem(400, "tmdbId must be a Show's positive TMDB ID, season a season number (0 for specials), and language an ISO 639-1 code, such as \"fr\".");
-      }
-      try {
-        return json({ episodes: await season(env, tmdbId as number, asked.season as number, language) });
-      } catch (e) {
-        if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
-        throw e;
-      }
-    }
-    if (request.method === "POST" && pathname === "/v1/charts") {
-      const { region, language } = ((await request.json().catch(() => null)) ?? {}) as { region?: unknown; language?: unknown };
-      if (typeof region !== "string" || !/^[A-Z]{2}$/.test(region) || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
-        return problem(400, "region must be an ISO 3166 country code, such as \"CA\", and language an ISO 639-1 code, such as \"fr\".");
-      }
-      return json(await charts(env, region, language));
-    }
-    if (request.method === "POST" && pathname === "/v1/games") {
-      const { leagues } = ((await request.json().catch(() => null)) ?? {}) as { leagues?: unknown };
-      if (!Array.isArray(leagues) || leagues.length > LEAGUES.length || !leagues.every(isLeague)) {
-        return problem(400, `leagues must be a list of League ids among ${LEAGUES.join(", ")}.`);
-      }
-      return json(await games(env, leagues as League[]));
-    }
-    if (request.method === "POST" && pathname === "/v1/subtitles/download") {
-      const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
-      if (!isOfferId(id)) return problem(400, "id must be the id of an offer a subtitle search gave.");
-      try {
-        const file = await downloadSubtitle(env, id);
-        return file ? json(file) : problem(404, "The service no longer has that subtitle.");
-      } catch (e) {
-        if (!(e instanceof ServiceUnavailable)) throw e;
-        return problem(503, "The subtitle service can't give that subtitle right now.");
-      }
-    }
-    return problem(404, "No such endpoint.");
+    const answer = await api(request, env, pathname, device.hash);
+    // Every answer says whether the device is signed in, so one signed out from another TV, or whose
+    // Account was deleted, goes anonymous at its next request, whatever it asked (#434).
+    const response = new Response(answer.body, answer);
+    if (!response.headers.has(ACCOUNT_HEADER)) response.headers.set(ACCOUNT_HEADER, device.signedIn ? "signed-in" : "none");
+    return response;
   },
 
   /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then the Charts' sources, a few parts a run, out of one budget of requests. */
@@ -202,6 +122,124 @@ export default {
     await fill(env, SUBREQUESTS - sent);
   },
 } satisfies ExportedHandler<Env>;
+
+/** The response header naming whether the requesting device is signed in to an Account: `signed-in` or `none`. */
+const ACCOUNT_HEADER = "Zugig-Account";
+
+/** The `/v1/` endpoints, for the registered device whose token hashes to [device]. */
+async function api(request: Request, env: Env, pathname: string, device: string): Promise<Response> {
+  if (request.method === "POST" && pathname === "/v1/sign-in") {
+    const { model } = ((await request.json().catch(() => null)) ?? {}) as { model?: unknown };
+    if (model !== undefined && model !== null && typeof model !== "string") return problem(400, "model must be the device's model name.");
+    const { code, expiresIn } = await startSignIn(env.DB, device, modelName(model));
+    return json({ code, url: `${site(request, env)}/sign-in?code=${code}`, expiresIn });
+  }
+  if (request.method === "POST" && pathname === "/v1/account") return json({ email: await accountOf(env.DB, device) });
+  if (request.method === "POST" && pathname === "/v1/account/devices") return json({ devices: await devicesOf(env.DB, device) });
+  if (request.method === "POST" && pathname === "/v1/account/sign-out") {
+    const { device: id } = ((await request.json().catch(() => null)) ?? {}) as { device?: unknown };
+    if (id !== undefined && !isDeviceId(id)) return problem(400, "device must be the id of a device the Account lists.");
+    const out = await signOut(env.DB, device, id);
+    if (out === null) return problem(404, "No such device on this Account.");
+    return new Response(null, { status: 204, headers: out === "this" ? { [ACCOUNT_HEADER]: "none" } : {} });
+  }
+  if (request.method === "POST" && pathname === "/v1/metadata") {
+    const asked = await metadataRequest(request);
+    if (typeof asked === "string") return problem(400, asked);
+    return json(await metadata(env, asked.titles, asked.language));
+  }
+  if (request.method === "POST" && pathname === "/v1/match") {
+    const asked = await matchRequest(request);
+    if (typeof asked === "string") return problem(400, asked);
+    return json({ matches: await match(env, asked) });
+  }
+  if (request.method === "POST" && pathname === "/v1/search") {
+    const query = await searchRequest(request);
+    if (query === null) return problem(400, `query must be a name of 1 to ${MAX_QUERY} characters.`);
+    try {
+      return json(await search(env, query));
+    } catch (e) {
+      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't search right now.");
+      throw e;
+    }
+  }
+  if (request.method === "POST" && pathname === "/v1/file-reads/lookup") {
+    const asked = await fileReadsRequest(request, "listings");
+    if (typeof asked === "string") return problem(400, asked);
+    return json({ files: await fileReads(env.DB, asked.provider, asked.listings) });
+  }
+  if (request.method === "POST" && pathname === "/v1/file-reads") {
+    const asked = await fileReadsRequest(request, "files");
+    if (typeof asked === "string") return problem(400, asked);
+    await saveFileReads(env.DB, asked.provider, asked.files);
+    return new Response(null, { status: 204 });
+  }
+  if (request.method === "POST" && pathname === "/v1/unknown-prefixes") {
+    const asked = await unknownPrefixesRequest(request);
+    if (typeof asked === "string") return problem(400, asked);
+    await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
+    return new Response(null, { status: 204 });
+  }
+  if (request.method === "POST" && pathname === "/v1/subtitles") {
+    const asked = await subtitlesRequest(request);
+    if (typeof asked === "string") return problem(400, asked);
+    return json(await searchSubtitles(env, asked));
+  }
+  if (request.method === "POST" && pathname === "/v1/upcoming") {
+    const { tmdbId, language } = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; language?: unknown };
+    if (!Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
+      return problem(400, "tmdbId must be a Show's positive TMDB ID, and language an ISO 639-1 code, such as \"fr\".");
+    }
+    try {
+      return json({ episodes: await upcoming(env, tmdbId as number, language) });
+    } catch (e) {
+      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
+      throw e;
+    }
+  }
+  if (request.method === "POST" && pathname === "/v1/season") {
+    const asked = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; season?: unknown; language?: unknown };
+    const { tmdbId, language } = asked;
+    if (
+      !Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || !Number.isSafeInteger(asked.season) || (asked.season as number) < 0 ||
+      typeof language !== "string" || !/^[a-z]{2}$/.test(language)
+    ) {
+      return problem(400, "tmdbId must be a Show's positive TMDB ID, season a season number (0 for specials), and language an ISO 639-1 code, such as \"fr\".");
+    }
+    try {
+      return json({ episodes: await season(env, tmdbId as number, asked.season as number, language) });
+    } catch (e) {
+      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
+      throw e;
+    }
+  }
+  if (request.method === "POST" && pathname === "/v1/charts") {
+    const { region, language } = ((await request.json().catch(() => null)) ?? {}) as { region?: unknown; language?: unknown };
+    if (typeof region !== "string" || !/^[A-Z]{2}$/.test(region) || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
+      return problem(400, "region must be an ISO 3166 country code, such as \"CA\", and language an ISO 639-1 code, such as \"fr\".");
+    }
+    return json(await charts(env, region, language));
+  }
+  if (request.method === "POST" && pathname === "/v1/games") {
+    const { leagues } = ((await request.json().catch(() => null)) ?? {}) as { leagues?: unknown };
+    if (!Array.isArray(leagues) || leagues.length > LEAGUES.length || !leagues.every(isLeague)) {
+      return problem(400, `leagues must be a list of League ids among ${LEAGUES.join(", ")}.`);
+    }
+    return json(await games(env, leagues as League[]));
+  }
+  if (request.method === "POST" && pathname === "/v1/subtitles/download") {
+    const { id } = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
+    if (!isOfferId(id)) return problem(400, "id must be the id of an offer a subtitle search gave.");
+    try {
+      const file = await downloadSubtitle(env, id);
+      return file ? json(file) : problem(404, "The service no longer has that subtitle.");
+    } catch (e) {
+      if (!(e instanceof ServiceUnavailable)) throw e;
+      return problem(503, "The subtitle service can't give that subtitle right now.");
+    }
+  }
+  return problem(404, "No such endpoint.");
+}
 
 /** The sign-in page's address: the app's own domain, or wherever this request came. */
 const site = (request: Request, env: Env) => (env.SITE_URL ?? new URL(request.url).origin).replace(/\/+$/, "");
@@ -234,6 +272,45 @@ async function signInPages(request: Request, env: Env, pathname: string): Promis
   const [status, text] = sendWords(outcome);
   if (outcome.kind === "sent") return htmlResponse(messagePage("Check your email", text), status);
   return htmlResponse(signInPage(field("code").trim().toUpperCase().slice(0, 8), { text, error: true }), status);
+}
+
+/** "Delete my account" and its magic links, for the phone (#434). */
+async function deletePages(request: Request, env: Env, pathname: string): Promise<Response> {
+  const url = new URL(request.url);
+  if (pathname === "/delete-account" && request.method === "GET") return htmlResponse(deletePage());
+  if (pathname === "/delete-account/link" && request.method === "GET") {
+    const token = url.searchParams.get("token");
+    if (!isMagicToken(token)) return htmlResponse(deleteLinkPage({ kind: "used" }), 410);
+    return htmlResponse(confirmDeletePage(token));
+  }
+  if (request.method !== "POST") return htmlResponse(messagePage("Not here", "This page only takes its own form."), 405);
+  const form = await request.formData().catch(() => null);
+  const field = (name: string) => {
+    const value = form?.get(name);
+    return typeof value === "string" ? value : "";
+  };
+  if (pathname === "/delete-account/link") {
+    const token = field("token");
+    const outcome: DeleteOutcome = isMagicToken(token) ? await useDeleteLink(env.DB, token) : { kind: "used" };
+    return htmlResponse(deleteLinkPage(outcome), outcome.kind === "deleted" ? 200 : 410);
+  }
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const outcome = await requestDeletion(env, site(request, env), field("email"), ip);
+  switch (outcome.kind) {
+    case "sent":
+      return htmlResponse(messagePage("Check your email", `If an account uses ${outcome.email}, we sent it a link. Tap it within 15 minutes to delete the account.`));
+    case "bad-email": return htmlResponse(deletePage({ text: "That doesn't look like an email address.", error: true }), 400);
+    case "too-many": return htmlResponse(deletePage({ text: "Too many links asked for. Wait 15 minutes and try again.", error: true }), 429);
+    case "not-sent": return htmlResponse(deletePage({ text: "We couldn't send the email right now. Try again in a moment.", error: true }), 503);
+  }
+}
+
+function deleteLinkPage(outcome: DeleteOutcome): string {
+  switch (outcome.kind) {
+    case "deleted": return messagePage("Your account is deleted", "Your account and everything it kept are deleted. Each TV signed in to it is signed out the next time it goes online, and keeps working without an account.");
+    case "used": return messagePage("This link doesn't work", "This link was already used or isn't one we sent. Ask for a new one on the Delete my account page.");
+    case "expired": return messagePage("This link doesn't work", "This link has expired: links work for 15 minutes. Ask for a new one on the Delete my account page.");
+  }
 }
 
 function sendWords(outcome: SendOutcome): [number, string] {
