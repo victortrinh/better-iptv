@@ -14,7 +14,7 @@ import org.junit.rules.TemporaryFolder
 class MatchingTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val cloud = FakeCloud()
+    private val cloud = FakeCloud().servingSurveyedTable(provider)
     private val credentials = InMemoryCredentials()
     private val libraries = mutableListOf<Library>()
     private lateinit var library: Library

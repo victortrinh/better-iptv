@@ -112,6 +112,13 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
+     * The Provider table the cloud keeps for [provider] (ADR 0014), as text in the Base table's format:
+     * empty for a Provider it has never seen. Waits at most [callTimeout], since a Sync waits for it.
+     */
+    fun providerTable(provider: String, callTimeout: Duration): String =
+        authorized { token -> post("v1/provider-table", json.toJson(mapOf("provider" to provider)), token, callTimeout, text = true) } as String
+
+    /**
      * The subtitles to download for a Movie, or a Show's [episode], in [languages] (ISO 639-1, at
      * most [MAX_SUBTITLE_LANGUAGES]): the best few in each language, best first.
      */
@@ -282,7 +289,8 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         return token
     }
 
-    private fun post(path: String, body: String, token: String?, callTimeout: Duration? = null): Any? {
+    /** POSTs [body] to [path] and reads the answer as JSON, or with [text] as text. */
+    private fun post(path: String, body: String, token: String?, callTimeout: Duration? = null, text: Boolean = false): Any? {
         val request = Request.Builder()
             .url(base.newBuilder().addPathSegments(path).build())
             .post(body.toRequestBody(JSON))
@@ -297,6 +305,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
                 if (response.code == 403) throw NotSignedIn()
                 if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
                 if (response.code == 204) return null
+                if (text) return response.body!!.string()
                 return JsonReader.of(response.body!!.source()).use { it.readJsonValue() }
             }
         } catch (e: IOException) {

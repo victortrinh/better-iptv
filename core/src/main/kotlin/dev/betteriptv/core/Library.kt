@@ -51,18 +51,53 @@ class Library private constructor(
     private val store: CatalogStore,
     private val credentials: CredentialStore,
     private val http: OkHttpClient,
-    /** The Provider table for a Provider key ([providerKey]), as text, or null for a Provider with none. */
+    /**
+     * The Provider table shipped with the app for a Provider key ([providerKey]), as text, or null for a
+     * Provider with none: it stands in until the cloud has answered for that Provider once.
+     */
     private val providerTables: (providerKey: String) -> String?,
     private val cloud: CloudClient?,
 ) : Closeable {
     /**
      * The Prefix table for the Provider logged in to: the Base table with that Provider's Provider
-     * table merged in, or the Base table alone before a login and for a Provider with no table.
+     * table merged in, or the Base table alone before a login and for a Provider with no table. It
+     * changes only as a Sync's catalog lands (#431), so what is on screen keeps the table it was
+     * described with.
      */
     @Volatile private var prefixTable: PrefixTable = prefixTableFor(credentials.load())
 
-    private fun prefixTableFor(login: ProviderLogin?): PrefixTable =
-        PrefixTable.withProviderTable(login?.let { providerTables(providerKey(it)) })
+    /**
+     * The Base table with the Provider table kept for [login]'s Provider (the cloud's last answer, as
+     * of the catalog on screen), else the one shipped with the app, else nothing.
+     */
+    private fun prefixTableFor(login: ProviderLogin?): PrefixTable {
+        val key = login?.let(::providerKey) ?: return PrefixTable.base()
+        store.providerTable(key)?.let(::readProviderTable)?.let { return it }
+        return PrefixTable.withProviderTable(providerTables(key))
+    }
+
+    /** The Base table with [text] merged in, or null when [text] isn't a Provider table this app can read. */
+    private fun readProviderTable(text: String): PrefixTable? =
+        try {
+            PrefixTable.withProviderTable(text)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+
+    /**
+     * Asks the cloud for [providerKey]'s Provider table at the start of a Sync, or null when it can't
+     * answer (or answers something this app can't read): the Sync then uses the table kept.
+     */
+    private fun fetchProviderTable(providerKey: String): Pair<String, PrefixTable>? {
+        if (cloud == null || !canAskCloud()) return null
+        val text = try {
+            cloud.providerTable(providerKey, PROVIDER_TABLE_CALL_TIMEOUT)
+        } catch (_: CloudException) {
+            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+            return null
+        }
+        return readProviderTable(text)?.let { text to it }
+    }
 
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
     @Volatile private var cloudRetryAt = Instant.MIN
@@ -161,7 +196,7 @@ class Library private constructor(
         val pendingAt = store.pendingAt()
         return when {
             pendingAt != null && last != null -> SyncStatus.Ready(last, pendingAt)
-            pendingAt != null -> SyncStatus.Synced(store.applyPending()!!)
+            pendingAt != null -> SyncStatus.Synced(store.applyPending()!!).also { prefixTable = prefixTableFor(credentials.load()) }
             last != null -> SyncStatus.Synced(last)
             else -> SyncStatus.NeverSynced(store.channelsSyncedAt())
         }
@@ -326,9 +361,13 @@ class Library private constructor(
         running()
         val started = System.nanoTime()
         val finished = try {
-            val client = XtreamClient(credentials.load() ?: throw ProviderException(WrongLogin), http)
+            val login = credentials.load() ?: throw ProviderException(WrongLogin)
+            val client = XtreamClient(login, http)
             client.account()
             store.discardPending()
+            // The Provider table comes first: this Sync describes its Listings with it, and it is kept with the catalog it lands.
+            val key = providerKey(login)
+            val table = fetchProviderTable(key)?.let { (text, table) -> store.stageProviderTable(key, text); table } ?: prefixTableFor(login)
             val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
             // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
             syncWriting = true
@@ -341,13 +380,13 @@ class Library private constructor(
                     val tallies = HashMap<String?, IntArray>()
                     client.liveListings { id, name, categoryId, image, guideId ->
                         val category = liveCategories[categoryId].orEmpty()
-                        val start = eventStart(name, now, prefixTable.eventTimeZone)
-                        val listing = prefixTable.describeLive(name, category)
+                        val start = eventStart(name, now, table.eventTimeZone)
+                        val listing = table.describeLive(name, category)
                         val tally = tallies.getOrPut(categoryId) { IntArray(2) }
                         tally[0]++
                         if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
                         if (listing == PrefixTable.LiveListing.Channel) {
-                            val channel = prefixTable.channelName(name)
+                            val channel = table.channelName(name)
                             staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
                             entriesRead++
                             running()
@@ -357,7 +396,7 @@ class Library private constructor(
                     liveCategories.forEach { (id, name) ->
                         val tally = tallies[id]
                         val kind = when {
-                            prefixTable.isClutterCategory(name) -> CategoryKind.Clutter
+                            table.isClutterCategory(name) -> CategoryKind.Clutter
                             tally != null && tally[1] * 2 > tally[0] -> CategoryKind.Event
                             else -> CategoryKind.Regular
                         }
@@ -368,6 +407,7 @@ class Library private constructor(
                     // The first stage shows at once: Live and Home have their Channels while the Titles are read.
                     val at = Instant.now()
                     store.swapChannels(at)
+                    prefixTable = table
                     channelsAt = at
                     catalogChanged()
                 }
@@ -378,12 +418,12 @@ class Library private constructor(
                         val movieCategories = HashMap<String, String>()
                         val showCategories = HashMap<String, String>()
                         val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String? ->
-                            val description = prefixTable.describe(name, category)
+                            val description = table.describe(name, category)
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
                             val hidden = description.hidden != null
-                            staging.listing(id, name, categoryId, added, image, hidden, question(kind, name, description, tmdbId), container)
+                            staging.listing(id, name, categoryId, added, image, hidden, question(table, kind, name, description, tmdbId), container)
                             // A Sports replay is kept apart, with what its name says: its TMDB ID and poster are wrong and ignored.
                             if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
                                 staging.replay(id, name, category, added, container, ReplayNames.parse(name))
@@ -436,7 +476,7 @@ class Library private constructor(
                     last == null -> SyncStatus.Synced(store.swapTitles())
                     hold -> SyncStatus.Ready(last, pending.finishedAt)
                     else -> SyncStatus.Synced(store.applyPending()!!)
-                }
+                }.also { if (it is SyncStatus.Synced) prefixTable = table }
             } finally {
                 syncWriting = false
             }
@@ -483,6 +523,8 @@ class Library private constructor(
                 } finally {
                     syncWriting = false
                 }
+                // The held catalog lands with the Provider table it was described with (#431).
+                prefixTable = prefixTableFor(credentials.load())
                 if (sync == null) {
                     _syncStatus.value = store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(store.channelsSyncedAt())
                     return@withContext false
@@ -559,8 +601,11 @@ class Library private constructor(
     }
 
     /** What the cloud is asked about a Listing of [kind] to Match it. */
-    private fun question(kind: TitleKind, name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion {
-        val cleaned = prefixTable.cleanName(name)
+    private fun question(kind: TitleKind, name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion =
+        question(prefixTable, kind, name, description, tmdbId)
+
+    private fun question(table: PrefixTable, kind: TitleKind, name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion {
+        val cleaned = table.cleanName(name)
         return MatchQuestion(kind, cleaned.name, cleaned.year, description.attributes.language?.value?.let(::primaryLanguage), tmdbId)
     }
 
@@ -2484,6 +2529,8 @@ class Library private constructor(
         private val SHARED_READS_WAIT: Duration = Duration.ofMillis(300)
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
         private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
+        /** How long a Sync waits for the Provider table before going on with the one kept. */
+        private val PROVIDER_TABLE_CALL_TIMEOUT: Duration = Duration.ofSeconds(10)
         /** How many programmes of a guide call are kept: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
         private const val GUIDE_PROGRAMMES = 4
         /** How long a Channel the guide listed nothing for stays unasked: the guide covers 15% of Channels, and a listed one rarely goes blank for long. */

@@ -1,9 +1,10 @@
 name: Unknown Prefixes
 
 # Lists the Prefixes devices reported in the last 30 days that the Prefix table doesn't know, in one
-# issue, so they get added to the Base table (core/src/main/resources/dev/betteriptv/core/prefix-table.txt)
-# when most Providers share them, or to the Provider's hand file in cloud/provider-tables/. A Prefix the
-# table has learned stops being reported and drops off the list; with none left, the issue is closed.
+# issue with a section per Provider (by host hash), so they get added to the Base table
+# (core/src/main/resources/dev/betteriptv/core/prefix-table.txt) when most Providers share them, or
+# to the Provider's hand file in cloud/provider-tables/. A Prefix the table has learned stops
+# being reported and drops off the list; with none left, the issue is closed.
 
 on:
   schedule:
@@ -31,10 +32,10 @@ jobs:
       - name: Read the reported Prefixes
         run: |
           npx wrangler d1 execute better-iptv --remote --json --command "
-            SELECT prefix, MAX(listing_count) AS listings, MAX(example) AS example, MIN(first_seen) AS first_seen
+            SELECT provider, prefix, listing_count AS listings, example, first_seen
             FROM unknown_prefix
             WHERE last_seen > (unixepoch() - 30 * 86400) * 1000
-            GROUP BY prefix ORDER BY listings DESC, prefix" > prefixes.json
+            ORDER BY provider, listings DESC, prefix" > prefixes.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -50,10 +51,12 @@ jobs:
           {
             echo "Devices' Syncs found these Prefixes that the Prefix table doesn't know, in the last 30 days."
             echo "Add each to the Base table, \`core/src/main/resources/dev/betteriptv/core/prefix-table.txt\`, when most Providers share it, or else to the Provider's hand file in \`cloud/provider-tables/\`; the Viewer never sees this list."
-            echo
-            echo "| Prefix | Listings | Example | First seen |"
-            echo "| --- | ---: | --- | --- |"
-            jq -r '.[0].results[] | "| `\(.prefix)` | \(.listings) | \(.example | gsub("\\|"; "\\|")) | \(.first_seen / 1000 | strftime("%Y-%m-%d")) |"' prefixes.json
+            echo "Each section is one Provider, by the SHA-256 of its host: its hand file is \`cloud/provider-tables/<hash>.txt\`. Providers with the most unknown Listings come first."
+            jq -r '
+              .[0].results | group_by(.provider) | sort_by(-(map(.listings) | add))[] |
+              "\n### `\(.[0].provider)`\n\n\(length) Prefix\(if length == 1 then "" else "es" end), \(map(.listings) | add) Listings.\n\n| Prefix | Listings | Example | First seen |\n| --- | ---: | --- | --- |",
+              (.[] | "| `\(.prefix)` | \(.listings) | \(.example | gsub("\\|"; "\\|")) | \(.first_seen / 1000 | strftime("%Y-%m-%d")) |")
+            ' prefixes.json
           } > body.md
           if [ -n "$issue" ]; then
             gh issue edit "$issue" --body-file body.md
