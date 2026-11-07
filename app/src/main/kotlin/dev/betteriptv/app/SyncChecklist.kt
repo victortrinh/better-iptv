@@ -38,7 +38,7 @@ import dev.betteriptv.core.SyncStep
  * A first Sync's checklist, centred where the rows will be: one line per step from [from] on,
  * marked done, running, pending or failed, with no counts, so the Viewer sees how far through the
  * list the Sync is and what it is doing, readable from the couch. Only the running step's dot
- * moves, a slow pulse. A failed step names why under it, with Retry, which takes focus. Home and
+ * moves, breathing. A failed step names why under it, with Retry, which takes focus. Home and
  * Live show it until the Channels land; Movies and Shows, from Movies on, until the Titles do.
  * Home's carries the sign-in card ([card], #438) under it, `xl` down, the two centred together.
  */

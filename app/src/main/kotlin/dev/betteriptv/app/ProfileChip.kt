@@ -149,7 +149,7 @@ fun BoxScope.ProfileSwitcher(
  * The current Profile's name in a `glass` capsule as tall as the tab capsule, at the tabs' right
  * end: a tab in the focus grammar's sense (Right from the last tab reaches it, it takes the tabs'
  * focus style). OK opens "Who's watching?". The first time a second Profile is made it pulses once
- * as it shows, the waiting dot's rhythm for one cycle ([pulseOnce]), so a household member who didn't
+ * as it shows, one alpha pulse ([pulseOnce]), so a household member who didn't
  * set the app up notices it (#438).
  */
 @Composable
