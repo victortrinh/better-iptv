@@ -224,6 +224,8 @@ class ChannelVariantsTest {
 
         val plan = plan(hevcStick)
         assertTrue(plan.live)
+        // Switching it blanks the TV for a second or two just after the picture shows (#454).
+        assertFalse(plan.matchesRefreshRate)
         val chain = (listOf(plan.version) + plan.version.backups).map { it.listingId to it.liveFormat }
         assertEquals(listOf(3L to "ts", 3L to "m3u8", 2L to "ts", 2L to "m3u8", 1L to "ts", 1L to "m3u8"), chain)
         // The list the player's menu key shows: one Version per variant, each going on down the chain.
