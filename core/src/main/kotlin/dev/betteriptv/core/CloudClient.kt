@@ -144,6 +144,28 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
+     * Trending's feed for a device in App [language] (ISO 639-1; cloud/src/trending.ts): each wiki's
+     * (`en`, and the language's) most viewed articles over the days the cloud keeps, a week, with
+     * their views summed over those days, by the article's name as Wikipedia shows it.
+     */
+    fun trending(language: String): Map<String, Map<String, Long>> {
+        val answer = authorized { token -> post("v1/trending", json.toJson(mapOf("language" to language)), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return (answer["wikis"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { wiki ->
+            val name = wiki["wiki"] as? String ?: return@mapNotNull null
+            val views = HashMap<String, Long>()
+            (wiki["days"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().forEach { day ->
+                (day["articles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().forEach { article ->
+                    val title = article["name"] as? String
+                    val count = (article["views"] as? Number)?.toLong()
+                    if (title != null && count != null) views.merge(title, count, Long::plus)
+                }
+            }
+            name to views
+        }.toMap()
+    }
+
+    /**
      * The Charts for [region] (ISO 3166, `CA`) in [language] (ISO 639-1), as the cloud's JSON, which
      * [Charts] reads; kept whole, so parts a later app reads are already there.
      */

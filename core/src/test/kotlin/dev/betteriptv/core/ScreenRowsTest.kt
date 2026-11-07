@@ -16,12 +16,6 @@ class ScreenRowsTest {
     }
 
     @Test
-    fun aChartShowsATitleOnceWhenItsListHasItTwice() {
-        val chart = ScreenRows().chart(listOf(movie(1), movie(2), movie(2), movie(3)))
-        assertEquals(listOf(1L, 2L, 3L), ids(chart))
-    }
-
-    @Test
     fun aRowCountsATitleOnceTowardsItsSizeAndItsMinimum() {
         val screen = ScreenRows()
         assertEquals(emptyList<Long>(), ids(screen.row(listOf(movie(1), movie(1), movie(1)), size = 10, min = 2)))

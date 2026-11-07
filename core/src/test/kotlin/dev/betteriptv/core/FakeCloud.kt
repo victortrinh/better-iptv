@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 
 /**
  * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
- * answers, Title facts from Wikidata ([titleFacts]), Charts and Games, and signing devices in to Accounts ([phoneSignsIn]).
+ * answers, Title facts from Wikidata ([titleFacts]), Trending's feed ([trending]) and Games, and signing devices in to Accounts ([phoneSignsIn]).
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -86,14 +86,9 @@ class FakeCloud : Closeable {
     val providerTables = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val metadata = HashMap<String, Map<String, Any?>>()
-    private val charts = HashMap<String, Map<String, Any?>>()
     private val games = HashMap<String, List<Map<String, Any?>>>()
-    @Volatile private var trending: List<TitleId.Tmdb> = emptyList()
-    private val genres = CopyOnWriteArrayList<Map<String, Any?>>()
-
-    /** The Regions the device asked Charts for, as sent. */
-    val chartsAsked: List<String>
-        get() = received.filter { it.path == "/v1/charts" }.map { (read(it.body) as Map<*, *>)["region"] as String }
+    /** Trending's feed, by `<wiki>/<day>`: the day's most viewed articles with their views. */
+    private val trendingDays = HashMap<String, List<Pair<String, Long>>>()
 
     /** The League lists the device asked Games for, as sent. */
     val gamesAsked: List<List<String>>
@@ -141,22 +136,6 @@ class FakeCloud : Closeable {
         Subtitle(kind, tmdbId, season, episode, language, release, text).also { subtitles += it }
 
     /**
-     * Answers `/v1/charts` for [region] with Netflix's Top 10 [movies] and [shows] (TMDB IDs in rank
-     * order), the world's when [worldwide]. Other Regions get empty lists.
-     */
-    fun charts(region: String, movies: List<Long>, shows: List<Long> = emptyList(), worldwide: Boolean = false) {
-        synchronized(charts) {
-            charts[region] = mapOf(
-                "top" to mapOf(
-                    "worldwide" to worldwide,
-                    "movies" to movies.map { mapOf("kind" to "movie", "tmdbId" to it) },
-                    "shows" to shows.map { mapOf("kind" to "show", "tmdbId" to it) },
-                ),
-            )
-        }
-    }
-
-    /**
      * Answers `/v1/games` for [league] with [games], each built with [game]. A League not given is
      * absent from the answer, as one the cloud has no copy of is.
      */
@@ -169,18 +148,18 @@ class FakeCloud : Closeable {
         synchronized(games) { games.remove(league) }
     }
 
-    /** Answers `/v1/charts` for every Region with TMDB's trending this week, movies and shows mixed: [titles], in order. */
-    fun trending(vararg titles: TitleId.Tmdb) {
-        trending = titles.toList()
+    /**
+     * Publishes [wiki]'s (`en`, `fr`) most viewed articles of [day] (`2026-11-06`) in `/v1/trending`'s
+     * feed (cloud/src/trending.ts): each article's name as Wikipedia shows it, with its views, most
+     * viewed first. Replaces what that day had.
+     */
+    fun trending(wiki: String, day: String, vararg articles: Pair<String, Long>) {
+        synchronized(trendingDays) { trendingDays["$wiki/$day"] = articles.toList() }
     }
 
-    /**
-     * Answers `/v1/charts` for every Region with TMDB Discover's genre [name] of [kind]: its most
-     * popular Titles, [tmdbIds] in order. Genres are listed in the order given.
-     */
-    fun genre(kind: TitleKind, name: String, vararg tmdbIds: Long) {
-        genres += mapOf("kind" to if (kind == TitleKind.Movie) "movie" else "show", "name" to name, "tmdbIds" to tmdbIds.toList())
-    }
+    /** The App languages the device asked Trending's feed in, one per request, in order. */
+    val trendingAsked: List<String>
+        get() = received.filter { it.path == "/v1/trending" }.map { (read(it.body) as Map<*, *>)["language"] as String }
 
     /** Each live Sign-in code, by code: the device token showing it. */
     private val signInCodes = HashMap<String, String>()
@@ -318,18 +297,17 @@ class FakeCloud : Closeable {
                 }
                 respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
             }
-            "/v1/charts" -> {
+            "/v1/trending" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                val region = (read(body) as Map<*, *>)["region"] as String
-                val empty = mapOf("top" to mapOf("worldwide" to false, "movies" to emptyList<Any>(), "shows" to emptyList<Any>()))
-                val key = { id: TitleId.Tmdb -> mapOf("kind" to if (id.kind == TitleKind.Movie) "movie" else "show", "tmdbId" to id.tmdbId) }
-                val trends = mapOf(
-                    "all" to trending.map(key),
-                    "movies" to trending.filter { it.kind == TitleKind.Movie }.map(key),
-                    "shows" to trending.filter { it.kind == TitleKind.Show }.map(key),
-                )
-                respond(exchange, 200, (synchronized(charts) { charts[region] } ?: empty) + ("trending" to trends) + ("genres" to genres.toList()))
+                val language = (read(body) as Map<*, *>)["language"] as String
+                val wikis = listOf("en", language).distinct()
+                val days = synchronized(trendingDays) { trendingDays.toMap() }
+                respond(exchange, 200, mapOf("wikis" to wikis.map { wiki ->
+                    mapOf("wiki" to wiki, "days" to days.filterKeys { it.startsWith("$wiki/") }.toSortedMap(reverseOrder()).map { (key, articles) ->
+                        mapOf("day" to key.substringAfter('/'), "articles" to articles.map { (name, views) -> mapOf("name" to name, "views" to views) })
+                    })
+                }))
             }
             "/v1/games" -> {
                 hangingGames?.await()

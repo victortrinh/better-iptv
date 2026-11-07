@@ -1,22 +1,13 @@
 package dev.betteriptv.core
 
 /**
- * Fills one screen's rows from the top so each Title shows once (the Row in CONTEXT.md): a Chart
- * keeps every Title it ranks, and each row below skips the Titles shown above it. Continue watching
+ * Fills one screen's rows from the top so each Title shows once (the Row in CONTEXT.md): each row
+ * skips the Titles shown above it. Continue watching
  * and Favourites stand apart and don't go through it. One per screen: Home, Movies and Shows each
  * dedupe on their own.
  */
 internal class ScreenRows {
     private val shown = HashSet<TitleId>()
-
-    /**
-     * A Chart's [titles], all of them, each once (where it first ranks), or none when there are fewer
-     * than [min]. The rows below skip them.
-     */
-    fun chart(titles: List<StoredTitle>, min: Int = 1): List<StoredTitle> {
-        val once = titles.distinctBy { it.id }
-        return if (once.size < min) emptyList() else once.also(::show)
-    }
 
     /**
      * Up to [size] of [titles] not shown in a row above, in their order, each once, or none when
