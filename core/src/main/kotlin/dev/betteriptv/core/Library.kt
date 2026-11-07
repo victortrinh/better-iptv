@@ -283,6 +283,42 @@ class Library private constructor(
         guideFavourites = emptyList()
     }
 
+    private val history = HistorySync(
+        store,
+        cloud,
+        signedIn = { _account.value != null },
+        currentProfile = { profile },
+        profileExists = { id -> _profiles.value.all.any { it.id == id } },
+        provider = { credentials.load()?.let(::providerKey) },
+        onSignedOut = { accountIs(null) },
+    )
+
+    /**
+     * Pushes the history changes this device made and pulls the Account's (#435), when signed in:
+     * the app calls it on launch and on coming to the front, and it runs by itself after each stop.
+     * What it pulls lands between screens ([applyPendingHistory]), never under focus. The first
+     * sync after signing in merges the device's history into the Account. Says whether the cloud
+     * answered; while it can't, the changes stay queued for the next.
+     */
+    suspend fun syncHistory(): Boolean = withContext(Dispatchers.IO) { history.sync() }
+
+    /**
+     * Lands the history pulled from the Account, as a held catalog lands: on entering a top-level
+     * screen, never while one is on screen or the player is open. Says whether Continue watching
+     * may show something else, in which case the screens read again ([catalogChanges]).
+     */
+    suspend fun applyPendingHistory(): Boolean = withContext(Dispatchers.IO) {
+        history.land().also { if (it) changed() }
+    }
+
+    /** A stop, or the end of a Title: what changed is pushed to the Account in the background. */
+    internal fun stoppedPlaying() = history.pushSoon()
+
+    /** Lands [id]'s pulled history before its page or Play reads where the Viewer stopped. */
+    private fun landHistory(id: TitleId) {
+        if (history.landTitle(profile, id)) changed()
+    }
+
     /** Checks [login] with the Provider and keeps it only if the Provider accepts it. */
     suspend fun logIn(login: ProviderLogin): LoginResult = withContext(Dispatchers.IO) {
         try {
@@ -1154,6 +1190,7 @@ class Library private constructor(
         }
         val original = originalLanguage(id)
         val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id) }
+        landHistory(id)
         val played = store.episodeProgress(profile, id)
         val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
         val merged = mergeEpisodes(shows, contentLanguages, reads, originalAudioLanguage(original, contentLanguages, preferOriginalAudio), expected(title, contentLanguages))
@@ -1164,6 +1201,36 @@ class Library private constructor(
     /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
     private val _account = MutableStateFlow(store.accountEmail())
 
+    /** When this device last learned it was signed in ([System.nanoTime]): answers to requests sent before then can't sign it out. */
+    @Volatile private var signedInSince = Long.MIN_VALUE
+
+    /** The thread telling the cloud of a sign-out it couldn't hear when it happened. */
+    private val signOuts = Executors.newSingleThreadExecutor { Thread(it, "library-sign-outs").apply { isDaemon = true } }
+
+    init {
+        cloud?.onAccountHeard = ::accountHeard
+    }
+
+    /**
+     * What every cloud answer says (#434): signed out by another TV, or with its Account deleted, the
+     * device goes anonymous at its next request, keeping its catalog and Provider login. Still signed
+     * in after signing itself out offline, it tells the cloud again.
+     */
+    private fun accountHeard(signedIn: Boolean, sentAt: Long) {
+        if (!signedIn && _account.value != null && sentAt > signedInSince) {
+            accountIs(null)
+        } else if (signedIn && _account.value == null && store.signOutPending()) {
+            signOuts.execute {
+                if (!store.signOutPending()) return@execute
+                try {
+                    cloud?.signOut()
+                    store.saveSignOutPending(false)
+                } catch (_: CloudException) {
+                }
+            }
+        }
+    }
+
     /**
      * The email of the Account this device is signed in to (ADR 0015), or null: kept on the device,
      * so it reads without the cloud. A device that never signs in never asks the cloud about one.
@@ -1173,10 +1240,12 @@ class Library private constructor(
     /**
      * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
      * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
+     * The device's [model] ("Fire TV Stick 4K Max") names it in the Account's device list: it is sent
+     * here and nowhere else.
      */
-    suspend fun startSignIn(): SignInCode? = withContext(Dispatchers.IO) {
+    suspend fun startSignIn(model: String? = null): SignInCode? = withContext(Dispatchers.IO) {
         try {
-            cloud?.startSignIn()
+            cloud?.startSignIn(model)
         } catch (e: CloudException) {
             null
         }
@@ -1188,16 +1257,76 @@ class Library private constructor(
      */
     suspend fun checkSignIn(): String? = withContext(Dispatchers.IO) {
         if (cloud == null) return@withContext null
+        val sentAt = System.nanoTime()
         val email = try {
             cloud.account()
         } catch (e: CloudException) {
             return@withContext _account.value
         }
-        if (email != _account.value) {
-            store.saveAccountEmail(email)
-            _account.value = email
+        synchronized(_account) {
+            if (email != null) {
+                signedInSince = sentAt
+                store.saveSignOutPending(false)
+            }
+            accountIs(email)
         }
         email
+    }
+
+    /**
+     * Keeps [email] as the Account the device is in. Signing out takes the Account's history off
+     * the device; signing in syncs, merging the device's history into the Account.
+     */
+    private fun accountIs(email: String?): Unit = synchronized(_account) {
+        val was = _account.value
+        if (email == was) return
+        store.saveAccountEmail(email)
+        _account.value = email
+        if (was != null) {
+            history.signedOut()
+            changed()
+        }
+        if (email != null) history.pushSoon()
+    }
+
+    /**
+     * The devices signed in to this one's Account (#434), by when they signed in, this one marked;
+     * null without a cloud, while it can't be reached, or when this device isn't signed in.
+     */
+    suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
+        if (cloud == null || _account.value == null) return@withContext null
+        try {
+            cloud.accountDevices()
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
+    /**
+     * Signs [device] out of the Account, or this device when it is null or [AccountDevice.thisDevice].
+     * This device goes anonymous at once, keeping its catalog and Provider login, and the cloud is
+     * told now or, when it can't be reached, at the device's next request. Another device is signed
+     * out in the cloud and goes anonymous at its own next request; false when the cloud can't be reached.
+     */
+    suspend fun signOut(device: AccountDevice? = null): Boolean = withContext(Dispatchers.IO) {
+        if (device != null && !device.thisDevice) {
+            return@withContext try {
+                cloud?.signOut(device.id) != null
+            } catch (e: CloudException) {
+                false
+            }
+        }
+        synchronized(_account) {
+            store.saveSignOutPending(cloud != null)
+            accountIs(null)
+        }
+        try {
+            cloud?.signOut()
+            store.saveSignOutPending(false)
+        } catch (e: CloudException) {
+            // Told again at the next request that finds the device still signed in.
+        }
+        true
     }
 
     /**
@@ -1302,6 +1431,7 @@ class Library private constructor(
         if (id.kind != TitleKind.Show) return null
         val byEpisode = episodeCandidates(id, contentLanguages) ?: return null
         val remembered = rememberedTracks()
+        landHistory(id)
         val stopped = store.episodeProgress(profile, id).filter { !it.watched }.associateBy { it.episode }
         val originalLanguage = originalLanguage(id)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
@@ -1341,6 +1471,7 @@ class Library private constructor(
             val version = withBackups(chosen, candidates)
             val remembered = rememberedTracks()
             val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
+            landHistory(id)
             val at = store.episodeProgress(profile, id).firstOrNull { it.episode == episode && !it.watched }
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
@@ -1441,7 +1572,10 @@ class Library private constructor(
     }
 
     /** Where Play starts in [id]: where the Viewer stopped, or null for the start once they finished it. */
-    private fun stopped(id: TitleId): StoredProgress? = store.progress(profile, id)?.takeUnless { it.watched }
+    private fun stopped(id: TitleId): StoredProgress? {
+        landHistory(id)
+        return store.progress(profile, id)?.takeUnless { it.watched }
+    }
 
     /**
      * Records that the Viewer is at [position] of [duration] (milliseconds, null when the player
@@ -1451,7 +1585,15 @@ class Library private constructor(
     internal fun saveProgress(id: TitleId, position: Long, duration: Long?) {
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveProgress(profile, id, if (watched) 0 else position, duration, watched, Instant.now())
+        record(id, null, if (watched) 0 else position, duration, watched)
+    }
+
+    /** Keeps where the Viewer is in [id] (an [episode] of it, for a Show), and queues it for the Account. */
+    private fun record(id: TitleId, episode: EpisodeNumber?, position: Long, duration: Long?, watched: Boolean) {
+        val at = Instant.now()
+        if (episode == null) store.saveProgress(profile, id, position, duration, watched, at)
+        else store.saveEpisodeProgress(profile, id, episode, position, duration, watched, at)
+        history.record(profile, HistoryChange(id, episode, position, duration, watched, removed = false, at))
     }
 
     /** Records how far the Viewer is in what [plan] plays, as [saveProgress] does: a Movie, or a Show's Episode. A Channel has none. */
@@ -1460,21 +1602,29 @@ class Library private constructor(
         val episode = plan.episode ?: return saveProgress(id, position, duration)
         val watched = inCredits(position, duration)
         if (!watched && position < MIN_RESUME_POSITION) return
-        store.saveEpisodeProgress(profile, id, episode, if (watched) 0 else position, duration, watched, Instant.now())
+        record(id, episode, if (watched) 0 else position, duration, watched)
     }
 
     /** Records that the Viewer played [id] to its end. */
-    internal fun finished(id: TitleId) = store.saveProgress(profile, id, 0, null, watched = true, Instant.now())
+    internal fun finished(id: TitleId) = record(id, null, 0, null, watched = true)
 
     /** Records that the Viewer played what [plan] plays to its end. */
     internal fun finished(plan: PlayPlan) {
         val id = plan.titleId ?: return
         val episode = plan.episode ?: return finished(id)
-        store.saveEpisodeProgress(profile, id, episode, 0, null, watched = true, Instant.now())
+        record(id, episode, 0, null, watched = true)
     }
 
-    /** Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it over. */
-    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) { store.forgetProgress(profile, id) }
+    /**
+     * Takes [id] out of Continue watching and forgets where the Viewer stopped, so Play starts it
+     * over: on every TV of the Account too, unless one of them plays it later.
+     */
+    suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) {
+        val at = Instant.now()
+        store.forgetProgress(profile, id, at)
+        history.record(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
+        history.pushSoon()
+    }
 
     /**
      * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
@@ -2570,7 +2720,9 @@ class Library private constructor(
         prefixTable.describe(listing.name, listing.category).let { Candidate(listing, it.attributes, it.unknownPrefix) }
 
     override fun close() {
+        history.close()
         gamesFetches.shutdownNow()
+        signOuts.shutdownNow()
         fileReadLookUps.shutdownNow()
         guideFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.

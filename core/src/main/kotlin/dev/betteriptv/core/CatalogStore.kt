@@ -1391,6 +1391,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     /** Records that the Viewer stopped at [position] of [duration] in [id] at [at], or finished it when [watched]. */
     fun saveProgress(profile: Long, id: TitleId, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        forgetTombstone(profile, key(id), NO_EPISODE, NO_EPISODE)
         writer.prepare("INSERT OR REPLACE INTO progress VALUES ($profile, ?, ?, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindLong(2, position)
@@ -1404,6 +1405,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     /** Records that the Viewer stopped at [position] of [duration] in Show [id]'s [episode] at [at], or finished it when [watched]. */
     fun saveEpisodeProgress(profile: Long, id: TitleId, episode: EpisodeNumber, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        forgetTombstone(profile, key(id), episode.season, episode.number)
         writer.prepare("INSERT OR REPLACE INTO episode_progress VALUES ($profile, ?, ?, ?, ?, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindLong(2, episode.season.toLong())
@@ -1446,14 +1448,287 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
-    /** Forgets where the Viewer stopped in [id], and whether they finished it. */
-    fun forgetProgress(profile: Long, id: TitleId) = synchronized(writer) {
+    /** Forgets where the Viewer stopped in [id], and whether they finished it, at [at]: kept as a tombstone for history sync. */
+    fun forgetProgress(profile: Long, id: TitleId, at: Instant) = synchronized(writer) {
         writer.prepare("DELETE FROM progress WHERE profile = $profile AND title_key = ?").use {
             it.bindText(1, key(id))
             it.step()
         }
-        Unit
+        saveTombstone(profile, key(id), NO_EPISODE, NO_EPISODE, at.toEpochMilli())
     }
+
+    private fun forgetTombstone(profile: Long, titleKey: String, season: Int, number: Int) {
+        writer.prepare("DELETE FROM history_tombstone WHERE profile = $profile AND title_key = ? AND season = ? AND number = ?").use {
+            it.bindText(1, titleKey)
+            it.bindLong(2, season.toLong())
+            it.bindLong(3, number.toLong())
+            it.step()
+        }
+    }
+
+    private fun saveTombstone(profile: Long, titleKey: String, season: Int, number: Int, at: Long) {
+        writer.prepare("INSERT OR REPLACE INTO history_tombstone VALUES ($profile, ?, ?, ?, ?)").use {
+            it.bindText(1, titleKey)
+            it.bindLong(2, season.toLong())
+            it.bindLong(3, number.toLong())
+            it.bindLong(4, at)
+            it.step()
+        }
+    }
+
+    /** Queues [change] to be pushed to the Account, replacing the one queued for its Movie or Episode. */
+    fun queueHistory(profile: Long, change: HistoryChange) = synchronized(writer) { writeChange("history_outbox", profile, change) }
+
+    /** Queues all of [profile]'s history, its removals too, as signing in merges it into the Account. */
+    fun queueAllHistory(profile: Long) = synchronized(writer) {
+        writer.execSQL(
+            "INSERT OR REPLACE INTO history_outbox SELECT profile, title_key, $NO_EPISODE, $NO_EPISODE, position, duration, watched, 0, updated_at " +
+                "FROM progress WHERE profile = $profile",
+        )
+        writer.execSQL(
+            "INSERT OR REPLACE INTO history_outbox SELECT profile, title_key, season, number, position, duration, watched, 0, updated_at " +
+                "FROM episode_progress WHERE profile = $profile",
+        )
+        writer.execSQL(
+            "INSERT OR REPLACE INTO history_outbox SELECT profile, title_key, season, number, 0, NULL, 0, 1, removed_at FROM history_tombstone WHERE profile = $profile",
+        )
+    }
+
+    /** The changes waiting to be pushed, oldest first, at most [limit]. */
+    fun queuedHistory(profile: Long, limit: Int): List<HistoryChange> = synchronized(writer) {
+        writer.prepare("SELECT $HISTORY_COLUMNS FROM history_outbox WHERE profile = $profile ORDER BY updated_at LIMIT $limit").use {
+            buildList { while (it.step()) add(it.historyChange()) }
+        }
+    }
+
+    /** Takes [pushed] off the queue, unless their Movie or Episode changed again since. */
+    fun unqueueHistory(profile: Long, pushed: List<HistoryChange>) = synchronized(writer) {
+        writer.prepare("DELETE FROM history_outbox WHERE profile = $profile AND title_key = ? AND season = ? AND number = ? AND updated_at = ?").use { delete ->
+            pushed.forEach {
+                delete.bindChangeKey(it)
+                delete.bindLong(4, it.at.toEpochMilli())
+                delete.stepAndReset()
+            }
+        }
+    }
+
+    /**
+     * Keeps what the Account answered until it lands ([applyPulledHistory]), the latest per Movie or
+     * Episode. A [reset] answer is everything the Account has: what was pulled before is dropped, and
+     * landing it forgets what the device kept that isn't in it.
+     */
+    fun stagePulledHistory(profile: Long, changes: List<HistoryChange>, reset: Boolean) = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            if (reset) {
+                writer.execSQL("DELETE FROM history_pulled WHERE profile = $profile")
+                writeMeta(HISTORY_RESET, "1")
+            }
+            writer.prepare(
+                "INSERT INTO history_pulled VALUES ($profile, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (profile, title_key, season, number) DO UPDATE SET " +
+                    "position = excluded.position, duration = excluded.duration, watched = excluded.watched, removed = excluded.removed, " +
+                    "updated_at = excluded.updated_at WHERE excluded.updated_at > history_pulled.updated_at",
+            ).use { insert -> changes.forEach { insert.bindChange(it); insert.stepAndReset() } }
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** Whether the Account's changes wait to land: any, or [id]'s. Read apart from the writer, which a Sync may hold for minutes. */
+    fun hasPulledHistory(profile: Long, id: TitleId? = null): Boolean {
+        if (meta(HISTORY_RESET) != null) return true
+        return synchronized(reader) { hasPulled(profile, id) }
+    }
+
+    private fun hasPulled(profile: Long, id: TitleId?): Boolean =
+        reader.prepare("SELECT 1 FROM history_pulled WHERE profile = $profile ${if (id == null) "" else "AND title_key = ?"} LIMIT 1").use {
+            if (id != null) it.bindText(1, key(id))
+            it.step()
+        }
+
+    /**
+     * Lands the Account's changes waiting for [profile] (only [id]'s, unless a reset waits), each
+     * where it is later than what the device has for its Movie or Episode, a removal as a removal.
+     * Says whether anything the screens show changed.
+     */
+    fun applyPulledHistory(profile: Long, id: TitleId? = null): Boolean = synchronized(writer) {
+        val reset = writerMeta(HISTORY_RESET) != null
+        val only = if (reset) null else id?.let(::key)
+        writer.execSQL("BEGIN")
+        try {
+            var changed = false
+            if (reset) {
+                for (table in listOf("progress", "episode_progress")) {
+                    val episode = if (table == "progress") "$NO_EPISODE = p.season AND $NO_EPISODE = p.number" else "t.season = p.season AND t.number = p.number"
+                    val outbox = episode.replace("p.", "o.")
+                    writer.execSQL(
+                        "DELETE FROM $table AS t WHERE profile = $profile " +
+                            "AND NOT EXISTS (SELECT 1 FROM history_pulled p WHERE p.profile = $profile AND p.title_key = t.title_key AND $episode AND p.removed = 0) " +
+                            "AND NOT EXISTS (SELECT 1 FROM history_outbox o WHERE o.profile = $profile AND o.title_key = t.title_key AND $outbox)",
+                    )
+                    changed = changed || writerChanges() > 0
+                }
+                deleteMeta(HISTORY_RESET)
+            }
+            val pulled = writer.prepare("SELECT $HISTORY_COLUMNS FROM history_pulled WHERE profile = $profile ${if (only == null) "" else "AND title_key = ?"}").use {
+                if (only != null) it.bindText(1, only)
+                buildList { while (it.step()) add(it.historyChange()) }
+            }
+            for (change in pulled) {
+                val titleKey = key(change.id)
+                val season = change.episode?.season ?: NO_EPISODE
+                val number = change.episode?.number ?: NO_EPISODE
+                val local = if (change.episode == null) {
+                    writer.prepare("SELECT updated_at FROM progress WHERE profile = $profile AND title_key = ?").use {
+                        it.bindText(1, titleKey)
+                        if (it.step()) it.getLong(0) else null
+                    }
+                } else {
+                    writer.prepare("SELECT updated_at FROM episode_progress WHERE profile = $profile AND title_key = ? AND season = ? AND number = ?").use {
+                        it.bindText(1, titleKey)
+                        it.bindLong(2, season.toLong())
+                        it.bindLong(3, number.toLong())
+                        if (it.step()) it.getLong(0) else null
+                    }
+                }
+                val removedAt = writer.prepare("SELECT removed_at FROM history_tombstone WHERE profile = $profile AND title_key = ? AND season = ? AND number = ?").use {
+                    it.bindText(1, titleKey)
+                    it.bindLong(2, season.toLong())
+                    it.bindLong(3, number.toLong())
+                    if (it.step()) it.getLong(0) else null
+                }
+                val at = change.at.toEpochMilli()
+                if (at > maxOf(local ?: Long.MIN_VALUE, removedAt ?: Long.MIN_VALUE)) {
+                    if (change.removed) {
+                        val table = if (change.episode == null) "progress" else "episode_progress"
+                        val episode = if (change.episode == null) "" else "AND season = $season AND number = $number"
+                        writer.prepare("DELETE FROM $table WHERE profile = $profile AND title_key = ? $episode").use {
+                            it.bindText(1, titleKey)
+                            it.step()
+                        }
+                        saveTombstone(profile, titleKey, season, number, at)
+                        changed = changed || local != null
+                    } else {
+                        forgetTombstone(profile, titleKey, season, number)
+                        if (change.episode == null) {
+                            writer.prepare("INSERT OR REPLACE INTO progress VALUES ($profile, ?, ?, ?, ?, ?)").use {
+                                it.bindText(1, titleKey)
+                                it.bindLong(2, change.position)
+                                if (change.duration == null) it.bindNull(3) else it.bindLong(3, change.duration)
+                                it.bindLong(4, if (change.watched) 1 else 0)
+                                it.bindLong(5, at)
+                                it.step()
+                            }
+                        } else {
+                            writer.prepare("INSERT OR REPLACE INTO episode_progress VALUES ($profile, ?, ?, ?, ?, ?, ?, ?)").use {
+                                it.bindText(1, titleKey)
+                                it.bindLong(2, season.toLong())
+                                it.bindLong(3, number.toLong())
+                                it.bindLong(4, change.position)
+                                if (change.duration == null) it.bindNull(5) else it.bindLong(5, change.duration)
+                                it.bindLong(6, if (change.watched) 1 else 0)
+                                it.bindLong(7, at)
+                                it.step()
+                            }
+                        }
+                        changed = true
+                    }
+                }
+                writer.prepare("DELETE FROM history_pulled WHERE profile = $profile AND title_key = ? AND season = ? AND number = ? AND updated_at = ?").use {
+                    it.bindChangeKey(change)
+                    it.bindLong(4, at)
+                    it.step()
+                }
+            }
+            writer.execSQL("COMMIT")
+            changed
+        } catch (e: Throwable) {
+            if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** Takes [profile]'s history off the device, as signing out does: where they stopped, what they Watched, and what waits to sync. */
+    fun forgetHistory(profile: Long) = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        for (table in listOf("progress", "episode_progress", "history_outbox", "history_pulled", "history_tombstone")) {
+            writer.execSQL("DELETE FROM $table WHERE profile = $profile")
+        }
+        listOf(HISTORY_PROFILE, HISTORY_CURSOR, HISTORY_PROVIDER, HISTORY_RESET).forEach(::deleteMeta)
+        writer.execSQL("COMMIT")
+    }
+
+    /** Forgets removals made before [before]: the Account keeps its own as long. */
+    fun forgetTombstones(before: Instant) = synchronized(writer) {
+        writer.execSQL("DELETE FROM history_tombstone WHERE removed_at < ${before.toEpochMilli()}")
+    }
+
+    /** Which Profile syncs with the Account, the cursor its last sync got, and the Provider key it was got for; null before the first sync. */
+    fun historyState(): HistoryState? {
+        val profile = meta(HISTORY_PROFILE)?.toLongOrNull() ?: return null
+        return HistoryState(profile, meta(HISTORY_CURSOR)?.toLongOrNull() ?: 0, meta(HISTORY_PROVIDER))
+    }
+
+    fun saveHistoryState(state: HistoryState) = synchronized(writer) {
+        writeMeta(HISTORY_PROFILE, state.profile.toString())
+        writeMeta(HISTORY_CURSOR, state.cursor.toString())
+        if (state.provider == null) deleteMeta(HISTORY_PROVIDER) else writeMeta(HISTORY_PROVIDER, state.provider)
+    }
+
+    private fun writeChange(table: String, profile: Long, change: HistoryChange) {
+        writer.prepare("INSERT OR REPLACE INTO $table VALUES ($profile, ?, ?, ?, ?, ?, ?, ?, ?)").use {
+            it.bindChange(change)
+            it.step()
+        }
+    }
+
+    private fun SQLiteStatement.bindChangeKey(change: HistoryChange) {
+        bindText(1, key(change.id))
+        bindLong(2, (change.episode?.season ?: NO_EPISODE).toLong())
+        bindLong(3, (change.episode?.number ?: NO_EPISODE).toLong())
+    }
+
+    private fun SQLiteStatement.bindChange(change: HistoryChange) {
+        bindChangeKey(change)
+        bindLong(4, change.position)
+        if (change.duration == null) bindNull(5) else bindLong(5, change.duration)
+        bindLong(6, if (change.watched) 1 else 0)
+        bindLong(7, if (change.removed) 1 else 0)
+        bindLong(8, change.at.toEpochMilli())
+    }
+
+    private fun SQLiteStatement.historyChange(): HistoryChange {
+        val season = getInt(1)
+        return HistoryChange(
+            titleId(getText(0)),
+            if (season == NO_EPISODE) null else EpisodeNumber(season, getInt(2)),
+            getLong(3),
+            if (isNull(4)) null else getLong(4),
+            getLong(5) != 0L,
+            getLong(6) != 0L,
+            Instant.ofEpochMilli(getLong(7)),
+        )
+    }
+
+    private fun writerMeta(key: String): String? = writer.prepare("SELECT value FROM meta WHERE key = ?").use {
+        it.bindText(1, key)
+        if (it.step()) it.getText(0) else null
+    }
+
+    private fun writeMeta(key: String, value: String) = writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+        it.bindText(1, key)
+        it.bindText(2, value)
+        it.step()
+    }
+
+    private fun deleteMeta(key: String) = writer.prepare("DELETE FROM meta WHERE key = ?").use {
+        it.bindText(1, key)
+        it.step()
+    }
+
+    private fun writerChanges(): Long = writer.prepare("SELECT changes()").use { it.step(); it.getLong(0) }
 
     /** The file reads the cloud doesn't have yet, as JSON by Listing id. */
     fun unsharedFileReads(): Map<Long, String> = synchronized(reader) {
@@ -1611,16 +1886,23 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** The email of the Account the device is signed in to, as the cloud last said; null when none. */
     fun accountEmail(): String? = meta(ACCOUNT_EMAIL)
 
-    fun saveAccountEmail(email: String?) = synchronized(writer) {
-        if (email == null) {
+    fun saveAccountEmail(email: String?) = saveOrDeleteMeta(ACCOUNT_EMAIL, email)
+
+    /** Whether this device signed itself out while the cloud couldn't hear it, so the cloud still has it signed in (#434). */
+    fun signOutPending(): Boolean = meta(SIGN_OUT_PENDING) != null
+
+    fun saveSignOutPending(pending: Boolean) = saveOrDeleteMeta(SIGN_OUT_PENDING, if (pending) "1" else null)
+
+    private fun saveOrDeleteMeta(key: String, value: String?) = synchronized(writer) {
+        if (value == null) {
             writer.prepare("DELETE FROM meta WHERE key = ?").use {
-                it.bindText(1, ACCOUNT_EMAIL)
+                it.bindText(1, key)
                 it.step()
             }
         } else {
             writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-                it.bindText(1, ACCOUNT_EMAIL)
-                it.bindText(2, email)
+                it.bindText(1, key)
+                it.bindText(2, value)
                 it.step()
             }
         }
@@ -1692,7 +1974,20 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "PRIMARY KEY (profile, title_key))",
             // What the Viewer last picked in the player, by kind (`audio`, `subtitles`).
             "remembered_track" to "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (profile, kind))",
+            // History sync (#435), by Title and Episode (a Movie's season and number are -1): the changes the Account hasn't
+            // been sent yet, the Account's changes pulled and not yet landed (they land between screens), and when the Viewer
+            // removed a Title from Continue watching, kept 30 days so an older stop from another TV doesn't bring it back.
+            "history_outbox" to HISTORY_CHANGE_TABLE,
+            "history_pulled" to HISTORY_CHANGE_TABLE,
+            "history_tombstone" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
+                "removed_at INTEGER NOT NULL, PRIMARY KEY (profile, title_key, season, number))",
         )
+        /** A history change as [HistoryChange] holds it, by Title and Episode. */
+        const val HISTORY_CHANGE_TABLE =
+            "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
+                "position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, removed INTEGER NOT NULL, updated_at INTEGER NOT NULL, " +
+                "PRIMARY KEY (profile, title_key, season, number))"
         /** Where Favourites kept by stream id wait for the Sync that carries them over. */
         const val LEGACY_FAVOURITES = "favourite_by_stream"
         /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
@@ -1751,6 +2046,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val ACCOUNT_EMAIL = "account_email"
+        const val SIGN_OUT_PENDING = "account_sign_out_pending"
+        /** History sync (#435): the Profile that syncs, the cursor of its last sync and the Provider key that was for, and a reset waiting to land. */
+        const val HISTORY_PROFILE = "history_profile"
+        const val HISTORY_CURSOR = "history_cursor"
+        const val HISTORY_PROVIDER = "history_provider"
+        const val HISTORY_RESET = "history_reset"
+        /** A Movie's season and number in the history tables, which key Movies and Episodes alike. */
+        const val NO_EPISODE = -1
+        const val HISTORY_COLUMNS = "title_key, season, number, position, duration, watched, removed, updated_at"
         const val REMEMBERED_TRACK = "remembered_track_"
         const val READING_DAY = "reading_day"
         const val LAST_FEATURED = "last_featured_"
@@ -1781,6 +2085,30 @@ internal class StoredSuspect(val kind: TitleKind, val name: String, val category
 internal class StoredProfile(val id: Long, val name: String?, val kids: Boolean, val usedAt: Long)
 
 internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
+
+/**
+ * One Movie's (no [episode]) or Episode's history as it syncs with the Account (#435): where the
+ * Viewer stopped, whether they Watched it, or that they [removed] it from Continue watching, [at]
+ * when, by the device's clock. The latest change per Movie or Episode wins.
+ */
+internal data class HistoryChange(
+    val id: TitleId,
+    val episode: EpisodeNumber?,
+    val position: Long,
+    val duration: Long?,
+    val watched: Boolean,
+    val removed: Boolean,
+    val at: Instant,
+)
+
+/** Which Profile syncs its history with the Account, from which [cursor], for which Provider key ([providerKey]). */
+internal data class HistoryState(val profile: Long, val cursor: Long, val provider: String?)
+
+/** A Title's key as the history sync sends it: `movie/238`, `show/1399` or `movie/listing/123`. */
+internal fun historyKey(id: TitleId): String = key(id)
+
+/** The Title a history key names, or null for one this app doesn't make. */
+internal fun historyTitleId(key: String): TitleId? = runCatching { titleId(key) }.getOrNull()
 
 /** Where the Viewer stopped in a Show's [episode], as [StoredProgress] is for a Title. */
 internal class StoredEpisodeProgress(val episode: EpisodeNumber, val position: Long, val duration: Long?, val watched: Boolean)
