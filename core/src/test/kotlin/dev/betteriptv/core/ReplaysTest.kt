@@ -226,6 +226,7 @@ class ReplaysTest {
         assertEquals(listOf(plan.version), plan.versions)
         // A file, not a live stream: it can be scrubbed and resumed.
         assertFalse(plan.live)
+        assertTrue(plan.matchesRefreshRate)
         library.connect(plan.version).use { assertTrue(it.location, it.location.endsWith("/movie/${provider.username}/${provider.password}/${replay.listingId}.mkv")) }
         // Where the Viewer stopped is kept, as a Movie's is.
         library.saveProgress(plan, 600_000, 7_200_000)

@@ -99,6 +99,14 @@ data class PlayPlan(
     /** Whether it plays a Channel, live: there is nowhere to seek to and nothing to resume. */
     val live: Boolean get() = titleId == null
 
+    /**
+     * Whether the TV switches to the refresh rate that fits the file's frame rate. A Channel keeps the
+     * TV's: the switch is an HDMI mode change that blanks the TV for a second or two, and it comes once
+     * the frame rate is measured, just after the picture shows, on every Channel the Viewer zaps to
+     * (#454). A 59.94 fps Channel on a 60 Hz TV only repeats a frame every 17 s.
+     */
+    val matchesRefreshRate: Boolean get() = !live
+
     /** This plan from the beginning, for Restart. Where the Viewer stopped stays kept until they pass the first minute. */
     fun fromStart(): PlayPlan = copy(from = 0)
 
