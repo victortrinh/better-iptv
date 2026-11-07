@@ -10,6 +10,8 @@ export interface Env {
   ESPN_API: string;
   /** The Wikidata Query Service's SPARQL endpoint, `https://query.wikidata.org/sparql`, which needs no key (#476). */
   WIKIDATA_SPARQL: string;
+  /** The Wikimedia pageviews API's root, `https://wikimedia.org/api/rest_v1/metrics/pageviews`, which needs no key (#477). */
+  WIKIMEDIA_PAGEVIEWS: string;
   /** OpenSubtitles' API root, `https://api.opensubtitles.com/api/v1`. */
   OPENSUBTITLES_API: string;
   /** The User-Agent OpenSubtitles asks every request to name the app by. */
