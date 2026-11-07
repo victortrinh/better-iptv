@@ -105,6 +105,9 @@ android {
 }
 
 androidComponents {
+    // The unit tests don't depend on the build type: `test` runs the debug and release variants' (CI
+    // runs one or the other), not a third copy for `benchmark`.
+    beforeVariants(selector().withBuildType("benchmark")) { it.enableUnitTest = false }
     // The Baseline Profile plugin's build types (nonMinifiedRelease generates the profile,
     // benchmarkRelease runs the Macrobenchmarks), made like `benchmark`: the debug build's app, so
     // they install over it and keep its login and catalog, never over the released app (#63).

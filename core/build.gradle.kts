@@ -48,6 +48,10 @@ tasks.processResources {
 tasks.test {
     // Small on purpose: Sync must stream the catalog, never hold a whole JSON document in memory.
     maxHeapSize = "128m"
+    // Four test JVMs, each with that heap: these tests were CI's critical path, seven minutes in one
+    // JVM, most of it real waits (delays and timeouts) rather than work. The fakes bind ephemeral
+    // ports and each test gets its own TemporaryFolder, so they don't meet.
+    maxParallelForks = 4
     // ./gradlew :core:test --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     providers.gradleProperty("surveyCloud").orNull?.let { systemProperty("surveyCloud", it) }
