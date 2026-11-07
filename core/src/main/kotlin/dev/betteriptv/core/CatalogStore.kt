@@ -951,6 +951,37 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
 
+    /** Every Category name a movie or show Listing is filed under, once each. */
+    fun listingCategories(): List<String> = synchronized(reader) {
+        reader.prepare("SELECT DISTINCT category FROM listing").use { buildList { while (it.step()) add(it.getText(0)) } }
+    }
+
+    /**
+     * The Titles any of whose Listings is filed under one of [categories], or that are among [ids],
+     * of each kind in list order (newest first): what the Kids catalog is made of.
+     */
+    fun titlesFiled(categories: Collection<String>, ids: Collection<TitleId> = emptyList()): Map<TitleKind, List<TitleId>> = synchronized(reader) {
+        val found = HashMap<String, Pair<String, Long>>()
+        categories.distinct().chunked(MAX_BOUND).forEach { chunk ->
+            reader.prepare(
+                "SELECT DISTINCT t.key, t.kind, t.position FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position " +
+                    "WHERE l.category IN (${chunk.joinToString(",") { "?" }})",
+            ).use {
+                chunk.forEachIndexed { i, category -> it.bindText(i + 1, category) }
+                while (it.step()) found[it.getText(0)] = it.getText(1) to it.getLong(2)
+            }
+        }
+        ids.map(::key).distinct().chunked(MAX_BOUND).forEach { chunk ->
+            reader.prepare("SELECT key, kind, position FROM title WHERE key IN (${chunk.joinToString(",") { "?" }})").use {
+                chunk.forEachIndexed { i, key -> it.bindText(i + 1, key) }
+                while (it.step()) found[it.getText(0)] = it.getText(1) to it.getLong(2)
+            }
+        }
+        TitleKind.entries.associateWith { kind ->
+            found.entries.filter { it.value.first == kindKey(kind) }.sortedBy { it.value.second }.map { titleId(it.key) }
+        }
+    }
+
     /** The Title [id] with its Listings, or null when the catalog doesn't have it. */
     fun title(id: TitleId): StoredTitle? = synchronized(reader) {
         reader.prepare(

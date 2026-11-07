@@ -82,6 +82,7 @@ import java.time.Duration
  * delete it, and "Add a profile" its name; each asks [onProfile]. The Languages and "Play next Episode" are the current
  * Profile's, the rest the device's.
  * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
+ * On a Kids profile there are only the Profiles, whose rows switch to another Profile at once, and the Text size.
  */
 @Composable
 fun SettingsScreen(
@@ -132,6 +133,8 @@ internal fun SettingsContent(
     val profileRow = { id: Long -> profileRows.getOrPut(id) { FocusRequester() } }
     val addProfileRow = remember { FocusRequester() }
     val picked = profiles.all.find { it.id == profileId }
+    // A Kids profile's Settings offer the Text size and the Profile switch, nothing else.
+    val kids = profiles.current.kids
     val appLanguageRow = remember { FocusRequester() }
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
@@ -187,10 +190,12 @@ internal fun SettingsContent(
                 ProfileNamePage(
                     if (picked == null) stringResource(R.string.profile_add) else stringResource(R.string.profile_rename_title, picked.shownName()),
                     initial = picked?.name.orEmpty(),
-                    onSave = { name ->
-                        onProfile(if (picked == null) ProfileChange.Add(name) else ProfileChange.Rename(picked.id, name))
+                    onSave = { name, kids ->
+                        onProfile(if (picked == null) ProfileChange.Add(name, kids) else ProfileChange.Rename(picked.id, name))
                         back()
                     },
+                    // The Kids switch is chosen once, when the Profile is made.
+                    kidsSwitch = picked == null,
                 )
             }
             Picker.DeleteProfile -> if (picked == null) {
@@ -222,16 +227,23 @@ internal fun SettingsContent(
                     rows = profileRow,
                     addRow = addProfileRow,
                     onOpen = { profile ->
-                        profileId = profile.id
-                        returnTo = Picker.Profile
-                        picking = Picker.Profile
+                        if (kids) {
+                            // A Kids profile switches, and nothing more: the Household PIN will ask first (#437).
+                            if (profile.id != profiles.currentId) onProfile(ProfileChange.Switch(profile.id))
+                        } else {
+                            profileId = profile.id
+                            returnTo = Picker.Profile
+                            picking = Picker.Profile
+                        }
                     },
                     onAdd = {
                         profileId = null
                         returnTo = Picker.ProfileName
                         picking = Picker.ProfileName
                     },
+                    canAdd = !kids,
                 )
+                if (!kids) {
                 item { Heading(stringResource(R.string.settings_languages)) }
                 item {
                     Labelled(stringResource(R.string.settings_app_language), stringResource(R.string.settings_app_language_detail)) {
@@ -288,6 +300,7 @@ internal fun SettingsContent(
                         detail = stringResource(R.string.settings_leagues_detail),
                     )
                 }
+                }
                 item { Heading(stringResource(R.string.settings_display)) }
                 item {
                     Labelled(stringResource(R.string.settings_text_size), stringResource(R.string.settings_text_size_detail)) {
@@ -302,6 +315,7 @@ internal fun SettingsContent(
                         )
                     }
                 }
+                if (!kids) {
                 item { Heading(stringResource(R.string.settings_playback)) }
                 item {
                     Labelled(stringResource(R.string.settings_quality_cap), stringResource(R.string.settings_quality_cap_detail)) {
@@ -355,6 +369,7 @@ internal fun SettingsContent(
                         },
                         onClick = { if (offered != null) onUpdate() },
                     )
+                }
                 }
             }
         }; ScreenFade(picking, firstFades = false) }

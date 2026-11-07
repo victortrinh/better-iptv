@@ -83,7 +83,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     fun changeProfiles(change: ProfileChange) {
         scope.launch {
             when (change) {
-                is ProfileChange.Add -> library.addProfile(change.name)
+                is ProfileChange.Add -> library.addProfile(change.name, change.kids)
                 is ProfileChange.Rename -> library.renameProfile(change.id, change.name)
                 is ProfileChange.Switch -> {
                     library.switchProfile(change.id)

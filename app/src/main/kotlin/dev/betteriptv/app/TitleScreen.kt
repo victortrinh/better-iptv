@@ -155,6 +155,7 @@ fun TitleScreen(
     TitlePage(
         id, openedOn, loaded, show,
         onPlay = play,
+        kids = library.kids,
         contentLanguages = contentLanguages,
         section = section,
         returnedFrom = returnedFrom,
@@ -194,6 +195,9 @@ fun TitleScreen(
  *
  * With a [section] open, the page gives way to that screen over the same backdrop, and coming back
  * ([returnedFrom]) puts focus on the action that opened it.
+ *
+ * On a Kids profile ([kids]) the page has no Trailer row (YouTube's end screen shows what it likes)
+ * and no Versions action: Play picks the Best playable Version, as on any profile.
  */
 @Composable
 internal fun TitlePage(
@@ -211,6 +215,7 @@ internal fun TitlePage(
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
     stillsOf: suspend (Int) -> Map<Int, EpisodeStill> = { emptyMap() },
     contentLanguages: List<String> = emptyList(),
+    kids: Boolean = false,
 ) {
     val title = loaded?.first
     var waited by remember(id) { mutableStateOf(false) }
@@ -228,20 +233,22 @@ internal fun TitlePage(
         if (backdrop != null) Backdrop(backdrop, under = first) else if (first != null) Backdrop(first)
         if (arrived) {
             val plan = loaded.second ?: show?.second
-            val versions = versionsOf(title!!, plan, show?.first, contentLanguages)
+            checkNotNull(title)
+            val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
                     TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) })
-                    TitleSection.Trailer -> title.trailer?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
+                    TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }, stillsOf = stillsOf) }
                     null -> TitleContent(
-                        title, plan, show?.first,
+                        if (kids) title.copy(trailer = null) else title, plan, show?.first,
                         versions = versions,
                         hasBackdrop = backdrop != null || first != null,
                         returnedFrom = returnedFrom,
                         onPlay = { onPlay(it, title.name) },
                         onRemove = onRemove,
                         onSection = onSection,
+                        kids = kids,
                     )
                 }
             }
@@ -284,6 +291,7 @@ private fun TitleContent(
     onPlay: (PlayPlan) -> Unit,
     onRemove: () -> Unit,
     onSection: (TitleSection) -> Unit,
+    kids: Boolean = false,
 ) {
     val context = LocalContext.current
     val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
@@ -306,7 +314,7 @@ private fun TitleContent(
             returnedFrom == TitleSection.Versions && versions != null -> versionsAction
             returnedFrom == TitleSection.Episodes && next != null -> episodesAction
             returnedFrom == TitleSection.Trailer && title.trailer != null -> trailerAction
-            plan != null || isShow -> play
+            plan != null || isShow || kids -> play
             else -> versionsAction
         }.requestFocus()
     }
@@ -327,7 +335,7 @@ private fun TitleContent(
     // With no Version in the Viewer's languages, the other languages are all there is to show.
     val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
     // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
-    val showVersions = versions != null || (isShow && episodes == null)
+    val showVersions = !kids && (versions != null || (isShow && episodes == null))
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {

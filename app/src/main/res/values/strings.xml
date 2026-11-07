@@ -31,6 +31,11 @@
     <string name="row_trending_shows">Trending shows this week</string>
     <string name="row_new_movies">New movies</string>
     <string name="row_new_shows">New shows</string>
+    <string name="row_new_for_kids">New for kids</string>
+    <string name="row_new_movies_for_kids">New movies for kids</string>
+    <string name="row_new_shows_for_kids">New shows for kids</string>
+    <string name="row_movies_for_kids">Movies for kids</string>
+    <string name="row_shows_for_kids">Shows for kids</string>
     <string name="rank_movies">#%1$d in movies in %2$s</string>
     <string name="rank_shows">#%1$d in shows in %2$s</string>
     <string name="rank_movies_worldwide">#%1$d in movies worldwide</string>
@@ -283,6 +288,8 @@
     <string name="profile_cancel">Cancel</string>
     <string name="profile_name">Name</string>
     <string name="profile_save">Save</string>
+    <string name="profile_kids">Kids profile</string>
+    <string name="profile_kids_detail">Sees only movies, shows and channels for kids</string>
     <string name="settings_languages">Languages</string>
     <string name="settings_app_language">App language</string>
     <string name="settings_app_language_detail">Menus, titles and descriptions</string>
