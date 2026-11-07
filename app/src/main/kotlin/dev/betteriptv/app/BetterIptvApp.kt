@@ -28,7 +28,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     lateinit var settings: ViewerSettingsStore
         private set
 
-    /** The in-app updater (#21), checked on launch; null in builds that don't update themselves (debug, benchmark). */
+    /** The in-app updater (#21), checked on launch and again when the app comes back to the front; null in builds that don't update themselves (debug, benchmark). */
     var updates: AppUpdates? = null
         private set
 
@@ -98,10 +98,13 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
      * The app came to the front (launch or resume): a held Sync's catalog lands now, between screens,
      * or else a Sync starts if the last one is stale. Either Matches the catalog after; with neither,
      * the first time, Matching a closed app left unfinished resumes. Nothing while the player is
-     * open or before login.
+     * open or before login. Updates are checked again too, unless checked recently: the process
+     * lives for days on a stick, so the launch check alone misses every build released since.
      */
     fun onResumed() {
-        if (!library.isLoggedIn || playerOpen) return
+        if (playerOpen) return
+        updates?.let { scope.launch { it.checkIfStale(RECHECK_UPDATES_AFTER) } }
+        if (!library.isLoggedIn) return
         when {
             library.hasPendingCatalog -> applyPendingCatalog()
             syncIfStale() -> Unit
@@ -161,6 +164,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     private companion object {
         const val TAG = "Sync"
         val STALE_AFTER: Duration = Duration.ofHours(6)
+        // CI releases within minutes of a merge, and the manifest is one small read.
+        val RECHECK_UPDATES_AFTER: Duration = Duration.ofMinutes(15)
         const val SEARCH_INDEX_AFTER = 5_000L
         // After Home's cold start and the search index have had the stick to themselves.
         const val VLC_FONTS_AFTER = 20_000L

@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -13,6 +14,11 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.InetSocketAddress
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** The in-app updater against a fake release host and a fake installer: check, the first-update permission, download and install. */
@@ -56,7 +62,15 @@ class AppUpdatesTest {
 
     private val downloads by lazy { folder.root.resolve("updates") }
 
-    private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer)
+    /** The updater's clock, moved by hand: a check is stale once [now] is far enough past it. */
+    private var now = Instant.parse("2026-11-06T20:21:00Z")
+    private val clock = object : Clock() {
+        override fun instant() = now
+        override fun getZone() = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId) = this
+    }
+
+    private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer, clock = clock)
 
     private val apk = ByteArray(300_000) { (it * 31).toByte() }
     private val dm = ByteArray(20_000) { (it * 7).toByte() }
@@ -110,6 +124,35 @@ class AppUpdatesTest {
         val updates = updates(installedVersionCode = 91)
         updates.check()
         assertEquals(UpdateState.UpToDate, updates.state.value)
+    }
+
+    @Test fun `coming back to the front checks again once the last check is old enough`() = runBlocking {
+        publish()
+        val updates = updates()
+        updates.check()
+        publish(versionCode = 97)
+        // Back a minute later: the launch check stands.
+        now += Duration.ofMinutes(1)
+        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertEquals(95L, (updates.state.value as UpdateState.Available).update.versionCode)
+        // Back an hour later: the build released meanwhile is offered.
+        now += Duration.ofHours(1)
+        assertTrue(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertEquals(97L, (updates.state.value as UpdateState.Available).update.versionCode)
+        // The re-check counts as a check: right after it, nothing is read again.
+        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertEquals(2, requested.count { it == "/latest/update.json" })
+    }
+
+    @Test fun `nothing is checked again while a build installs`() = runBlocking {
+        publish()
+        val updates = updates()
+        updates.check()
+        updates.update()
+        publish(versionCode = 97)
+        now += Duration.ofHours(1)
+        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertEquals(95L, (updates.state.value as UpdateState.Installing).update.versionCode)
     }
 
     @Test fun `an unreachable or broken manifest offers nothing`() = runBlocking {
