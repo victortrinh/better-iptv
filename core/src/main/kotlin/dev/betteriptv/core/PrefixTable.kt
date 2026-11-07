@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal class PrefixTable private constructor(
     private val prefixes: Map<String, Rule>,
-    private val categoryHints: List<Pair<Regex, Rule>>,
+    /** Each Category hint: its phrase as the table writes it, its whole-word pattern, its rule. */
+    private val categoryHints: List<Hint>,
     private val clutterNames: List<Regex>,
     private val liveClutterNames: List<Regex>,
     private val emptyEventSlots: List<Regex>,
@@ -34,7 +35,7 @@ internal class PrefixTable private constructor(
 
     /** The languages the table names for any Prefix or Category hint, as primary subtags: `fr-CA` counts as French. */
     private val knownLanguages: Set<String> by lazy {
-        (prefixes.values + categoryHints.map { it.second }).mapNotNull { it.language?.let(::primaryLanguage) }.filter { it.isNotEmpty() && it != "xx" }.toSet()
+        (prefixes.values + categoryHints.map { it.rule }).mapNotNull { it.language?.let(::primaryLanguage) }.filter { it.isNotEmpty() && it != "xx" }.toSet()
     }
 
     /** Whether the table names [language] (a primary subtag) for some Prefix or Category: a Header read may move a Version to it. */
@@ -160,10 +161,24 @@ internal class PrefixTable private constructor(
         return ChannelName(key, cleaned, country, quality, hevc)
     }
 
-    private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) {
+    private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) { matchingHints(category).map { it.rule } }
+
+    private fun matchingHints(category: String): List<Hint> {
         val folded = fold(category)
-        categoryHints.filter { (hint, _) -> hint.containsMatchIn(folded) }.map { it.second }
+        return categoryHints.filter { it.pattern.containsMatchIn(folded) }
     }
+
+    /**
+     * What a file-read report says of a Listing named [name] in [category] (ADR 0014): its Prefix,
+     * known to the table or not, and the Category hints that matched, as the table writes them. A
+     * code and hint words, never the name, so the cloud learns nothing of the catalog (ADR 0001).
+     */
+    fun reported(name: String, category: String): Reported =
+        Reported(PREFIX.find(name)?.groupValues?.get(1)?.replace('=', '-'), matchingHints(category).map { it.phrase })
+
+    class Reported(val prefix: String?, val hints: List<String>)
+
+    private class Hint(val phrase: String, val pattern: Regex, val rule: Rule)
 
     /**
      * A Listing's name without its Prefix and year, for showing until cloud metadata arrives:
@@ -201,7 +216,28 @@ internal class PrefixTable private constructor(
         val hevc: Boolean = false,
         /** A Channel quality word that counts only in the Provider's superscript form. */
         val superscript: Boolean = false,
-    )
+        /** Learned: the Prefix's files mostly carry several audio languages, so it names none (it is Untagged). */
+        val multiAudio: Boolean = false,
+    ) {
+        /**
+         * This line with a learned line's [learned] attributes over it: each attribute the learned line
+         * names replaces this one's, and Multi-audio drops the language. A learned language that is
+         * this line's primary language keeps the regional one (`fr` learned over `QC`'s `fr-CA`).
+         */
+        fun learned(learned: Rule): Rule = copy(
+            language = when {
+                learned.multiAudio -> null
+                learned.language == null -> language
+                language != null && primaryLanguage(language) == learned.language -> language
+                else -> learned.language
+            },
+            subtitled = subtitled && !learned.multiAudio && learned.language == null,
+            quality = learned.quality ?: quality,
+            hdr = learned.hdr ?: hdr,
+            dolbyAudio = dolbyAudio || learned.dolbyAudio,
+            multiAudio = learned.multiAudio,
+        )
+    }
 
     private data class Draft(
         val language: String? = null,
@@ -214,6 +250,7 @@ internal class PrefixTable private constructor(
         val audioDescription: Boolean = false,
         val sportsReplay: Boolean = false,
         val clutter: Boolean = false,
+        val multiAudio: Boolean = false,
     ) {
         fun apply(rule: Rule): Draft {
             val moved = if (rule.subtitled) copy(language = null, subtitles = subtitles + listOfNotNull(language)) else this
@@ -228,6 +265,7 @@ internal class PrefixTable private constructor(
                 audioDescription = moved.audioDescription || rule.audioDescription,
                 sportsReplay = moved.sportsReplay || rule.sportsReplay,
                 clutter = moved.clutter || rule.clutter,
+                multiAudio = moved.multiAudio || rule.multiAudio,
             )
         }
 
@@ -240,6 +278,7 @@ internal class PrefixTable private constructor(
             dolbyAudio = dolbyAudio,
             cam = cam,
             audioDescription = audioDescription,
+            multiAudio = multiAudio && language == null,
         )
 
         private fun <T> likely(value: T) = Known(value, Provenance.Likely)
@@ -311,6 +350,10 @@ internal class PrefixTable private constructor(
         /** What the table's sections hold so far, as [parse] reads its sources one after the other. */
         private class Sections {
             val prefixes = LinkedHashMap<String, Rule>()
+            /** The Prefixes the Provider table's hand lines name: a learned line never overrides them. */
+            val handPrefixes = HashSet<String>()
+            /** The Provider table's learned lines, by Prefix, laid over Base's lines once every source is read. */
+            val learnedPrefixes = LinkedHashMap<String, Rule>()
             /** Each Category hint's phrase, as written, to its rule. */
             val hints = LinkedHashMap<String, Rule>()
             val clutterNames = mutableListOf<Regex>()
@@ -380,7 +423,12 @@ internal class PrefixTable private constructor(
                         else -> {
                             val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
                             when (section) {
-                                "prefixes" -> { once(key); prefixes[key] = rule }
+                                "prefixes" -> { once(key); prefixes[key] = rule; if (ofProvider) handPrefixes += key }
+                                "learned prefixes" -> {
+                                    if (!ofProvider) fail("learned prefixes come only from a Provider table")
+                                    once(key)
+                                    learnedPrefixes[key] = rule
+                                }
                                 "category hints" -> { once(key); hints[key] = rule }
                                 // The colon is where the tag ends, not part of it.
                                 "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
@@ -393,10 +441,12 @@ internal class PrefixTable private constructor(
             }
 
             fun table(): PrefixTable {
+                // A hand line over a learned line over Base (ADR 0014).
+                learnedPrefixes.forEach { (key, learned) -> if (key !in handPrefixes) prefixes[key] = (prefixes[key] ?: Rule()).learned(learned) }
                 val genres = LinkedHashMap<String, Int>()
                 val ranked = genreWords.map { (word, genre) -> wholeWord(word) to genres.getOrPut(genre) { genres.size } }
                 return PrefixTable(
-                    prefixes, hints.map { (phrase, rule) -> wholeWord(phrase) to rule }, clutterNames, liveClutterNames, emptyEventSlots,
+                    prefixes, hints.map { (phrase, rule) -> Hint(phrase, wholeWord(phrase), rule) }, clutterNames, liveClutterNames, emptyEventSlots,
                     tierTags, qualityWords, countryAliases, ranked, eventTimeZone ?: ZoneOffset.UTC,
                 )
             }
@@ -420,6 +470,7 @@ internal class PrefixTable private constructor(
                     "clutter" -> rule.copy(clutter = true)
                     "hevc" -> rule.copy(hevc = true)
                     "superscript" -> rule.copy(superscript = true)
+                    "multi-audio" -> rule.copy(multiAudio = true)
                     else -> fail("unknown attribute $attribute")
                 }
             }

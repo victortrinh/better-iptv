@@ -4,6 +4,8 @@
  * by a SHA-256 of its host, which the device sends; the cloud never learns the host itself.
  */
 
+import { relearn } from "./learned-lines";
+
 /** At most this many Listings per request. */
 export const MAX_FILE_BATCH = 50;
 
@@ -13,6 +15,10 @@ const MAX_BODY = 8 * 1024;
 export interface FileRead {
   listingId: number;
   file: Record<string, unknown>;
+  /** The Listing's Prefix (`SC`, `4K-EN`), null when its name has none; never a name (ADR 0001). */
+  prefix?: string | null;
+  /** The Category hints that matched the Listing's Category (`MULTI-SUBS`), as the table writes them. */
+  hints?: string[];
 }
 
 /** The kept file reads of [provider]'s [listingIds]; Listings nobody read are left out. */
@@ -26,20 +32,35 @@ export async function fileReads(db: D1Database, provider: string, listingIds: nu
   return results.map((row) => ({ listingId: row.listing_id, file: JSON.parse(row.body) }));
 }
 
-/** Keeps [files] read on [provider], replacing what was kept: a later read has seen more. */
+/**
+ * Keeps [files] read on [provider], replacing what was kept: a later read has seen more. Then the
+ * Prefixes they touch, and those their Listings had before, are tallied again (ADR 0014).
+ */
 export async function saveFileReads(db: D1Database, provider: string, files: FileRead[]): Promise<void> {
   if (files.length === 0) return;
   const now = Date.now();
-  await db.batch(
-    files.map((file) =>
-      db.prepare("INSERT OR REPLACE INTO file_read (provider, listing_id, body, read_at) VALUES (?1, ?2, ?3, ?4)")
-        .bind(provider, file.listingId, JSON.stringify(file.file), now),
+  const ids = JSON.stringify(files.map((file) => file.listingId));
+  const [before] = await db.batch<{ prefix: string }>([
+    db.prepare("SELECT DISTINCT prefix FROM file_read WHERE provider = ?1 AND listing_id IN (SELECT value FROM json_each(?2)) AND prefix IS NOT NULL").bind(provider, ids),
+    ...files.map((file) =>
+      db.prepare("INSERT OR REPLACE INTO file_read (provider, listing_id, body, read_at, prefix, hints) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+        .bind(provider, file.listingId, JSON.stringify(file.file), now, file.prefix ?? null, JSON.stringify(file.hints ?? [])),
     ),
-  );
+  ]);
+  const touched = new Set([...before.results.map((row) => row.prefix), ...files.flatMap((file) => (file.prefix ? [file.prefix] : []))]);
+  await relearn(db, provider, touched);
 }
 
 /** Whether [provider] is a Provider key: a SHA-256 as lowercase hex. */
 export const isProviderKey = (provider: unknown): provider is string => typeof provider === "string" && /^[0-9a-f]{64}$/.test(provider);
+
+/** Whether [prefix] is a Prefix as a device reports it: a code like `EN`, `4K-FR` or `D+`, or null for a name with none. */
+export const isReportedPrefix = (prefix: unknown): prefix is string | null | undefined =>
+  prefix === null || prefix === undefined || (typeof prefix === "string" && prefix.length <= 32 && /^[A-Z0-9+]+(?:-[A-Z0-9+]+)*$/.test(prefix));
+
+/** Whether [hints] are Category hints as a device reports them: a short list of a Prefix table's hint words. */
+export const isReportedHints = (hints: unknown): hints is string[] | undefined =>
+  hints === undefined || (Array.isArray(hints) && hints.length <= 20 && hints.every((h) => typeof h === "string" && h.length >= 1 && h.length <= 64));
 
 export const isListingId = (id: unknown): id is number => Number.isSafeInteger(id) && (id as number) > 0;
 

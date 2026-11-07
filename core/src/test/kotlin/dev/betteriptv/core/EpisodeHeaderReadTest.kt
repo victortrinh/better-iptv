@@ -141,6 +141,9 @@ class EpisodeHeaderReadTest {
         openShow(listOf("fr"))
         assertEquals(emptyList<String>(), provider.ranges)
         assertEquals(1, cloud.fileReads.size)
+        // An Episode's read reports its Show's Prefix, never the Show's name.
+        assertEquals("FR", cloud.fileReadReports.single()["prefix"])
+        assertTrue("Game of Thrones" !in cloud.received.single { it.path == "/v1/file-reads" }.body)
     }
 
     @Test fun `an Episode whose details name the Show's original language has Original audio, and plays ahead of an EN copy`() = runBlocking {

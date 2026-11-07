@@ -63,6 +63,40 @@ class ProviderTableSyncTest {
         assertEquals("{\"provider\":\"$key\"}", asked.first().body)
     }
 
+    @Test fun `learned lines apply as Likely, a hand line over them and they over Base`() = runBlocking {
+        cloud.providerTables[key] = "[prefixes]\nCD | language=de\n\n[learned prefixes]\nCD | language=fr\nDE | language=it\nXQ | language=pt; quality=4K\nQC | language=fr\n"
+        listings(*versions, "XQ - O Padrinho (1972)" to "FILMES", "QC - Le Parrain (1972)" to "QC - FILMS")
+        val library = library()
+
+        val synced = library.sync() as SyncStatus.Synced
+
+        // The hand line wins over the learned one.
+        assertEquals("de", library.language(1))
+        // A learned line that contradicts Base applies: it was measured.
+        assertEquals("it", library.language(2))
+        val learned = library.movieListings(0, 10_000).single { it.id == 3L }.attributes
+        assertEquals(Known("pt", Provenance.Likely), learned.language)
+        assertEquals(Known(Quality.UHD, Provenance.Likely), learned.quality)
+        assertTrue(synced.last.unknownPrefixes.none { it.prefix == "XQ" })
+        // A learned French keeps Base's Québec French.
+        assertEquals("fr-CA", library.language(4))
+    }
+
+    @Test fun `a Multi-audio Prefix's Versions are Untagged, Likely in the Title's original language`() = runBlocking {
+        cloud.providerTables[key] = "[learned prefixes]\nEN | multi-audio\n"
+        cloud.title("en", tmdbTitle(1, "Amélie", originalLanguage = "fr"))
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"}]"""
+        provider.movieListOverride = """[{"stream_id":1,"name":"EN - Amélie (2001)","tmdb":"1","category_id":"1","added":"1700000000"}]"""
+        val library = library()
+
+        library.sync()
+
+        assertNull(library.language(1))
+        val details = library.title(TitleId.Tmdb(TitleKind.Movie, 1), listOf("en"), "en")!!
+        val version = (details.languages + details.otherLanguages).flatMap { it.versions }.single()
+        assertEquals(Known("fr", Provenance.Likely), version.attributes.language)
+    }
+
     @Test fun `a Provider the cloud has no table for reports CD as unknown`() = runBlocking {
         listings(*versions)
         val library = library()

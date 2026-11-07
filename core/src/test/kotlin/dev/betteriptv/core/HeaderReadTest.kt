@@ -253,6 +253,21 @@ class HeaderReadTest {
         assertEquals(emptyList<String>(), provider.ranges)
     }
 
+    @Test fun `a read report carries the Listing, its file, its Prefix and its hints, and no name`() = runBlocking {
+        syncVersions("SC - Movie (2025)" to "SC - MULTI-SUBS FILMS" with "mkv")
+        provider.movieFiles[1] = matroskaFile(englishAndFrench)
+
+        readHeaders()
+
+        val report = cloud.fileReadReports.single()
+        assertEquals(setOf("listingId", "file", "prefix", "hints"), report.keys)
+        assertEquals(1L, (report["listingId"] as Number).toLong())
+        assertEquals("SC", report["prefix"])
+        assertEquals(listOf("MULTI-SUBS"), report["hints"])
+        val sent = cloud.received.single { it.path == "/v1/file-reads" }.body
+        assertTrue("Movie" !in sent && "FILMS" !in sent)
+    }
+
     @Test fun `Tracks seen during Playback Confirm the Version`() = runBlocking {
         syncVersions("FR - Le Film (2025)" to "FR - FILMS" with "mkv")
         val plan = library.playPlan(movie, listOf("fr"), fullHdTv)!!
@@ -268,6 +283,11 @@ class HeaderReadTest {
         readHeaders(listOf("fr"))
         assertEquals(emptyList<String>(), provider.ranges)
         assertEquals(1, cloud.fileReads.size)
+        // Reported with its Prefix, and the Category's hints (none here).
+        val report = cloud.fileReadReports.single()
+        assertEquals("FR", report["prefix"])
+        assertEquals(emptyList<String>(), report["hints"])
+        assertTrue("Le Film" !in cloud.received.single { it.path == "/v1/file-reads" }.body)
     }
 
     /** An engine that plays a file to its end at once, having seen [seen] in it. */

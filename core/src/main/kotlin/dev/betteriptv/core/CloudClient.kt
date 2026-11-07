@@ -94,12 +94,22 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }.toMap()
     }
 
-    /** Shares what the files of [provider]'s movie Listings hold ([files], JSON by Listing id), at most [MAX_BATCH] at a time. */
-    fun shareFileReads(provider: String, files: Map<Long, String>) {
+    /**
+     * Shares what the files of [provider]'s Listings hold ([files]), at most [MAX_BATCH] at a time,
+     * each with its Listing's Prefix and matched Category hints, from which the cloud learns the
+     * Provider table (ADR 0014). Never a name.
+     */
+    fun shareFileReads(provider: String, files: List<SharedFileRead>) {
         require(files.size <= MAX_BATCH)
-        val body = mapOf("provider" to provider, "files" to files.map { (id, file) -> mapOf("listingId" to id, "file" to json.fromJson(file)) })
+        val body = mapOf(
+            "provider" to provider,
+            "files" to files.map { mapOf("listingId" to it.listingId, "file" to json.fromJson(it.file), "prefix" to it.prefix, "hints" to it.hints) },
+        )
         authorized { token -> post("v1/file-reads", json.serializeNulls().toJson(body), token) }
     }
+
+    /** One file read as shared: the Listing, its file as JSON, its Prefix (null when its name has none) and its matched Category hints. */
+    class SharedFileRead(val listingId: Long, val file: String, val prefix: String?, val hints: List<String>)
 
     /** Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most [MAX_PREFIX_BATCH]. */
     fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>) {
