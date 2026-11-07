@@ -46,6 +46,7 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Profile
 import dev.betteriptv.core.Profiles
@@ -66,27 +67,48 @@ val LocalProfileChip = compositionLocalOf<ProfileChipState?> { null }
  * The household's Profiles over [content], the browsing screens: their tabs draw the profile chip
  * (through [LocalProfileChip]), whose OK opens "Who's watching?" over the screen. Picking a Profile
  * there switches to it ([onSwitch]) and closes; "Add a profile" closes and opens Settings' add flow
- * ([onAdd]); Back closes. Focus goes back to the chip, unless a Profile was added.
+ * ([onAdd]); Back closes. Focus goes back to the chip, unless a Profile was added. From a Kids
+ * profile, picking another asks the Household [pin] first (#437), Back from it returning to the list,
+ * and there is no "Add a profile".
  */
 @Composable
-fun BoxScope.ProfileSwitcher(profiles: Profiles, onSwitch: (Long) -> Unit, onAdd: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+fun BoxScope.ProfileSwitcher(profiles: Profiles, pin: HouseholdPin, onSwitch: (Long) -> Unit, onAdd: () -> Unit, content: @Composable BoxScope.() -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
+    // The Profile a Kids profile picked, while the Household PIN is asked before switching to it.
+    var asking by rememberSaveable { mutableStateOf<Long?>(null) }
     // Set when it closes: focus goes back to the chip once the screen under it is focusable again.
     var backToChip by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val chip = remember(profiles) { ProfileChipState(profiles, onOpen = { open = true }, focus) }
     val close = {
         open = false
+        asking = null
         backToChip = true
     }
     CompositionLocalProvider(LocalProfileChip provides chip) { content() }
+    val picked = profiles.all.find { it.id == asking }
     // A Profile deleted down to one closes it: there is nothing to pick between.
-    if (open && chip.shown) {
+    if (open && chip.shown && picked != null) {
+        BackHandler { asking = null }
+        OnVeil {
+            AskPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
+                onSwitch(picked.id)
+                close()
+            })
+        }
+    } else if (open && chip.shown) {
         WhoIsWatching(
             profiles,
             onPick = { id ->
-                if (id != profiles.currentId) onSwitch(id)
-                close()
+                when {
+                    id == profiles.currentId -> close()
+                    // Leaving a Kids profile takes the Household PIN.
+                    profiles.current.kids -> asking = id
+                    else -> {
+                        onSwitch(id)
+                        close()
+                    }
+                }
             },
             onAdd = {
                 open = false
@@ -154,52 +176,60 @@ fun BoxScope.TabsEnd(chip: ProfileChipState?, pill: (@Composable () -> Unit)?) {
 }
 
 /**
- * "Who's watching?" over the screen, on one `veil`: a headline, a row per Profile in the order they
+ * [content] over the screen, on one `veil`, on a `ground` slab ([SWITCHER_WIDTH] wide): glass rows
+ * straight on the veil let the screen's own rows show through them. Focus stays inside.
+ */
+@Composable
+private fun OnVeil(content: @Composable () -> Unit) {
+    Box(
+        Modifier.fillMaxSize()
+            .background(Colors.veil)
+            // Keeps focus inside: nothing under the veil can be reached while it is open.
+            .focusProperties { onExit = { cancelFocusChange() } }
+            .focusGroup(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.background(Colors.ground, RoundedCornerShape(Corners.card)).padding(Spacing.xl).width(SWITCHER_WIDTH),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) { content() }
+    }
+}
+
+/**
+ * "Who's watching?" over the screen, [OnVeil]: a headline, a row per Profile in the order they
  * were made (the current one marked ✓, a Kids one with a small "Kids" label), then "Add a profile",
- * off once the household has [Library.MAX_PROFILES]. Focus opens on the current Profile and stays
- * inside; Back closes ([onClose]).
+ * off once the household has [Library.MAX_PROFILES] and left out on a Kids profile. Focus opens on
+ * the current Profile and stays inside; Back closes ([onClose]).
  */
 @Composable
 fun WhoIsWatching(profiles: Profiles, onPick: (Long) -> Unit, onAdd: () -> Unit, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val current = remember { FocusRequester() }
     LaunchedEffect(Unit) { current.requestFocus() }
-    Box(
-        Modifier.fillMaxSize()
-            .background(Colors.veil)
-            // Keeps focus in the list: nothing under the veil can be reached while it is open.
-            .focusProperties { onExit = { cancelFocusChange() } }
-            .focusGroup(),
-        contentAlignment = Alignment.Center,
-    ) {
-        // The list on a `ground` slab: glass rows straight on the veil let the screen's own rows show through them.
-        Column(
-            Modifier.background(Colors.ground, RoundedCornerShape(Corners.card)).padding(Spacing.xl).width(SWITCHER_WIDTH),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(stringResource(R.string.who_is_watching), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-            profiles.all.forEach { profile ->
-                SwitcherRow(
-                    profile,
-                    chosen = profile.id == profiles.currentId,
-                    onClick = { onPick(profile.id) },
-                    modifier = (if (profile.id == profiles.currentId) Modifier.focusRequester(current) else Modifier).testTag("switcher:${profile.id}"),
-                )
-            }
-            val full = profiles.all.size >= Library.MAX_PROFILES
-            // A Kids profile switches and adds nothing, as in its Settings (#433).
-            if (!profiles.current.kids) FocusSurface(
-                onClick = { if (!full) onAdd() },
-                modifier = Modifier.fillMaxWidth().testTag("switcher:add"),
-                weight = FocusWeight.Row,
-                container = Colors.surface,
-                focusedContainer = Colors.focus,
-            ) { focused ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text(stringResource(R.string.profile_add), style = Type.label, color = if (focused) Colors.onFocus else if (full) Colors.inkMuted else Colors.ink)
-                    if (full) {
-                        Text(stringResource(R.string.profile_add_full, Library.MAX_PROFILES), style = Type.caption, color = if (focused) Colors.onFocus.copy(alpha = 0.7f) else Colors.inkMuted)
-                    }
+    OnVeil {
+        Text(stringResource(R.string.who_is_watching), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+        profiles.all.forEach { profile ->
+            SwitcherRow(
+                profile,
+                chosen = profile.id == profiles.currentId,
+                onClick = { onPick(profile.id) },
+                modifier = (if (profile.id == profiles.currentId) Modifier.focusRequester(current) else Modifier).testTag("switcher:${profile.id}"),
+            )
+        }
+        val full = profiles.all.size >= Library.MAX_PROFILES
+        // A Kids profile adds none, as its Settings don't.
+        if (!profiles.current.kids) FocusSurface(
+            onClick = { if (!full) onAdd() },
+            modifier = Modifier.fillMaxWidth().testTag("switcher:add"),
+            weight = FocusWeight.Row,
+            container = Colors.surface,
+            focusedContainer = Colors.focus,
+        ) { focused ->
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(stringResource(R.string.profile_add), style = Type.label, color = if (focused) Colors.onFocus else if (full) Colors.inkMuted else Colors.ink)
+                if (full) {
+                    Text(stringResource(R.string.profile_add_full, Library.MAX_PROFILES), style = Type.caption, color = if (focused) Colors.onFocus.copy(alpha = 0.7f) else Colors.inkMuted)
                 }
             }
         }

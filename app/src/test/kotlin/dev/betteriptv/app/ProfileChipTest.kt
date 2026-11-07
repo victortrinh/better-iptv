@@ -95,6 +95,7 @@ class ProfileChipTest {
             Box(Modifier.fillMaxSize()) {
                 ProfileSwitcher(
                     profiles,
+                    FakePin(),
                     onSwitch = { id ->
                         switches += id
                         profiles = Profiles(profiles.all, id)
@@ -113,6 +114,7 @@ class ProfileChipTest {
                         onTab = {},
                         profiles = profiles,
                         onProfile = {},
+                        pin = FakePin(),
                         catalogLanguages = { listOf("en") },
                         catalog = {},
                         addProfile = adding,

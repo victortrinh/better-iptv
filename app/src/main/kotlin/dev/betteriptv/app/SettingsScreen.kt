@@ -55,6 +55,7 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Profiles
 import dev.betteriptv.core.QualityCap
@@ -84,7 +85,8 @@ import java.time.Duration
  * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
  * [addProfile] opens "Add a profile"'s name at once, as "Who's watching?" asks (#432), and says so through [onAddProfileShown];
  * Back from it lands on "Add a profile".
- * On a Kids profile there are only the Profiles, whose rows switch to another Profile at once, and the Text size.
+ * On a Kids profile there are only the Profiles, whose rows switch to another Profile once the Household [pin] is
+ * typed (#437), and the Text size. Elsewhere the first Kids profile added chooses the PIN, and "Change PIN" changes it.
  */
 @Composable
 fun SettingsScreen(
@@ -102,6 +104,7 @@ fun SettingsScreen(
     onAddProfileShown: () -> Unit = {},
 ) = SettingsContent(
     settings, update, onChange, onUpdate, focusTab, onTab, profiles, onProfile,
+    pin = library.householdPin,
     addProfile = addProfile,
     onAddProfileShown = onAddProfileShown,
     catalogLanguages = library::catalogLanguages,
@@ -128,6 +131,7 @@ internal fun SettingsContent(
     onTab: (Browse) -> Unit,
     profiles: Profiles,
     onProfile: (ProfileChange) -> Unit,
+    pin: HouseholdPin,
     catalogLanguages: suspend () -> List<String>,
     catalog: LazyListScope.() -> Unit,
     account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
@@ -141,7 +145,12 @@ internal fun SettingsContent(
     val profileRows = remember { HashMap<Long, FocusRequester>() }
     val profileRow = { id: Long -> profileRows.getOrPut(id) { FocusRequester() } }
     val addProfileRow = remember { FocusRequester() }
+    val changePinRow = remember { FocusRequester() }
     val picked = profiles.all.find { it.id == profileId }
+    val pinSet by pin.isSet.collectAsStateWithLifecycle()
+    // The name of the first Kids profile, kept while its Household PIN is chosen (#437): it is added once there is one.
+    var kidsName by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     // A Kids profile's Settings offer the Text size and the Profile switch, nothing else.
     val kids = profiles.current.kids
     val appLanguageRow = remember { FocusRequester() }
@@ -206,18 +215,69 @@ internal fun SettingsContent(
             }
             Picker.ProfileName -> {
                 // Back from adding returns to "Add a profile", from renaming to the Profile's page.
-                val back = { picking = if (picked == null) null else Picker.Profile }
+                val back = {
+                    kidsName = null
+                    picking = if (picked == null) null else Picker.Profile
+                }
                 BackHandler(onBack = back)
                 ProfileNamePage(
                     if (picked == null) stringResource(R.string.profile_add) else stringResource(R.string.profile_rename_title, picked.shownName()),
-                    initial = picked?.name.orEmpty(),
+                    initial = kidsName ?: picked?.name.orEmpty(),
                     onSave = { name, kids ->
-                        onProfile(if (picked == null) ProfileChange.Add(name, kids) else ProfileChange.Rename(picked.id, name))
-                        back()
+                        if (picked == null && kids && !pinSet) {
+                            // The household's first Kids profile: the PIN that lets someone leave it comes first.
+                            kidsName = name
+                            picking = Picker.ChoosePin
+                        } else {
+                            onProfile(if (picked == null) ProfileChange.Add(name, kids) else ProfileChange.Rename(picked.id, name))
+                            back()
+                        }
                     },
                     // The Kids switch is chosen once, when the Profile is made.
                     kidsSwitch = picked == null,
+                    initialKids = kidsName != null,
                 )
+            }
+            Picker.ChoosePin -> {
+                // Back returns to the name, as typed, the Kids switch on: no Profile is made without its PIN.
+                BackHandler { picking = Picker.ProfileName }
+                PinPage {
+                    ChoosePin(stringResource(R.string.pin_choose), stringResource(R.string.pin_choose_detail), onChosen = { chosen ->
+                        val name = kidsName
+                        scope.launch {
+                            pin.set(chosen)
+                            if (name != null) onProfile(ProfileChange.Add(name, kids = true))
+                            kidsName = null
+                            picking = null
+                        }
+                    })
+                }
+            }
+            Picker.SwitchPin -> if (picked == null) {
+                LaunchedEffect(Unit) { picking = null }
+            } else {
+                BackHandler { picking = null }
+                PinPage {
+                    AskPin(pin, stringResource(R.string.pin_title), stringResource(R.string.pin_to_watch_as, picked.shownName()), onRight = {
+                        onProfile(ProfileChange.Switch(picked.id))
+                        picking = null
+                    })
+                }
+            }
+            Picker.ChangePin -> {
+                BackHandler { picking = null }
+                PinPage { AskPin(pin, stringResource(R.string.pin_current), detail = null, onRight = { picking = Picker.NewPin }) }
+            }
+            Picker.NewPin -> {
+                BackHandler { picking = null }
+                PinPage {
+                    ChoosePin(stringResource(R.string.pin_new), detail = null, onChosen = { chosen ->
+                        scope.launch {
+                            pin.set(chosen)
+                            picking = null
+                        }
+                    })
+                }
             }
             Picker.DeleteProfile -> if (picked == null) {
                 LaunchedEffect(Unit) { picking = null }
@@ -255,8 +315,12 @@ internal fun SettingsContent(
                     addRow = addProfileRow,
                     onOpen = { profile ->
                         if (kids) {
-                            // A Kids profile switches, and nothing more: the Household PIN will ask first (#437).
-                            if (profile.id != profiles.currentId) onProfile(ProfileChange.Switch(profile.id))
+                            // A Kids profile switches, and nothing more, once the Household PIN is typed.
+                            if (profile.id != profiles.currentId) {
+                                profileId = profile.id
+                                returnTo = Picker.SwitchPin
+                                picking = Picker.SwitchPin
+                            }
                         } else {
                             profileId = profile.id
                             returnTo = Picker.Profile
@@ -270,6 +334,21 @@ internal fun SettingsContent(
                     },
                     canAdd = !kids,
                 )
+                // Outside a Kids profile, once the household has a PIN.
+                if (!kids && pinSet) {
+                    item(key = "profile:pin") {
+                        SettingRow(
+                            stringResource(R.string.pin_change),
+                            "",
+                            onClick = {
+                                returnTo = Picker.ChangePin
+                                picking = Picker.ChangePin
+                            },
+                            Modifier.focusRequester(changePinRow),
+                            detail = stringResource(R.string.pin_change_detail),
+                        )
+                    }
+                }
                 if (!kids) {
                 item { Heading(stringResource(R.string.settings_languages)) }
                 item {
@@ -415,8 +494,9 @@ internal fun SettingsContent(
                 Picker.Region -> regionRow
                 Picker.Leagues -> leaguesRow
                 // Back to the Profile's row; once it's deleted, to the current one's.
-                Picker.Profile, Picker.DeleteProfile -> profileRow(picked?.id ?: profiles.currentId)
-                Picker.ProfileName -> addProfileRow
+                Picker.Profile, Picker.DeleteProfile, Picker.SwitchPin -> profileRow(picked?.id ?: profiles.currentId)
+                Picker.ProfileName, Picker.ChoosePin -> addProfileRow
+                Picker.ChangePin, Picker.NewPin -> changePinRow
                 Picker.SignIn, Picker.SignOut -> accountRow
                 Picker.Devices -> devicesRow
                 // Reached by its tab, which keeps focus.
@@ -483,6 +563,16 @@ private enum class Picker {
 
     /** The Sign-in code and QR. */
     SignIn,
+
+    /** Choosing the Household PIN, for the household's first Kids profile. */
+    ChoosePin,
+
+    /** The Household PIN, before a Kids profile switches to the picked Profile, or Back to its row. */
+    SwitchPin,
+
+    /** "Change PIN": the current one first, then [NewPin]. */
+    ChangePin,
+    NewPin,
 
     /** The question before signing this TV out. */
     SignOut,

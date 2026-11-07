@@ -63,6 +63,7 @@ class AccountSectionTest {
             onTab = {},
             profiles = Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID),
             onProfile = {},
+            pin = FakePin(),
             catalogLanguages = { listOf("en") },
             catalog = {},
             account = { open, accountRow, devicesRow -> AccountRows(email, open, accountRow, devicesRow) },
