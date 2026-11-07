@@ -82,6 +82,8 @@ import java.time.Duration
  * delete it, and "Add a profile" its name; each asks [onProfile]. The Languages and "Play next Episode" are the current
  * Profile's, the rest the device's.
  * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
+ * [addProfile] opens "Add a profile"'s name at once, as "Who's watching?" asks (#432), and says so through [onAddProfileShown];
+ * Back from it lands on "Add a profile".
  */
 @Composable
 fun SettingsScreen(
@@ -95,20 +97,25 @@ fun SettingsScreen(
     onTab: (Browse) -> Unit,
     profiles: Profiles,
     onProfile: (ProfileChange) -> Unit,
+    addProfile: Boolean = false,
+    onAddProfileShown: () -> Unit = {},
 ) = SettingsContent(
     settings, update, onChange, onUpdate, focusTab, onTab, profiles, onProfile,
+    addProfile = addProfile,
+    onAddProfileShown = onAddProfileShown,
     catalogLanguages = library::catalogLanguages,
     catalog = {
         item { SyncRow(library, onSyncNow) }
         item { MatchingRow(library) }
     },
-    account = { onSignIn, modifier -> AccountRow(library, onSignIn, modifier) },
-    signIn = { onSignedIn -> SignInScreen(library, onSignedIn = { onSignedIn() }) },
+    account = { open, accountRow, devicesRow -> AccountRows(library, open, accountRow, devicesRow) },
+    accountPage = { page, onDone -> AccountPageContent(library, page, onDone) },
 )
 
 /**
  * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
- * the Catalog section's rows from [catalog], the Account row from [account] and the Sign-in screen from [signIn].
+ * the Catalog section's rows from [catalog], the Account section's rows from [account] and what they
+ * open (the Sign-in screen, Sign out, the device list) from [accountPage].
  */
 @Composable
 internal fun SettingsContent(
@@ -122,8 +129,10 @@ internal fun SettingsContent(
     onProfile: (ProfileChange) -> Unit,
     catalogLanguages: suspend () -> List<String>,
     catalog: LazyListScope.() -> Unit,
-    account: @Composable (onSignIn: () -> Unit, modifier: Modifier) -> Unit = { _, _ -> },
-    signIn: @Composable (onSignedIn: () -> Unit) -> Unit = {},
+    account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
+    accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
+    addProfile: Boolean = false,
+    onAddProfileShown: () -> Unit = {},
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
@@ -137,12 +146,21 @@ internal fun SettingsContent(
     val regionRow = remember { FocusRequester() }
     val leaguesRow = remember { FocusRequester() }
     val accountRow = remember { FocusRequester() }
+    val devicesRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
     // Kept while a list or the Sign-in screen replaces the column, so Back lands with the row that
     // opened it composed: the Account row is below the first screenful.
     val settingsList = rememberLazyListState()
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
+    if (addProfile) {
+        LaunchedEffect(Unit) {
+            profileId = null
+            returnTo = Picker.ProfileName
+            picking = Picker.ProfileName
+            onAddProfileShown()
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
         BrowseTabs(Browse.Settings, onTab, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
@@ -207,9 +225,15 @@ internal fun SettingsContent(
                     onCancel = { picking = Picker.Profile },
                 )
             }
-            Picker.SignIn -> {
+            Picker.SignIn, Picker.SignOut, Picker.Devices -> {
                 BackHandler { picking = null }
-                signIn { picking = null }
+                accountPage(
+                    when (picking) {
+                        Picker.SignOut -> AccountPage.SignOut
+                        Picker.Devices -> AccountPage.Devices
+                        else -> AccountPage.SignIn
+                    },
+                ) { picking = null }
             }
             null -> LazyColumn(
                 state = settingsList,
@@ -336,10 +360,15 @@ internal fun SettingsContent(
                 }
                 item { Heading(stringResource(R.string.settings_account)) }
                 item {
-                    account({
-                        returnTo = Picker.SignIn
-                        picking = Picker.SignIn
-                    }, Modifier.focusRequester(accountRow))
+                    account({ page ->
+                        val opened = when (page) {
+                            AccountPage.SignIn -> Picker.SignIn
+                            AccountPage.SignOut -> Picker.SignOut
+                            AccountPage.Devices -> Picker.Devices
+                        }
+                        returnTo = opened
+                        picking = opened
+                    }, Modifier.focusRequester(accountRow), Modifier.focusRequester(devicesRow))
                 }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 catalog()
@@ -370,7 +399,8 @@ internal fun SettingsContent(
                 // Back to the Profile's row; once it's deleted, to the current one's.
                 Picker.Profile, Picker.DeleteProfile -> profileRow(picked?.id ?: profiles.currentId)
                 Picker.ProfileName -> addProfileRow
-                Picker.SignIn -> accountRow
+                Picker.SignIn, Picker.SignOut -> accountRow
+                Picker.Devices -> devicesRow
                 // Reached by its tab, which keeps focus.
                 null -> profileRow(profiles.currentId).takeUnless { focusTab }
             }?.requestFocus()
@@ -435,21 +465,12 @@ private enum class Picker {
 
     /** The Sign-in code and QR. */
     SignIn,
-}
 
-/**
- * The Account row (ADR 0015): "Sign in", which opens the Sign-in screen, or "Signed in as …" once
- * the device is, read from the device alone. Signing out comes with the device list (#434).
- */
-@Composable
-private fun AccountRow(library: Library, onSignIn: () -> Unit, modifier: Modifier) {
-    val account by library.account.collectAsStateWithLifecycle()
-    val email = account
-    if (email == null) {
-        SettingRow(stringResource(R.string.settings_sign_in), "", onClick = onSignIn, modifier, detail = stringResource(R.string.settings_sign_in_detail))
-    } else {
-        SettingRow(stringResource(R.string.settings_signed_in_as, email), "", onClick = {}, modifier)
-    }
+    /** The question before signing this TV out. */
+    SignOut,
+
+    /** The Account's devices. */
+    Devices,
 }
 
 /**

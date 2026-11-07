@@ -6,7 +6,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
@@ -34,6 +33,7 @@ enum class Browse { Home, Movies, Shows, Live, Search, Settings }
 /**
  * The tabs across the top of the browsing screens; [selectedFocus] focuses the [selected] one. With
  * [library], the pill at their right end says while a Sync or Matching may still change the rows.
+ * With two Profiles or more the profile chip ([LocalProfileChip]) sits after it, at the very end.
  */
 @Composable
 fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier = Modifier, selectedFocus: FocusRequester? = null, library: Library? = null) {
@@ -51,7 +51,7 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
         modifier = modifier,
         selectedFocus = selectedFocus,
     ) {
-        if (library != null) CatalogActivityPill(library, Modifier.align(Alignment.CenterEnd))
+        TabsEnd(LocalProfileChip.current, pill = library?.let { { CatalogActivityPill(it) } })
     }
 }
 

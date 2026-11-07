@@ -251,6 +251,27 @@ class HistorySyncTest {
         assertTrue(living.isLoggedIn)
     }
 
+    @Test fun `Sign out in Settings, or another TV signing this one out, takes the Account's history off it`() = runBlocking {
+        val living = tv("living")
+        val bedroom = tv("bedroom")
+        living.signIn()
+        bedroom.signIn()
+        living.stop(first, hour)
+        living.syncHistory()
+        bedroom.pullAndEnter()
+
+        // The bedroom signs the living room out; the living room hears it in its next answer, whatever it asked.
+        val other = bedroom.accountDevices()!!.single { !it.thisDevice }
+        assertTrue(bedroom.signOut(other))
+        living.checkSignIn()
+        assertNull(living.account.value)
+        assertEquals(emptyList<TitleId>(), living.watching())
+
+        assertTrue(bedroom.signOut())
+        assertEquals(emptyList<TitleId>(), bedroom.watching())
+        assertTrue(bedroom.isLoggedIn && living.isLoggedIn)
+    }
+
     @Test fun `a Listing's progress stays with its Provider, and a TMDB ID's follows the Account to another`() = runBlocking {
         val living = tv("living")
         // The same panel by another name: another Provider host, whose Listing 3 may be anything.

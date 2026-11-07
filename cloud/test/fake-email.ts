@@ -34,4 +34,10 @@ export class FakeEmail {
     const message = [...this.sent].reverse().find((m) => m.to.includes(address.toLowerCase()));
     return message ? (/https:\/\/\S+\/sign-in\/link\?token=[A-Za-z0-9_-]+/.exec(message.text)?.[0] ?? null) : null;
   }
+
+  /** The "Delete my account" link in the last email to [address], or null when none went there. */
+  lastDeleteLinkTo(address: string): string | null {
+    const message = [...this.sent].reverse().find((m) => m.to.includes(address.toLowerCase()));
+    return message ? (/https:\/\/\S+\/delete-account\/link\?token=[A-Za-z0-9_-]+/.exec(message.text)?.[0] ?? null) : null;
+  }
 }

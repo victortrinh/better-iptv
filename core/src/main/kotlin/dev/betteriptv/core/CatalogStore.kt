@@ -1836,16 +1836,23 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     /** The email of the Account the device is signed in to, as the cloud last said; null when none. */
     fun accountEmail(): String? = meta(ACCOUNT_EMAIL)
 
-    fun saveAccountEmail(email: String?) = synchronized(writer) {
-        if (email == null) {
+    fun saveAccountEmail(email: String?) = saveOrDeleteMeta(ACCOUNT_EMAIL, email)
+
+    /** Whether this device signed itself out while the cloud couldn't hear it, so the cloud still has it signed in (#434). */
+    fun signOutPending(): Boolean = meta(SIGN_OUT_PENDING) != null
+
+    fun saveSignOutPending(pending: Boolean) = saveOrDeleteMeta(SIGN_OUT_PENDING, if (pending) "1" else null)
+
+    private fun saveOrDeleteMeta(key: String, value: String?) = synchronized(writer) {
+        if (value == null) {
             writer.prepare("DELETE FROM meta WHERE key = ?").use {
-                it.bindText(1, ACCOUNT_EMAIL)
+                it.bindText(1, key)
                 it.step()
             }
         } else {
             writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-                it.bindText(1, ACCOUNT_EMAIL)
-                it.bindText(2, email)
+                it.bindText(1, key)
+                it.bindText(2, value)
                 it.step()
             }
         }
@@ -1989,6 +1996,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val ACCOUNT_EMAIL = "account_email"
+        const val SIGN_OUT_PENDING = "account_sign_out_pending"
         /** History sync (#435): the Profile that syncs, the cursor of its last sync and the Provider key that was for, and a reset waiting to land. */
         const val HISTORY_PROFILE = "history_profile"
         const val HISTORY_CURSOR = "history_cursor"

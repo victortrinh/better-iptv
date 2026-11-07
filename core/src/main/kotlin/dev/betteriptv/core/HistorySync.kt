@@ -84,6 +84,8 @@ internal class HistorySync(
                 // A Listing's progress names its Provider: it waits for a login.
                 val pushed = queued.filter { it.id is TitleId.Tmdb || provider != null }
                 val answer = cloud.sync(state.cursor, provider, pushed)
+                // Signed out meanwhile (another TV, or the answer's own Zugig-Account): nothing of the Account is kept.
+                if (!signedIn()) return false
                 store.stagePulledHistory(state.profile, answer.changes, answer.reset)
                 store.unqueueHistory(state.profile, pushed)
                 state = state.copy(cursor = answer.cursor)
@@ -111,8 +113,12 @@ internal class HistorySync(
         return store.applyPulledHistory(profile, id)
     }
 
-    /** Takes the synced Profile's history off the device, as signing out does: the catalog and the Provider login stay. */
-    fun signedOut() = synchronized(lock) {
+    /**
+     * Takes the synced Profile's history off the device, as signing out does: the catalog and the
+     * Provider login stay. Not under [lock], which a sync holds while the cloud answers it with this
+     * very sign-out: a sync still running finds the device signed out before it keeps anything.
+     */
+    fun signedOut() {
         val profile = syncedProfile ?: return
         store.forgetHistory(profile)
     }
