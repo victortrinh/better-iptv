@@ -239,6 +239,8 @@
     <string name="profile_save">Enregistrer</string>
     <string name="who_is_watching">Qui regarde ?</string>
     <string name="profile_kids_label">Enfants</string>
+    <string name="profile_kids">Profil enfant</string>
+    <string name="profile_kids_detail">Ne voit que les films, séries et chaînes pour les enfants</string>
     <string name="settings_languages">Langues</string>
     <string name="settings_app_language">Langue de l\'appli</string>
     <string name="settings_app_language_detail">Menus, titres et descriptions</string>
@@ -324,6 +326,11 @@
     <string name="row_trending_shows">Séries tendance de la semaine</string>
     <string name="row_new_movies">Nouveaux films</string>
     <string name="row_new_shows">Nouvelles séries</string>
+    <string name="row_new_for_kids">Nouveautés pour les enfants</string>
+    <string name="row_new_movies_for_kids">Nouveaux films pour les enfants</string>
+    <string name="row_new_shows_for_kids">Nouvelles séries pour les enfants</string>
+    <string name="row_movies_for_kids">Films pour les enfants</string>
+    <string name="row_shows_for_kids">Séries pour les enfants</string>
     <string name="rank_movies">N° %1$d des films · %2$s</string>
     <string name="rank_shows">N° %1$d des séries · %2$s</string>
     <string name="rank_movies_worldwide">N° %1$d des films dans le monde</string>

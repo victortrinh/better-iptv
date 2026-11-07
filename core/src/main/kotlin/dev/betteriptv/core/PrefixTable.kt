@@ -26,6 +26,8 @@ internal class PrefixTable private constructor(
     private val countryAliases: Map<String, String>,
     /** Each genre Category word, as a whole-word pattern over the folded name, with its genre's place in the genre list. */
     private val genreWords: List<Pair<Regex, Int>>,
+    /** The genre list's Kids words, as whole-word patterns over the folded name: what files a Title in the Kids catalog. */
+    private val kidsWords: List<Regex>,
     /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
     val eventTimeZone: ZoneId,
 ) {
@@ -48,6 +50,16 @@ internal class PrefixTable private constructor(
     fun genreRank(name: String): Int? {
         val folded = fold(name)
         return genreWords.filter { (word, _) -> word.containsMatchIn(folded) }.minOfOrNull { (_, rank) -> rank }
+    }
+
+    /**
+     * Whether a Category named [name] (`EN - KIDS`, `GR| ΓΙΑ ΠΑΙΔΙΑ/KIDS`, `FR - DESSINS ANIMÉS`) is a
+     * Kids Category: it has a word of the genre list's Kids genre, matched as Category hints are. A
+     * Title any of whose Listings sits in one is in the Kids catalog, and so is a Channel of one.
+     */
+    fun isKids(name: String): Boolean {
+        val folded = fold(name)
+        return kidsWords.any { it.containsMatchIn(folded) }
     }
 
     /** Why a Listing is left out of the movie list. */
@@ -246,6 +258,8 @@ internal class PrefixTable private constructor(
     }
 
     companion object {
+        /** The genre whose words name Kids Categories ([isKids]). */
+        private const val KIDS_GENRE = "Kids"
         /**
          * `PREFIX - Title`, also with the space missing on one side of the dash (`GR- Title`) or a
          * spaced dot (`4K-FR . Title`). A Prefix is capitals, digits and `+` joined by `-` (or the
@@ -397,7 +411,7 @@ internal class PrefixTable private constructor(
                 val ranked = genreWords.map { (word, genre) -> wholeWord(word) to genres.getOrPut(genre) { genres.size } }
                 return PrefixTable(
                     prefixes, hints.map { (phrase, rule) -> wholeWord(phrase) to rule }, clutterNames, liveClutterNames, emptyEventSlots,
-                    tierTags, qualityWords, countryAliases, ranked, eventTimeZone ?: ZoneOffset.UTC,
+                    tierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map(::wholeWord), eventTimeZone ?: ZoneOffset.UTC,
                 )
             }
         }
