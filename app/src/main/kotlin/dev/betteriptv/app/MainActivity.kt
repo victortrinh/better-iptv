@@ -177,6 +177,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         // Sync's catalog, so rows change between screens, never under focus; leaving Settings after Sync now too.
         val topLevel = now == null && opened == null && openedGame == null && country == null
         LaunchedEffect(tab, topLevel) { if (topLevel) app.applyPendingCatalog() }
+        val chipPulse by app.library.profileChipPulse.collectAsStateWithLifecycle()
         // With two Profiles or more, the tabs' chip opens "Who's watching?" over whichever browsing screen is shown (#432).
         ProfileSwitcher(
             profile,
@@ -188,6 +189,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 byTab = false
                 addingProfile = true
             },
+            pulse = chipPulse,
+            onPulsed = { scope.launch { app.library.profileChipPulsed() } },
         ) {
             if (now != null) {
                 BackHandler { playing = null }

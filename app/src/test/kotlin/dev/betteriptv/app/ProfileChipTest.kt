@@ -139,6 +139,32 @@ class ProfileChipTest {
 
     private fun chip() = compose.onNodeWithTag(PROFILE_CHIP_TAG)
 
+    @Test fun theChipPulsesOneCycleWhenDueThenSaysSo() {
+        var pulsed = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            val chip = remember { ProfileChipState(two, onOpen = {}, FocusRequester(), pulse = true, onPulsed = { pulsed++ }) }
+            Box(Modifier.fillMaxSize()) { ProfileChip(chip) }
+        }
+        // The waiting dot's rhythm, once: 900 ms down to 30%, 900 ms back.
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(0, pulsed)
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(1, pulsed)
+        compose.mainClock.advanceTimeBy(5_000)
+        assertEquals(1, pulsed)
+    }
+
+    @Test fun theChipDoesNotPulseWhenNotDue() {
+        var pulsed = 0
+        compose.setContent {
+            val chip = remember { ProfileChipState(two, onOpen = {}, FocusRequester(), onPulsed = { pulsed++ }) }
+            Box(Modifier.fillMaxSize()) { ProfileChip(chip) }
+        }
+        compose.mainClock.advanceTimeBy(5_000)
+        assertEquals(0, pulsed)
+    }
+
     @Test fun withOneProfileNoChipIsDrawnAndThePillEndsTheTabs() {
         tabs(one)
 

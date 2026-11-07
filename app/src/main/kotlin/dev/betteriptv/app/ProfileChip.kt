@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.FocusSurface
 import dev.betteriptv.app.ui.components.FocusWeight
+import dev.betteriptv.app.ui.components.pulseOnce
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
@@ -55,7 +57,15 @@ import dev.betteriptv.core.Profiles
  * What the tabs need to draw the profile chip (#432): the household's [profiles], what OK on it
  * does ([onOpen]) and the [focus] that puts focus back on it when "Who's watching?" closes.
  */
-class ProfileChipState(val profiles: Profiles, val onOpen: () -> Unit, val focus: FocusRequester) {
+class ProfileChipState(
+    val profiles: Profiles,
+    val onOpen: () -> Unit,
+    val focus: FocusRequester,
+    /** Whether the chip pulses once as it shows (#438): the first time a second Profile is made. */
+    val pulse: Boolean = false,
+    /** Called once it has pulsed, so it never does again. */
+    val onPulsed: () -> Unit = {},
+) {
     /** Drawn only once the household has two Profiles or more: with one nothing changes anywhere. */
     val shown: Boolean get() = profiles.all.size > 1
 }
@@ -72,14 +82,22 @@ val LocalProfileChip = compositionLocalOf<ProfileChipState?> { null }
  * and there is no "Add a profile".
  */
 @Composable
-fun BoxScope.ProfileSwitcher(profiles: Profiles, pin: HouseholdPin, onSwitch: (Long) -> Unit, onAdd: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+fun BoxScope.ProfileSwitcher(
+    profiles: Profiles,
+    pin: HouseholdPin,
+    onSwitch: (Long) -> Unit,
+    onAdd: () -> Unit,
+    pulse: Boolean = false,
+    onPulsed: () -> Unit = {},
+    content: @Composable BoxScope.() -> Unit,
+) {
     var open by rememberSaveable { mutableStateOf(false) }
     // The Profile a Kids profile picked, while the Household PIN is asked before switching to it.
     var asking by rememberSaveable { mutableStateOf<Long?>(null) }
     // Set when it closes: focus goes back to the chip once the screen under it is focusable again.
     var backToChip by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
-    val chip = remember(profiles) { ProfileChipState(profiles, onOpen = { open = true }, focus) }
+    val chip = remember(profiles, pulse) { ProfileChipState(profiles, onOpen = { open = true }, focus, pulse, onPulsed) }
     val close = {
         open = false
         asking = null
@@ -130,14 +148,18 @@ fun BoxScope.ProfileSwitcher(profiles: Profiles, pin: HouseholdPin, onSwitch: (L
 /**
  * The current Profile's name in a `glass` capsule as tall as the tab capsule, at the tabs' right
  * end: a tab in the focus grammar's sense (Right from the last tab reaches it, it takes the tabs'
- * focus style). OK opens "Who's watching?".
+ * focus style). OK opens "Who's watching?". The first time a second Profile is made it pulses once
+ * as it shows, the waiting dot's rhythm for one cycle ([pulseOnce]), so a household member who didn't
+ * set the app up notices it (#438).
  */
 @Composable
 fun ProfileChip(chip: ProfileChipState, modifier: Modifier = Modifier) {
     val capsule = RoundedCornerShape(50)
+    val alpha = pulseOnce(chip.pulse, chip.onPulsed)
     FocusSurface(
         onClick = chip.onOpen,
         modifier = modifier
+            .graphicsLayer { this.alpha = alpha() }
             .height(CHIP_HEIGHT)
             .widthIn(max = CHIP_MAX_WIDTH)
             .focusRequester(chip.focus)

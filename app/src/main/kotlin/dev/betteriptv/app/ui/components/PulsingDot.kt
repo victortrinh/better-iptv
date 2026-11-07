@@ -1,5 +1,6 @@
 package dev.betteriptv.app.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,7 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -33,6 +37,24 @@ fun PulsingDot(size: Dp, modifier: Modifier = Modifier) {
         label = "alpha",
     )
     Box(modifier.size(size).graphicsLayer { this.alpha = alpha }.background(Colors.ink, CircleShape))
+}
+
+/**
+ * One cycle of [PulsingDot]'s rhythm, for something that is noticed once rather than waited on (the
+ * profile chip, #438): while [pulse], the alpha to draw goes from full to 30% and back, [PULSE_MILLIS]
+ * each way, linear, then [onDone] is called. Read the alpha in a `graphicsLayer`, so nothing redraws.
+ */
+@Composable
+fun pulseOnce(pulse: Boolean, onDone: () -> Unit): () -> Float {
+    val alpha = remember { Animatable(1f) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(pulse) {
+        if (!pulse) return@LaunchedEffect
+        alpha.animateTo(0.3f, tween(PULSE_MILLIS, easing = LinearEasing))
+        alpha.animateTo(1f, tween(PULSE_MILLIS, easing = LinearEasing))
+        done()
+    }
+    return { alpha.value }
 }
 
 /** Each way of the pulse: slow enough to read as waiting, not activity. */
