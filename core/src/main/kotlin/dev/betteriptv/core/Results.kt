@@ -192,8 +192,8 @@ data class TitleDetails(
     /** The Provider's rating on a 10 scale ("★ 6.6"); null when it gives none or zero. */
     val rating: Double? = null,
     /**
-     * The language the Title was released in (TMDB's, a primary subtag), when Prefer original audio
-     * acts on it: the setting is on, TMDB names the language and it is no Content language. Its
+     * The language the Title was released in (Wikidata's, a primary subtag, #476), when Prefer original
+     * audio acts on it: the setting is on, Wikidata names the language and it is no Content language. Its
      * group then sits among [languages]. Null otherwise.
      */
     val originalLanguage: String? = null,

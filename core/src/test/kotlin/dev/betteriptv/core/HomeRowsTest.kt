@@ -54,9 +54,9 @@ class HomeRowsTest {
         library.sync()
     }
 
-    /** Serves a Title [tmdbId] named [name], released in [originalLanguage]. */
-    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0, originalLanguage: String = "en", genres: List<String> = emptyList()) =
-        cloud.title("en", tmdbTitle(tmdbId, name, originalLanguage = originalLanguage, genres = genres, popularity = popularity, backdropPath = "/still-$tmdbId.jpg"))
+    /** Serves TMDB's metadata of a Title [tmdbId] named [name]. */
+    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0, genres: List<String> = emptyList()) =
+        cloud.title("en", tmdbTitle(tmdbId, name, genres = genres, popularity = popularity, backdropPath = "/still-$tmdbId.jpg"))
 
     private suspend fun rows(contentLanguages: List<String> = english, region: String = "CA", now: Instant = Instant.now(), leagues: List<League> = emptyList()) =
         library.homeRows(contentLanguages, appLanguage = "en", region = region, leagues = leagues, now = now)
@@ -87,6 +87,9 @@ class HomeRowsTest {
     }
 
     @Test fun `browse rows show only Titles in a Content language, and Untagged ones Likely in one`() = runBlocking {
+        // Wikidata says which language the Untagged Titles were released in; the device learns it at the Sync (#476).
+        cloud.titleFacts(movie(3), originalLanguage = "en")
+        cloud.titleFacts(movie(4), originalLanguage = "fr")
         syncMovies(
             "EN - English (2025)" to 1,
             "FR - Français (2025)" to 2,
@@ -96,10 +99,10 @@ class HomeRowsTest {
             "EN - Both (2025)" to 5,
         )
         tmdb(1, "English")
-        tmdb(2, "Français", originalLanguage = "fr")
+        tmdb(2, "Français")
         tmdb(3, "Untagged English")
-        tmdb(4, "Untagged French", originalLanguage = "fr")
-        tmdb(5, "Both", originalLanguage = "fr")
+        tmdb(4, "Untagged French")
+        tmdb(5, "Both")
 
         assertEquals(setOf("English", "Untagged English", "Both"), rows(english).new().toSet())
         assertEquals(setOf("Français", "Untagged French", "Both"), rows(listOf("fr-CA")).new().toSet())
@@ -122,7 +125,7 @@ class HomeRowsTest {
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "FR - Foreign (2025)" to 3)
         tmdb(1, "First")
         tmdb(2, "Second")
-        tmdb(3, "Foreign", originalLanguage = "fr")
+        tmdb(3, "Foreign")
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
         Thread.sleep(5)
         library.saveProgress(movie(3), position = 10 * 60_000L, duration = null)
@@ -381,7 +384,7 @@ class HomeRowsTest {
     @Test fun `a Top row keeps the Provider's Titles in a Content language, in rank order without gaps`() = runBlocking {
         syncMovies("EN - Fourth (2025)" to 4, "EN - First (2025)" to 1, "FR - Second (2025)" to 2, "EN - Fifth (2025)" to 5)
         tmdb(1, "First")
-        tmdb(2, "Second", originalLanguage = "fr")
+        tmdb(2, "Second")
         tmdb(4, "Fourth")
         tmdb(5, "Fifth")
         // Netflix's #2 isn't on the Provider; #3 has no Version in English.

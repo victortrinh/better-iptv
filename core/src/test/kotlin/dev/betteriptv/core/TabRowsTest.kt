@@ -59,9 +59,9 @@ class TabRowsTest {
         }
     }
 
-    /** Serves a movie [tmdbId] named [name], released in [originalLanguage]. */
-    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0, originalLanguage: String = "en") =
-        cloud.title("en", tmdbTitle(tmdbId, name, originalLanguage = originalLanguage, popularity = popularity))
+    /** Serves TMDB's metadata of a movie [tmdbId] named [name]. */
+    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0) =
+        cloud.title("en", tmdbTitle(tmdbId, name, popularity = popularity))
 
     private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english, region: String = "CA") =
         library.tabRows(kind, contentLanguages, appLanguage = "en", region = region, now = Instant.now())
@@ -131,9 +131,12 @@ class TabRowsTest {
     }
 
     @Test fun `an Untagged Title is in a genre row when its original language is a Content language`() = runBlocking {
+        // Wikidata says which language each Untagged Title was released in; the device learns it at the Sync (#476).
+        cloud.titleFacts(movie(5), originalLanguage = "en")
+        cloud.titleFacts(movie(6), originalLanguage = "fr")
         syncOlderMovies(*numbered("Laugh", 1L..4L), "4K - Untagged English (2010)" to 5, "4K - Untagged French (2010)" to 6)
         tmdb(5, "Untagged English")
-        tmdb(6, "Untagged French", originalLanguage = "fr")
+        tmdb(6, "Untagged French")
         cloud.genre(TitleKind.Movie, "Comedy", 6, 5, 1, 2, 3, 4)
 
         assertEquals(listOf("Untagged English", "Laugh 1", "Laugh 2", "Laugh 3", "Laugh 4"), rows().genre("Comedy"))
@@ -199,7 +202,7 @@ class TabRowsTest {
         syncMovies("EN - Quiet (2025)" to 1, "EN - Hit (2025)" to 2, "FR - Français (2025)" to 3, "EN - Middling (2025)" to 4)
         tmdb(1, "Quiet", popularity = 2.0)
         tmdb(2, "Hit", popularity = 90.0)
-        tmdb(3, "Français", popularity = 99.0, originalLanguage = "fr")
+        tmdb(3, "Français", popularity = 99.0)
         tmdb(4, "Middling", popularity = 30.0)
 
         assertEquals(listOf("Hit", "Middling", "Quiet"), rows().newNames())
@@ -208,7 +211,7 @@ class TabRowsTest {
     @Test fun `a tab's Top row keeps the Provider's Titles in a Content language, ranked in order, in the Region`() = runBlocking {
         syncMovies("EN - Fourth (2025)" to 4, "EN - First (2025)" to 1, "FR - Second (2025)" to 2, "EN - Fifth (2025)" to 5)
         tmdb(1, "First")
-        tmdb(2, "Second", originalLanguage = "fr")
+        tmdb(2, "Second")
         tmdb(4, "Fourth")
         tmdb(5, "Fifth")
         cloud.charts("CA", movies = listOf(1, 99, 2, 4, 5))

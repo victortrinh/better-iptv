@@ -65,7 +65,10 @@ class MetadataTest {
         library.title(id, contentLanguages, appLanguage) ?: throw AssertionError("no Title $id")
 
     @Test fun `a play plan knows the language the Title was released in, so the player can call its audio Original`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", originalLanguage = "en"))
+        // Wikidata's facts arrive after a Sync (#476), never from TMDB's metadata.
+        cloud.title("fr", tmdbTitle(238, "The Godfather", originalLanguage = "fr"))
+        cloud.titleFacts(godfather, originalLanguage = "en")
+        library.sync()
         details(godfather, "fr")
 
         val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
@@ -76,7 +79,7 @@ class MetadataTest {
         assertFalse(plan.isOriginal(Track(null)))
     }
 
-    @Test fun `without TMDB's metadata no audio is Original`() = runBlocking {
+    @Test fun `without Wikidata's facts no audio is Original`() = runBlocking {
         val plan = library.playPlan(godfather, french, DeviceProfile(maxHeight = 2160, hdr = emptySet())) ?: throw AssertionError("no plan")
         assertNull(plan.originalLanguage)
         assertFalse(plan.isOriginal(Track("eng")))

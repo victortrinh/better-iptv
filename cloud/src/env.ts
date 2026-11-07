@@ -8,6 +8,8 @@ export interface Env {
   NETFLIX_TOP10: string;
   /** ESPN's site API root, `https://site.api.espn.com/apis/site/v2/sports`, whose scoreboard needs no key. */
   ESPN_API: string;
+  /** The Wikidata Query Service's SPARQL endpoint, `https://query.wikidata.org/sparql`, which needs no key (#476). */
+  WIKIDATA_SPARQL: string;
   /** OpenSubtitles' API root, `https://api.opensubtitles.com/api/v1`. */
   OPENSUBTITLES_API: string;
   /** The User-Agent OpenSubtitles asks every request to name the app by. */
