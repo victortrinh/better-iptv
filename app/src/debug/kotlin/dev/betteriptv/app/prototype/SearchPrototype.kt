@@ -1,46 +1,51 @@
 package dev.betteriptv.app.prototype
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.withFrameNanos
-import dev.betteriptv.app.ResultRow
-import dev.betteriptv.app.ui.components.Completions
-import kotlinx.coroutines.delay
+import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ResultGrid
+import dev.betteriptv.app.ui.components.Completions
+import dev.betteriptv.app.ui.components.KEYBOARD_WIDTH
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TopTabs
 import dev.betteriptv.app.ui.theme.Colors
-import dev.betteriptv.app.ui.theme.Corners
-import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
+import kotlinx.coroutines.delay
 
 /**
- * Search: a D-pad keyboard on the left, completions under it, results updating on the right as
- * each letter lands.
+ * Search, as Netflix lays it out: a D-pad keyboard on the left, completions under it, and the query
+ * over one grid of cards on the right, updating as each letter lands.
  */
 @Composable
 fun SearchPrototype() {
@@ -48,6 +53,7 @@ fun SearchPrototype() {
     val keyboard = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyboard.requestFocus() }
     val firstResult = remember { FocusRequester() }
+    val grid = remember { FocusRequester() }
     var toResults by remember { mutableStateOf(false) }
     val titles = listOf(
         SampleCatalog.general, SampleCatalog.goldRush, SampleCatalog.kid, SampleCatalog.phantom,
@@ -82,31 +88,21 @@ fun SearchPrototype() {
     }
 
     Ground {
-        Column(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY)) {
-            TopTabs(TABS, selected = 4, onSelect = {})
+        Column(Modifier.fillMaxSize().padding(start = Spacing.screenX, top = Spacing.screenY)) {
+            TopTabs(TABS, selected = 4, onSelect = {}, modifier = Modifier.padding(end = Spacing.screenX))
             Spacer(Modifier.height(24.dp))
             Row {
-                Column(Modifier.width(290.dp).verticalScroll(rememberScrollState())) {
-                    Box(
-                        Modifier.fillMaxWidth().height(44.dp).background(Colors.surface, RoundedCornerShape(Corners.control)).padding(horizontal = 14.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(query, style = Type.title, color = Colors.ink)
-                            Box(Modifier.padding(start = 2.dp).width(2.dp).height(20.dp).background(Colors.focus))
-                        }
-                    }
-                    Text(
-                        "Accents and typos are fine: \"metropolis\", \"métropolis\" and \"metroplis\" all find it.",
-                        style = Type.caption,
-                        color = Colors.inkMuted,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
-                    )
+                Column(
+                    Modifier.width(KEYBOARD_WIDTH).verticalScroll(rememberScrollState())
+                        // Right from Space or Delete, above the cards, goes into the grid rather than up to the tabs.
+                        .focusProperties { onExit = { if (requestedFocusDirection == FocusDirection.Right && shown.isNotEmpty()) grid.requestFocus() } }
+                        .focusGroup(),
+                ) {
                     RemoteKeyboard(
                         onKey = { query += it },
                         onDelete = { query = query.dropLast(1) },
                         onSpace = { query += " " },
-                        modifier = Modifier.focusRequester(keyboard),
+                        entry = keyboard,
                     )
                     Completions(
                         completions,
@@ -117,15 +113,21 @@ fun SearchPrototype() {
                         modifier = Modifier.padding(top = 14.dp, bottom = Spacing.screenY),
                     )
                 }
-                Spacer(Modifier.width(40.dp))
+                Spacer(Modifier.width(Spacing.xxl))
                 Column(Modifier.weight(1f)) {
-                    Text("Movies · ${shown.size}", style = Type.headline, color = Colors.ink)
-                    ResultRow(shown, key = { it.name }, Modifier.focusRequester(firstResult)) { title, modifier ->
-                        TitleCard(painterResource(title.poster), title.name, title.badges, onClick = {}, modifier = modifier)
+                    Row(Modifier.height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = Colors.ink, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(Spacing.m))
+                        Text(query, style = Type.title, color = Colors.ink)
+                        Box(Modifier.padding(start = 2.dp).width(2.dp).height(18.dp).background(Colors.focus))
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text("Shows · 0", style = Type.headline, color = Colors.ink)
-                    Text("No Shows match \"$query\".", style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = 6.dp))
+                    if (shown.isEmpty()) {
+                        Text("Nothing matches \"$query\".", style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.l))
+                    } else {
+                        ResultGrid(shown, wide = { false }, keyOf = { it.name }, first = firstResult, modifier = Modifier.focusRequester(grid)) { title, modifier ->
+                            TitleCard(painterResource(title.poster), title.name, emptyList(), onClick = {}, modifier = modifier, named = false)
+                        }
+                    }
                 }
             }
         }

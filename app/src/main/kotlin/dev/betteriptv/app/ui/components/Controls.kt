@@ -316,26 +316,44 @@ fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
 }
 
 /**
- * An on-screen keyboard laid out for the D-pad: letters in alphabetical order on a 7-column grid, so
- * any letter is a few presses away and the layout is the same in English and French.
+ * An on-screen keyboard laid out for the D-pad, as Netflix's: Space and Delete as two wide keys on
+ * top, then the letters in alphabetical order and the digits on a 6-column grid, so any key is a few
+ * presses away and the layout is the same in English and French. No apostrophe or hyphen: the search
+ * index splits names at them, as at a space. Space and Delete show Netflix's icons, the space bar
+ * and the backspace, and are named for accessibility. [entry] focuses the first letter, where focus
+ * lands on arrival rather than on Space.
  */
 @Composable
-fun RemoteKeyboard(onKey: (String) -> Unit, onDelete: () -> Unit, onSpace: () -> Unit, modifier: Modifier = Modifier) {
-    val rows = listOf("abcdefg", "hijklmn", "opqrstu", "vwxyz12", "3456789", "0'-")
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { char -> Key(char.toString(), { onKey(char.toString()) }) }
-            }
+fun RemoteKeyboard(onKey: (String) -> Unit, onDelete: () -> Unit, onSpace: () -> Unit, modifier: Modifier = Modifier, entry: FocusRequester? = null) {
+    val rows = listOf("abcdef", "ghijkl", "mnopqr", "stuvwx", "yz1234", "567890")
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(KEY_GAP)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP)) {
+            Key(stringResource(R.string.keyboard_space), onSpace, width = WIDE_KEY, icon = NuageIcons.SpaceBar)
+            Key(stringResource(R.string.keyboard_delete), onDelete, width = WIDE_KEY, icon = NuageIcons.Backspace)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Key(stringResource(R.string.keyboard_space), onSpace, width = KEY * 3 + 6.dp * 2)
-            Key(stringResource(R.string.keyboard_delete), onDelete, width = KEY * 4 + 6.dp * 3)
+        rows.forEachIndexed { r, row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP)) {
+                row.forEachIndexed { c, char ->
+                    Key(
+                        char.toString(),
+                        { onKey(char.toString()) },
+                        modifier = if (r == 0 && c == 0 && entry != null) Modifier.focusRequester(entry) else Modifier,
+                    )
+                }
+            }
         }
     }
 }
 
-private val KEY = 34.dp
+private val KEY = 30.dp
+private val KEY_GAP = 4.dp
+private const val KEY_COLUMNS = 6
+
+/** Space and Delete: half the grid each. */
+private val WIDE_KEY = KEY * (KEY_COLUMNS / 2) + KEY_GAP * (KEY_COLUMNS / 2 - 1)
+
+/** How wide the keyboard is, its six columns and their gaps: Search's left column is this wide. */
+val KEYBOARD_WIDTH = KEY * KEY_COLUMNS + KEY_GAP * (KEY_COLUMNS - 1)
 
 /**
  * Queries one press away, under the [RemoteKeyboard]: Title names, people and genres as plain text
@@ -359,15 +377,18 @@ fun Completions(completions: List<String>, onPick: (String) -> Unit, modifier: M
     }
 }
 
+/** A key: its [label], or its [icon] described by the label. */
 @Composable
-private fun Key(label: String, onClick: () -> Unit, width: Dp = KEY) {
-    FocusSurface(onClick, Modifier.size(width, KEY), weight = FocusWeight.Control, corner = KEY / 2, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
-        Text(
-            label,
-            style = Type.label,
-            color = if (focused) Colors.onFocus else Colors.ink,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center),
-        )
+private fun Key(label: String, onClick: () -> Unit, width: Dp = KEY, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    FocusSurface(onClick, modifier.size(width, KEY), weight = FocusWeight.Control, corner = KEY / 2, container = Colors.surface, focusedContainer = Colors.focus) { focused ->
+        val ink = if (focused) Colors.onFocus else Colors.ink
+        if (icon != null) {
+            Icon(icon, contentDescription = label, tint = ink, modifier = Modifier.align(Alignment.Center).size(KEY_ICON))
+        } else {
+            Text(label, style = Type.label, color = ink, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center))
+        }
     }
 }
+
+/** A wide key's icon: a little bigger than its letters' cap height, as Netflix's. */
+private val KEY_ICON = 18.dp

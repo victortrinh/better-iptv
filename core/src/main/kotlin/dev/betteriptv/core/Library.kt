@@ -800,6 +800,8 @@ class Library private constructor(
         return SearchResults(
             movies = found(ofKind(TitleKind.Movie)),
             shows = found(ofKind(TitleKind.Show)),
+            // The same Titles together, best first whatever their kind: Search shows them in one grid.
+            titles = found(TitleKind.entries.flatMap(ofKind).sortedWith(byRank)),
             people = shownPeople.map { (name, hits) -> Person(name, found(hits)) },
             genres = shownGenres.map { (name, hits) -> Genre(name, found(hits)) },
             completions = completions(query, titleNames, shownPeople.map { it.first }, shownGenres.map { it.first }),

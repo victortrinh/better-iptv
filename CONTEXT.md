@@ -35,8 +35,20 @@ The part of the Prefix table that holds the conventions most Providers share (`E
 _Avoid_: Default table, generic table
 
 **Provider table**:
-The part of the Prefix table that is one Provider's own: what its Prefixes mean beyond the Base table, learned from what Header reads on that Provider Confirmed, or curated by hand where reads disagree.
+The part of the Prefix table that is one Provider's own: what its Prefixes mean beyond the Base table, as Learned lines and Hand lines. A Hand line wins over a Learned line, and both over the Base table.
 _Avoid_: Override, custom table
+
+**Learned line**:
+A Provider table entry the cloud worked out from what Header reads of that Prefix's files Confirmed, once enough reads agree. It shows as Likely.
+_Avoid_: Inferred rule, auto rule
+
+**Hand line**:
+A Provider table entry written by a person, for what reads can't teach (Clutter, Tier tags, a Source) or where reads disagree.
+_Avoid_: Override, manual rule
+
+**Multi-audio**:
+What a Prefix learns when most of its files carry two or more audio languages: its Versions are Untagged, Likely in the Title's original language.
+_Avoid_: Multilingual, dual audio
 
 **Sync**:
 Refreshing the device's copy of the Provider's catalog, in two Stages.
@@ -178,6 +190,36 @@ _Avoid_: UI language, locale
 **Region**:
 The country that sets the default leagues. Canada when the device doesn't say.
 _Avoid_: Country, locale, market
+
+### Household
+
+**Account**:
+An email address a household signs its devices in with, through a Magic link and never a password. It owns each Profile's history and settings and, later, the Purchase; it never holds the Provider login.
+_Avoid_: User, login, user account
+
+**Sign-in code**:
+The short code and QR a TV shows so a phone can sign it in to an Account.
+_Avoid_: Pairing code, device code
+
+**Magic link**:
+The link emailed to an Account's address that, tapped once, signs a TV in, resets the Household PIN or deletes the Account.
+_Avoid_: Login link, OTP
+
+**Profile**:
+One person's place in a household: their Continue watching, Favourites, Leagues, Content languages and App language, apart from the others'. A TV stays on the last Profile used; nobody picks one on launch.
+_Avoid_: User, persona, viewer slot
+
+**Kids profile**:
+A Profile that sees only the Kids catalog, with no sports hub, Channel browser, Trailer row or Versions screen, and that can't be left without the Household PIN.
+_Avoid_: Kids mode, child lock, parental mode
+
+**Kids catalog**:
+The Titles any of whose Listings sits in a Category named with a Kids word (KIDS, ENFANTS, KINDER, INFANTILES…), and the Channels of those Categories.
+_Avoid_: Children's section, safe content
+
+**Household PIN**:
+The four digits that let a Viewer leave a Kids profile, the app's only lock.
+_Avoid_: Parental code, password
 
 ### Live and sports
 

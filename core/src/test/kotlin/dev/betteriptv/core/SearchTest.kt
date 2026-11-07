@@ -188,30 +188,34 @@ class SearchTest {
 
     private val dramaTv = Channel("Drama TV", "Drama TV", null, null, false, listOf(ChannelVariant(7, "Drama TV", null, false)))
 
-    @Test fun `results show Movies, Shows, genres, Channels, Replays, then people`() {
+    @Test fun `results are one grid of cards, Titles by name first, then genres', Channels, Replays and people's, each Title once`() {
         val movie = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
         val show = TitleSummary(TitleId.Tmdb(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
+        val brooklyn = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 3), "Brooklyn", null, null, VersionAttributes())
         val replay = Replay(9, "SOC - Drama FC - Comedy United 01.11.2025", "SOCCER FOOTBALL", null, "Comedy United", "Drama FC", java.time.LocalDate.of(2025, 11, 1), 2025)
         val results = SearchResults(
             movies = listOf(movie),
             shows = listOf(show),
-            people = listOf(Person("Dramane Diallo", listOf(movie))),
+            people = listOf(Person("Dramane Diallo", listOf(movie, brooklyn))),
             channels = listOf(dramaTv),
-            genres = listOf(Genre("Drama", listOf(show))),
+            genres = listOf(Genre("Drama", listOf(show, brooklyn))),
             replays = listOf(replay),
+            // The show matched better than the movie.
+            titles = listOf(show, movie),
         )
 
         assertEquals(
             listOf(
-                SearchGroup.Movies(listOf(movie)),
-                SearchGroup.Shows(listOf(show)),
-                SearchGroup.OfGenre(Genre("Drama", listOf(show))),
-                SearchGroup.Channels(listOf(dramaTv)),
-                SearchGroup.Replays(listOf(replay)),
-                SearchGroup.OfPerson(Person("Dramane Diallo", listOf(movie))),
+                SearchCard.OfTitle(show),
+                SearchCard.OfTitle(movie),
+                SearchCard.OfTitle(brooklyn),
+                SearchCard.OfChannel(dramaTv),
+                SearchCard.OfReplay(replay),
             ),
-            results.groups("dra"),
+            results.cards("dra"),
         )
+        // Without the Titles together, Movies come before Shows.
+        assertEquals(listOf(movie, show), SearchResults(movies = listOf(movie), shows = listOf(show), people = emptyList()).titles)
     }
 
     @Test fun `a Sports replay is found by its name, and its TMDB ID never makes it a Title (#258)`() = runBlocking {
@@ -221,7 +225,7 @@ class SearchTest {
         val bruins = search("bruins")
         assertEquals(listOf("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25"), bruins.replays.map { it.name })
         assertTrue(bruins.movies.isEmpty())
-        assertEquals(listOf(SearchGroup.Replays(bruins.replays)), bruins.groups("bruins"))
+        assertEquals(bruins.replays.map(SearchCard::OfReplay), bruins.cards("bruins"))
         assertEquals(listOf(godfather), search("godfather").movies.map { it.id })
         assertTrue(search("godfather").replays.isEmpty())
     }
@@ -232,14 +236,14 @@ class SearchTest {
         cloud.title("en", tmdbTitle(3, "Melodrama", genres = listOf("Melodrama"), popularity = 20.0))
         syncMovies("EN - The Drama (2024)" to 1, "EN - Brooklyn (2015)" to 2, "EN - Melodrama (2020)" to 3)
 
-        val picked = search("Drama").groups("Drama")
-        assertEquals(SearchGroup.OfGenre::class, picked.first()::class)
-        assertEquals("Drama", (picked.first() as SearchGroup.OfGenre).genre.name)
-        assertEquals(SearchGroup.Movies::class, picked[1]::class)
+        val drama = search("Drama")
+        assertEquals(listOf("The Drama"), drama.titles.map { it.name })
+        // The genre's Titles first, then the one found by name.
+        assertEquals(listOf("Brooklyn", "The Drama"), drama.cards("Drama").map { (it as SearchCard.OfTitle).title.name })
         // Typed in full, in any case, with a space after it.
-        assertEquals("Drama", (search("drama ").groups("drama ").first() as SearchGroup.OfGenre).genre.name)
+        assertEquals("Brooklyn", (search("drama ").cards("drama ").first() as SearchCard.OfTitle).title.name)
         // Still being typed: the usual order.
-        assertEquals(SearchGroup.Movies::class, search("dra").groups("dra").first()::class)
+        assertEquals("The Drama", (search("dra").cards("dra").first() as SearchCard.OfTitle).title.name)
     }
 
     @Test fun `completions offer Titles, then people, then genres, the query starts`() = runBlocking {
@@ -287,12 +291,12 @@ class SearchTest {
         assertEquals(listOf("Drama", "Comedy", "Crime", "Romance", "Thriller"), search("").completions)
         assertEquals(listOf("Drame", "Comédie", "Crime", "Romance", "Thriller"), search("", appLanguage = "fr").completions)
         val ids = { genre: Genre -> genre.titles.map { (it.id as TitleId.Tmdb).tmdbId }.toSet() }
-        val drama = search("Drama").groups("Drama").first() as SearchGroup.OfGenre
-        val drame = search("Drame", appLanguage = "fr").groups("Drame").first() as SearchGroup.OfGenre
-        assertEquals("Drame", drame.genre.name)
-        assertEquals(setOf(1L, 2L, 4L), ids(drama.genre))
-        assertEquals(ids(drama.genre), ids(drame.genre))
-        assertEquals("Comédie", (search("comedie", appLanguage = "fr").groups("comedie").first() as SearchGroup.OfGenre).genre.name)
+        val drama = search("Drama").genres.first()
+        val drame = search("Drame", appLanguage = "fr").genres.first()
+        assertEquals("Drame", drame.name)
+        assertEquals(setOf(1L, 2L, 4L), ids(drama))
+        assertEquals(ids(drama), ids(drame))
+        assertEquals("Comédie", search("comedie", appLanguage = "fr").genres.first().name)
     }
 
     @Test fun `TMDB's search finds a Title by a name the device has no metadata for`() = runBlocking {
