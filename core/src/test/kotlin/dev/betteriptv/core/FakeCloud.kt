@@ -200,6 +200,10 @@ class FakeCloud : Closeable {
     private val signInCodes = HashMap<String, String>()
     /** The Account each signed-in device token is bound to, by its email. */
     private val accounts = HashMap<String, String>()
+    /** The model each device token sent with its live Sign-in code, and with its sign-in once it signed in. */
+    private val models = HashMap<String, String>()
+    /** When each signed-in device token signed in. */
+    private val signedInAt = HashMap<String, java.time.Instant>()
 
     /**
      * What the phone does on the sign-in page (cloud/src/page.ts): types [code] and [email], then taps
@@ -208,8 +212,23 @@ class FakeCloud : Closeable {
     fun phoneSignsIn(code: String, email: String): Boolean = synchronized(tokens) {
         val token = signInCodes.remove(code) ?: return false
         accounts[token] = email
+        signedInAt[token] = java.time.Instant.now()
         true
     }
+
+    /** What the phone does on "Delete my account" once it taps the link: every device on [email]'s Account goes anonymous. */
+    fun deleteAccount(email: String) = synchronized(tokens) {
+        accounts.entries.filter { it.value == email }.map { it.key }.forEach(::unbind)
+    }
+
+    private fun unbind(token: String) {
+        accounts.remove(token)
+        signedInAt.remove(token)
+        models.remove(token)
+    }
+
+    /** A listed device's id: like the real one, not its token. */
+    private fun deviceId(token: String) = java.security.MessageDigest.getInstance("SHA-256").digest("device-id:$token".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
 
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
@@ -220,6 +239,9 @@ class FakeCloud : Closeable {
         val body = exchange.requestBody.readBytes().decodeToString()
         received += Received(exchange.requestURI.path, exchange.requestHeaders.toMap(), body)
         if (down) return exchange.sendResponseHeaders(503, -1)
+        // Like the real cloud, every answer to a registered device says whether it is signed in.
+        val caller = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+        synchronized(tokens) { if (caller in tokens) exchange.responseHeaders.add("Zugig-Account", if (caller in accounts) "signed-in" else "none") }
         when (exchange.requestURI.path) {
             "/v1/devices" -> {
                 val token = UUID.randomUUID().toString()
@@ -284,14 +306,37 @@ class FakeCloud : Closeable {
                 val leagues = asked.mapNotNull { league -> synchronized(games) { games[league] }?.let { mapOf("league" to league, "games" to it) } }
                 respond(exchange, 200, mapOf("leagues" to leagues))
             }
-            "/v1/sign-in", "/v1/account" -> {
+            "/v1/sign-in", "/v1/account", "/v1/account/devices", "/v1/account/sign-out" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                token!!
                 if (exchange.requestURI.path == "/v1/account") return respond(exchange, 200, mapOf("email" to synchronized(tokens) { accounts[token] }))
+                if (exchange.requestURI.path == "/v1/account/devices") {
+                    val listed = synchronized(tokens) {
+                        val email = accounts[token]
+                        accounts.filter { email != null && it.value == email }.keys.sortedBy { signedInAt[it] }.map {
+                            mapOf("id" to deviceId(it), "model" to models[it], "signedInAt" to signedInAt.getValue(it).toString(), "thisDevice" to (it == token))
+                        }
+                    }
+                    return respond(exchange, 200, mapOf("devices" to listed))
+                }
+                if (exchange.requestURI.path == "/v1/account/sign-out") {
+                    val id = (read(body) as Map<*, *>)["device"] as String?
+                    val out = synchronized(tokens) {
+                        val email = accounts[token]
+                        val target = if (id == null) token else accounts.keys.find { accounts[it] == email && deviceId(it) == id }
+                        if (email == null || target == null) false else true.also { unbind(target) }
+                    }
+                    if (!out) return respond(exchange, 404, mapOf("error" to "No such device on this Account."))
+                    if (id == null) exchange.responseHeaders.set("Zugig-Account", "none")
+                    return exchange.sendResponseHeaders(204, -1)
+                }
+                val model = (read(body.ifEmpty { "{}" }) as Map<*, *>)["model"] as String?
                 val code = (1..6).map { "23456789ABCDEFGHJKLMNPQRSTUVWXYZ".random() }.joinToString("")
                 synchronized(tokens) {
                     signInCodes.values.remove(token)
-                    signInCodes[code] = token!!
+                    signInCodes[code] = token
+                    if (model != null) models[token] = model else models.remove(token)
                 }
                 respond(exchange, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
             }

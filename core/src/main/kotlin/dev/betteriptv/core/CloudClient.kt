@@ -12,6 +12,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -207,8 +208,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
      * A fresh Sign-in code for this device to show, with the sign-in page's address for its QR
      * (ADR 0015). It replaces the code the device had.
      */
-    fun startSignIn(): SignInCode {
-        val answer = authorized { token -> post("v1/sign-in", "{}", token) } as? Map<*, *>
+    fun startSignIn(model: String? = null): SignInCode {
+        val body = if (model == null) "{}" else json.toJson(mapOf("model" to model))
+        val answer = authorized { token -> post("v1/sign-in", body, token) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
         val code = answer["code"] as? String
         val url = answer["url"] as? String
@@ -224,6 +226,38 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         if (!answer.containsKey("email")) throw CloudException("The cloud didn't say which Account this device is signed in to.")
         return answer["email"] as? String
     }
+
+    /** The devices signed in to this one's Account (#434), by sign-in; none when it is signed in to none. */
+    fun accountDevices(): List<AccountDevice> {
+        val answer = authorized { token -> post("v1/account/devices", "{}", token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        val devices = answer["devices"] as? List<*> ?: throw CloudException("The cloud sent no device list.")
+        return devices.map { device ->
+            device as? Map<*, *> ?: throw CloudException("The cloud sent a device that isn't an object.")
+            val id = device["id"] as? String
+            val signedInAt = (device["signedInAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            if (id == null || signedInAt == null) throw CloudException("The cloud sent a device without its id or sign-in date.")
+            AccountDevice(id, device["model"] as? String, signedInAt, device["thisDevice"] == true)
+        }
+    }
+
+    /**
+     * Signs the device listed as [id] out of this one's Account, or this device without one. A device
+     * no longer on the Account counts as signed out.
+     */
+    fun signOut(id: String? = null) {
+        val body = if (id == null) "{}" else json.toJson(mapOf("device" to id))
+        try {
+            authorized { token -> post("v1/account/sign-out", body, token) }
+        } catch (_: NotFound) {
+        }
+    }
+
+    /**
+     * Told after each answer whether the cloud has this device signed in to an Account, with when its
+     * request was sent ([System.nanoTime]), so an answer to a request sent before a change can be told apart.
+     */
+    @Volatile var onAccountHeard: ((signedIn: Boolean, sentAt: Long) -> Unit)? = null
 
     /** Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it. */
     private fun authorized(call: (token: String) -> Any?): Any? {
@@ -250,9 +284,14 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
             .build()
         // A client with a call timeout shares the pool and dispatcher of the one it is built from.
         val client = if (callTimeout == null) http else http.newBuilder().callTimeout(callTimeout).build()
+        val sentAt = System.nanoTime()
         try {
             client.newCall(request).execute().use { response ->
                 if (response.code == 401) throw Unauthorized()
+                when (response.header(ACCOUNT_HEADER)) {
+                    "signed-in" -> onAccountHeard?.invoke(true, sentAt)
+                    "none" -> onAccountHeard?.invoke(false, sentAt)
+                }
                 if (response.code == 404) throw NotFound()
                 if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
                 if (response.code == 204) return null
@@ -284,6 +323,8 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
         /** The most unknown Prefixes one report may hold. */
         const val MAX_PREFIX_BATCH = 200
+        /** The answer header saying whether the cloud has this device signed in: `signed-in` or `none`. */
+        private const val ACCOUNT_HEADER = "Zugig-Account"
         private val JSON = "application/json".toMediaType()
         private val json = Moshi.Builder().build().adapter(Any::class.java)
 
@@ -302,6 +343,12 @@ internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound:
  * the sign-in page, for [expiresIn] from when it was given; then the device asks for a new one.
  */
 data class SignInCode(val code: String, val url: String, val expiresIn: Duration)
+
+/**
+ * A device signed in to the Account (#434): named by its [model] ("Fire TV Stick 4K Max", or null
+ * when it sent none), signed in at [signedInAt]; [thisDevice] is the one asking.
+ */
+data class AccountDevice(val id: String, val model: String?, val signedInAt: Instant, val thisDevice: Boolean)
 
 /** A subtitle file the cloud found for a Movie or Episode, in [language] (ISO 639-1), named by its [release]. */
 data class SubtitleOffer(val id: String, val language: String, val release: String, val hearingImpaired: Boolean)

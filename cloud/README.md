@@ -27,10 +27,15 @@ Registration is open: a token identifies a device, so it can be revoked, but it 
 A TV signs in to an Account from a phone, with no password (ADR 0015). The device token stays the credential: signing in binds it to the Account (`device.account_id`, `device.signed_in_at`), so every endpoint keeps answering the same token, and a device that never signs in is as before. See `src/accounts.ts` and `src/page.ts`.
 
 - `POST /v1/sign-in` answers a fresh Sign-in code for the device, `{"code": "K7M2QX", "url": "https://zugig.app/sign-in?code=K7M2QX", "expiresIn": 600}`: 6 digits and capitals without 0, O, 1 and I, for 10 minutes, replacing the device's previous code. The TV shows the code and a QR of `url`.
+  It may carry `{"model": "Fire TV Stick 4K Max"}`, kept to one line of at most 60 characters: the only time a device names its model, which the device list shows (`device.model`).
 - `POST /v1/account` answers `{"email": "…"}`, the Account the device is signed in to, or `{"email": null}`. The TV polls it every 2 s while it shows the code.
+- `POST /v1/account/devices` answers the devices signed in to this one's Account, by sign-in, `{"devices": [{"id": "3f9a0c1d2e4b5a69", "model": "Fire TV Stick 4K Max", "signedInAt": "2026-11-03T20:00:00.000Z", "thisDevice": true}]}`, or `[]` when it is signed in to none. The id is derived from the token's hash, from which it can't be turned back (#434).
+- `POST /v1/account/sign-out`, with `{}` for this device or `{"device": "3f9a…"}` for another on its Account, clears that device's link (account, sign-in date and model), `204`; `404` when no such device is on the Account. The token stays registered.
+- Every `/v1/` answer to a registered device carries `Zugig-Account: signed-in` or `none`, so a device signed out from another TV, or whose Account was deleted, goes anonymous at its next request, whatever it asked.
 - `GET /sign-in` is the page the QR opens (the code filled in from `?code=`): the code, an email, a "Send me a link" button and the privacy note. No script, nothing loaded from elsewhere. `POST /sign-in` emails a magic link to the address when the code is live. Each IP may type 5 wrong codes in 10 minutes; the sixth try is refused, right or wrong, until they age out (kept by a hash of the IP). A code sends at most 5 links.
 - The magic link, `GET /sign-in/link?token=…`, works once, for 15 minutes (even after its code expired). It opens a page with one "Sign in the TV" button, `POST /sign-in/link`, so a mail scanner that opens links (Outlook's Safe Links does) signs nobody in. The button binds the TV to the email's Account, creating it when the email is new. A used, unknown or expired link gets a plain message.
-- The cloud keeps the email address (`account`), the live codes, and only SHA-256 hashes of the magic tokens (`magic_link`) and of the IPs that typed wrong codes (`sign_in_miss`). The Provider login never comes here.
+- "Delete my account", linked from the sign-in page: `GET /delete-account` asks for the address, and `POST /delete-account` emails a delete link when an Account uses it, answering the same when none does (and emailing nobody), so the page can't tell who has an Account. Each IP may ask 5 times and each address be sent 3 links in 15 minutes (`delete_request`, by hashes). The link, `GET /delete-account/link?token=…`, works once, for 15 minutes, and opens a page with one "Delete my account" button, `POST /delete-account/link`, which deletes the Account and everything it owns and unbinds every device signed in to it.
+- The cloud keeps the email address (`account`), each signed-in device's model, the live codes, and only SHA-256 hashes of the magic tokens (`magic_link`, `delete_link`), of the IPs that typed wrong codes (`sign_in_miss`) and of who asked for delete links (`delete_request`). The Provider login never comes here.
 
 ### Setting up the domain and the sender
 
@@ -45,7 +50,7 @@ The QR must point at the app's own domain, not `workers.dev`, which on a TV read
 
    Once Resend says Verified, create an API key with Sending access for that domain and set it with `npx wrangler secret put RESEND_API_KEY`. Without it no email goes out, and the page says it couldn't send one.
 3. **Rate limit.** Security → WAF → Rate limiting rules → Create rule, on the domain's zone (and on the `workers.dev` route turned off, Settings → Domains & Routes, so the rule can't be walked around):
-   - If incoming requests match: `(http.request.method eq "POST" and http.request.uri.path in {"/v1/devices" "/v1/sign-in" "/sign-in"})`
+   - If incoming requests match: `(http.request.method eq "POST" and http.request.uri.path in {"/v1/devices" "/v1/sign-in" "/sign-in" "/delete-account"})`
    - With the same characteristics: IP
    - When rate exceeds: 10 requests per 10 seconds (the free plan's period), then Block for 10 seconds.
 

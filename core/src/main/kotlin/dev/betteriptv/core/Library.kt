@@ -1107,6 +1107,39 @@ class Library private constructor(
     /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
     private val _account = MutableStateFlow(store.accountEmail())
 
+    /** When this device last learned it was signed in ([System.nanoTime]): answers to requests sent before then can't sign it out. */
+    @Volatile private var signedInSince = Long.MIN_VALUE
+
+    /** The thread telling the cloud of a sign-out it couldn't hear when it happened. */
+    private val signOuts = Executors.newSingleThreadExecutor { Thread(it, "library-sign-outs").apply { isDaemon = true } }
+
+    init {
+        cloud?.onAccountHeard = ::accountHeard
+    }
+
+    /**
+     * What every cloud answer says (#434): signed out by another TV, or with its Account deleted, the
+     * device goes anonymous at its next request, keeping its catalog and Provider login. Still signed
+     * in after signing itself out offline, it tells the cloud again.
+     */
+    private fun accountHeard(signedIn: Boolean, sentAt: Long) {
+        if (!signedIn && _account.value != null && sentAt > signedInSince) {
+            synchronized(_account) {
+                store.saveAccountEmail(null)
+                _account.value = null
+            }
+        } else if (signedIn && _account.value == null && store.signOutPending()) {
+            signOuts.execute {
+                if (!store.signOutPending()) return@execute
+                try {
+                    cloud?.signOut()
+                    store.saveSignOutPending(false)
+                } catch (_: CloudException) {
+                }
+            }
+        }
+    }
+
     /**
      * The email of the Account this device is signed in to (ADR 0015), or null: kept on the device,
      * so it reads without the cloud. A device that never signs in never asks the cloud about one.
@@ -1116,10 +1149,12 @@ class Library private constructor(
     /**
      * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
      * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
+     * The device's [model] ("Fire TV Stick 4K Max") names it in the Account's device list: it is sent
+     * here and nowhere else.
      */
-    suspend fun startSignIn(): SignInCode? = withContext(Dispatchers.IO) {
+    suspend fun startSignIn(model: String? = null): SignInCode? = withContext(Dispatchers.IO) {
         try {
-            cloud?.startSignIn()
+            cloud?.startSignIn(model)
         } catch (e: CloudException) {
             null
         }
@@ -1131,16 +1166,64 @@ class Library private constructor(
      */
     suspend fun checkSignIn(): String? = withContext(Dispatchers.IO) {
         if (cloud == null) return@withContext null
+        val sentAt = System.nanoTime()
         val email = try {
             cloud.account()
         } catch (e: CloudException) {
             return@withContext _account.value
         }
-        if (email != _account.value) {
-            store.saveAccountEmail(email)
-            _account.value = email
+        synchronized(_account) {
+            if (email != null) {
+                signedInSince = sentAt
+                store.saveSignOutPending(false)
+            }
+            if (email != _account.value) {
+                store.saveAccountEmail(email)
+                _account.value = email
+            }
         }
         email
+    }
+
+    /**
+     * The devices signed in to this one's Account (#434), by when they signed in, this one marked;
+     * null without a cloud, while it can't be reached, or when this device isn't signed in.
+     */
+    suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
+        if (cloud == null || _account.value == null) return@withContext null
+        try {
+            cloud.accountDevices()
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
+    /**
+     * Signs [device] out of the Account, or this device when it is null or [AccountDevice.thisDevice].
+     * This device goes anonymous at once, keeping its catalog and Provider login, and the cloud is
+     * told now or, when it can't be reached, at the device's next request. Another device is signed
+     * out in the cloud and goes anonymous at its own next request; false when the cloud can't be reached.
+     */
+    suspend fun signOut(device: AccountDevice? = null): Boolean = withContext(Dispatchers.IO) {
+        if (device != null && !device.thisDevice) {
+            return@withContext try {
+                cloud?.signOut(device.id) != null
+            } catch (e: CloudException) {
+                false
+            }
+        }
+        synchronized(_account) {
+            store.saveSignOutPending(cloud != null)
+            store.saveAccountEmail(null)
+            _account.value = null
+        }
+        try {
+            cloud?.signOut()
+            store.saveSignOutPending(false)
+        } catch (e: CloudException) {
+            // Told again at the next request that finds the device still signed in.
+        }
+        true
     }
 
     /**
@@ -2333,6 +2416,7 @@ class Library private constructor(
 
     override fun close() {
         gamesFetches.shutdownNow()
+        signOuts.shutdownNow()
         fileReadLookUps.shutdownNow()
         guideFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.
