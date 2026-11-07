@@ -2,16 +2,13 @@ package dev.betteriptv.app
 
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
-import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.core.SyncStatus
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +51,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
 import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
+import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.components.RowHeading
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
@@ -242,7 +240,8 @@ class RowsState {
  * before coming back, or the card now in its place when it has gone; the first card when null,
  * unless the screen was reached by picking its tab ([focusTab]), which keeps focus. [placeholder],
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
- * read, [PlaceholderRows] hold their place, so the screen is never blank under its tabs.
+ * read, the screen is bare under its tabs for the page arrival time, then waits with the pulsing dot
+ * ([WaitingDot]), which crossfades out as they arrive.
  * A Title's card opens it ([onOpen]), with the textless backdrop it had grown into, if it had,
  * so the Title page can open on that picture; a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a Replay's
@@ -355,14 +354,27 @@ internal fun RowsLayout(
     }
     val hero = if (feature != null) state.featured else null
     // Rows that arrive after the screen is up (the first entry's, with the hero read beside them) fade
-    // in as one with the hero, its backdrop included, over the placeholders that held their place,
-    // which then go. The fade shows over frames even when the first of them comes late, as on the
-    // stick's cold start (#398). Rows kept from last time, and the hero read for this entry with
-    // them, show at once.
+    // in as one with the hero, its backdrop included, over the bare ground. The fade shows over frames
+    // even when the first of them comes late, as on the stick's cold start (#398). Rows kept from last
+    // time, and the hero read for this entry with them, show at once.
     val arrived = placeholder == null && state.rows != null
     val arrival = remember { Fade(if (arrived) 1f else 0f) }
     LaunchedEffect(arrived) { if (arrived) arrival.fadeIn(Motion.screenFadeMillis) }
     val arriving by remember(arrival) { derivedStateOf { arrival.value < 1f } }
+    // Rows still to come after the page arrival time are waited for with the dot, centred under the
+    // tabs, which fades in and then crossfades out as they fade in. Rows that land within the time
+    // show no dot, so most entries show nothing but the tabs for one beat (DESIGN.md, Motion). It
+    // isn't drawn under a [placeholder] (a first Sync's checklist). Not a shape of the rows to come:
+    // Home opens on a hero and wide stills, Live on Game cards, and a row of posters promised them wrongly.
+    val waitingForRows = placeholder == null && state.rows == null
+    var waiting by remember { mutableStateOf(false) }
+    val waitingFade = remember { Fade(0f) }
+    LaunchedEffect(waitingForRows) {
+        if (!waitingForRows) return@LaunchedEffect
+        delay(Motion.pageArrivalMillis.toLong())
+        waiting = true
+        waitingFade.fadeIn(Motion.screenFadeMillis)
+    }
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
     // so the card is checked again once they are read: the Title opened may have left Continue
@@ -489,9 +501,12 @@ internal fun RowsLayout(
     Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * arrival.value }) {
         header(tab)
         if (placeholder != null) return@Column placeholder()
-        if (rows == null) return@Column PlaceholderRows()
+        if (rows == null) {
+            if (waiting) WaitingDot { waitingFade.value }
+            return@Column
+        }
         Box(Modifier.fillMaxSize()) {
-            if (arriving) PlaceholderRows(modifier = Modifier.graphicsLayer { alpha = 1f - arrival.value })
+            if (arriving && waiting) WaitingDot { waitingFade.value * (1f - arrival.value) }
             CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
                 LazyColumn(
                     Modifier.fillMaxSize().graphicsLayer { alpha = arrival.value }.onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
@@ -920,37 +935,20 @@ private fun HomeRow.heading(): String = when (this) {
 }
 
 /**
- * Where the rows go while they are first read: two rows of glass posters in their places, without
- * headings, focus or motion, so the screen under the tabs is never blank (#213). With a [caption],
- * they hold the places of rows still to come (Home's Title rows while a first Sync reads them), and
- * the caption says so above them.
+ * Where the rows go while they are read past the page arrival time: the pulsing dot, centred in the
+ * room under the tabs, at [alpha] (read in drawing, so its fades redraw nothing else). Without
+ * headings, focus or a shape of the rows to come.
  */
 @Composable
-internal fun PlaceholderRows(caption: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize().testTag(PLACEHOLDERS)) {
-        if (caption != null) {
-            Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(start = Spacing.screenX, bottom = 12.dp))
-        }
-        repeat(PLACEHOLDER_ROWS) {
-            Box(Modifier.padding(start = Spacing.screenX).size(PLACEHOLDER_HEADING_WIDTH, PLACEHOLDER_HEADING_HEIGHT).background(Colors.surface, RoundedCornerShape(Corners.badge)))
-            Row(
-                Modifier.wrapContentWidth(Alignment.Start, unbounded = true).padding(start = Spacing.screenX, top = 12.dp + 10.dp, bottom = 10.dp + 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(Cards.gap),
-            ) {
-                repeat(PLACEHOLDER_POSTERS) {
-                    Box(Modifier.size(Cards.posterWidth, Cards.posterWidth * 3 / 2).background(Colors.surface, RoundedCornerShape(Corners.card)))
-                }
-            }
-        }
+private fun WaitingDot(alpha: () -> Float) {
+    Box(Modifier.fillMaxSize().testTag(WAITING), contentAlignment = Alignment.Center) {
+        PulsingDot(WAITING_DOT_SIZE, Modifier.graphicsLayer { this.alpha = alpha() })
     }
 }
 
-/** The placeholder rows, for tests. */
-internal const val PLACEHOLDERS = "placeholders"
+/** The waiting dot, for tests. */
+internal const val WAITING = "waiting"
 
-private const val PLACEHOLDER_ROWS = 2
-/** As many posters as the screen shows, the last peeking at the right edge. */
-private const val PLACEHOLDER_POSTERS = 6
-private val PLACEHOLDER_HEADING_WIDTH = 160.dp
-private val PLACEHOLDER_HEADING_HEIGHT = 16.dp
+/** The checklist step's size: the dot alone, not beside a caption. */
+private val WAITING_DOT_SIZE = 10.dp
 

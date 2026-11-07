@@ -1,11 +1,5 @@
 package dev.betteriptv.app
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +20,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -34,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -93,16 +87,7 @@ private fun StepDot(state: StepState) {
         StepState.Done -> Box(modifier.background(Colors.ink, CircleShape))
         StepState.Failed -> Box(modifier.background(Colors.error, CircleShape))
         StepState.Pending -> Box(modifier.border(1.5.dp, Colors.inkMuted, CircleShape))
-        StepState.Running -> {
-            val pulse = rememberInfiniteTransition(label = "step")
-            val alpha by pulse.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.3f,
-                animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Reverse),
-                label = "pulse",
-            )
-            Box(modifier.alpha(alpha).background(Colors.ink, CircleShape))
-        }
+        StepState.Running -> PulsingDot(DOT_SIZE)
     }
 }
 
@@ -116,4 +101,3 @@ private fun SyncStep.label() = when (this) {
 /** Wide enough for the French failure line on two lines at caption size. */
 private val CHECKLIST_WIDTH = 440.dp
 private val DOT_SIZE = 10.dp
-private const val PULSE_MS = 900
