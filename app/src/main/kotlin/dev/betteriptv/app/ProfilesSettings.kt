@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.ChoiceRow
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.RemoteKeyboard
 import dev.betteriptv.app.ui.components.SettingRow
@@ -44,7 +45,8 @@ import dev.betteriptv.core.Profiles
 
 /** What Settings' Profiles asks of the household's Profiles (#428). */
 sealed interface ProfileChange {
-    data class Add(val name: String) : ProfileChange
+    /** A new Profile named [name], a Kids profile when [kids] (#433). */
+    data class Add(val name: String, val kids: Boolean = false) : ProfileChange
     data class Rename(val id: Long, val name: String) : ProfileChange
     data class Switch(val id: Long) : ProfileChange
     data class Delete(val id: Long) : ProfileChange
@@ -56,10 +58,10 @@ fun Profile.shownName(): String = name ?: languageName(deviceAppLanguage())
 /**
  * The Profiles section, first in Settings: a row per Profile in the order they were made, the one
  * the device is on marked ✓, each opening its page ([onOpen]); then "Add a profile" ([onAdd]),
- * disabled once the household has [Library.MAX_PROFILES]. [rows] focuses each Profile's row by id,
- * [addRow] the last row.
+ * disabled once the household has [Library.MAX_PROFILES], and left out when it [canAdd] none (on a
+ * Kids profile). [rows] focuses each Profile's row by id, [addRow] the last row.
  */
-fun LazyListScope.profilesSection(profiles: Profiles, rows: (Long) -> FocusRequester, addRow: FocusRequester, onOpen: (Profile) -> Unit, onAdd: () -> Unit) {
+fun LazyListScope.profilesSection(profiles: Profiles, rows: (Long) -> FocusRequester, addRow: FocusRequester, onOpen: (Profile) -> Unit, onAdd: () -> Unit, canAdd: Boolean = true) {
     item { SettingsHeading(R.string.settings_profiles) }
     items(profiles.all, key = { "profile:${it.id}" }) { profile ->
         SettingRow(
@@ -69,7 +71,7 @@ fun LazyListScope.profilesSection(profiles: Profiles, rows: (Long) -> FocusReque
             Modifier.focusRequester(rows(profile.id)).testTag("profile:${profile.id}"),
         )
     }
-    item(key = "profile:add") {
+    if (canAdd) item(key = "profile:add") {
         val full = profiles.all.size >= Library.MAX_PROFILES
         SettingRow(
             stringResource(R.string.profile_add),
@@ -135,11 +137,13 @@ fun DeleteProfilePage(profile: Profile, onDelete: () -> Unit, onCancel: () -> Un
 /**
  * A Profile's name typed on the [RemoteKeyboard], under [title]: the name so far in a glass field,
  * each word starting with a capital, at most [MAX_NAME] characters; Save ([onSave]) once it has a
- * letter. The keyboard's first letter takes focus.
+ * letter. The keyboard's first letter takes focus. Adding a Profile ([kidsSwitch]) also offers the
+ * Kids switch under them, Off unless chosen: a Kids profile sees only the Kids catalog (#433).
  */
 @Composable
-fun ProfileNamePage(title: String, initial: String, onSave: (String) -> Unit) {
+fun ProfileNamePage(title: String, initial: String, onSave: (String, Boolean) -> Unit, kidsSwitch: Boolean = false) {
     var name by rememberSaveable { mutableStateOf(initial) }
+    var kids by rememberSaveable { mutableStateOf(false) }
     val entry = remember { FocusRequester() }
     LaunchedEffect(Unit) { entry.requestFocus() }
     Column(Modifier.padding(horizontal = Spacing.screenX, vertical = 20.dp).width(SETTINGS_WIDTH), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -165,7 +169,23 @@ fun ProfileNamePage(title: String, initial: String, onSave: (String) -> Unit) {
                 entry = entry,
             )
             Spacer(Modifier.width(24.dp))
-            NuageButton(stringResource(R.string.profile_save), onClick = { onSave(name.trim()) }, enabled = name.isNotBlank())
+            NuageButton(stringResource(R.string.profile_save), onClick = { onSave(name.trim(), kids) }, enabled = name.isNotBlank())
+        }
+        if (kidsSwitch) {
+            // Off unless chosen: a Kids profile sees only the Kids catalog.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(320.dp)) {
+                    Text(stringResource(R.string.profile_kids), style = Type.label, color = Colors.ink)
+                    Text(stringResource(R.string.profile_kids_detail), style = Type.caption, color = Colors.inkMuted)
+                }
+                Spacer(Modifier.width(16.dp))
+                ChoiceRow(
+                    listOf(stringResource(R.string.settings_off), stringResource(R.string.settings_on)),
+                    selected = if (kids) 1 else 0,
+                    onSelect = { kids = it == 1 },
+                    modifier = Modifier.testTag("kids switch"),
+                )
+            }
         }
     }
 }

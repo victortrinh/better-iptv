@@ -112,7 +112,7 @@ fun SignInScreen(library: Library, onSignedIn: (String) -> Unit) {
     var state by remember { mutableStateOf<SignInState>(SignInState.Asking) }
     var run by remember { mutableStateOf(0) }
     LaunchedEffect(run) {
-        onSignedIn(runSignIn(library::startSignIn, library::checkSignIn) { state = it })
+        onSignedIn(runSignIn({ library.startSignIn(deviceModel()) }, library::checkSignIn) { state = it })
     }
     val newCode = remember { FocusRequester() }
     LaunchedEffect(Unit) { newCode.requestFocus() }

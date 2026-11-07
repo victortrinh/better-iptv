@@ -152,6 +152,25 @@ class ProviderTableTest {
         assertTrue(table.genreRank("NEWS")!! < table.genreRank("KIDS")!!)
     }
 
+    @Test fun `the Base table's Kids words name Kids Categories in the survey's languages`() {
+        val table = PrefixTable.base()
+
+        listOf(
+            "EN - KIDS", "FR - ENFANTS", "DE - KINDER", "ES - INFANTILES", "ES - FAMILIAS", "GR - ΠΑΙΔΙΚΑ", "GR| ΓΙΑ ΠΑΙΔΙΑ/KIDS ⱽᴵᴾ",
+            "TR - ÇOCUK", "TR - COCUK", "SE - BARN", "DK - BØRN", "IR - کارتون", "FR - DESSINS ANIMÉS", "EN - FAMILY", "US| KIDS ᴴᴰ/ᴿᴬᵂ ⁶⁰ᶠᵖˢ",
+        ).forEach { assertTrue(it, table.isKids(it)) }
+        // French panels file teen anime under ANIMEE, so it stays out.
+        listOf("FR - ANIMEE", "EN - MOVIES", "EN - ACTION", "NETFLIX MOVIES", "EN - KIDSTUFF").forEach { assertFalse(it, table.isKids(it)) }
+    }
+
+    @Test fun `a Provider table line adds a Kids word or empties one`() {
+        val table = PrefixTable.withProviderTable("[genre categories]\nNIÑOS | Kids\nFAMILY |\n")
+
+        assertTrue(table.isKids("ES - NIÑOS"))
+        assertFalse(table.isKids("EN - FAMILY"))
+        assertTrue(table.isKids("EN - KIDS"))
+    }
+
     @Test fun `a key listed twice in one table is an error, once in each is not`() {
         assertThrows(IllegalArgumentException::class.java) { PrefixTable.withProviderTable("[prefixes]\nXB | language=de\nXB | language=fr\n") }
         assertFalse(PrefixTable.withProviderTable("[prefixes]\nEN | language=fr\n").describe("EN - Heat", "MOVIES").attributes.language?.value == "en")

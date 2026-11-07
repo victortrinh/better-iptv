@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { DEVICES_QUERY } from "../src/accounts";
 import { LOOKUP_QUERY } from "../src/match";
 import { CACHE_QUERY } from "../src/metadata";
 import { SEARCH_CACHE_QUERY } from "../src/subtitles";
@@ -25,5 +26,10 @@ describe("batch lookups", () => {
     const details = await plan(SEARCH_CACHE_QUERY, "show", 1396, 1, 2, '["en","fr"]');
     expect(details).toContainEqual(expect.stringMatching(/^SEARCH subtitle_search .*\(kind=\? AND tmdb_id=\? AND season=\? AND episode=\? AND language=\?\)/));
     expect(details.filter((detail) => detail.includes("subtitle_search") && detail.startsWith("SCAN"))).toEqual([]);
+  });
+
+  it("search the device list by its Account, not every device", async () => {
+    const details = await plan(DEVICES_QUERY, "a".repeat(64));
+    expect(details.filter((detail) => detail.includes("device") && detail.startsWith("SCAN"))).toEqual([]);
   });
 });

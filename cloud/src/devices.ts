@@ -12,12 +12,16 @@ export async function register(db: D1Database): Promise<string> {
   return token;
 }
 
-/** The hash of the registered device's token [request] carries, or null when it carries none a device was given. */
-export async function deviceOf(db: D1Database, request: Request): Promise<string | null> {
+/**
+ * The registered device whose token [request] carries, by its token's hash, and whether it is signed
+ * in to an Account; null when it carries none a device was given.
+ */
+export async function deviceOf(db: D1Database, request: Request): Promise<{ hash: string; signedIn: boolean } | null> {
   const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("Authorization") ?? "")?.[1];
   if (token === undefined) return null;
   const hash = await sha256(token);
-  return (await db.prepare("SELECT 1 FROM device WHERE token_hash = ?1").bind(hash).first()) !== null ? hash : null;
+  const row = await db.prepare("SELECT account_id FROM device WHERE token_hash = ?1").bind(hash).first<{ account_id: number | null }>();
+  return row === null ? null : { hash, signedIn: row.account_id !== null };
 }
 
 /** 32 random bytes, in base64url without padding: 43 characters. */

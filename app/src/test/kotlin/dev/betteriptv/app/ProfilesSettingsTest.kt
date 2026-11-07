@@ -66,7 +66,7 @@ class ProfilesSettingsTest {
     private fun change(change: ProfileChange) {
         changes += change
         profiles = when (change) {
-            is ProfileChange.Add -> Profiles(profiles.all + Profile(nextId++, change.name), profiles.currentId)
+            is ProfileChange.Add -> Profiles(profiles.all + Profile(nextId++, change.name, change.kids), profiles.currentId)
             is ProfileChange.Rename -> Profiles(profiles.all.map { if (it.id == change.id) it.copy(name = change.name) else it }, profiles.currentId)
             is ProfileChange.Switch -> Profiles(profiles.all, change.id)
             is ProfileChange.Delete -> {
@@ -144,6 +144,45 @@ class ProfilesSettingsTest {
         row("Add a profile").assertIsFocused()
         profileRow(second).assert(hasText("Alex Ma") and !hasText(CHOSEN))
         profileRow(first).assert(hasText(CHOSEN))
+    }
+
+    @Test fun addingAProfileOffersTheKidsSwitchOffUnlessChosen() {
+        settings()
+        press(listOf(Key.DirectionDown, Key.DirectionCenter))
+        type("sam")
+        compose.onNodeWithText("Kids profile").assertExists()
+        compose.onNodeWithText("On").performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf<ProfileChange>(ProfileChange.Add("Sam", kids = true)), changes)
+    }
+
+    @Test fun renamingAProfileOffersNoKidsSwitch() {
+        settings()
+        press(listOf(Key.DirectionCenter))
+        row("Rename").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Rename English").assertExists()
+        compose.onNodeWithText("Kids profile").assertDoesNotExist()
+    }
+
+    @Test fun aKidsProfilesSettingsOfferTheProfileSwitchAndTextSizeOnly() {
+        change(ProfileChange.Add("Sam", kids = true))
+        change(ProfileChange.Switch(second))
+        changes.clear()
+        settings()
+
+        profileRow(second).assertIsFocused()
+        compose.onNodeWithText("Text size").assertExists()
+        listOf("Add a profile", "App language", "Content languages", "Region", "Leagues", "Quality cap", "Account", "Catalog", "App version").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        // OK on another Profile switches to it at once: there is no page to rename or delete from.
+        press(listOf(Key.DirectionUp, Key.DirectionCenter))
+        assertEquals(listOf<ProfileChange>(ProfileChange.Switch(first)), changes)
+        compose.onNodeWithText("Rename").assertDoesNotExist()
     }
 
     @Test fun backFromTheNamePageAddsNothing() {

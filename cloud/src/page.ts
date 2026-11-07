@@ -22,7 +22,37 @@ ${message ? `<p class="${message.error ? "error" : "note"}">${escape(message.tex
 <label for="email">Your email</label>
 <input id="email" name="email" type="email" required autocomplete="email" maxlength="254">
 <button type="submit">Send me a link</button>
+</form>
+<p class="aside"><a href="/delete-account">Delete my account</a></p>`,
+  );
+}
+
+/** "Delete my account" (#434): an email, to which a link that deletes the Account is sent. */
+export function deletePage(message?: { text: string; error: boolean }): string {
+  return page(
+    "Delete my account",
+    `<h1>Delete my account</h1>
+<p>Type your account's email. We'll send you a link: tap it, and the account is deleted with the history it keeps and its list of TVs. Each TV is signed out and keeps working without an account.</p>
+${message ? `<p class="${message.error ? "error" : "note"}">${escape(message.text)}</p>` : ""}
+<form method="post" action="/delete-account">
+<label for="email">Your email</label>
+<input id="email" name="email" type="email" required autocomplete="email" maxlength="254">
+<button type="submit">Send me a link</button>
 </form>`,
+  );
+}
+
+/** The page a delete link opens: one button, so a mail scanner opening the link deletes nothing. */
+export function confirmDeletePage(token: string): string {
+  return page(
+    "Delete my account",
+    `<h1>Delete my account</h1>
+<p>This deletes your account, the history it keeps and its list of TVs. It can't be undone.</p>
+<form method="post" action="/delete-account/link">
+<input type="hidden" name="token" value="${escape(token)}">
+<button type="submit">Delete my account</button>
+</form>`,
+    false,
   );
 }
 
@@ -79,6 +109,8 @@ input:focus { outline: none; border-color: #FFFFFF; background: rgba(255,255,255
 button { width: 100%; margin-top: 1.5rem; padding: 0.875rem; border: 0; border-radius: 999px; background: #FFFFFF; color: #000000; font: inherit; font-weight: 600; }
 .error { color: #FF6B60; }
 .note { color: #FFFFFF; }
+a { color: #FFFFFF; }
+.aside { margin-top: 1.5rem; text-align: center; font-size: 0.875rem; }
 small { display: block; margin-top: 2.5rem; color: #A9A9AF; font-size: 0.8125rem; }
 </style>
 </head>

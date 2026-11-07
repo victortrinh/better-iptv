@@ -84,6 +84,7 @@ import java.time.Duration
  * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
  * [addProfile] opens "Add a profile"'s name at once, as "Who's watching?" asks (#432), and says so through [onAddProfileShown];
  * Back from it lands on "Add a profile".
+ * On a Kids profile there are only the Profiles, whose rows switch to another Profile at once, and the Text size.
  */
 @Composable
 fun SettingsScreen(
@@ -108,13 +109,14 @@ fun SettingsScreen(
         item { SyncRow(library, onSyncNow) }
         item { MatchingRow(library) }
     },
-    account = { onSignIn, modifier -> AccountRow(library, onSignIn, modifier) },
-    signIn = { onSignedIn -> SignInScreen(library, onSignedIn = { onSignedIn() }) },
+    account = { open, accountRow, devicesRow -> AccountRows(library, open, accountRow, devicesRow) },
+    accountPage = { page, onDone -> AccountPageContent(library, page, onDone) },
 )
 
 /**
  * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
- * the Catalog section's rows from [catalog], the Account row from [account] and the Sign-in screen from [signIn].
+ * the Catalog section's rows from [catalog], the Account section's rows from [account] and what they
+ * open (the Sign-in screen, Sign out, the device list) from [accountPage].
  */
 @Composable
 internal fun SettingsContent(
@@ -128,8 +130,8 @@ internal fun SettingsContent(
     onProfile: (ProfileChange) -> Unit,
     catalogLanguages: suspend () -> List<String>,
     catalog: LazyListScope.() -> Unit,
-    account: @Composable (onSignIn: () -> Unit, modifier: Modifier) -> Unit = { _, _ -> },
-    signIn: @Composable (onSignedIn: () -> Unit) -> Unit = {},
+    account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
+    accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
     addProfile: Boolean = false,
     onAddProfileShown: () -> Unit = {},
 ) {
@@ -140,11 +142,14 @@ internal fun SettingsContent(
     val profileRow = { id: Long -> profileRows.getOrPut(id) { FocusRequester() } }
     val addProfileRow = remember { FocusRequester() }
     val picked = profiles.all.find { it.id == profileId }
+    // A Kids profile's Settings offer the Text size and the Profile switch, nothing else.
+    val kids = profiles.current.kids
     val appLanguageRow = remember { FocusRequester() }
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
     val leaguesRow = remember { FocusRequester() }
     val accountRow = remember { FocusRequester() }
+    val devicesRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
     // Kept while a list or the Sign-in screen replaces the column, so Back lands with the row that
     // opened it composed: the Account row is below the first screenful.
@@ -153,9 +158,12 @@ internal fun SettingsContent(
     FocusTabOnArrival(focusTab, tab)
     if (addProfile) {
         LaunchedEffect(Unit) {
-            profileId = null
-            returnTo = Picker.ProfileName
-            picking = Picker.ProfileName
+            // A Kids profile adds none (#433).
+            if (!kids) {
+                profileId = null
+                returnTo = Picker.ProfileName
+                picking = Picker.ProfileName
+            }
             onAddProfileShown()
         }
     }
@@ -203,10 +211,12 @@ internal fun SettingsContent(
                 ProfileNamePage(
                     if (picked == null) stringResource(R.string.profile_add) else stringResource(R.string.profile_rename_title, picked.shownName()),
                     initial = picked?.name.orEmpty(),
-                    onSave = { name ->
-                        onProfile(if (picked == null) ProfileChange.Add(name) else ProfileChange.Rename(picked.id, name))
+                    onSave = { name, kids ->
+                        onProfile(if (picked == null) ProfileChange.Add(name, kids) else ProfileChange.Rename(picked.id, name))
                         back()
                     },
+                    // The Kids switch is chosen once, when the Profile is made.
+                    kidsSwitch = picked == null,
                 )
             }
             Picker.DeleteProfile -> if (picked == null) {
@@ -223,9 +233,15 @@ internal fun SettingsContent(
                     onCancel = { picking = Picker.Profile },
                 )
             }
-            Picker.SignIn -> {
+            Picker.SignIn, Picker.SignOut, Picker.Devices -> {
                 BackHandler { picking = null }
-                signIn { picking = null }
+                accountPage(
+                    when (picking) {
+                        Picker.SignOut -> AccountPage.SignOut
+                        Picker.Devices -> AccountPage.Devices
+                        else -> AccountPage.SignIn
+                    },
+                ) { picking = null }
             }
             null -> LazyColumn(
                 state = settingsList,
@@ -238,16 +254,23 @@ internal fun SettingsContent(
                     rows = profileRow,
                     addRow = addProfileRow,
                     onOpen = { profile ->
-                        profileId = profile.id
-                        returnTo = Picker.Profile
-                        picking = Picker.Profile
+                        if (kids) {
+                            // A Kids profile switches, and nothing more: the Household PIN will ask first (#437).
+                            if (profile.id != profiles.currentId) onProfile(ProfileChange.Switch(profile.id))
+                        } else {
+                            profileId = profile.id
+                            returnTo = Picker.Profile
+                            picking = Picker.Profile
+                        }
                     },
                     onAdd = {
                         profileId = null
                         returnTo = Picker.ProfileName
                         picking = Picker.ProfileName
                     },
+                    canAdd = !kids,
                 )
+                if (!kids) {
                 item { Heading(stringResource(R.string.settings_languages)) }
                 item {
                     Labelled(stringResource(R.string.settings_app_language), stringResource(R.string.settings_app_language_detail)) {
@@ -304,6 +327,7 @@ internal fun SettingsContent(
                         detail = stringResource(R.string.settings_leagues_detail),
                     )
                 }
+                }
                 item { Heading(stringResource(R.string.settings_display)) }
                 item {
                     Labelled(stringResource(R.string.settings_text_size), stringResource(R.string.settings_text_size_detail)) {
@@ -318,6 +342,7 @@ internal fun SettingsContent(
                         )
                     }
                 }
+                if (!kids) {
                 item { Heading(stringResource(R.string.settings_playback)) }
                 item {
                     Labelled(stringResource(R.string.settings_quality_cap), stringResource(R.string.settings_quality_cap_detail)) {
@@ -352,10 +377,15 @@ internal fun SettingsContent(
                 }
                 item { Heading(stringResource(R.string.settings_account)) }
                 item {
-                    account({
-                        returnTo = Picker.SignIn
-                        picking = Picker.SignIn
-                    }, Modifier.focusRequester(accountRow))
+                    account({ page ->
+                        val opened = when (page) {
+                            AccountPage.SignIn -> Picker.SignIn
+                            AccountPage.SignOut -> Picker.SignOut
+                            AccountPage.Devices -> Picker.Devices
+                        }
+                        returnTo = opened
+                        picking = opened
+                    }, Modifier.focusRequester(accountRow), Modifier.focusRequester(devicesRow))
                 }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 catalog()
@@ -372,6 +402,7 @@ internal fun SettingsContent(
                         onClick = { if (offered != null) onUpdate() },
                     )
                 }
+                }
             }
         }; ScreenFade(picking, firstFades = false) }
     }
@@ -386,7 +417,8 @@ internal fun SettingsContent(
                 // Back to the Profile's row; once it's deleted, to the current one's.
                 Picker.Profile, Picker.DeleteProfile -> profileRow(picked?.id ?: profiles.currentId)
                 Picker.ProfileName -> addProfileRow
-                Picker.SignIn -> accountRow
+                Picker.SignIn, Picker.SignOut -> accountRow
+                Picker.Devices -> devicesRow
                 // Reached by its tab, which keeps focus.
                 null -> profileRow(profiles.currentId).takeUnless { focusTab }
             }?.requestFocus()
@@ -451,21 +483,12 @@ private enum class Picker {
 
     /** The Sign-in code and QR. */
     SignIn,
-}
 
-/**
- * The Account row (ADR 0015): "Sign in", which opens the Sign-in screen, or "Signed in as …" once
- * the device is, read from the device alone. Signing out comes with the device list (#434).
- */
-@Composable
-private fun AccountRow(library: Library, onSignIn: () -> Unit, modifier: Modifier) {
-    val account by library.account.collectAsStateWithLifecycle()
-    val email = account
-    if (email == null) {
-        SettingRow(stringResource(R.string.settings_sign_in), "", onClick = onSignIn, modifier, detail = stringResource(R.string.settings_sign_in_detail))
-    } else {
-        SettingRow(stringResource(R.string.settings_signed_in_as, email), "", onClick = {}, modifier)
-    }
+    /** The question before signing this TV out. */
+    SignOut,
+
+    /** The Account's devices. */
+    Devices,
 }
 
 /**
