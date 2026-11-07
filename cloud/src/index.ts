@@ -19,6 +19,7 @@ import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
 import { confirmDeletePage, confirmPage, deletePage, htmlResponse, messagePage, signInPage } from "./page";
+import { accountIdOf, readSyncRequest, sync } from "./sync";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves data that is the same for every Viewer, and signs TVs in to Accounts by email (ADR 0015);
@@ -89,6 +90,10 @@ import { confirmDeletePage, confirmPage, deletePage, htmlResponse, messagePage, 
  *   true}]}`, by sign-in; `[]` when it is signed in to none.
  * - `POST /v1/account/sign-out`, with `{}` for this device or `{"device": "3f9a…"}` for another on
  *   its Account: clears that device's link, `204`; `404` when no such device is on the Account.
+ * - `POST /v1/sync`, with `{"cursor": 0, "provider": "<SHA-256 of the Provider's host>", "progress": [{"title":
+ *   "show/1399", "season": 1, "episode": 2, "position": 600000, "duration": 3600000, "watched": false, "removed":
+ *   false, "at": 1762500000000}]}`: keeps the device's history changes, latest winning, and answers the Account's
+ *   since the cursor, `{"cursor": 42, "reset": false, "progress": […]}` (#435). `403` when the device isn't signed in.
  *
  * Every `/v1/` answer to a registered device carries `Zugig-Account: signed-in` or `none`, so a
  * device signed out elsewhere goes anonymous at its next request (#434).
@@ -145,6 +150,13 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const out = await signOut(env.DB, device, id);
     if (out === null) return problem(404, "No such device on this Account.");
     return new Response(null, { status: 204, headers: out === "this" ? { [ACCOUNT_HEADER]: "none" } : {} });
+  }
+  if (request.method === "POST" && pathname === "/v1/sync") {
+    const accountId = await accountIdOf(env.DB, device);
+    if (accountId === null) return problem(403, "This device isn't signed in to an Account.");
+    const asked = readSyncRequest(await request.json().catch(() => null));
+    if (typeof asked === "string") return problem(400, asked);
+    return json(await sync(env.DB, accountId, asked));
   }
   if (request.method === "POST" && pathname === "/v1/metadata") {
     const asked = await metadataRequest(request);
