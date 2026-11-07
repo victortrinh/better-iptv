@@ -1,6 +1,8 @@
 package dev.betteriptv.app.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,6 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -43,6 +49,28 @@ fun PulsingDot(size: Dp, modifier: Modifier = Modifier) {
         }.background(Colors.ink, CircleShape),
     )
 }
+
+/**
+ * One pulse, for something that is noticed once rather than waited on (the profile chip, #438): while
+ * [pulse], the alpha to draw goes from full to 30% and back, [ONCE_MILLIS] each way, linear, then
+ * [onDone] is called. Alpha only, since it fades a whole chip, not a dot. Read the alpha in a
+ * `graphicsLayer`, so nothing redraws.
+ */
+@Composable
+fun pulseOnce(pulse: Boolean, onDone: () -> Unit): () -> Float {
+    val alpha = remember { Animatable(1f) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(pulse) {
+        if (!pulse) return@LaunchedEffect
+        alpha.animateTo(LOW_ALPHA, tween(ONCE_MILLIS, easing = LinearEasing))
+        alpha.animateTo(1f, tween(ONCE_MILLIS, easing = LinearEasing))
+        done()
+    }
+    return { alpha.value }
+}
+
+/** Each way of [pulseOnce]: slow enough to read as a nudge, not activity. */
+private const val ONCE_MILLIS = 900
 
 /** Each way of the breath: slow enough to read as waiting, quick enough to be seen moving. */
 private const val PULSE_MILLIS = 700

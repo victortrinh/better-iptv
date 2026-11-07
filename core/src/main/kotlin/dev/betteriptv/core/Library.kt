@@ -236,8 +236,27 @@ class Library private constructor(
             if (_profiles.value.all.size >= MAX_PROFILES) return@withContext null
             val id = store.addProfile(name.trim(), kids, Instant.now())
             _profiles.value = readProfiles()
+            // The first second Profile: the chip appears, and pulses once so the household notices it.
+            if (store.profileChipPulse() == null) {
+                store.saveProfileChipPulse(PULSE_PENDING)
+                _profileChipPulse.value = true
+            }
             _profiles.value.all.single { it.id == id }
         }
+    }
+
+    private val _profileChipPulse = MutableStateFlow(store.profileChipPulse() == PULSE_PENDING)
+
+    /**
+     * Whether the profile chip is to pulse once (#438): set the first time a second Profile is made on
+     * this device, kept across launches until the chip has pulsed ([profileChipPulsed]), never set again.
+     */
+    val profileChipPulse: StateFlow<Boolean> = _profileChipPulse.asStateFlow()
+
+    /** The chip has pulsed: it never does again on this device. */
+    suspend fun profileChipPulsed() = withContext(Dispatchers.IO) {
+        _profileChipPulse.value = false
+        saveLater { store.saveProfileChipPulse(PULSE_DONE) }
     }
 
     /** Names Profile [id] [name] (trimmed). */
@@ -372,6 +391,7 @@ class Library private constructor(
             val key = providerKey(login)
             val table = fetchProviderTable(key)?.let { (text, table) -> store.stageProviderTable(key, text); table } ?: prefixTableFor(login)
             val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
+            val tierTags = CandidateTierTags(table)
             // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
             syncWriting = true
             try {
@@ -390,6 +410,7 @@ class Library private constructor(
                         if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
                         if (listing == PrefixTable.LiveListing.Channel) {
                             val channel = table.channelName(name)
+                            if (!isEventChannel(name, start)) tierTags.add(name, channel.key)
                             staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
                             entriesRead++
                             running()
@@ -472,6 +493,7 @@ class Library private constructor(
                             rematched,
                             showCount,
                             channelCount,
+                            tierTags.candidates(),
                         )
                     },
                 )
@@ -591,13 +613,18 @@ class Library private constructor(
 
     /**
      * Tells the cloud which Prefixes the Sync found that the Prefix table doesn't know, so they get
-     * added to it. The Viewer never sees them; a Sync that can't report them leaves it to the next.
+     * added to it, and its candidate Tier tags (#439). The Viewer never sees them; a Sync that can't
+     * report them leaves it to the next.
      */
     private fun reportUnknownPrefixes(sync: CompletedSync) {
-        if (cloud == null || sync.unknownPrefixes.isEmpty() || !canAskCloud()) return
+        if (cloud == null || (sync.unknownPrefixes.isEmpty() && sync.candidateTierTags.isEmpty()) || !canAskCloud()) return
         val login = credentials.load() ?: return
         try {
-            cloud.reportUnknownPrefixes(providerKey(login), sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH))
+            cloud.reportUnknownPrefixes(
+                providerKey(login),
+                sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH),
+                sync.candidateTierTags.take(CloudClient.MAX_TIER_TAG_BATCH),
+            )
         } catch (e: CloudException) {
             cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
         }
@@ -1237,6 +1264,21 @@ class Library private constructor(
      */
     val account: StateFlow<String?> = _account.asStateFlow()
 
+    private val _offersSignInCard = MutableStateFlow(cloud != null && _account.value == null && !store.signInCardDone())
+
+    /**
+     * Whether the first Sync's checklist offers the sign-in card (#438): with a cloud, no Account and
+     * the card neither dismissed ([dismissSignInCard]) nor used to sign in on this device. Once either,
+     * never again, signed out or not.
+     */
+    val offersSignInCard: StateFlow<Boolean> = _offersSignInCard.asStateFlow()
+
+    /** Back or Home on the sign-in card: it never shows again on this device; Settings keeps its row. */
+    suspend fun dismissSignInCard() = withContext(Dispatchers.IO) {
+        _offersSignInCard.value = false
+        saveLater { store.saveSignInCardDone() }
+    }
+
     /**
      * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
      * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
@@ -1266,9 +1308,16 @@ class Library private constructor(
         synchronized(_account) {
             if (email != null) {
                 signedInSince = sentAt
-                store.saveSignOutPending(false)
+                // On the saving thread: a first Sync's Titles stage holds the writer for minutes, and
+                // the sign-in card under its checklist must turn to "Signed in as …" meanwhile.
+                // Skipped when the device signed out meanwhile, whose pending sign-out must stand.
+                saveLater { if (_account.value != null) store.saveSignOutPending(false) }
             }
             accountIs(email)
+        }
+        if (email != null && _offersSignInCard.value) {
+            _offersSignInCard.value = false
+            saveLater { store.saveSignInCardDone() }
         }
         email
     }
@@ -1280,8 +1329,9 @@ class Library private constructor(
     private fun accountIs(email: String?): Unit = synchronized(_account) {
         val was = _account.value
         if (email == was) return
-        store.saveAccountEmail(email)
+        // Known at once, kept on the saving thread, which waits out a Sync holding the writer.
         _account.value = email
+        saveLater { store.saveAccountEmail(email) }
         if (was != null) {
             history.signedOut()
             changed()
@@ -1549,14 +1599,19 @@ class Library private constructor(
 
     /**
      * The subtitles that can be downloaded for [plan]'s Movie or Episode in [languages] (ISO 639-1),
-     * the best few in each language first. Empty for a Title without a TMDB ID, or when the cloud
-     * can't answer: the Viewer plays on without them.
+     * the best few in each language first. A file ripped from the Version's Source (a Netflix
+     * release for a Netflix copy) goes first in its language, as it is timed to that copy; files for
+     * the hard of hearing stay after the others. Empty for a Title without a TMDB ID, or when the
+     * cloud can't answer: the Viewer plays on without them.
      */
     suspend fun subtitleOffers(plan: PlayPlan, languages: List<String>): List<SubtitleOffer> = withContext(Dispatchers.IO) {
         val id = plan.titleId as? TitleId.Tmdb
         if (cloud == null || id == null || languages.isEmpty()) return@withContext emptyList()
         try {
-            cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+            val offers = cloud.searchSubtitles(id, plan.episode, languages.take(MAX_SUBTITLE_LANGUAGES))
+            val source = plan.version.attributes.source?.value ?: return@withContext offers
+            val order = offers.map { it.language }.distinct()
+            offers.sortedWith(compareBy({ order.indexOf(it.language) }, { it.hearingImpaired }, { !fromSource(it.release, source) }))
         } catch (e: CloudException) {
             emptyList()
         }
@@ -2487,14 +2542,23 @@ class Library private constructor(
         return found
     }
 
-    /** Shares the file reads the cloud doesn't have yet; those it doesn't take are shared next time. */
+    /**
+     * Shares the file reads the cloud doesn't have yet, each with its Listing's Prefix and matched
+     * Category hints (ADR 0014), on every device, Unlocked or not; those the cloud doesn't take are
+     * shared next time.
+     */
     private fun shareFileReads(provider: String) {
         if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
         try {
+            val table = prefixTable
             store.unsharedFileReads().entries.chunked(CloudClient.MAX_BATCH).forEach { batch ->
-                val files = batch.associate { it.key to it.value }
+                val sources = store.fileReadSources(batch.map { it.key })
+                val files = batch.map { (id, file) ->
+                    val reported = sources[id]?.let { (name, category) -> table.reported(name, category) }
+                    CloudClient.SharedFileRead(id, file, reported?.prefix, reported?.hints.orEmpty())
+                }
                 cloud.shareFileReads(provider, files)
-                store.markFileReadsShared(files.keys)
+                store.markFileReadsShared(files.map { it.listingId })
             }
         } catch (e: CloudException) {
             cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
@@ -2734,6 +2798,9 @@ class Library private constructor(
     companion object {
         /** The most Profiles a household keeps (#428). */
         const val MAX_PROFILES = 5
+
+        private const val PULSE_PENDING = "pending"
+        private const val PULSE_DONE = "done"
 
         private val METADATA_FRESH_FOR: Duration = Duration.ofDays(7)
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)

@@ -95,20 +95,34 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }.toMap()
     }
 
-    /** Shares what the files of [provider]'s movie Listings hold ([files], JSON by Listing id), at most [MAX_BATCH] at a time. */
-    fun shareFileReads(provider: String, files: Map<Long, String>) {
+    /**
+     * Shares what the files of [provider]'s Listings hold ([files]), at most [MAX_BATCH] at a time,
+     * each with its Listing's Prefix and matched Category hints, from which the cloud learns the
+     * Provider table (ADR 0014). Never a name.
+     */
+    fun shareFileReads(provider: String, files: List<SharedFileRead>) {
         require(files.size <= MAX_BATCH)
-        val body = mapOf("provider" to provider, "files" to files.map { (id, file) -> mapOf("listingId" to id, "file" to json.fromJson(file)) })
+        val body = mapOf(
+            "provider" to provider,
+            "files" to files.map { mapOf("listingId" to it.listingId, "file" to json.fromJson(it.file), "prefix" to it.prefix, "hints" to it.hints) },
+        )
         authorized { token -> post("v1/file-reads", json.serializeNulls().toJson(body), token) }
     }
 
-    /** Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most [MAX_PREFIX_BATCH]. */
-    fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>) {
-        require(prefixes.size <= MAX_PREFIX_BATCH)
-        val body = mapOf(
-            "provider" to provider,
-            "prefixes" to prefixes.map { mapOf("prefix" to it.prefix, "listingCount" to it.listingCount, "example" to it.example) },
-        )
+    /** One file read as shared: the Listing, its file as JSON, its Prefix (null when its name has none) and its matched Category hints. */
+    class SharedFileRead(val listingId: Long, val file: String, val prefix: String?, val hints: List<String>)
+
+    /**
+     * Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most
+     * [MAX_PREFIX_BATCH], and its candidate Tier tags, at most [MAX_TIER_TAG_BATCH] (left out when none).
+     */
+    fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>, tierTags: List<CandidateTierTag> = emptyList()) {
+        require(prefixes.size <= MAX_PREFIX_BATCH && tierTags.size <= MAX_TIER_TAG_BATCH)
+        val body = buildMap {
+            put("provider", provider)
+            put("prefixes", prefixes.map { mapOf("prefix" to it.prefix, "listingCount" to it.listingCount, "example" to it.example) })
+            if (tierTags.isNotEmpty()) put("tierTags", tierTags.map { mapOf("word" to it.word, "listingCount" to it.listingCount, "example" to it.example) })
+        }
         authorized { token -> post("v1/unknown-prefixes", json.toJson(body), token) }
     }
 
@@ -379,6 +393,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
         /** The most unknown Prefixes one report may hold. */
         const val MAX_PREFIX_BATCH = 200
+
+        /** The most candidate Tier tags one report may hold. */
+        const val MAX_TIER_TAG_BATCH = 50
         /** The answer header saying whether the cloud has this device signed in: `signed-in` or `none`. */
         private const val ACCOUNT_HEADER = "Zugig-Account"
         private val JSON = "application/json".toMediaType()
@@ -411,6 +428,34 @@ data class AccountDevice(val id: String, val model: String?, val signedInAt: Ins
 
 /** A subtitle file the cloud found for a Movie or Episode, in [language] (ISO 639-1), named by its [release]. */
 data class SubtitleOffer(val id: String, val language: String, val release: String, val hearingImpaired: Boolean)
+
+/**
+ * Whether a subtitle file's [release] name says it was ripped from [source] (a Version's Source,
+ * as the Prefix table names it): it carries one of the tags release groups give that service,
+ * such as `NF` for Netflix, as a whole word. Tags that are also common title words (`MAX`) aren't
+ * counted, and a Source without a tag of its own (a studio) matches nothing.
+ */
+internal fun fromSource(release: String, source: String): Boolean {
+    val tags = SOURCE_TAGS[source] ?: return false
+    val words = release.uppercase().replace("BLU-RAY", "BLURAY").split(Regex("[^A-Z0-9+]+"))
+    return words.any { it in tags }
+}
+
+private val SOURCE_TAGS = mapOf(
+    "Netflix" to setOf("NF", "NFLX"),
+    "Disney+" to setOf("DSNP", "DSNY", "DNSP", "DISNEY+"),
+    "Marvel" to setOf("DSNP", "DSNY", "DNSP", "DISNEY+"),
+    "Prime Video" to setOf("AMZN"),
+    "Apple TV+" to setOf("ATVP", "ATV+", "APTV"),
+    "Max" to setOf("HMAX"),
+    "Paramount+" to setOf("PMTP", "PMNP"),
+    "Peacock" to setOf("PCOK"),
+    "Showtime" to setOf("SHO"),
+    "Crunchyroll" to setOf("CR"),
+    "Discovery+" to setOf("DSCP"),
+    "Joyn" to setOf("JOYN"),
+    "Blu-ray" to setOf("BLURAY", "BDRIP", "BRRIP", "BDREMUX"),
+)
 
 /** A downloaded subtitle file: its [text], in its [format] (`srt`, `vtt` or `ass`). */
 class DownloadedSubtitle(val format: String, val text: String)

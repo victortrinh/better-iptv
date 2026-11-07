@@ -131,6 +131,23 @@ class ProfilesTest {
         assertEquals(Library.MAX_PROFILES, library.profiles.value.all.size)
     }
 
+    @Test fun `the chip pulses once, the first time a second Profile is made, and never again`() = runBlocking {
+        assertFalse(library.profileChipPulse.value)
+        val alex = library.addProfile("Alex")!!
+        assertTrue(library.profileChipPulse.value)
+        // Still due after a restart, until the chip has pulsed.
+        library = openLibrary()
+        assertTrue(library.profileChipPulse.value)
+        library.profileChipPulsed()
+        assertFalse(library.profileChipPulse.value)
+        library.addProfile("Sam")
+        library.deleteProfile(alex.id)
+        library.addProfile("Jo")
+        assertFalse(library.profileChipPulse.value)
+        library = openLibrary()
+        assertFalse(library.profileChipPulse.value)
+    }
+
     @Test fun `a Profile is renamed, the first one too`() = runBlocking {
         val alex = library.addProfile("Alex")!!
         library.renameProfile(alex.id, "Alexis")

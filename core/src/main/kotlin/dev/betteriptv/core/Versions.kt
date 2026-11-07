@@ -87,7 +87,7 @@ internal fun VersionAttributes.onlyAudioLanguage(contentLanguages: List<String>,
 
 /**
  * [candidates] with each Untagged one, whose Prefix names a Source but no language (`D+`, `NF`,
- * `TOP`), Likely in the language the Title was released in ([originalLanguage], TMDB's): a streaming
+ * `TOP`) or is Multi-audio, Likely in the language the Title was released in ([originalLanguage], TMDB's): a streaming
  * service's or a Blu-ray's copy keeps the original audio. One whose Prefix names neither (`SC`, the
  * Nordic copies, which may be dubs) is left as it is, as is every one when TMDB names no language.
  */
@@ -96,7 +96,7 @@ internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLangu
     val language = originalLanguage?.takeIf { it.isNotBlank() && it != "xx" } ?: return candidates
     return candidates.map { candidate ->
         val attributes = candidate.attributes
-        if (attributes.language != null || attributes.source == null) candidate
+        if (attributes.language != null || !attributes.untaggedCopy) candidate
         else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)), candidate.unknownPrefix)
     }
 }
@@ -204,8 +204,8 @@ private fun knownPrefixOrder(candidates: List<Candidate>, read: Set<Long>, conte
         return (wanted + listOf(null) + others).distinct().mapNotNull { firstUnread(byLanguage[it]) }
     }
     val unnamed = byLanguage[null].orEmpty()
-    val untagged = firstUnread(unnamed.filter { it.attributes.source != null })
-    val subtitleCultures = listOfNotNull(firstUnread(unnamed.filter { it.attributes.source == null })) +
+    val untagged = firstUnread(unnamed.filter { it.attributes.untaggedCopy })
+    val subtitleCultures = listOfNotNull(firstUnread(unnamed.filter { !it.attributes.untaggedCopy })) +
         others.filter { it in SUBTITLE_CULTURES }.mapNotNull { firstUnread(byLanguage[it]) }
     val outside = others.filter { it !in SUBTITLE_CULTURES }.mapNotNull { firstUnread(byLanguage[it]) }
     val bestOutside = outside.minWithOrNull(BEST_FIRST)
