@@ -27,7 +27,8 @@ class OriginalAudioTest {
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
+        // The surveyed Provider's table, where `SC` is the Nordic subtitle culture rather than an unknown Prefix.
+        library = openSurveyedLibrary(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
         library.logIn(provider.login)
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"

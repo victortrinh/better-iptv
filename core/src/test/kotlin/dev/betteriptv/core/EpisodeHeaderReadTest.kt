@@ -167,6 +167,18 @@ class EpisodeHeaderReadTest {
         assertEquals(listOf("en", "ko"), episode.languages.map { it.language })
     }
 
+    @Test fun `an unknown-Prefix Show's Episodes are read before the Viewer's languages`() = runBlocking {
+        syncShow(
+            "FR - Game of Thrones" to listOf(101L to "fre", 102L to "fre"),
+            "XB - Game of Thrones" to listOf(201L to "ger", 202L to "ger"),
+        )
+        listOf(101L, 102L, 201L, 202L).forEach { provider.episodeFiles[it] = englishThenFrench }
+
+        openShow(listOf("fr"))
+
+        assertEquals(listOf(201L, 202L, 101L, 102L), readIds())
+    }
+
     /** An engine that plays a file to its end at once, having seen [seen] in it. */
     private class SeeingEngine(override val engine: Engine, override val seen: FileContents) : PlayerEngine {
         override val position = 0L

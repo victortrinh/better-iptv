@@ -260,6 +260,43 @@ class BackgroundReadingTest {
         assertEquals("NL - The Shadow's Edge (2025)", library.playPlan(movie(7), english, fullHdTv)!!.version.name)
     }
 
+    @Test fun `a Title's unknown-Prefix Version is read before the Version its card shows`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"},{"category_id":"2","category_name":"MOVIES"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"EN - Heat (1995)","tmdb":"7","category_id":"1","added":"1700000002","container_extension":"mkv"},
+            {"stream_id":2,"name":"XB - Heat (1995)","tmdb":"7","category_id":"2","added":"1700000001","container_extension":"mkv"}
+        ]"""
+        provider.movieFiles[1] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")))
+        provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "ger", "A_AAC")))
+        library.sync()
+        library.onScreen(listOf(movie(7)))
+
+        startReading()
+        awaitReads(2)
+        idle()
+
+        // `XB`, which no table knows, then the English copy the card shows; nothing else.
+        assertEquals(listOf(2L, 1L), read())
+    }
+
+    @Test fun `unknown-Prefix reads count against the day's reads like any other`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"},{"category_id":"2","category_name":"MOVIES"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"EN - Heat (1995)","tmdb":"7","category_id":"1","added":"1700000002","container_extension":"mkv"},
+            {"stream_id":2,"name":"XB - Heat (1995)","tmdb":"7","category_id":"2","added":"1700000001","container_extension":"mkv"}
+        ]"""
+        provider.movieFiles[1] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")))
+        provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "ger", "A_AAC")))
+        library.sync()
+        library.onScreen(listOf(movie(7)))
+
+        startReading(perDay = 1)
+        awaitReads(1)
+        idle()
+
+        assertEquals(listOf(2L), read())
+    }
+
     /** A clock the test moves by hand, in UTC. */
     private class TestClock(@Volatile var now: Instant) : Clock() {
         override fun instant(): Instant = now
