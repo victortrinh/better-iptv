@@ -9,6 +9,7 @@ import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_
 import { fillGames, games } from "./games";
 import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
 import { MAX_BATCH, metadata } from "./metadata";
+import { providerTable } from "./provider-tables";
 import { isUnknownPrefix, MAX_PREFIX_BATCH, saveUnknownPrefixes, type UnknownPrefix } from "./prefixes";
 import { isLeague, type League, LEAGUES } from "./schedule";
 import { MAX_QUERY, search } from "./search";
@@ -43,6 +44,8 @@ import { confirmDeletePage, confirmPage, deletePage, htmlResponse, messagePage, 
  * - `POST /v1/unknown-prefixes`, with `{"provider": "…", "prefixes": [{"prefix": "BR", "listingCount": 260,
  *   "example": "BR - Cold Pursuit (2019)"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't
  *   know, for the developer to add, `204`.
+ * - `POST /v1/provider-table`, with `{"provider": "…"}`: that Provider's Provider table, as text in the
+ *   Base table's format (`text/plain`), empty for a Provider the cloud has never seen (ADR 0014).
  * - `POST /v1/subtitles`, with `{"kind": "movie", "tmdbId": 238, "season": null, "episode": null,
  *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
  *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
@@ -179,6 +182,11 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     if (typeof asked === "string") return problem(400, asked);
     await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
     return new Response(null, { status: 204 });
+  }
+  if (request.method === "POST" && pathname === "/v1/provider-table") {
+    const { provider } = ((await request.json().catch(() => null)) ?? {}) as { provider?: unknown };
+    if (!isProviderKey(provider)) return problem(400, "provider must be the SHA-256 of the Provider's host, in lowercase hex.");
+    return new Response(await providerTable(env.DB, provider), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
   if (request.method === "POST" && pathname === "/v1/subtitles") {
     const asked = await subtitlesRequest(request);

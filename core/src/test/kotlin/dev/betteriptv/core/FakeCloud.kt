@@ -43,6 +43,9 @@ class FakeCloud : Closeable {
     /** Answers `/v1/unknown-prefixes` with HTTP 503, as a cloud down for that call alone would. */
     @Volatile var failingPrefixReports = false
 
+    /** The Provider tables `/v1/provider-table` serves, by Provider key; a Provider not here gets an empty table, as from the real cloud. */
+    val providerTables = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val metadata = HashMap<String, Map<String, Any?>>()
     private val upcoming = HashMap<String, List<Map<String, Any?>>>()
     private val seasons = HashMap<String, List<Map<String, Any?>>>()
@@ -341,6 +344,14 @@ class FakeCloud : Closeable {
                 respond(exchange, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
+            "/v1/provider-table" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val text = providerTables[(read(body) as Map<*, *>)["provider"] as String].orEmpty().toByteArray()
+                exchange.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
+                exchange.sendResponseHeaders(200, if (text.isEmpty()) -1 else text.size.toLong())
+                if (text.isNotEmpty()) exchange.responseBody.write(text)
+            }
             "/v1/upcoming" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))

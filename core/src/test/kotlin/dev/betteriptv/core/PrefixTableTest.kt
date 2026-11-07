@@ -17,7 +17,7 @@ class PrefixTableTest {
     private val provider = FakeProvider()
     private val credentials = InMemoryCredentials()
     private val libraries = mutableListOf<Library>()
-    private val cloud by lazy { FakeCloud() }
+    private val cloud by lazy { FakeCloud().servingSurveyedTable(provider) }
 
     private fun openLibrary(file: String = "catalog.db", cloudAddress: String? = null) =
         openSurveyedLibrary(folder.root.resolve(file).path, credentials, cloudAddress).also { libraries += it }

@@ -517,6 +517,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 LAST_SYNC_REMATCHED to meta(PENDING_REMATCHED)!!,
             ),
         )
+        // The Provider table the staged catalog was described with is the one kept from now on.
+        meta(PENDING_PROVIDER_TABLE_FOR)?.let { key -> writeMeta(mapOf(PROVIDER_TABLE_FOR to key, PROVIDER_TABLE to meta(PENDING_PROVIDER_TABLE)!!)) }
         writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
     }
 
@@ -1541,6 +1543,21 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         Unit
     }
 
+    /**
+     * The Provider table kept for the Provider whose key is [providerKey] (#431): what the cloud last
+     * answered for it, as of the catalog on screen. Null when none was kept, or it was another Provider's.
+     */
+    fun providerTable(providerKey: String): String? =
+        if (meta(PROVIDER_TABLE_FOR) == providerKey) meta(PROVIDER_TABLE) else null
+
+    /**
+     * Keeps [table], the cloud's answer for [providerKey], with the catalog a Sync is staging: it
+     * becomes the kept table when that catalog is swapped in, and goes when it is discarded.
+     */
+    fun stageProviderTable(providerKey: String, table: String) = synchronized(writer) {
+        writeMeta(mapOf(PENDING_PROVIDER_TABLE_FOR to providerKey, PENDING_PROVIDER_TABLE to table))
+    }
+
     /** The email of the Account the device is signed in to, as the cloud last said; null when none. */
     fun accountEmail(): String? = meta(ACCOUNT_EMAIL)
 
@@ -1683,6 +1700,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val PENDING_SHOW_LISTINGS = "pending_sync_show_listings"
         const val PENDING_CHANNEL_LISTINGS = "pending_sync_channel_listings"
         const val PENDING_REMATCHED = "pending_sync_rematched_listings"
+        const val PENDING_PROVIDER_TABLE_FOR = "pending_sync_provider_table_for"
+        const val PENDING_PROVIDER_TABLE = "pending_sync_provider_table"
+        /** The Provider table kept ([providerTable]), and the key of the Provider it is for. */
+        const val PROVIDER_TABLE_FOR = "provider_table_for"
+        const val PROVIDER_TABLE = "provider_table"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
         const val ACCOUNT_EMAIL = "account_email"
