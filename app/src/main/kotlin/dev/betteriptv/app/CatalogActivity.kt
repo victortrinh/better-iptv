@@ -32,23 +32,21 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Library
-import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.delay
 
 /** What the tab bar's pill says while the catalog on screen may still change (#304). */
-internal enum class CatalogActivity { Syncing, UpdateReady, CheckingTitles, UpToDate }
+internal enum class CatalogActivity { Syncing, UpdateReady, UpToDate }
 
 /**
- * The pill's line for [status] and [matching]: a Sync running, its held catalog waiting for the next
- * screen, or Matching regrouping the Titles; null while none is, and while the first Sync's checklist
- * fills the screen, since it says as much. A failed Sync shows only in Settings.
+ * The pill's line for [status]: a Sync running, or its held catalog waiting for the next screen; null
+ * while neither is, and while the first Sync's checklist fills the screen, since it says as much. A
+ * failed Sync shows only in Settings.
  */
-internal fun catalogActivity(status: SyncStatus, matching: MatchingStatus?): CatalogActivity? = when {
+internal fun catalogActivity(status: SyncStatus): CatalogActivity? = when {
     status.channelsAt == null -> null
     status is SyncStatus.Running -> CatalogActivity.Syncing
     status is SyncStatus.Ready -> CatalogActivity.UpdateReady
-    matching != null -> CatalogActivity.CheckingTitles
     else -> null
 }
 
@@ -59,14 +57,12 @@ internal fun afterword(shown: CatalogActivity?, status: SyncStatus): CatalogActi
 /**
  * A glass pill at the tab bar's right end, never focusable, saying the rows may still change: a slow
  * pulsing dot, the checklist's, and one caption line. Work already running when the screen opens shows
- * at once; work that starts later shows after [APPEAR_AFTER], so a Matching with nothing to ask doesn't
- * flash. Once it ends, "Up to date" shows for [UP_TO_DATE_FOR], then the pill fades.
+ * at once; work that starts later shows after [APPEAR_AFTER], so a quick one doesn't flash. Once it ends, "Up to date" shows for [UP_TO_DATE_FOR], then the pill fades.
  */
 @Composable
 internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    val matching by library.matchingStatus.collectAsStateWithLifecycle()
-    val current = catalogActivity(status, matching)
+    val current = catalogActivity(status)
     val latestStatus by rememberUpdatedState(status)
     // What the pill says, kept while it fades out; [visible] says whether it shows.
     var shown by remember { mutableStateOf(current) }
@@ -77,7 +73,7 @@ internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier
             shown = current
             visible = true
         } else {
-            // A held catalog landing goes on to Matching: wait a beat before calling it done.
+            // Wait a beat before calling it done, so a held catalog landing doesn't flash "Up to date" twice.
             delay(APPEAR_AFTER)
             val after = afterword(shown.takeIf { visible }, latestStatus)
             if (after != null) {
@@ -112,7 +108,6 @@ internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier
 private fun CatalogActivity.label() = when (this) {
     CatalogActivity.Syncing -> R.string.catalog_activity_syncing
     CatalogActivity.UpdateReady -> R.string.catalog_activity_ready
-    CatalogActivity.CheckingTitles -> R.string.catalog_activity_checking
     CatalogActivity.UpToDate -> R.string.catalog_activity_up_to_date
 }
 

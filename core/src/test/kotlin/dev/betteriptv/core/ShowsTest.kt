@@ -3,7 +3,6 @@ package dev.betteriptv.core
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,7 +35,6 @@ class ShowsTest {
 
     private val english = listOf("en")
     private val gameOfThrones = TitleId.Tmdb(TitleKind.Show, 1399)
-    private val trotro = TitleId.Tmdb(TitleKind.Show, 36175)
     private val chelseaDetective = TitleId.Tmdb(TitleKind.Show, 156240)
     private val dogImpossible = TitleId.Tmdb(TitleKind.Show, 93422)
 
@@ -74,7 +72,8 @@ class ShowsTest {
         assertEquals(46, status.last.showListingCount)
         // The movie list is unchanged.
         assertEquals(150, status.last.movieListingCount)
-        assertEquals(56, library.titleCount())
+        // Mohgiben MBBS, a Mismatch under Munna Bhai's number, is a Title of its own.
+        assertEquals(57, library.titleCount())
         val cards = showCards()
         assertEquals(library.titleCount(TitleKind.Show), cards.size)
         assertEquals(1, cards.count { it.id == gameOfThrones })
@@ -83,16 +82,12 @@ class ShowsTest {
         assertNull(library.title(TitleId.Tmdb(TitleKind.Movie, 156240), english, "en"))
     }
 
-    @Test fun `FR - Trotro, carrying Game of Thrones' ID, no longer sits under Game of Thrones`() = runBlocking {
-        cloud.match("Trotro", trotro.tmdbId)
-
+    @Test fun `FR - Trotro, filed under Game of Thrones' number with its release date, sits under Game of Thrones`() = runBlocking {
         library.sync()
 
-        assertFalse("FR - Trotro" in versionNames(gameOfThrones))
-        assertEquals(listOf("FR - Trotro"), versionNames(trotro))
-        assertEquals(mapOf("kind" to "show", "name" to "Trotro", "year" to null, "language" to "fr", "tmdbId" to 1399.0), cloud.matchAsked.single { it["name"] == "Trotro" })
-        // Game of Thrones' other Listings agree with each other.
-        assertFalse(cloud.matchAsked.any { it["name"] == "Game of Thrones" })
+        // Nothing is looked up by name (ADR 0014), and its year tells nothing: the Provider dated it 2011-04-17 too.
+        assertTrue("FR - Trotro" in versionNames(gameOfThrones))
+        assertEquals(1, showCards().count { it.id == gameOfThrones })
     }
 
     @Test fun `a Show lists every season any Version has, merged by season and episode number`() = runBlocking {

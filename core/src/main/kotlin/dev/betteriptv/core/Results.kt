@@ -370,7 +370,7 @@ data class Unreachable(val detail: String) : ProviderProblem
 /** The catalog downloaded but couldn't be stored on the device. */
 data class CatalogNotSaved(val detail: String) : SyncProblem
 
-/** What a Sync is doing, as the first-run checklist names it. Matching isn't a step: it has its own status, [MatchingStatus]. */
+/** What a Sync is doing, as the first-run checklist names it. */
 enum class SyncStep { Channels, Movies, Shows, Saving }
 
 /**
@@ -379,16 +379,15 @@ enum class SyncStep { Channels, Movies, Shows, Saving }
  * are the Prefixes to add to the Prefix table, most common first, and [candidateTierTags] the words
  * that may be Tier tags (most merging first). [duration] runs from the Sync's start
  * to the end of its swap; for a held catalog, the time it took to compute plus the time its swap took.
- * [rematchedListings] counts the Listings Matched by name instead of by their Provider ID:
- * Mismatches, and Listings without an ID that TMDB found. It grows after the Sync finishes, as
- * the cloud answers, and the Titles change with it.
+ * [mismatches] counts the Unmatched Titles the year rule made: Listings dated more than a year from
+ * their siblings' year, kept apart from the Title their number names (ADR 0014).
  */
 data class CompletedSync(
     val finishedAt: Instant,
     val duration: Duration,
     val movieListingCount: Int,
     val unknownPrefixes: List<UnknownPrefix>,
-    val rematchedListings: Int = 0,
+    val mismatches: Int = 0,
     val showListingCount: Int = 0,
     val channelListingCount: Int = 0,
     val candidateTierTags: List<CandidateTierTag> = emptyList(),
@@ -441,11 +440,3 @@ sealed interface SyncStatus {
     /** The Sync failed at [step]; the catalog from [last] is still shown, or on a first Sync whatever landed by [channelsAt]. */
     data class Failed(val problem: SyncProblem, override val last: CompletedSync?, override val channelsAt: Instant?, val step: SyncStep) : SyncStatus
 }
-
-/**
- * The cloud is being asked about [of] names to Match the catalog's suspects, [asked] so far; their
- * Titles regroup once every name is asked. [of] is null while the suspects are still being found,
- * which can take half a minute on a full catalog. Runs after a Sync's catalog lands, with the Sync
- * itself finished.
- */
-data class MatchingStatus(val asked: Int, val of: Int?)

@@ -342,8 +342,7 @@ class SearchTest {
         assertEquals(listOf("heat"), cloud.searchAsked)
     }
 
-    @Test fun `a Title TMDB has no ID for is still found by its name, now that the tabs are rows (#200)`() = runBlocking {
-        cloud.match("Mohgiben MBBS", null)
+    @Test fun `a Title without a number is still found by its name, now that the tabs are rows (#200)`() = runBlocking {
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
         provider.movieListOverride = """[{"stream_id":1,"name":"IN - Mohgiben MBBS (2003)","tmdb":"","category_id":"1","added":"1700000000"}]"""
         library.sync()

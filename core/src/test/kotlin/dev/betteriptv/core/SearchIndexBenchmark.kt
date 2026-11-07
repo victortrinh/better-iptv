@@ -90,7 +90,7 @@ class SearchIndexBenchmark {
                             else -> listOf("EN", "4K-EN", "NF").random(random) to "1"
                         }
                         val listing = "$prefix - $name ($year)"
-                        staging.listing(++listingId, listing, category, listingId, null, false, MatchQuestion(kind, name, year, null, tmdbId))
+                        staging.listing(kind, ++listingId, listing, category, listingId, null, false, tmdbId, year)
                     }
                 }
             },

@@ -1,16 +1,20 @@
 package dev.betteriptv.core
 
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/** Mismatches and Listings without a TMDB ID Matched by name through the fake Cloud, seen through the Library after a Sync of the fixture. */
+/**
+ * Titles grouped by the Title number alone, with a Mismatch told by its year (ADR 0014), seen
+ * through the Library after a Sync of the fixture or of a few Listings, with the cloud asked nothing.
+ */
 class MatchingTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
@@ -18,14 +22,11 @@ class MatchingTest {
     private val credentials = InMemoryCredentials()
     private val libraries = mutableListOf<Library>()
     private lateinit var library: Library
+    private val path get() = folder.root.resolve("catalog.db").path
 
-    private fun openLibrary() = openSurveyedLibrary(folder.root.resolve("catalog.db").path, credentials, cloud.url).also { libraries += it }
+    private fun openLibrary() = openSurveyedLibrary(path, credentials, cloud.url).also { libraries += it }
 
     @Before fun logIn() = runBlocking {
-        // What TMDB makes of the fixture's odd names.
-        cloud.match("Mohgiben MBBS", null)
-        cloud.match("Titanic", titanic.tmdbId)
-        cloud.match("Forrest Gump", forrestGump.tmdbId)
         library = openLibrary()
         library.logIn(provider.login)
         Unit
@@ -38,145 +39,187 @@ class MatchingTest {
     }
 
     private val munnaBhai = TitleId.Tmdb(TitleKind.Movie, 19625)
-    private val titanic = TitleId.Tmdb(TitleKind.Movie, 597)
-    private val forrestGump = TitleId.Tmdb(TitleKind.Movie, 13)
+    private val ballerina = TitleId.Tmdb(TitleKind.Movie, 541671)
+    private val pose = TitleId.Tmdb(TitleKind.Movie, 1199193)
 
-    private suspend fun cards() = library.titles(0, 1000, listOf("en"), appLanguage = "en")
+    private suspend fun cards(kind: TitleKind = TitleKind.Movie) = library.titles(0, 1000, listOf("en"), appLanguage = "en", kind = kind)
 
     private suspend fun versionNames(id: TitleId): List<String> {
         val details = library.title(id, listOf("en"), appLanguage = "en") ?: throw AssertionError("no Title $id")
         return (details.languages + details.otherLanguages).flatMap { group -> group.versions.flatMap { listOf(it) + it.backups } }.map { it.name }
     }
 
-    @Test fun `a Mismatch no longer sits under the Title its Provider ID points to, and stands alone when it can't be looked up`() = runBlocking {
+    /** Serves these movie Listings (name to Title number) in one Category, newest first, and no shows. */
+    private fun serveMovies(vararg listings: Pair<String, Long?>) {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
+            val (name, number) = listing
+            """{"stream_id":${i + 1},"name":"$name","tmdb":"${number ?: ""}","category_id":"1","added":"${1_700_000_000 - i}","stream_icon":"https://img.example/${i + 1}.jpg"}"""
+        }
+        provider.showCategoriesOverride = "[]"
+        provider.showListOverride = "[]"
+    }
+
+    private val matchRequests get() = cloud.received.filter { it.path == "/v1/match" }
+
+    @Test fun `Listings sharing a number are one Title, and the cloud is asked nothing about them, during or after a Sync`() = runBlocking {
+        library.sync()
+        library.close()
+        library = openLibrary()
+        library.resumeTitleFacts()
+
+        assertEquals(1, cards().count { it.id == ballerina })
+        assertEquals(32, versionNames(ballerina).size)
+        assertEquals(emptyList<FakeCloud.Received>(), matchRequests)
+    }
+
+    @Test fun `a Listing dated more than a year from its siblings' year is an Unmatched Title of its own`() = runBlocking {
+        serveMovies("EN - Pose  (2025)" to 1199193, "IR - Pose (2025) ژست مرموز" to 1199193, "PL - Poza (1970)" to 1199193)
+
+        library.sync()
+
+        assertEquals(listOf("EN - Pose  (2025)", "IR - Pose (2025) ژست مرموز"), versionNames(pose).sorted())
+        val poza = cards().single { it.name == "Poza" }
+        assertEquals(TitleId.Unmatched(TitleKind.Movie, 3), poza.id)
+        assertEquals(2, cards().size)
+    }
+
+    @Test fun `Listings a year apart stay one Title`() = runBlocking {
+        serveMovies("EN - Joker (2019)" to 475557, "FR - Joker (2019)" to 475557, "DE - Joker (2020)" to 475557)
+
+        library.sync()
+
+        assertEquals(TitleId.Tmdb(TitleKind.Movie, 475557), cards().single().id)
+        assertEquals(0, library.syncStatus.value.last?.mismatches)
+    }
+
+    @Test fun `a Listing without a year stays with its number`() = runBlocking {
+        serveMovies("EN - Heat (1995)" to 949, "FR - Heat" to 949, "DE - Heat (1995)" to 949)
+
+        library.sync()
+
+        assertEquals(listOf("DE - Heat (1995)", "EN - Heat (1995)", "FR - Heat"), versionNames(TitleId.Tmdb(TitleKind.Movie, 949)).sorted())
+        assertEquals(1, cards().size)
+    }
+
+    @Test fun `when years tie, the earliest is the siblings' year`() = runBlocking {
+        serveMovies("EN - Pose  (2025)" to 1199193, "PL - Poza (1970)" to 1199193)
+
+        library.sync()
+
+        assertEquals(listOf("PL - Poza (1970)"), versionNames(pose))
+        assertTrue(cards().single { it.name == "Pose" }.id is TitleId.Unmatched)
+    }
+
+    @Test fun `a Show whose name carries no year is dated by its Listing's release date`() = runBlocking {
+        provider.showCategoriesOverride = """[{"category_id":"1","category_name":"SERIES"}]"""
+        provider.showListOverride = """[
+            {"series_id":1,"name":"EN - Pose","tmdb":"70993","category_id":"1","last_modified":"1700000002","releaseDate":"2018-06-03"},
+            {"series_id":2,"name":"FR - Pose (2018)","tmdb":"70993","category_id":"1","last_modified":"1700000001","releaseDate":""},
+            {"series_id":3,"name":"PL - Poza","tmdb":"70993","category_id":"1","last_modified":"1700000000","releaseDate":"June 4, 1970"}
+        ]"""
+
+        library.sync()
+
+        assertEquals(listOf("EN - Pose", "FR - Pose (2018)"), versionNames(TitleId.Tmdb(TitleKind.Show, 70993)).sorted())
+        assertEquals(TitleId.Unmatched(TitleKind.Show, 3), cards(TitleKind.Show).single { it.name == "Poza" }.id)
+    }
+
+    @Test fun `the fixture's Mohgiben MBBS, filed under Munna Bhai MBBS' number, is told apart by its year`() = runBlocking {
         library.sync()
 
         assertEquals(listOf("IN - Munna Bhai M.B.B.S.  (2003)", "IN - Munna Bhai M.B.B.S."), versionNames(munnaBhai))
         assertTrue(cards().single { it.name == "Mohgiben MBBS" }.id is TitleId.Unmatched)
     }
 
-    @Test fun `Listings without a TMDB ID land under their Title, found by name and a year one off`() = runBlocking {
+    @Test fun `a Mismatch stays an Unmatched Title across Syncs, keeping where the Viewer stopped`() = runBlocking {
+        serveMovies("EN - Pose  (2025)" to 1199193, "IR - Pose (2025) ژست مرموز" to 1199193, "PL - Poza (1970)" to 1199193)
         library.sync()
-
-        assertTrue("EN - Titanic  (1996)" in versionNames(titanic))
-        // It carried an IMDb ID instead.
-        assertTrue("GR - Forrest Gump (1994)" in versionNames(forrestGump))
-        assertEquals(1, cards().count { it.id == titanic })
-    }
-
-    @Test fun `only Listings whose name matches none of their siblings', or that have no ID, are sent to the cloud`() = runBlocking {
-        library.sync()
-
-        val asked = cloud.matchAsked.associateBy { it["name"] }
-        // Both Munna Bhai Listings have the same name, so only the odd one out is checked.
-        assertFalse("Munna Bhai M.B.B.S." in asked)
-        assertEquals(mapOf("kind" to "movie", "name" to "Mohgiben MBBS", "year" to 2023.0, "language" to "gu", "tmdbId" to 19625.0), asked["Mohgiben MBBS"])
-        assertEquals(mapOf("kind" to "movie", "name" to "Titanic", "year" to 1996.0, "language" to "en", "tmdbId" to null), asked["Titanic"])
-        // Ballerina's French Listings agree with each other.
-        assertFalse(cloud.matchAsked.any { it["name"] == "Ballerina" && it["language"] == "fr" })
-    }
-
-    @Test fun `names that differ only in punctuation or an acronym's dots vouch for each other`() = runBlocking {
-        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
-        provider.movieListOverride = """[
-            {"stream_id":1,"name":"EN - Munna Bhai M.B.B.S. (2003)","tmdb":"19625","category_id":"1","added":"1700000002"},
-            {"stream_id":2,"name":"IN - Munna Bhai MBBS (2003)","tmdb":"19625","category_id":"1","added":"1700000001"},
-            {"stream_id":3,"name":"EN - Lilo & Stitch (2025)","tmdb":"552524","category_id":"1","added":"1700000000"},
-            {"stream_id":4,"name":"FR - Lilo et Stitch (2025)","tmdb":"552524","category_id":"1","added":"1699999999"},
-            {"stream_id":5,"name":"4K-EN - Lilo  Stitch (2025)","tmdb":"552524","category_id":"1","added":"1699999998"}
-        ]"""
+        val poza = cards().single { it.name == "Poza" }.id
+        library.saveProgress(poza, 600_000, 6_000_000)
 
         library.sync()
 
-        assertEquals(listOf("Lilo et Stitch"), cloud.matchAsked.filter { it["kind"] == "movie" }.map { it["name"] })
+        assertEquals(poza, cards().single { it.name == "Poza" }.id)
+        assertEquals(listOf("Poza"), continueWatching())
     }
 
-    @Test fun `the Sync counts the Listings it Matched by name instead of their Provider ID`() = runBlocking {
-        val status = library.sync()
+    @Test fun `a Listing without a number is an Unmatched Title, named and pictured by its Listing`() = runBlocking {
+        serveMovies("EN - Heat (1995)" to 949, "EN - Lost Film (2020)" to null)
 
-        assertEquals(3, (status as SyncStatus.Synced).last.rematchedListings)
-        assertEquals(status, library.syncStatus.value)
-    }
-
-    @Test fun `answers are kept on the device, so the next Sync has the right Titles without asking the cloud`() = runBlocking {
         library.sync()
-        val asked = cloud.matchAsked.size
+
+        val lost = cards().single { it.id is TitleId.Unmatched }
+        assertEquals(TitleId.Unmatched(TitleKind.Movie, 2), lost.id)
+        assertEquals("Lost Film", lost.name)
+        assertEquals(2020, lost.year)
+        assertEquals("https://img.example/2.jpg", lost.image)
+    }
+
+    @Test fun `a Provider that doesn't copy TMDB's numbering gives one card per Listing`() = runBlocking {
+        serveMovies("EN - Heat (1995)" to null, "FR - Heat (1995)" to null, "DE - Heat (1995)" to null)
+
+        library.sync()
+
+        assertEquals(3, cards().size)
+        assertTrue(cards().all { it.id is TitleId.Unmatched })
+    }
+
+    @Test fun `the Sync counts the Unmatched Titles the year rule made, and keeps the count`() = runBlocking {
+        serveMovies(
+            "EN - Pose  (2025)" to 1199193, "IR - Pose (2025) ژست مرموز" to 1199193, "PL - Poza (1970)" to 1199193,
+            "EN - Joker (2019)" to 475557, "FR - Joker (2019)" to 475557, "DE - Joker (1989)" to 475557,
+            "EN - Lost Film (2020)" to null,
+        )
+
+        val status = library.sync() as SyncStatus.Synced
+
+        assertEquals(2, status.last.mismatches)
         library.close()
-        cloud.down = true
-
         library = openLibrary()
-        library.sync()
-
-        assertEquals(asked, cloud.matchAsked.size)
-        assertTrue("EN - Titanic  (1996)" in versionNames(titanic))
-        assertFalse("IN-GU - Mohgiben.MBBS.2023" in versionNames(munnaBhai))
+        assertEquals(2, library.syncStatus.value.last?.mismatches)
     }
 
-    @Test fun `without the cloud, the Sync still finishes, trusting the Provider's IDs`() = runBlocking {
-        cloud.down = true
-
-        val status = library.sync()
-
-        assertTrue(status is SyncStatus.Synced)
-        assertTrue("IN-GU - Mohgiben.MBBS.2023" in versionNames(munnaBhai))
-        assertTrue(cards().single { it.name == "Titanic" && it.year == 1996 }.id is TitleId.Unmatched)
-    }
-
-    @Test fun `Matching cut short picks up on the next launch, without waiting for a Sync`() = runBlocking {
-        // The app closed (or the cloud was out) before Matching got its answers.
-        cloud.down = true
+    @Test fun `a catalog stored before Matching went on-device opens without a Sync, its cloud-matched Listings Unmatched Titles again`() = runBlocking {
+        serveMovies("EN - Heat (1995)" to 949, "FR - Heat (1995)" to 949, "EN - Lost Film (2020)" to null, "IN-GU - Mohgiben.MBBS.2023" to 19625)
         library.sync()
         library.close()
-        cloud.down = false
+        // As the app stored it before: the cloud had Matched Lost Film to a number of its own and found nothing for
+        // Mohgiben, and the Viewer stopped partway through Lost Film under the number the cloud gave it.
+        BundledSQLiteDriver().open(path).apply {
+            execSQL("ALTER TABLE listing ADD COLUMN match_key TEXT NOT NULL DEFAULT ''")
+            execSQL("ALTER TABLE listing ADD COLUMN suspect INTEGER NOT NULL DEFAULT 0")
+            execSQL("UPDATE listing SET suspect = 1 WHERE id IN (3, 4)")
+            execSQL("UPDATE listing SET title_key = 'movie/5000' WHERE id = 3")
+            execSQL("UPDATE title SET key = 'movie/5000' WHERE key = 'movie/listing/3'")
+            execSQL("UPDATE title SET key = 'movie/listing/4' WHERE key = 'movie/19625'")
+            execSQL("UPDATE listing SET title_key = 'movie/listing/4' WHERE id = 4")
+            execSQL("CREATE TABLE match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
+            execSQL("INSERT INTO match_answer VALUES ('movie||lost film|2020|en', 5000, 0)")
+            execSQL("INSERT INTO meta VALUES ('last_sync_rematched_listings', '2')")
+            execSQL("INSERT INTO progress VALUES (1, 'movie/5000', 600000, 6000000, 0, ${System.currentTimeMillis()})")
+            close()
+        }
+        val actions = java.util.concurrent.CopyOnWriteArrayList<String?>()
+        provider.onRequest = { actions += it }
 
         library = openLibrary()
-        library.resumeMatching()
 
-        assertTrue("EN - Titanic  (1996)" in versionNames(titanic))
-        assertEquals(1, cards().count { it.id == titanic })
-        assertEquals(3, library.syncStatus.value.last?.rematchedListings)
-    }
-
-    @Test fun `a launch after Matching finished asks the cloud nothing`() = runBlocking {
-        library.sync()
-        val asked = cloud.matchAsked.size
-
-        library.resumeMatching()
-
-        assertEquals(asked, cloud.matchAsked.size)
-        assertEquals(null, library.matchingStatus.value)
-    }
-
-    @Test fun `a batch the cloud fails doesn't stop the batches after it`() = runBlocking {
-        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
-        provider.showCategoriesOverride = "[]"
-        provider.showListOverride = "[]"
-        // Thirty Listings without an ID ask the cloud two batches.
-        provider.movieListOverride = (1..30).joinToString(",", "[", "]") { n ->
-            cloud.match("Film $n", 1000L + n)
-            """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""
+        assertTrue(library.syncStatus.value is SyncStatus.Synced)
+        assertEquals(
+            setOf(TitleId.Tmdb(TitleKind.Movie, 949), TitleId.Unmatched(TitleKind.Movie, 3), TitleId.Unmatched(TitleKind.Movie, 4)),
+            cards().map { it.id }.toSet(),
+        )
+        assertEquals(listOf("Lost Film"), continueWatching())
+        assertEquals(0, library.syncStatus.value.last?.mismatches)
+        BundledSQLiteDriver().open(path).apply {
+            prepare("SELECT count(*) FROM sqlite_master WHERE name = 'match_answer'").use { it.step(); assertEquals(0L, it.getLong(0)) }
+            prepare("SELECT count(*) FROM pragma_table_info('listing') WHERE name IN ('suspect', 'match_key')").use { it.step(); assertEquals(0L, it.getLong(0)) }
+            close()
         }
-        cloud.failingMatches = 1
-
-        library.sync()
-
-        assertEquals(2, cloud.matchRequests.size)
-        val answered = cloud.matchRequests[1].map { "Film ${(it["name"] as String).substringAfter("Film ")}" }
-        assertEquals(answered.sorted(), cards().filter { it.id is TitleId.Tmdb }.map { it.name }.sorted())
+        assertEquals(emptyList<String?>(), actions)
     }
 
-    @Test fun `the Sync stops asking the cloud after a few batches fail in a row`() = runBlocking {
-        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
-        provider.showCategoriesOverride = "[]"
-        provider.showListOverride = "[]"
-        provider.movieListOverride = (1..200).joinToString(",", "[", "]") { n ->
-            """{"stream_id":$n,"name":"EN - Film $n (2020)","category_id":"1","added":"${1700000000 + n}"}"""
-        }
-        cloud.failingMatches = Int.MAX_VALUE
-
-        val status = library.sync()
-
-        assertTrue(status is SyncStatus.Synced)
-        assertEquals(3, cloud.matchRequests.size)
-    }
+    private suspend fun continueWatching() =
+        library.homeRows(listOf("en"), "en").filterIsInstance<HomeRow.ContinueWatching>().singleOrNull()?.titles.orEmpty().map { it.title.name }
 }

@@ -130,19 +130,11 @@
     <string name="catalog_not_saved">Couldn\'t save the catalog on this device (%1$s).</string>
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
-    <!-- Settings' Checking titles row, under Sync now only while the cloud is asked about the catalog's suspects. -->
-    <string name="matching_row">Checking titles</string>
     <string name="catalog_activity_syncing">Syncing…</string>
     <string name="catalog_activity_ready">Update ready · shows when you switch tabs</string>
-    <string name="catalog_activity_checking">Checking titles…</string>
     <string name="catalog_activity_up_to_date">Up to date</string>
     <string name="catalog_work_channel">Catalog updates</string>
     <string name="catalog_work_notification">Updating your catalog</string>
-    <string name="matching_finding">Finding the names to check…</string>
-    <plurals name="matching_checking">
-        <item quantity="one">%1$s of %2$s name checked</item>
-        <item quantity="other">%1$s of %2$s names checked</item>
-    </plurals>
     <!-- Over Home's placeholder rows while a first Sync, its Channels landed, still reads the Titles. -->
     <string name="home_titles_pending">Movies and shows arrive once syncing finishes.</string>
 
@@ -449,6 +441,11 @@
     <plurals name="catalog_movies">
         <item quantity="one">%1$s movie</item>
         <item quantity="other">%1$s movies</item>
+    </plurals>
+    <!-- After the Title counts: Listings dated more than a year from their siblings, kept apart as Titles of their own (ADR 0014). -->
+    <plurals name="catalog_mismatches">
+        <item quantity="one">%1$s kept apart by year</item>
+        <item quantity="other">%1$s kept apart by year</item>
     </plurals>
     <plurals name="catalog_shows">
         <item quantity="one">%1$s show</item>

@@ -59,7 +59,7 @@ One of a Sync's two halves: the Channels (live Categories and Listings), then th
 _Avoid_: Phase, half, pass
 
 **Step**:
-What a Sync is doing now, as the first-Sync checklist names it: Channels, Movies, Shows, Saving. Matching after a Sync isn't a Step.
+What a Sync is doing now, as the first-Sync checklist names it: Channels, Movies, Shows, Saving.
 _Avoid_: Stage, phase
 
 **Pending catalog**:
@@ -112,7 +112,7 @@ The link between a Listing and its Title.
 _Avoid_: Merge, dedupe
 
 **Mismatch**:
-A Listing whose Title number points to the wrong Title (for example `FR - Trotro` carrying Game of Thrones' number). It is told by its year: a Listing dated more than a year away from its sibling Listings' year is a Mismatch, and is kept apart as an Unmatched Title of its own.
+A Listing whose Title number points to the wrong Title (for example `PL - Poza (1970)` carrying the number of `EN - Pose (2025)`). It is told by its year: a Listing dated more than a year away from its sibling Listings' year (the year most of the dated Listings of its number and kind carry, ties going to the earliest; a Show without a year in its name is dated by its release date) is a Mismatch, and is kept apart as an Unmatched Title of its own. A Mismatch dated like its siblings (`FR - Trotro` carries Game of Thrones' number and release date) can't be told, and stays with its number.
 
 **Unmatched Title**:
 A Title of one Listing alone: the Listing has no Title number, or is a Mismatch. It is named and pictured by its Listing, and never grouped with another.

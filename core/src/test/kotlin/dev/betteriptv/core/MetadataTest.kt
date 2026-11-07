@@ -23,7 +23,7 @@ class MetadataTest {
 
     private lateinit var library: Library
 
-    /** What the Sync sent the cloud (its Match requests), kept apart so tests see only what showing Titles sends. */
+    /** What the Sync sent the cloud (its Title facts requests), kept apart so tests see only what showing Titles sends. */
     private lateinit var sentBySync: List<FakeCloud.Received>
 
     @Before fun syncFixture() = runBlocking {
@@ -199,7 +199,7 @@ class MetadataTest {
         card(godfather, "fr")
         card(godfather, "en")
 
-        // It registered during the Sync, for its first Match request.
+        // It registered during the Sync, for its first Title facts request.
         assertEquals("/v1/devices", sentBySync.first().path)
         assertEquals(listOf("/v1/metadata", "/v1/metadata"), cloud.received.map { it.path })
         val token = sentBySync[1].headers["Authorization"]
@@ -218,7 +218,7 @@ class MetadataTest {
         details(godfather, "fr")
 
         val sent = (sentBySync + cloud.received).joinToString("\n") { "${it.path} ${it.headers} ${it.body}" }
-        assertTrue(sentBySync.any { it.path == "/v1/match" })
+        assertTrue(sentBySync.any { it.path == "/v1/title-facts" })
         assertTrue(cloud.received.isNotEmpty())
         for (secret in listOf(provider.password, provider.username, provider.url)) {
             assertFalse("the cloud was sent \"$secret\"", secret in sent)

@@ -40,8 +40,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     /** How many Syncs and Matchings are running: [CatalogWorkService] keeps the process alive while any is. */
     val catalogJobs: StateFlow<Int> = _catalogJobs.asStateFlow()
 
-    /** Whether this launch has picked up Matching a closed app left unfinished ([Library.resumeMatching]). */
-    private val matchingResumed = AtomicBoolean()
+    /** Whether this launch has asked for the Title facts a closed app left unasked ([Library.resumeTitleFacts]). */
+    private val titleFactsResumed = AtomicBoolean()
 
     override fun onCreate() {
         super.onCreate()
@@ -129,7 +129,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         when {
             library.hasPendingCatalog -> applyPendingCatalog()
             syncIfStale() -> Unit
-            matchingResumed.compareAndSet(false, true) -> scope.launch { keepingAlive { library.resumeMatching() } }
+            titleFactsResumed.compareAndSet(false, true) -> scope.launch { keepingAlive { library.resumeTitleFacts() } }
         }
     }
 
@@ -161,7 +161,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     /**
      * Starts a Sync unless one is running. A later Sync's catalog is held for [applyPendingCatalog],
-     * so rows never move under focus; Matching after a Sync doesn't hold the next one up.
+     * so rows never move under focus; what the cloud is asked after a Sync doesn't hold the next one up.
      */
     fun sync() {
         if (library.syncStatus.value is SyncStatus.Running) return
@@ -170,7 +170,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             when (val status = keepingAlive { library.sync(hold = true) }) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
-                    "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.rematchedListings} Matched by name",
+                    "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.mismatches} Mismatches kept apart",
                 )
                 is SyncStatus.Ready -> Log.i(TAG, "Synced; the catalog waits to be applied")
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed at ${status.step}: ${status.problem}")

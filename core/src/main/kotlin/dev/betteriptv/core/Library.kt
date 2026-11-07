@@ -176,13 +176,9 @@ class Library private constructor(
     val confirmations: SharedFlow<TitleId> = _confirmations.asSharedFlow()
     private val _syncStatus = MutableStateFlow(openingStatus())
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
-    private val _matchingStatus = MutableStateFlow<MatchingStatus?>(null)
 
-    /** The cloud being asked about the catalog's suspects after a Sync's catalog lands, or null while it isn't. */
-    val matchingStatus: StateFlow<MatchingStatus?> = _matchingStatus.asStateFlow()
-
-    /** Matching runs under this, apart from [syncLock]: Sync now needn't wait for the Titles to regroup. */
-    private val matchLock = Mutex()
+    /** What follows a catalog landing runs under this, apart from [syncLock]: Sync now needn't wait for the cloud. */
+    private val landedLock = Mutex()
 
     /** Whether a held Sync's catalog waits to be swapped in by [applyPendingCatalog]. */
     val hasPendingCatalog: Boolean get() = _syncStatus.value is SyncStatus.Ready
@@ -443,7 +439,7 @@ class Library private constructor(
     /**
      * Downloads the Provider's catalog and replaces the device's copy, in two stages. The Channels
      * stage (live Categories and Listings) comes first; the Titles stage (movie and show Categories
-     * and Listings) after, with the suspects Matched by the answers kept. Only `player_api` requests
+     * and Listings) after, grouped by their Title numbers with each Mismatch apart. Only `player_api` requests
      * are made, never a stream, so a Sync never takes the Viewer's connection. Clutter and Sports
      * replays are left out of the lists, and Prefixes the Prefix table doesn't know are reported in
      * the finished Sync.
@@ -454,9 +450,9 @@ class Library private constructor(
      * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
      * move under focus; a Sync started meanwhile discards what was held.
      *
-     * Once a catalog lands, the cloud is asked about its suspects and the Titles regroup by its
-     * answers, under [matchingStatus], apart from this status: the Sync itself is finished, and another
-     * may start meanwhile. This returns once that is done too.
+     * Once a catalog lands, the cloud is told the unknown Prefixes and asked for the Title facts, apart
+     * from this status: the Sync itself is finished, and another may start meanwhile. This returns once
+     * that is done too.
      */
     suspend fun sync(hold: Boolean = false): SyncStatus {
         val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold) } }
@@ -531,13 +527,14 @@ class Library private constructor(
                     fill = { staging ->
                         val movieCategories = HashMap<String, String>()
                         val showCategories = HashMap<String, String>()
-                        val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?, rating: Double?, details: ProviderDetails? ->
+                        val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?,
+                            rating: Double?, details: ProviderDetails?, releaseYear: Int? ->
                             val description = table.describe(name, category)
                             description.unknownPrefix?.let { prefix ->
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
                             val hidden = description.hidden != null
-                            staging.listing(id, name, categoryId, added, image, hidden, question(table, kind, name, description, tmdbId), container, rating, details)
+                            staging.listing(kind, id, name, categoryId, added, image, hidden, tmdbId, table.cleanName(name).year ?: releaseYear, container, rating, details)
                             // A Sports replay is kept apart, with what its name says: its TMDB ID and poster are wrong and ignored.
                             if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
                                 staging.replay(id, name, category, added, container, ReplayNames.parse(name))
@@ -554,7 +551,7 @@ class Library private constructor(
                         var movieListings = 0
                         client.movieListings { id, name, categoryId, added, tmdbId, image, container, rating ->
                             movieListings++
-                            listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container, rating, null)
+                            listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, tmdbId, image, container, rating, null, null)
                         }
                         if (movieListings == 0) requireListings(movieCategories, "movie")
                         step = SyncStep.Shows
@@ -566,7 +563,11 @@ class Library private constructor(
                         var showListings = 0
                         client.showListings { show ->
                             showListings++
-                            listing(TitleKind.Show, show.id, show.name, showCategories[show.categoryId].orEmpty(), show.categoryId, show.modified, show.tmdbId, show.image, null, show.details.rating, show.details)
+                            // A Show whose name carries no year is dated by its release date.
+                            listing(
+                                TitleKind.Show, show.id, show.name, showCategories[show.categoryId].orEmpty(), show.categoryId, show.modified, show.tmdbId, show.image, null,
+                                show.details.rating, show.details, releaseYear(show.details.releaseDate),
+                            )
                         }
                         if (showListings == 0) requireListings(showCategories, "show")
                     },
@@ -574,13 +575,13 @@ class Library private constructor(
                         step = SyncStep.Saving
                         running()
                     },
-                    completed = { movieCount, showCount, rematched ->
+                    completed = { movieCount, showCount, mismatches ->
                         CompletedSync(
                             Instant.now(),
                             Duration.ofNanos(System.nanoTime() - started),
                             movieCount,
                             unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
-                            rematched,
+                            mismatches,
                             showCount,
                             channelCount,
                             tierTags.candidates(),
@@ -623,8 +624,8 @@ class Library private constructor(
     }
 
     /**
-     * Swaps a held Sync's catalog in ([SyncStatus.Ready]), then Matches its suspects as a Sync does
-     * once its catalog lands. Returns false at once, without waiting, when none is held or a Sync is
+     * Swaps a held Sync's catalog in ([SyncStatus.Ready]), then asks the cloud what a Sync asks once
+     * its catalog lands. Returns false at once, without waiting, when none is held or a Sync is
      * running: the next screen entry asks again.
      */
     suspend fun applyPendingCatalog(): Boolean {
@@ -684,41 +685,26 @@ class Library private constructor(
     }
 
     /**
-     * Once a catalog lands: reports the Prefixes the Sync didn't know, then asks the cloud about the
-     * catalog's suspects and regroups the Titles by its answers, under [matchingStatus] from start to
-     * end whatever happens, so the status never stays at Matching (#271), then asks it for the Title
-     * facts the catalog's Titles lack ([fetchTitleFacts]). With [hold], the facts wait for
+     * Once a catalog lands: reports the Prefixes the Sync didn't know, then asks the cloud for the
+     * Title facts the catalog's Titles lack ([fetchTitleFacts]). With [hold], the facts wait for
      * [applyPendingTitleFacts] as the catalog waited; else they land here, as the catalog did.
      */
-    private suspend fun afterCatalogLanded(hold: Boolean) = matchLock.withLock {
+    private suspend fun afterCatalogLanded(hold: Boolean) = landedLock.withLock {
         withContext(Dispatchers.IO) {
-            try {
-                if (!canAskCloud()) return@withContext
-                _matchingStatus.value = MatchingStatus(0, null)
-                val sync = store.lastSync() ?: return@withContext
-                reportUnknownPrefixes(sync)
-                matchByName()
-            } finally {
-                _matchingStatus.value = null
-            }
+            if (!canAskCloud()) return@withContext
+            val sync = store.lastSync() ?: return@withContext
+            reportUnknownPrefixes(sync)
             fetchTitleFacts(land = !hold)
         }
     }
 
     /**
-     * Picks up Matching the app closed on (or the cloud didn't answer): asks the cloud about the
-     * stored catalog's suspects it hasn't answered for lately and regroups the Titles by the answers
-     * kept, without waiting for the next Sync. Asks nothing, and shows no [matchingStatus], when
-     * every suspect has its answer.
+     * Picks up the Title facts the last fetch couldn't get (the app closed, or the cloud couldn't
+     * answer), without waiting for the next Sync, to land between screens. Asks nothing when every
+     * Title has its answer.
      */
-    suspend fun resumeMatching() = matchLock.withLock {
+    suspend fun resumeTitleFacts() = landedLock.withLock {
         withContext(Dispatchers.IO) {
-            try {
-                if (store.lastSync() != null) matchByName()
-            } finally {
-                _matchingStatus.value = null
-            }
-            // The Title facts the last fetch couldn't get (the app closed, the cloud couldn't answer) are asked for too, to land between screens.
             if (store.lastSync() != null) fetchTitleFacts(land = false)
         }
     }
@@ -742,7 +728,7 @@ class Library private constructor(
                     store.stageTitleFacts(answer.found, answer.notFound, Instant.now())
                     failedInARow = 0
                 } catch (e: CloudException) {
-                    if (++failedInARow == MATCH_FAILURES_IN_A_ROW) {
+                    if (++failedInARow == CLOUD_FAILURES_IN_A_ROW) {
                         cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
                         break
                     }
@@ -774,68 +760,6 @@ class Library private constructor(
             cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
         }
     }
-
-    /** What the cloud is asked about a Listing of [kind] to Match it. */
-    private fun question(kind: TitleKind, name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion =
-        question(prefixTable, kind, name, description, tmdbId)
-
-    private fun question(table: PrefixTable, kind: TitleKind, name: String, description: PrefixTable.Description, tmdbId: Long?): MatchQuestion {
-        val cleaned = table.cleanName(name)
-        return MatchQuestion(kind, cleaned.name, cleaned.year, description.attributes.language?.value?.let(::primaryLanguage), tmdbId)
-    }
-
-    /**
-     * Asks the cloud about the stored catalog's suspects it hasn't answered for lately, and regroups
-     * the Titles by its answers. Without the cloud, the Provider's IDs stand until the next Sync.
-     * When no batch has been answered for [MATCH_STALL_AFTER], the rest wait for the next Sync too.
-     * A Sync may land a new catalog meanwhile: the answers are kept by question, so they regroup
-     * whichever catalog shows when they are applied.
-     */
-    private fun matchByName() {
-        if (cloud == null || !canAskCloud()) return
-        try {
-            val now = Instant.now()
-            val questions = store.unansweredSuspects(now - MATCH_FRESH_FOR, now - MATCH_NOT_FOUND_FRESH_FOR)
-                .map { question(it.kind, it.name, prefixTable.describe(it.name, it.category), it.providerTmdbId) }
-                .distinctBy { it.key }
-            // A batch can fail on its own (the cloud ran out of CPU time, say): its suspects are asked
-            // again next Sync. Several in a row mean the cloud is down.
-            var failedInARow = 0
-            var asked = 0
-            var answeredAt = matchClock.instant()
-            if (questions.isNotEmpty()) _matchingStatus.value = MatchingStatus(asked, questions.size)
-            for (batch in questions.chunked(CloudClient.MAX_MATCH_BATCH)) {
-                if (Duration.between(answeredAt, matchClock.instant()) >= MATCH_STALL_AFTER) break
-                try {
-                    store.saveMatchAnswers(cloud.match(batch).mapKeys { it.key.key }, now)
-                    failedInARow = 0
-                    answeredAt = matchClock.instant()
-                } catch (e: CloudException) {
-                    if (++failedInARow == MATCH_FAILURES_IN_A_ROW) {
-                        cloudRetryAt = now + CLOUD_RETRY_AFTER
-                        break
-                    }
-                }
-                asked += batch.size
-                _matchingStatus.value = MatchingStatus(asked, questions.size)
-            }
-            // Answers saved before the app closed are applied even when nothing is left to ask; with
-            // nothing asked and no Listing moved, the screens needn't read again.
-            (store.applyMatchAnswers() ?: store.lastSync()?.takeIf { questions.isNotEmpty() })?.let { regrouped ->
-                // The regrouped Sync replaces the one showing, not a Sync running or held meanwhile.
-                _syncStatus.update { if (it is SyncStatus.Synced) SyncStatus.Synced(regrouped) else it }
-                catalogChanged()
-                prepareSearchInBackground()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The Sync itself finished: its catalog shows, Matched by the Provider's IDs.
-        }
-    }
-
-    /** What Matching times its batches by: tests move it on to stall Matching without waiting. */
-    @Volatile internal var matchClock: Clock = Clock.systemUTC()
 
     private fun canAskCloud() = cloud != null && !Instant.now().isBefore(cloudRetryAt)
 
@@ -3070,23 +2994,14 @@ class Library private constructor(
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
         /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
         private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
-        private const val MATCH_FAILURES_IN_A_ROW = 3
-        /**
-         * Matching stops when no batch has been answered for this long, its remaining suspects asked
-         * next Sync: a batch takes seconds, and one the cloud doesn't answer fails after the 60 s read
-         * timeout, so this is two of those in a row.
-         */
-        internal val MATCH_STALL_AFTER: Duration = Duration.ofMinutes(2)
+        /** Batches failing this many times in a row mean the cloud is down: the rest wait for the next Sync. */
+        private const val CLOUD_FAILURES_IN_A_ROW = 3
 
         /** The kinds of Track the Viewer's last picks are kept by, and what turning subtitles off is kept as. */
         private const val AUDIO = "audio"
         private const val SUBTITLES = "subtitles"
         private const val SUBTITLES_OFF = "off"
         private const val CLOSED_CAPTIONS = "closed-captions"
-        /** The cloud's answers about a Listing are asked again after this, so new Titles on TMDB come through. */
-        private val MATCH_FRESH_FOR: Duration = Duration.ofDays(30)
-        /** A name TMDB found nothing for is asked about again sooner, but not every daily Sync: few Titles are added in a week. */
-        private val MATCH_NOT_FOUND_FRESH_FOR: Duration = Duration.ofDays(7)
         private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         /** Provider details calls in flight at once, a page's Episodes or its Versions' movie details. */
