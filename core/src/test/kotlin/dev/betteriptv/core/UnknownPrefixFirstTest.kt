@@ -42,7 +42,7 @@ class UnknownPrefixFirstTest {
 
     /** Syncs these Listings of one Movie, as (name, Category, file), newest first, numbered from 1. */
     private suspend fun syncVersions(originalLanguage: String, vararg listings: Triple<String, String, ByteArray>) {
-        cloud.title("en", tmdbTitle(1, "Heat", originalLanguage = originalLanguage))
+        cloud.titleFacts(movie, originalLanguage = originalLanguage)
         val categories = listings.map { it.second }.distinct()
         provider.movieCategoriesOverride = categories.withIndex()
             .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":"$name"}""" }

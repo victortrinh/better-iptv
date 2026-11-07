@@ -74,7 +74,7 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
  * milliseconds in: where the Viewer stopped last time, or the start; [length] is the file's length
  * the player knew then, null when it didn't or the Viewer never stopped in it. A Show's plan plays
  * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.
- * [originalLanguage] is the language the Title was released in (TMDB's, ISO 639-1), when known.
+ * [originalLanguage] is the language the Title was released in (Wikidata's, a primary subtag), when known.
  * [choices] is what the Viewer chose the last time this Title played (#291), which wins over
  * [remembered] for the Tracks the file still has. With [preferOriginalAudio] (the Viewer's Prefer
  * original audio setting), the audio Track in the original language is chosen when it is no

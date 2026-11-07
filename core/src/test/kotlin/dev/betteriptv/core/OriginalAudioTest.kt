@@ -71,9 +71,9 @@ class OriginalAudioTest {
         library.sync()
     }
 
-    /** The surveyed spread: the 4K is Listing 1, the `SC` copy 2, the `NL` copy 3 and the `EN` copy 4. */
-    private suspend fun syncSpread(originalLanguage: String = "zh") {
-        cloud.title("en", tmdbTitle(1, "The Shadow's Edge", originalLanguage = originalLanguage))
+    /** The surveyed spread: the 4K is Listing 1, the `SC` copy 2, the `NL` copy 3 and the `EN` copy 4. Wikidata says the film is in [originalLanguage]. */
+    private suspend fun syncSpread(originalLanguage: String? = "zh") {
+        cloud.titleFacts(movie, originalLanguage = originalLanguage)
         syncVersions(
             Triple("4K-DE - Shadow Chase: Im Netz der Diebe (2025)", "4K MOVIES", germanOnly4k),
             Triple("SC - The Shadow's Edge (2025)", "NORDIC MOVIES", mandarinNordicSubs),
@@ -82,7 +82,7 @@ class OriginalAudioTest {
         )
     }
 
-    /** Opens the Title's page as the app does: its details (which fetch TMDB's original language), then its Header reads. */
+    /** Opens the Title's page as the app does: its details (the original language came from Wikidata at the Sync), then its Header reads. */
     private suspend fun openPage(contentLanguages: List<String> = english, preferOriginalAudio: Boolean = true): TitleDetails {
         val details = library.title(movie, contentLanguages, "en", preferOriginalAudio = preferOriginalAudio)!!
         library.readHeaders(movie, contentLanguages, preferOriginalAudio) {}
@@ -116,7 +116,7 @@ class OriginalAudioTest {
     }
 
     @Test fun `Original audio beats a 4K dub with the setting on, and loses to it with the setting off`() = runBlocking {
-        cloud.title("en", tmdbTitle(1, "The Shadow's Edge", originalLanguage = "zh"))
+        cloud.titleFacts(movie, originalLanguage = "zh")
         syncVersions(
             Triple("4K-EN - The Shadow's Edge (2025)", "4K MOVIES", matroskaFile(listOf(FileTrack("audio", "eng", "A_EAC3", channels = 6)), width = 3840, height = 1608)),
             Triple("NL - The Shadow's Edge (2025)", "NL - MOVIES", mandarinDutchSubs),
@@ -128,7 +128,7 @@ class OriginalAudioTest {
     }
 
     @Test fun `a 4K with German first and Mandarin second has Original audio, and its Mandarin Track is chosen`() = runBlocking {
-        cloud.title("en", tmdbTitle(1, "The Shadow's Edge", originalLanguage = "zh"))
+        cloud.titleFacts(movie, originalLanguage = "zh")
         val germanThenMandarin = matroskaFile(
             listOf(FileTrack("audio", "ger", "A_EAC3", channels = 6), FileTrack("audio", "chi", "A_EAC3", channels = 6), FileTrack("subtitle", "eng", "S_TEXT/UTF8")),
             width = 3840, height = 1608,
@@ -176,8 +176,8 @@ class OriginalAudioTest {
         assertEquals("4K-DE - Shadow Chase: Im Netz der Diebe (2025)", library.chosenPlayPlan(movie, 1, english)!!.version.name)
     }
 
-    @Test fun `TMDB's "No Language" changes nothing`() = runBlocking {
-        syncSpread(originalLanguage = "xx")
+    @Test fun `Wikidata naming no language changes nothing`() = runBlocking {
+        syncSpread(originalLanguage = null)
         openPage()
 
         assertEquals("EN - The Shadow's Edge (2025)", library.playPlan(movie, english, sdr4kTv)!!.version.name)
@@ -185,7 +185,7 @@ class OriginalAudioTest {
     }
 
     @Test fun `a Title with no Version in Original audio plays as today`() = runBlocking {
-        cloud.title("en", tmdbTitle(1, "The Shadow's Edge", originalLanguage = "zh"))
+        cloud.titleFacts(movie, originalLanguage = "zh")
         syncVersions(
             Triple("4K-DE - Shadow Chase: Im Netz der Diebe (2025)", "4K MOVIES", germanOnly4k),
             Triple("EN - The Shadow's Edge (2025)", "EN - MOVIES", englishStereo),
@@ -208,7 +208,7 @@ class OriginalAudioTest {
     }
 
     @Test fun `Untagged Versions are read first`() = runBlocking {
-        cloud.title("en", tmdbTitle(1, "The Shadow's Edge", originalLanguage = "zh"))
+        cloud.titleFacts(movie, originalLanguage = "zh")
         syncVersions(
             Triple("EN - The Shadow's Edge (2025)", "EN - MOVIES", englishStereo),
             Triple("SC - The Shadow's Edge (2025)", "NORDIC MOVIES", mandarinNordicSubs),
@@ -282,7 +282,7 @@ class OriginalAudioTest {
     // The guard on moving a Version's language
 
     @Test fun `a read moves a Version only to a language the app has reason to expect`() = runBlocking {
-        cloud.title("en", tmdbTitle(1, "Gladiator II", originalLanguage = "en"))
+        cloud.titleFacts(movie, originalLanguage = "en")
         syncVersions(
             // Sichuan Yi on a Polish copy: nonsense, kept in the read, not acted on.
             Triple("PL - Gladiator II (2024)", "PL - FILMY", matroskaFile(listOf(FileTrack("audio", "iii", "A_AAC")))),

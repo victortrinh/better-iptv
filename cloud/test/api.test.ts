@@ -11,7 +11,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM tier_tag_candidate"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM title_facts"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM tier_tag_candidate"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);

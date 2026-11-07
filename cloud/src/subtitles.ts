@@ -2,6 +2,7 @@ import type { Env } from "./env";
 import * as opensubtitles from "./opensubtitles";
 import * as subdl from "./subdl";
 import { type Found, NOT_FOUND, type Searched, type ServiceFile, ServiceUnavailable, SUBTITLE_FORMATS } from "./subtitle-service";
+import { cachedImdbId } from "./title-facts";
 import type { Kind } from "./tmdb";
 
 /**
@@ -82,7 +83,7 @@ export async function searchSubtitles(env: Env, asked: SubtitleQuestion): Promis
   const found = new Map<string, Offer[]>();
   const unavailable: Source[] = [];
   if (stale.length > 0) {
-    const searched: Searched = { tmdbId: asked.tmdbId, imdbId: await imdbId(env.DB, asked.kind, asked.tmdbId), season: asked.season, episode: asked.episode };
+    const searched: Searched = { tmdbId: asked.tmdbId, imdbId: await cachedImdbId(env.DB, asked.kind, asked.tmdbId), season: asked.season, episode: asked.episode };
     const sources = (Object.keys(SERVICES) as Source[]).filter((source) => SERVICES[source].configured(env));
     const answers = await Promise.all(
       sources.map(async (source) => {
@@ -126,14 +127,6 @@ function best(found: (Found & { source: Source })[]): Offer[] {
     .sort((a, b) => rank(a.f) - rank(b.f) || (b.f.downloads ?? 0) - (a.f.downloads ?? 0) || a.order - b.order)
     .slice(0, PER_LANGUAGE)
     .map(({ f }) => ({ id: `${f.source}:${f.ref}`, language: f.language, source: f.source, release: f.release, hearingImpaired: f.hearingImpaired, downloads: f.downloads }));
-}
-
-/** The Title's IMDb ID, from TMDB's metadata the cloud has cached in any language; null when it has none. */
-async function imdbId(db: D1Database, kind: Kind, tmdbId: number): Promise<string | null> {
-  const row = await db.prepare("SELECT body ->> '$.imdbId' AS imdb FROM title_metadata WHERE kind = ?1 AND tmdb_id = ?2 AND body IS NOT NULL LIMIT 1")
-    .bind(kind, tmdbId)
-    .first<{ imdb: string | null }>();
-  return row?.imdb ?? null;
 }
 
 /** Whether [id] is shaped like an offer's id. */

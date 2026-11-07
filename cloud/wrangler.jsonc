@@ -18,6 +18,7 @@
     "TMDB_API": "https://api.themoviedb.org/3",
     "NETFLIX_TOP10": "https://www.netflix.com/tudum/top10/data",
     "ESPN_API": "https://site.api.espn.com/apis/site/v2/sports",
+    "WIKIDATA_SPARQL": "https://query.wikidata.org/sparql",
     "OPENSUBTITLES_API": "https://api.opensubtitles.com/api/v1",
     "OPENSUBTITLES_USER_AGENT": "BetterIPTV v1",
     "SUBDL_API": "https://api.subdl.com/api/v1",

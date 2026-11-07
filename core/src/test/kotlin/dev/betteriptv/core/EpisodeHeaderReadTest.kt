@@ -147,7 +147,7 @@ class EpisodeHeaderReadTest {
     }
 
     @Test fun `an Episode whose details name the Show's original language has Original audio, and plays ahead of an EN copy`() = runBlocking {
-        cloud.title("en", tmdbTitle(1399, "Squid Game", kind = "show", originalLanguage = "ko"))
+        cloud.titleFacts(show, originalLanguage = "ko")
         // The Asian copy names Korean for the first Episode and English for the second; the English copy the other way round.
         syncShow(
             "EN - Squid Game" to listOf(201L to "eng", 202L to "kor"),

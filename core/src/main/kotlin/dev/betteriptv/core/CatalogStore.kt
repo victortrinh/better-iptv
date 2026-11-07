@@ -147,6 +147,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
                 "PRIMARY KEY (title_key, language))",
         )
+        // What Wikidata knows of a Title (#476), by Title key, kept for good: found is 0 when Wikidata has no item for its
+        // number, and the other columns are then null. The cloud's answers wait in the pending table until they land
+        // between screens (ADR 0011), so nothing moves under focus.
+        execSQL(TITLE_FACTS_TABLE.format("title_facts"))
+        execSQL(TITLE_FACTS_TABLE.format("title_facts_pending"))
         // Episodes kept before their file extension was are asked again, so they can play.
         if (prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'audio_language'").use { it.step(); it.getLong(0) } > 0 &&
             prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'container'").use { it.step(); it.getLong(0) } == 0L
@@ -1322,6 +1327,84 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
+    /**
+     * What Wikidata knows of [ids] (#476), as landed: a Title mapped to null is one Wikidata has no item
+     * for; one absent was never answered, or its answer waits to land.
+     */
+    fun titleFacts(ids: Collection<TitleId>): Map<TitleId, TitleFacts?> = synchronized(reader) {
+        buildMap {
+            ids.distinct().filterIsInstance<TitleId.Tmdb>().chunked(MAX_BOUND).forEach { chunk ->
+                val byKey = chunk.associateBy(::key)
+                reader.prepare(
+                    "SELECT title_key, found, original_language, imdb_id, enwiki, frwiki FROM title_facts WHERE title_key IN (${chunk.joinToString(",") { "?" }})",
+                ).use {
+                    byKey.keys.forEachIndexed { i, key -> it.bindText(i + 1, key) }
+                    while (it.step()) {
+                        val facts = if (it.getLong(1) == 0L) null else TitleFacts(it.textOrNull(2), it.textOrNull(3), it.textOrNull(4), it.textOrNull(5))
+                        put(byKey.getValue(it.getText(0)), facts)
+                    }
+                }
+            }
+        }
+    }
+
+    /** [titleFacts] of one Title: null when Wikidata has no item for it, or it was never answered. */
+    fun titleFacts(id: TitleId): TitleFacts? = titleFacts(listOf(id))[id]
+
+    /** The Title numbers of the catalog on screen with no facts, landed or waiting, in list order: what to ask the cloud for. */
+    fun titlesWithoutFacts(): List<TitleId.Tmdb> = synchronized(reader) {
+        reader.prepare(
+            "SELECT key FROM title WHERE key NOT LIKE '%/listing/%' AND key NOT IN (SELECT title_key FROM title_facts) " +
+                "AND key NOT IN (SELECT title_key FROM title_facts_pending) ORDER BY kind, position",
+        ).use {
+            buildList { while (it.step()) (titleId(it.getText(0)) as? TitleId.Tmdb)?.let(::add) }
+        }
+    }
+
+    /** Keeps what the cloud answered at [at] to land later: [found] Titles' facts, and the Titles Wikidata has no item for. */
+    fun stageTitleFacts(found: Map<TitleId.Tmdb, TitleFacts>, notFound: List<TitleId.Tmdb>, at: Instant) = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            writer.prepare("INSERT OR REPLACE INTO title_facts_pending VALUES (?, ?, ?, ?, ?, ?, ?)").use { insert ->
+                (found.entries.map { it.key to it.value } + notFound.map { it to null }).forEach { (id, facts) ->
+                    insert.bindText(1, key(id))
+                    insert.bindLong(2, if (facts == null) 0 else 1)
+                    listOf(facts?.originalLanguage, facts?.imdbId, facts?.enwiki, facts?.frwiki).forEachIndexed { i, value ->
+                        if (value == null) insert.bindNull(i + 3) else insert.bindText(i + 3, value)
+                    }
+                    insert.bindLong(7, at.toEpochMilli())
+                    insert.stepAndReset()
+                }
+            }
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** Lands the facts waiting since [stageTitleFacts]; how many Titles gained an answer. */
+    fun landTitleFacts(): Int = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            val landed = writer.prepare("SELECT count(*) FROM title_facts_pending").use { it.step(); it.getLong(0).toInt() }
+            if (landed > 0) {
+                writer.execSQL("INSERT OR REPLACE INTO title_facts SELECT * FROM title_facts_pending")
+                writer.execSQL("DELETE FROM title_facts_pending")
+            }
+            writer.execSQL("COMMIT")
+            landed
+        } catch (e: Throwable) {
+            writer.execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
+    /** Whether any facts wait to land. */
+    fun hasPendingTitleFacts(): Boolean = synchronized(reader) {
+        reader.prepare("SELECT 1 FROM title_facts_pending LIMIT 1").use { it.step() }
+    }
+
     /** Caches what the cloud answered at [at]: [found] Titles' metadata as JSON, and the Titles TMDB doesn't have. */
     fun saveMetadata(language: String, found: Map<TitleId.Tmdb, String>, notFound: List<TitleId.Tmdb>, at: Instant) = synchronized(writer) {
         writer.execSQL("BEGIN")
@@ -2342,6 +2425,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
         const val MAX_BOUND = 900
         const val TITLE_TABLE = "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, key TEXT NOT NULL, PRIMARY KEY (kind, position))"
+        /** Wikidata's facts of a Title (#476), landed or waiting to. */
+        const val TITLE_FACTS_TABLE = "CREATE TABLE IF NOT EXISTS %s (title_key TEXT PRIMARY KEY, found INTEGER NOT NULL, original_language TEXT, imdb_id TEXT, " +
+            "enwiki TEXT, frwiki TEXT, fetched_at INTEGER NOT NULL)"
         /** Made after a swap: an index keeps its name when its table is renamed. */
         val TITLE_INDEXES = listOf(
             "CREATE INDEX IF NOT EXISTS listing_title ON listing (kind, title)",
@@ -2513,6 +2599,9 @@ private fun titleId(key: String): TitleId {
     val kind = kind(parts[0])
     return if (parts[1] == "listing") TitleId.Unmatched(kind, parts[2].toLong()) else TitleId.Tmdb(kind, parts[1].toLong())
 }
+
+/** The text in column [index], or null when it is NULL. */
+private fun SQLiteStatement.textOrNull(index: Int): String? = if (isNull(index)) null else getText(index)
 
 private fun SQLiteConnection.hasColumn(table: String, column: String): Boolean =
     prepare("SELECT count(*) FROM pragma_table_info('$table') WHERE name = '$column'").use { it.step(); it.getLong(0) > 0 }

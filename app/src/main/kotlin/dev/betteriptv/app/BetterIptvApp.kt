@@ -134,12 +134,14 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     }
 
     /**
-     * Lands a held Sync's catalog ([Library.applyPendingCatalog]) and the history pulled from the
-     * Account ([Library.applyPendingHistory]), on entering a top-level screen; never while the player is open.
+     * Lands a held Sync's catalog ([Library.applyPendingCatalog]), the history pulled from the Account
+     * ([Library.applyPendingHistory]) and the Title facts the cloud answered ([Library.applyPendingTitleFacts]),
+     * on entering a top-level screen; never while the player is open.
      */
     fun applyPendingCatalog() {
         if (playerOpen) return
         scope.launch { library.applyPendingHistory() }
+        scope.launch { library.applyPendingTitleFacts() }
         if (!library.hasPendingCatalog) return
         scope.launch { keepingAlive { library.applyPendingCatalog() } }
     }

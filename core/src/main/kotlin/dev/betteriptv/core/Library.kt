@@ -460,7 +460,7 @@ class Library private constructor(
      */
     suspend fun sync(hold: Boolean = false): SyncStatus {
         val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold) } }
-        if (landed is SyncStatus.Synced) afterCatalogLanded()
+        if (landed is SyncStatus.Synced) afterCatalogLanded(hold)
         return _syncStatus.value
     }
 
@@ -652,8 +652,25 @@ class Library private constructor(
         } finally {
             syncLock.unlock()
         }
-        if (applied) afterCatalogLanded()
+        if (applied) afterCatalogLanded(hold = true)
         return applied
+    }
+
+    /**
+     * Lands the Title facts the cloud answered since the last landing ([fetchTitleFacts]), between
+     * screens like a held catalog (ADR 0011), so an Untagged Version's Likely language never changes
+     * under focus. Says whether any landed, in which case the screens read again ([catalogChanges]).
+     * Nothing lands while a Sync holds the writer: the next screen entry asks again.
+     */
+    suspend fun applyPendingTitleFacts(): Boolean = withContext(Dispatchers.IO) {
+        if (syncWriting || !store.hasPendingTitleFacts()) return@withContext false
+        landTitleFacts()
+    }
+
+    private fun landTitleFacts(): Boolean {
+        val landed = store.landTitleFacts() > 0
+        if (landed) changed()
+        return landed
     }
 
     private fun catalogChanged() {
@@ -669,9 +686,11 @@ class Library private constructor(
     /**
      * Once a catalog lands: reports the Prefixes the Sync didn't know, then asks the cloud about the
      * catalog's suspects and regroups the Titles by its answers, under [matchingStatus] from start to
-     * end whatever happens, so the status never stays at Matching (#271).
+     * end whatever happens, so the status never stays at Matching (#271), then asks it for the Title
+     * facts the catalog's Titles lack ([fetchTitleFacts]). With [hold], the facts wait for
+     * [applyPendingTitleFacts] as the catalog waited; else they land here, as the catalog did.
      */
-    private suspend fun afterCatalogLanded() = matchLock.withLock {
+    private suspend fun afterCatalogLanded(hold: Boolean) = matchLock.withLock {
         withContext(Dispatchers.IO) {
             try {
                 if (!canAskCloud()) return@withContext
@@ -682,6 +701,7 @@ class Library private constructor(
             } finally {
                 _matchingStatus.value = null
             }
+            fetchTitleFacts(land = !hold)
         }
     }
 
@@ -698,6 +718,41 @@ class Library private constructor(
             } finally {
                 _matchingStatus.value = null
             }
+            // The Title facts the last fetch couldn't get (the app closed, the cloud couldn't answer) are asked for too, to land between screens.
+            if (store.lastSync() != null) fetchTitleFacts(land = false)
+        }
+    }
+
+    /**
+     * Asks the cloud what Wikidata knows of every Title number the catalog on screen has no answer for
+     * (#476), in batches of [CloudClient.MAX_FACTS_BATCH], and keeps the answers with the catalog:
+     * "no item" too, so a Title Wikidata doesn't know isn't asked again, while the Titles the cloud
+     * couldn't answer for stay unanswered and are asked again after the next Sync. The answers wait to
+     * [land] between screens, or land at once. Without a cloud nothing is known and nothing is asked.
+     * A few batches may fail on their own (the cloud ran out of CPU time, say); several in a row mean
+     * the cloud is down, and the rest wait for the next Sync.
+     */
+    private fun fetchTitleFacts(land: Boolean) {
+        if (cloud == null || !canAskCloud()) return
+        try {
+            var failedInARow = 0
+            for (batch in store.titlesWithoutFacts().chunked(CloudClient.MAX_FACTS_BATCH)) {
+                try {
+                    val answer = cloud.titleFacts(batch)
+                    store.stageTitleFacts(answer.found, answer.notFound, Instant.now())
+                    failedInARow = 0
+                } catch (e: CloudException) {
+                    if (++failedInARow == MATCH_FAILURES_IN_A_ROW) {
+                        cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+                        break
+                    }
+                }
+            }
+            if (land) landTitleFacts()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The catalog shows as it is; the facts are asked for again after the next Sync.
         }
     }
 
@@ -1251,8 +1306,9 @@ class Library private constructor(
         }
         val candidates = candidates(title, contentLanguages)
         val shown = shown(candidates, contentLanguages, metadata, appLanguage)
-        val original = originalAudioLanguage(metadata?.originalLanguage, contentLanguages, preferOriginalAudio)
-        val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, metadata?.originalLanguage), contentLanguages, original)
+        val originalLanguage = originalLanguage(id)
+        val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
+        val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, originalLanguage), contentLanguages, original)
         TitleDetails(
             id, shown.name, shown.year, shown.image, languages, otherLanguages,
             description = metadata?.description(appLanguage),
@@ -1632,8 +1688,15 @@ class Library private constructor(
         }
     }
 
-    /** The language [id] was released in, from TMDB's metadata kept on the device: the details screen has fetched it before Play. */
-    private fun originalLanguage(id: TitleId): String? = (id as? TitleId.Tmdb)?.let(store::anyMetadata)?.let { TitleMetadata(it).originalLanguage }
+    /**
+     * The language [id] was released in, as a primary subtag, from the Title facts Wikidata gave through
+     * the cloud after a Sync (#476), kept with the catalog; null when Wikidata names none, doesn't know
+     * the Title, or hasn't been asked. Never from TMDB's metadata.
+     */
+    private fun originalLanguage(id: TitleId): String? = store.titleFacts(id)?.originalLanguage
+
+    /** [originalLanguage] of each of [ids] that has one, in a few queries. */
+    private fun originalLanguages(ids: Collection<TitleId>): Map<TitleId, String?> = store.titleFacts(ids).mapValues { it.value?.originalLanguage }
 
     /** The audio and subtitle languages the Viewer last picked in the player. */
     fun rememberedTracks(): RememberedTracks = remembered ?: run {
@@ -1827,17 +1890,15 @@ class Library private constructor(
         fun card(title: StoredTitle) = rowCard(title, contentLanguages, appLanguage, metadata)
         val popularFirst = popularFirst(metadata)
         // The newest movies, then the newest shows, in the Viewer's languages.
-        val browsable = listOf(movies, shows).map { titles ->
-            titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
-        }
+        val browsable = listOf(movies, shows).map { titles -> watchable(titles, contentLanguages) }
         val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst)
         val byGenre = LinkedHashMap<String, MutableList<StoredTitle>>()
         browsable.flatten().forEach { title -> metadata[title.id]?.genres?.forEach { byGenre.getOrPut(it) { mutableListOf() } += title } }
         val screen = ScreenRows()
-        val charted = tops.map { (list, titles) -> list to screen.chart(watchable(titles, contentLanguages, metadata), MIN_CHART_SIZE) }
+        val charted = tops.map { (list, titles) -> list to screen.chart(watchable(titles, contentLanguages), MIN_CHART_SIZE) }
         val new = screen.row(newest, ROW_SIZE)
         // Trending sits below New, so it skips what New shows.
-        val trending = screen.row(watchable(trends, contentLanguages, metadata), ROW_SIZE, MIN_CHART_SIZE)
+        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_CHART_SIZE)
         val genres = buildList {
             for ((name, titles) in byGenre.entries.sortedByDescending { it.value.size }) {
                 if (size == GENRE_ROWS) break
@@ -1910,7 +1971,7 @@ class Library private constructor(
         }.map { it.mapNotNull(store::title) }
         val metadata = metadata(lists.flatten().map { it.id }.distinct(), appLanguage)
         // Each Top row as it shows, none under [MIN_CHART_SIZE], then its top few.
-        val tops = lists.map { titles -> watchable(titles, contentLanguages, metadata).takeIf { it.size >= MIN_CHART_SIZE }.orEmpty().take(FEATURED_FROM) }
+        val tops = lists.map { titles -> watchable(titles, contentLanguages).takeIf { it.size >= MIN_CHART_SIZE }.orEmpty().take(FEATURED_FROM) }
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
         val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }.filter {
             val about = metadata[it.id]
@@ -2133,11 +2194,11 @@ class Library private constructor(
         val newest = store.titles(kind, 0, TAB_NEW)
         val metadata = metadata((tops + trends + newest).map { it.id }.distinct(), appLanguage)
         val screen = ScreenRows()
-        val top = screen.chart(watchable(tops, contentLanguages, metadata), MIN_CHART_SIZE)
-        val trending = screen.row(watchable(trends, contentLanguages, metadata), ROW_SIZE, MIN_CHART_SIZE)
-        val new = screen.row(watchable(newest, contentLanguages, metadata).sortedWith(popularFirst(metadata)), ROW_SIZE)
+        val top = screen.chart(watchable(tops, contentLanguages), MIN_CHART_SIZE)
+        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_CHART_SIZE)
+        val new = screen.row(watchable(newest, contentLanguages).sortedWith(popularFirst(metadata)), ROW_SIZE)
         // The genre rows go after New, through the same [screen], so they skip what's shown above.
-        val genres = genreLists(charts.genres.filter { it.kind == kind }, contentLanguages, appLanguage).mapNotNull { (name, titles) ->
+        val genres = genreLists(charts.genres.filter { it.kind == kind }, contentLanguages).mapNotNull { (name, titles) ->
             screen.row(titles, ROW_SIZE, MIN_GENRE_SIZE).takeIf { it.isNotEmpty() }?.let { name to it }
         }
         val all = metadata + metadata(genres.flatMap { (_, titles) -> titles.map { it.id } }, appLanguage)
@@ -2215,7 +2276,7 @@ class Library private constructor(
         val metadata = metadata((resumes.map { it.first } + movies + shows).map { it.id }.distinct(), appLanguage)
         fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, metadata) }
         val popularFirst = popularFirst(metadata)
-        val browsable = listOf(movies, shows).map { watchable(it, contentLanguages, metadata) }
+        val browsable = listOf(movies, shows).map { watchable(it, contentLanguages) }
         val screen = ScreenRows()
         val new = screen.row((browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(popularFirst), ROW_SIZE)
         val ofKind = TitleKind.entries.zip(browsable).map { (kind, titles) -> kind to screen.row(titles.sortedWith(popularFirst), ROW_SIZE) }
@@ -2250,7 +2311,7 @@ class Library private constructor(
         val catalog = kidsCatalog(region, appLanguage, now)
         val titles = newestKids(catalog.getValue(kind), if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS)
         val metadata = metadata(titles.map { it.id }, appLanguage)
-        val browsable = watchable(titles, contentLanguages, metadata)
+        val browsable = watchable(titles, contentLanguages)
         val screen = ScreenRows()
         val new = screen.row(browsable.take(TAB_NEW).sortedWith(popularFirst(metadata)), ROW_SIZE)
         val popular = screen.row(browsable.sortedWith(popularFirst(metadata)), ROW_SIZE)
@@ -2279,7 +2340,7 @@ class Library private constructor(
         val metadata = metadata(lists.flatten().map { it.id }, appLanguage)
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
         val tops = lists.map { titles ->
-            watchable(titles, contentLanguages, metadata).filter {
+            watchable(titles, contentLanguages).filter {
                 val about = metadata[it.id]
                 it.id !in started && about?.heroBackdrop != null && about.logo != null
             }.sortedWith(popularFirst(metadata)).take(FEATURED_FROM)
@@ -2321,26 +2382,20 @@ class Library private constructor(
      * Discover's genre [lists] kept to the Provider's Titles the Viewer can watch ([watchable]), each
      * in TMDB's order (most popular across TMDB first), the genres with the most such Titles first.
      * Lists run to a few hundred Titles each, so their Titles and Versions are read in a few queries,
-     * and metadata is only read where it decides: for Untagged Titles, whose original language says
-     * whether they are Likely in a Content language. The cloud is asked only about those near the
-     * top of a genre, where they would show; the rest go by the metadata the device already has.
+     * and the Title facts only where they decide: for Untagged Titles, whose original language says
+     * whether they are Likely in a Content language.
      */
-    private fun genreLists(lists: List<Charts.GenreList>, contentLanguages: List<String>, appLanguage: String): List<Pair<String, List<StoredTitle>>> {
+    private fun genreLists(lists: List<Charts.GenreList>, contentLanguages: List<String>): List<Pair<String, List<StoredTitle>>> {
         val listed = store.titles(lists.flatMap { it.titles })
         val versions = candidates(listed.values)
         fun likely(id: TitleId, originalLanguage: String?) = inContentLanguages(versions.getValue(id), contentLanguages, originalLanguage)
         val tagged = listed.keys.filterTo(HashSet()) { likely(it, null) }
         val untagged = listed.keys.filterTo(HashSet()) { id -> id !in tagged && versions.getValue(id).any { it.attributes.language?.value == null } }
-        val nearTop = lists.flatMap { list -> list.titles.filter { it in listed }.take(ROW_SIZE) }.filter { it in untagged }.distinct()
-        val originalLanguages = keptMetadata(untagged - nearTop.toSet(), appLanguage) + metadata(nearTop, appLanguage)
+        val originalLanguages = originalLanguages(untagged)
         return lists
-            .map { list -> list.name to list.titles.filter { it in tagged || it in untagged && likely(it, originalLanguages[it]?.originalLanguage) }.map(listed::getValue) }
+            .map { list -> list.name to list.titles.filter { it in tagged || it in untagged && likely(it, originalLanguages[it]) }.map(listed::getValue) }
             .sortedByDescending { (_, titles) -> titles.size }
     }
-
-    /** The TMDB metadata of [ids] the device already has in [appLanguage]'s language, however old, without asking the cloud. */
-    private fun keptMetadata(ids: Collection<TitleId>, appLanguage: String): Map<TitleId, TitleMetadata> =
-        storedMetadata(ids.filterIsInstance<TitleId.Tmdb>(), primaryLanguage(appLanguage)).mapNotNull { (id, stored) -> stored.body?.let { id to TitleMetadata(it) } }.toMap()
 
     /** The metadata of [ids] in [language] the device has, with the cloud's answers still waiting on their save. */
     private fun storedMetadata(ids: List<TitleId.Tmdb>, language: String): Map<TitleId.Tmdb, StoredMetadata> {
@@ -2771,9 +2826,14 @@ class Library private constructor(
         return buildMap { cached.forEach { (id, stored) -> stored.body?.let { put(id, TitleMetadata(it)) } } }
     }
 
-    /** A Chart's [titles] the Viewer can watch: those with a Version in their [contentLanguages], or an Untagged one Likely in one. */
-    private fun watchable(titles: List<StoredTitle>, contentLanguages: List<String>, metadata: Map<TitleId, TitleMetadata>): List<StoredTitle> =
-        titles.filter { inContentLanguages(candidates(it), contentLanguages, metadata[it.id]?.originalLanguage) }
+    /**
+     * The [titles] the Viewer can watch: those with a Version in their [contentLanguages], or an
+     * Untagged one Likely in one because Wikidata says the Title was released in it ([originalLanguages]).
+     */
+    private fun watchable(titles: List<StoredTitle>, contentLanguages: List<String>): List<StoredTitle> {
+        val originalLanguages = originalLanguages(titles.map { it.id })
+        return titles.filter { inContentLanguages(candidates(it), contentLanguages, originalLanguages[it.id]) }
+    }
 
     /**
      * Each Top 10 Title's rank in [region], as its Top row on Home numbers it: counted among the
@@ -2785,7 +2845,7 @@ class Library private constructor(
         val metadata = metadata(tops.flatMap { it.second }.map { it.id }, appLanguage)
         return buildMap {
             tops.forEach { (list, titles) ->
-                watchable(titles, contentLanguages, metadata).forEachIndexed { i, title -> put(title.id, ChartRank(i + 1, list, region.takeUnless { charts.worldwide })) }
+                watchable(titles, contentLanguages).forEachIndexed { i, title -> put(title.id, ChartRank(i + 1, list, region.takeUnless { charts.worldwide })) }
             }
         }
     }

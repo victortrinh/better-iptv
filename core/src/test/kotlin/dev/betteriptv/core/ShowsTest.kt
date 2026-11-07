@@ -152,13 +152,13 @@ class ShowsTest {
     }
 
     @Test fun `a Source's Episodes whose details name no language are Likely in the Show's original language`() = runBlocking {
-        cloud.title("en", tmdbTitle(332649, "Shadows of the Ten Ninja", kind = "show", originalLanguage = "ja"))
+        cloud.titleFacts(TitleId.Tmdb(TitleKind.Show, 332649), originalLanguage = "ja")
         provider.showCategoriesOverride = """[{"category_id":"1","category_name":"NETFLIX SERIES"}]"""
         provider.showListOverride = """[{"series_id":1,"name":"NF - Shadows of the Ten Ninja (2026) (JP)","tmdb":"332649","category_id":"1","last_modified":"1700000000"}]"""
         provider.showDetailsOverride[1] = details(listOf(episode(101, 1, 1, "NF - Shadows of the Ten Ninja (2026) (JP) - S01E01", "")))
         library.sync()
         val id = TitleId.Tmdb(TitleKind.Show, 332649)
-        // The Title page asks for the Show's details, TMDB's included, before its Episodes.
+        // The Title page asks for the Show's details before its Episodes; its original language came from Wikidata at the Sync.
         library.title(id, english, "en")
 
         assertEquals(Known("ja", Provenance.Likely), episodes(id).episode(1, 1).allVersions().single().attributes.language)
