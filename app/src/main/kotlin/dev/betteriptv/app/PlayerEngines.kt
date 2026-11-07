@@ -196,8 +196,8 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
             val audio = groups(C.TRACK_TYPE_AUDIO)
             val subtitles = groups(C.TRACK_TYPE_TEXT)
             return FileTracks(
-                audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType, format.channelCount.takeIf { count -> count != Format.NO_VALUE }) } },
-                subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
+                audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType, format.channelCount.takeIf { count -> count != Format.NO_VALUE }, format.label) } },
+                subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType, label = format.label) } },
                 audio.indexOfFirst { it.isSelected }.takeIf { it >= 0 },
                 subtitles.indexOfFirst { it.isSelected }.takeIf { it >= 0 },
             )
@@ -377,8 +377,8 @@ private class TrackChooser(
         val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }
         val subtitles = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
         val choice = plan.chooseTracks(
-            audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
-            subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType) } },
+            audio.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType, label = format.label) } },
+            subtitles.map { it.getTrackFormat(0).let { format -> Track(format.language, format.sampleMimeType, label = format.label) } },
             device,
             remembered(),
             choices(),
@@ -641,7 +641,7 @@ class VlcEngine(
         known = media
         val audio = media.filter { it.type == IMedia.Track.Type.Audio }
         if (audio.isNotEmpty()) {
-            audioTracks = audio.map { VlcTrack(it.id, Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 })) }
+            audioTracks = audio.map { VlcTrack(it.id, Track(it.language, channels = (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }, label = it.description)) }
             subtitleTracks = media.filter { it.type == IMedia.Track.Type.Text }.map { VlcTrack(it.id, vlcSubtitles(it)) }
         } else {
             // A live Channel's stream: LibVLC lists its sound and closed captions only as the player's, by name.
@@ -756,8 +756,8 @@ private fun Tracks.contents(): FileContents {
     fun formats(type: Int) = groups.filter { it.type == type }.map { it.getTrackFormat(0) }
     val video = formats(C.TRACK_TYPE_VIDEO).firstOrNull()
     return FileContents(
-        audio = formats(C.TRACK_TYPE_AUDIO).map { Track(it.language, it.sampleMimeType, it.channelCount.takeIf { count -> count != Format.NO_VALUE }) },
-        subtitles = formats(C.TRACK_TYPE_TEXT).map { Track(it.language, it.sampleMimeType) },
+        audio = formats(C.TRACK_TYPE_AUDIO).map { Track(it.language, it.sampleMimeType, it.channelCount.takeIf { count -> count != Format.NO_VALUE }, it.label) },
+        subtitles = formats(C.TRACK_TYPE_TEXT).map { Track(it.language, it.sampleMimeType, label = it.label) },
         width = video?.width?.takeIf { it != Format.NO_VALUE },
         height = video?.height?.takeIf { it != Format.NO_VALUE },
         hdr = when {
@@ -777,7 +777,7 @@ internal fun vlcContents(tracks: List<IMedia.Track>): FileContents {
     val video = tracks.filterIsInstance<IMedia.VideoTrack>().firstOrNull()
     return FileContents(
         audio = tracks.filter { it.type == IMedia.Track.Type.Audio }
-            .map { Track(it.language, VLC_AUDIO_CODECS[it.codec?.trim()], (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }) },
+            .map { Track(it.language, VLC_AUDIO_CODECS[it.codec?.trim()], (it as? IMedia.AudioTrack)?.channels?.takeIf { count -> count > 0 }, it.description) },
         subtitles = tracks.filter { it.type == IMedia.Track.Type.Text }.map(::vlcSubtitles),
         width = video?.width?.takeIf { it > 0 },
         height = video?.height?.takeIf { it > 0 },
@@ -785,7 +785,7 @@ internal fun vlcContents(tracks: List<IMedia.Track>): FileContents {
 }
 
 /** A VLC subtitle Track, its closed captions known by their fourcc. */
-private fun vlcSubtitles(track: IMedia.Track) = Track(track.language, VLC_CAPTION_CODECS[track.codec?.trim()])
+private fun vlcSubtitles(track: IMedia.Track) = Track(track.language, VLC_CAPTION_CODECS[track.codec?.trim()], label = track.description)
 
 private val VLC_CAPTION_CODECS = mapOf("c608" to CEA_608, "c708" to CEA_708)
 
