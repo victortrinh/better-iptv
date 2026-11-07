@@ -12,6 +12,7 @@ export default defineConfig({
           OPENSUBTITLES_USERNAME: "test-os-user",
           OPENSUBTITLES_PASSWORD: "test-os-password",
           SUBDL_API_KEY: "test-subdl-key",
+          RESEND_API_KEY: "test-resend-key",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
         },
       },
