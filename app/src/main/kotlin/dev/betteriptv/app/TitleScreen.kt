@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.Backdrop
 import dev.betteriptv.app.ui.components.BadgeRow
+import dev.betteriptv.app.ui.components.NuageIcons
 import dev.betteriptv.app.ui.components.ActionRow
 import dev.betteriptv.app.ui.components.PrimaryAction
 import dev.betteriptv.app.ui.components.TitleName
@@ -413,7 +413,7 @@ private fun TitleContent(
                 if (title.trailer != null) {
                     ActionRow(
                         stringResource(R.string.title_trailer),
-                        Icons.Outlined.PlayArrow,
+                        NuageIcons.Movie,
                         onClick = { onSection(TitleSection.Trailer) },
                         modifier = Modifier.testTag("trailer action").focusRequester(trailerAction),
                     )
