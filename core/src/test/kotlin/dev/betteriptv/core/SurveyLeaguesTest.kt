@@ -43,7 +43,7 @@ class SurveyLeaguesTest {
         println("Sync: ${library.sync()}")
 
         val now = Instant.now()
-        val events = CatalogStore(database).eventChannels(now - Duration.ofDays(1), now + Duration.ofDays(9)).map { it.first.variants.first().name }
+        val events = CatalogStore(database).eventChannels(1, now - Duration.ofDays(1), now + Duration.ofDays(9)).map { it.first.variants.first().name }
         val words = events.map(SearchIndex::words)
         fun holding(phrases: Collection<String>) = events.indices.filterTo(HashSet()) { i -> phrases.any { containsPhrase(words[i], SearchIndex.words(it)) } }
         println("Event channels in the window: ${events.size}")

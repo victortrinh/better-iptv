@@ -2,8 +2,11 @@ package dev.betteriptv.core
 
 import java.util.Locale
 
-/** One Listing with what the Prefix table says about it: a Version before it's ranked and grouped. */
-internal class Candidate(val listing: StoredListing, val attributes: VersionAttributes)
+/**
+ * One Listing with what the Prefix table says about it: a Version before it's ranked and grouped.
+ * [unknownPrefix] is the name's Prefix when neither the Base table nor the Provider table knows it.
+ */
+internal class Candidate(val listing: StoredListing, val attributes: VersionAttributes, val unknownPrefix: String? = null)
 
 /**
  * Better Versions first. CAM Versions always rank last and Audio-description ones after the rest, so
@@ -94,7 +97,7 @@ internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLangu
     return candidates.map { candidate ->
         val attributes = candidate.attributes
         if (attributes.language != null || attributes.source == null) candidate
-        else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)))
+        else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)), candidate.unknownPrefix)
     }
 }
 
@@ -179,8 +182,19 @@ private val SUBTITLE_CULTURES = setOf("nl", "da", "sv", "no", "nb", "fi", "is")
  * the Nordic languages); the highest-quality Version whose language is neither a Content language
  * nor the original, so the app learns whether the best picture carries the original audio; the
  * Content languages in their order; then the rest.
+ *
+ * Either way, the Versions whose Prefix no table knows go first ([unknownPrefixFirst]), the best
+ * one not yet read of each such Prefix: they are the ones the app knows least about.
  */
-internal fun readOrder(candidates: List<Candidate>, read: Set<Long>, contentLanguages: List<String>, original: String? = null): List<Candidate> {
+internal fun readOrder(candidates: List<Candidate>, read: Set<Long>, contentLanguages: List<String>, original: String? = null): List<Candidate> =
+    unknownPrefixFirst(candidates, read) + knownPrefixOrder(candidates.filter { it.unknownPrefix == null }, read, contentLanguages, original)
+
+/** The best Version not yet [read] of each Prefix no table knows, the best of them first. */
+internal fun unknownPrefixFirst(candidates: List<Candidate>, read: Set<Long>): List<Candidate> =
+    candidates.filter { it.unknownPrefix != null }.sortedWith(BEST_FIRST).groupBy { it.unknownPrefix }.values
+        .mapNotNull { group -> group.firstOrNull { it.listing.id !in read } }
+
+private fun knownPrefixOrder(candidates: List<Candidate>, read: Set<Long>, contentLanguages: List<String>, original: String?): List<Candidate> {
     val wanted = contentLanguages.map(::primaryLanguage).distinct()
     val byLanguage = candidates.sortedWith(BEST_FIRST).groupBy { it.primaryLanguage }
     fun firstUnread(group: List<Candidate>?) = group?.firstOrNull { it.listing.id !in read }
