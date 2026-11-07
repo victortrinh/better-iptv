@@ -128,6 +128,15 @@ Settled 2026-11-03 in a grilling session against the code, the real catalog on t
 - **Trailers** play inside Zugig in YouTube's embedded player ([ADR 0012](adr/0012-trailers-play-in-youtubes-embedded-player.md)). **While a stream starts**, the player shows the Title's art instead of black.
 - The Top row numerals become custom digits, and a focused Top row poster scales from its left edge so it never covers its numeral. Both were settled in a separate session.
 
+## Original audio
+
+Settled 2026-11-06 in a grilling session against the stick's catalog and four Header reads of *The Shadow's Edge* (2025). Its only 4K Version is `4K-DE` (15.3 GB, German 5.1 only, a cut 29 s longer than every 1080p copy); the `NL` Version (2.1 GB, 1080p HEVC) carries Mandarin 5.1 with Dutch, German, English and Chinese subtitles, and the `SC` one Mandarin with Nordic subtitles. The app would never have picked either: `NL` means Dutch until a Header read says otherwise, and Dutch isn't a Content language. The spec is [#414](https://github.com/victortrinh/better-iptv/issues/414).
+
+- **Prefer original audio**, a setting on by default: a Title plays with Original audio when any Version has it, ahead of a Version in a Content language at any quality; quality decides among those. Movies and Shows alike (Episode details already name the first audio Track's language). When the audio isn't in a Content language, subtitles in the first Content language come on (as today), from the file when it has them, else downloaded.
+- **Finding the copy.** The details page's reads (the best unconfirmed Version per language) run in order of Original-audio likelihood: Untagged (`NF`, `D+`, `TOP`), then subtitle-culture Prefixes (`SC`, `NL`), then the highest-quality Version outside the Content languages (to settle whether the 4K could do), then the rest. Play lets the read in flight finish (≤ ~1 s) instead of preempting it, so a copy Confirmed in that second is what starts; reads not yet started are dropped as today. No in-player offer: nothing can be learned while a file plays on one connection. The Prefix table keeps `SC`/`NL` as "may be dubs" until Background reading has a few dozen of them to judge by.
+- **The Versions list** puts the Original-audio group with the Content languages' groups, and names a Version with a single audio language outside both as, say, "German only".
+- **Not planned: borrowing the audio of one Version while playing another's picture.** Measured against the same Title: the Connection limit is 1 and audio is interleaved with video (a second file means a second stream); the stick had 1.8 GB free against a 3.6 GB donor file, so fetching it ahead doesn't fit; and the 4K cut is 29 s longer than the 1080p copies, so even with two connections the audio would need real alignment. The ask was Original audio with English subtitles, which the `NL` copy already is.
+
 ## M5: For everyone
 
 - Accounts and history sync. Trakt sync as an option.
