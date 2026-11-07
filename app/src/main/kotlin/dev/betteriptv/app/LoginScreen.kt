@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -57,6 +58,16 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // An M3U URL in the address field fills all three fields. A paste splits at once; typed by hand,
+    // it splits when focus leaves the field, so the query isn't cut off mid-word.
+    val splitM3uUrl = { text: String ->
+        ProviderLogin.fromM3uUrl(text)?.let {
+            address = it.address
+            username = it.username
+            password = it.password
+        } != null
+    }
+
     val focus = LocalFocusManager.current
     val canLogIn = !checking && address.isNotBlank() && username.isNotBlank() && password.isNotEmpty()
     val logIn = {
@@ -86,7 +97,10 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
         Column(Modifier.width(400.dp), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
             val fieldModifier = Modifier.fillMaxWidth()
             NuageTextField(
-                address, { address = it }, stringResource(R.string.login_address), fieldModifier,
+                address,
+                { if (it.length - address.length <= 1 || !splitM3uUrl(it)) address = it },
+                stringResource(R.string.login_address),
+                fieldModifier.onFocusChanged { if (!it.hasFocus) splitM3uUrl(address) },
                 placeholder = stringResource(R.string.login_address_hint), keyboardType = KeyboardType.Uri,
             )
             NuageTextField(username, { username = it }, stringResource(R.string.login_username), fieldModifier)
