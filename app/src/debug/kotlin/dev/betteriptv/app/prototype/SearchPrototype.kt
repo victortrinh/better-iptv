@@ -124,7 +124,7 @@ fun SearchPrototype() {
                     if (shown.isEmpty()) {
                         Text("Nothing matches \"$query\".", style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.l))
                     } else {
-                        ResultGrid(shown, wide = { false }, keyOf = { it.name }, first = firstResult, modifier = Modifier.padding(top = Spacing.l).focusRequester(grid)) { title, modifier ->
+                        ResultGrid(shown, wide = { false }, keyOf = { it.name }, first = firstResult, modifier = Modifier.focusRequester(grid)) { title, modifier ->
                             TitleCard(painterResource(title.poster), title.name, emptyList(), onClick = {}, modifier = modifier, named = false)
                         }
                     }

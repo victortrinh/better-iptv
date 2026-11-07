@@ -215,7 +215,7 @@ private fun Results(
     }
     val cards = remember(results, query) { results.cards(query) }
     // Focusing [grid] enters it at the card that had focus; Back focuses the tab.
-    ResultGrid(cards, wide = { it !is SearchCard.OfTitle }, keyOf = { it.key }, first = firstResult, modifier = Modifier.padding(top = GRID_TOP).focusRequester(grid).backKeyToTab(tab)) { card, modifier ->
+    ResultGrid(cards, wide = { it !is SearchCard.OfTitle }, keyOf = { it.key }, first = firstResult, modifier = Modifier.focusRequester(grid).backKeyToTab(tab)) { card, modifier ->
         when (card) {
             is SearchCard.OfTitle -> ResultTitle(card.title, onOpen, modifier)
             is SearchCard.OfChannel -> ChannelCard(card.channel, onWatch, onFavourite, modifier, named = false)
@@ -273,10 +273,12 @@ internal fun <T> ResultGrid(
         withFrameNanos {}
         first.requestFocus()
     }
-    // The right margin is content padding, so cards scroll under the edge instead of being clipped.
+    // The gap under the query line and the margins are content padding: a list clips along its
+    // scroll axis, so a focused card on the first or last row, lifted 12 dp, would be cut off at
+    // the list's edge otherwise, and cards scroll under the bottom margin rather than stopping at it.
     LazyColumn(
         state = list,
-        contentPadding = PaddingValues(end = Spacing.screenX, bottom = Spacing.screenY),
+        contentPadding = PaddingValues(top = GRID_TOP, end = Spacing.screenX, bottom = Spacing.screenY),
         verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         modifier = modifier.focusRestorer().onFocusChanged { if (!it.hasFocus) focused = null },
     ) {
@@ -312,7 +314,7 @@ private val COLUMN_GAP = Spacing.xxl
 /** The query line's height: the magnifier and the caret centre in it. */
 private val QUERY_HEIGHT = 32.dp
 
-/** Between the query line and the cards, or the message in their place. */
+/** Between the query line and the cards, or the message in their place: more than a focused card's 12 dp lift. */
 private val GRID_TOP = Spacing.l
 
 /**
