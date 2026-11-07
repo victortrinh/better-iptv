@@ -181,6 +181,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         // With two Profiles or more, the tabs' chip opens "Who's watching?" over whichever browsing screen is shown (#432).
         ProfileSwitcher(
             profile,
+            app.library.householdPin,
             onSwitch = { app.changeProfiles(ProfileChange.Switch(it)) },
             onAdd = {
                 // Settings' add flow, under its own tabs: Back from it lands on "Add a profile".

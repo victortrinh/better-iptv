@@ -214,6 +214,9 @@ class Library private constructor(
      */
     val profiles: StateFlow<Profiles> = _profiles.asStateFlow()
 
+    /** The Household PIN (#437), which lets a Viewer leave a Kids profile. */
+    val householdPin: HouseholdPin = KeptHouseholdPin(store)
+
     /** The current Profile's id, which every Viewer's read and write goes to. */
     private val profile: Long get() = _profiles.value.current.id
 

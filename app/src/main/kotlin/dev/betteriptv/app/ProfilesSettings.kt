@@ -138,12 +138,12 @@ fun DeleteProfilePage(profile: Profile, onDelete: () -> Unit, onCancel: () -> Un
  * A Profile's name typed on the [RemoteKeyboard], under [title]: the name so far in a glass field,
  * each word starting with a capital, at most [MAX_NAME] characters; Save ([onSave]) once it has a
  * letter. The keyboard's first letter takes focus. Adding a Profile ([kidsSwitch]) also offers the
- * Kids switch under them, Off unless chosen: a Kids profile sees only the Kids catalog (#433).
+ * Kids switch under them, Off unless chosen ([initialKids]): a Kids profile sees only the Kids catalog (#433).
  */
 @Composable
-fun ProfileNamePage(title: String, initial: String, onSave: (String, Boolean) -> Unit, kidsSwitch: Boolean = false) {
+fun ProfileNamePage(title: String, initial: String, onSave: (String, Boolean) -> Unit, kidsSwitch: Boolean = false, initialKids: Boolean = false) {
     var name by rememberSaveable { mutableStateOf(initial) }
-    var kids by rememberSaveable { mutableStateOf(false) }
+    var kids by rememberSaveable { mutableStateOf(initialKids) }
     val entry = remember { FocusRequester() }
     LaunchedEffect(Unit) { entry.requestFocus() }
     Column(Modifier.padding(horizontal = Spacing.screenX, vertical = 20.dp).width(SETTINGS_WIDTH), verticalArrangement = Arrangement.spacedBy(16.dp)) {
