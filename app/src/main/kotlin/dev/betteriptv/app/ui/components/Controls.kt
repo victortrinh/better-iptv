@@ -176,11 +176,12 @@ fun TopTabs(
     end: @Composable BoxScope.() -> Unit = {},
 ) {
     val capsule = RoundedCornerShape(50)
-    Box(modifier.fillMaxWidth()) {
+    // One group with what sits at the end (the profile chip), so Right from the last tab reaches it
+    // and Up from the screen still lands on the selected tab, never on the chip.
+    Box(modifier.fillMaxWidth().then(if (selectedFocus != null) Modifier.entersAtSelected(selectedFocus) else Modifier)) {
         Wordmark(Modifier.align(Alignment.CenterStart))
         Row(
             Modifier.align(Alignment.Center)
-                .then(if (selectedFocus != null) Modifier.entersAtSelected(selectedFocus) else Modifier)
                 .background(Colors.surface, capsule)
                 .border(1.dp, Colors.ink.copy(alpha = 0.14f), capsule)
                 .padding(4.dp),
