@@ -29,6 +29,10 @@ import java.time.LocalDate
  * Provider's movie details, are kept forever.
  * So is where the Viewer stopped in each Title, keyed by Title so it outlives Syncs.
  *
+ * What a Viewer keeps (where they stopped, Favourites, "Not this game" marks, what they chose in the
+ * player) is kept per Profile, the household's Profiles in their own table (#428); the catalog and
+ * what the Provider's files hold are the device's. Each Viewer's read and write names its Profile.
+ *
  * Channel variants (live Listings, Clutter left out) are swapped in with the movie and show
  * Listings, in the Provider's order, each with its Channel's key, the Category it was filed under and
  * its guide id, and so are the live Categories with their normalised names and kinds. A Channel is
@@ -49,6 +53,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         // A big write grows the write-ahead log; once checkpointed, it is cut back to this.
         execSQL("PRAGMA journal_size_limit=$WAL_SIZE_LIMIT")
         execSQL("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        // What the player remembered was kept in meta before Profiles (#428), by kind: it becomes the first Profile's,
+        // before an older catalog's meta is cleared below.
+        execSQL(PROFILE_TABLES.toMap().getValue("remembered_track").format("remembered_track"))
+        execSQL(
+            "INSERT OR IGNORE INTO remembered_track SELECT $FIRST_PROFILE, substr(key, ${REMEMBERED_TRACK.length + 1}), value FROM meta " +
+                "WHERE substr(key, 1, ${REMEMBERED_TRACK.length}) = '$REMEMBERED_TRACK'",
+        )
+        execSQL("DELETE FROM meta WHERE substr(key, 1, ${REMEMBERED_TRACK.length}) = '$REMEMBERED_TRACK'")
         if (prepare("PRAGMA user_version").use { it.step(); it.getLong(0) } < SCHEMA_VERSION) {
             // A catalog stored in an older shape is dropped; the next Sync stores it again.
             execSQL("DROP TABLE IF EXISTS movie_listing")
@@ -85,10 +97,27 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
                 execSQL("ALTER TABLE favourite RENAME TO $LEGACY_FAVOURITES")
             }
         }
-        // The Channels the Viewer saved, by Channel key, so they outlive Syncs.
-        execSQL("CREATE TABLE IF NOT EXISTS favourite (key TEXT PRIMARY KEY, added_at INTEGER NOT NULL)")
-        // The Feeds the Viewer marked "Not this game" on this device (#255), by Game (League and schedule id) and Channel key, so they outlive Syncs.
-        execSQL("CREATE TABLE IF NOT EXISTS not_this_game (game_key TEXT NOT NULL, channel_key TEXT NOT NULL, dropped_at INTEGER NOT NULL, PRIMARY KEY (game_key, channel_key))")
+        // The household's Profiles (#428): the first is made with the table, and holds what the device kept before there were Profiles.
+        // The current one is the one used last, so a change to how meta is kept never moves the TV to another.
+        execSQL(
+            "CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, kids INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
+                "used_at INTEGER NOT NULL)",
+        )
+        execSQL("BEGIN")
+        // Each Viewer's table is kept per Profile. One kept before Profiles is rebuilt with its rows as the first Profile's.
+        for ((table, shape) in PROFILE_TABLES) {
+            val exists = prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'").use { it.step(); it.getLong(0) } > 0
+            val kept = exists && prepare("SELECT count(*) FROM pragma_table_info('$table') WHERE name = 'profile'").use { it.step(); it.getLong(0) } == 0L
+            if (kept) execSQL("ALTER TABLE $table RENAME TO ${table}_before_profiles")
+            execSQL(shape.format(table))
+            if (kept) {
+                execSQL("INSERT INTO $table SELECT $FIRST_PROFILE, * FROM ${table}_before_profiles")
+                execSQL("DROP TABLE ${table}_before_profiles")
+            }
+        }
+        val now = System.currentTimeMillis()
+        execSQL("INSERT INTO profile SELECT $FIRST_PROFILE, NULL, 0, $now, $now WHERE NOT EXISTS (SELECT 1 FROM profile)")
+        execSQL("COMMIT")
         // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
         execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
         // Keyed by Title, not by Listing, so it outlives Syncs and catalog shape changes.
@@ -118,18 +147,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
             "CREATE TABLE IF NOT EXISTS episode (listing_id INTEGER NOT NULL, id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
                 "title TEXT NOT NULL, added INTEGER, width INTEGER, height INTEGER, audio_language TEXT, container TEXT, PRIMARY KEY (listing_id, id))",
         )
-        // Where the Viewer stopped in a Title, in milliseconds, out of its `duration` when the player knew it.
-        execSQL(
-            "CREATE TABLE IF NOT EXISTS progress (title_key TEXT PRIMARY KEY, position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, " +
-                "updated_at INTEGER NOT NULL)",
-        )
-        // The same for each Episode of a Show, by season and episode number.
-        execSQL(
-            "CREATE TABLE IF NOT EXISTS episode_progress (title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, position INTEGER NOT NULL, " +
-                "duration INTEGER, watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (title_key, season, number))",
-        )
-        // What the Viewer chose while a Title played (TitleChoices as JSON), kept by Title so it outlives Syncs and carries to a Show's next Episode (#291).
-        execSQL("CREATE TABLE IF NOT EXISTS title_choices (title_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at INTEGER NOT NULL)")
     }
     private val reader: SQLiteConnection = driver.open(path)
 
@@ -466,7 +483,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         // an id the Provider no longer lists can't be told, and goes.
         if (tableExists(LEGACY_FAVOURITES)) {
             writer.execSQL(
-                "INSERT OR IGNORE INTO favourite (key, added_at) SELECT c.channel_key, min(l.added_at) FROM $LEGACY_FAVOURITES l " +
+                "INSERT OR IGNORE INTO favourite (profile, key, added_at) SELECT $FIRST_PROFILE, c.channel_key, min(l.added_at) FROM $LEGACY_FAVOURITES l " +
                     "JOIN channel c ON c.id = l.id GROUP BY c.channel_key ORDER BY 2",
             )
             writer.execSQL("DROP TABLE $LEGACY_FAVOURITES")
@@ -666,11 +683,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * with the variants that are on: every one but Event channels whose Game started before
      * [startedBefore]. A Channel with none on is left out.
      */
-    fun channels(leadIds: Collection<Long>, startedBefore: Instant): Map<Long, Channel> = synchronized(reader) {
+    fun channels(profile: Long, leadIds: Collection<Long>, startedBefore: Instant): Map<Long, Channel> = synchronized(reader) {
         if (leadIds.isEmpty()) return emptyMap()
         leadIds.chunked(MAX_BOUND).flatMap { chunk ->
             reader.prepare(
-                "SELECT lead.id, $CHANNEL_COLUMNS FROM channel lead JOIN channel c ON c.channel_key = lead.channel_key LEFT JOIN favourite f ON f.key = c.channel_key " +
+                "SELECT lead.id, $CHANNEL_COLUMNS FROM channel lead JOIN channel c ON c.channel_key = lead.channel_key LEFT JOIN favourite f ON f.profile = $profile AND f.key = c.channel_key " +
                     "WHERE lead.id IN (${chunk.joinToString(",") { "?" }}) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY lead.id, c.position",
             ).use {
                 chunk.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
@@ -681,10 +698,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** The Viewer's Favourites that are on (as [channels] tells), in the order they were added. */
-    fun favourites(startedBefore: Instant): List<Channel> = synchronized(reader) {
+    fun favourites(profile: Long, startedBefore: Instant): List<Channel> = synchronized(reader) {
         reader.prepare(
             "SELECT $CHANNEL_COLUMNS FROM favourite f JOIN channel c ON c.channel_key = f.key " +
-                "WHERE c.event_start IS NULL OR c.event_start >= ? ORDER BY f.added_at, f.key, c.position",
+                "WHERE f.profile = $profile AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY f.added_at, f.key, c.position",
         ).use {
             it.bindLong(1, startedBefore.epochSecond)
             buildList { while (it.step()) add(it.variantRow(0)) }
@@ -697,9 +714,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * [channels] merges them, in the Provider's order, each with the start its name gives (null when
      * only marked). A Sync keeps a finished Event channel's rows until the next, so the caller bounds the window.
      */
-    fun eventChannels(from: Instant, to: Instant): List<Pair<Channel, Instant?>> = synchronized(reader) {
+    fun eventChannels(profile: Long, from: Instant, to: Instant): List<Pair<Channel, Instant?>> = synchronized(reader) {
         reader.prepare(
-            "SELECT $CHANNEL_COLUMNS, c.event_start FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+            "SELECT $CHANNEL_COLUMNS, c.event_start FROM channel c LEFT JOIN favourite f ON f.profile = $profile AND f.key = c.channel_key " +
                 "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE (event_start >= ? AND event_start < ?) OR name LIKE 'Live%|%' OR name LIKE 'Next%|%') " +
                 "ORDER BY c.position",
         ).use {
@@ -719,11 +736,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * and spaces apart ("ESPN2" is "ESPN 2"), by that name lower-cased with its spaces dropped: a
      * Broadcaster's Channels, in every country. Merged as [channels] merges them, in the Provider's order.
      */
-    fun channelsNamed(names: Collection<String>): Map<String, List<Channel>> = synchronized(reader) {
+    fun channelsNamed(profile: Long, names: Collection<String>): Map<String, List<Channel>> = synchronized(reader) {
         val asked = names.map(::channelKey).distinct()
         if (asked.isEmpty()) return emptyMap()
         reader.prepare(
-            "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+            "SELECT $CHANNEL_COLUMNS FROM channel c LEFT JOIN favourite f ON f.profile = $profile AND f.key = c.channel_key " +
                 "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE lead = 1 AND replace(lower(channel_name), ' ', '') IN (${asked.joinToString(",") { "?" }})) " +
                 "ORDER BY c.position",
         ).use {
@@ -736,11 +753,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * The Feeds marked "Not this game" among the Games keyed [gameKeys] ([GameFeeds.key]), each as
      * [GameFeeds.droppedKey] forms it.
      */
-    fun droppedFeeds(gameKeys: Collection<String>): Set<String> = synchronized(reader) {
+    fun droppedFeeds(profile: Long, gameKeys: Collection<String>): Set<String> = synchronized(reader) {
         if (gameKeys.isEmpty()) return emptySet()
         val found = HashSet<String>()
         gameKeys.distinct().chunked(MAX_BOUND).forEach { chunk ->
-            reader.prepare("SELECT game_key, channel_key FROM not_this_game WHERE game_key IN (${chunk.joinToString(",") { "?" }})").use {
+            reader.prepare("SELECT game_key, channel_key FROM not_this_game WHERE profile = $profile AND game_key IN (${chunk.joinToString(",") { "?" }})").use {
                 chunk.forEachIndexed { i, key -> it.bindText(i + 1, key) }
                 while (it.step()) found += GameFeeds.droppedKey(it.getText(0), it.getText(1))
             }
@@ -753,12 +770,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * forgets the marks made before [forgetBefore]: their Games are long over, and a schedule id is
      * never reused, so they would only grow.
      */
-    fun dropFeed(gameKey: String, channelKey: String, at: Instant, forgetBefore: Instant) = synchronized(writer) {
+    fun dropFeed(profile: Long, gameKey: String, channelKey: String, at: Instant, forgetBefore: Instant) = synchronized(writer) {
         writer.prepare("DELETE FROM not_this_game WHERE dropped_at < ?").use {
             it.bindLong(1, forgetBefore.toEpochMilli())
             it.step()
         }
-        writer.prepare("INSERT OR REPLACE INTO not_this_game VALUES (?, ?, ?)").use {
+        writer.prepare("INSERT OR REPLACE INTO not_this_game VALUES ($profile, ?, ?, ?)").use {
             it.bindText(1, gameKey)
             it.bindText(2, channelKey)
             it.bindLong(3, at.toEpochMilli())
@@ -768,15 +785,15 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** The keys of the Viewer's Favourites, whether or not the Provider still has them. */
-    fun favouriteKeys(): Set<String> = synchronized(reader) {
-        reader.prepare("SELECT key FROM favourite").use { buildSet { while (it.step()) add(it.getText(0)) } }
+    fun favouriteKeys(profile: Long): Set<String> = synchronized(reader) {
+        reader.prepare("SELECT key FROM favourite WHERE profile = $profile").use { buildSet { while (it.step()) add(it.getText(0)) } }
     }
 
     /** Saves the Channel keyed [key] as a Favourite at [at], or forgets it. */
-    fun setFavourite(key: String, favourite: Boolean, at: Instant) = synchronized(writer) {
+    fun setFavourite(profile: Long, key: String, favourite: Boolean, at: Instant) = synchronized(writer) {
         // Two added within a millisecond still keep their order.
-        val insert = "INSERT OR IGNORE INTO favourite VALUES (?, max(?, (SELECT coalesce(max(added_at), 0) + 1 FROM favourite)))"
-        writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE key = ?").use {
+        val insert = "INSERT OR IGNORE INTO favourite VALUES ($profile, ?, max(?, (SELECT coalesce(max(added_at), 0) + 1 FROM favourite WHERE profile = $profile)))"
+        writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE profile = $profile AND key = ?").use {
             it.bindText(1, key)
             if (favourite) it.bindLong(2, at.toEpochMilli())
             it.step()
@@ -875,12 +892,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
      * each once; as in [channels], Event channels whose Game started before [startedBefore] are
      * left out, and a Channel with no variant on with them.
      */
-    fun categoryChannels(categoryIds: Collection<String>, startedBefore: Instant): List<Channel> = synchronized(reader) {
+    fun categoryChannels(profile: Long, categoryIds: Collection<String>, startedBefore: Instant): List<Channel> = synchronized(reader) {
         if (categoryIds.isEmpty()) return emptyList()
         val ids = categoryIds.toList()
         val marks = ids.joinToString(",") { "?" }
         reader.prepare(
-            "SELECT $CHANNEL_COLUMNS, c.position FROM channel c LEFT JOIN favourite f ON f.key = c.channel_key " +
+            "SELECT $CHANNEL_COLUMNS, c.position FROM channel c LEFT JOIN favourite f ON f.profile = $profile AND f.key = c.channel_key " +
                 "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE category_id IN ($marks)) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY c.position",
         ).use {
             ids.forEachIndexed { i, id -> it.bindText(i + 1, id) }
@@ -1059,11 +1076,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** What the Viewer last picked in the player, by kind (`audio`, `subtitles`): a language, or what turning subtitles off is kept as. */
-    fun rememberedTrack(kind: String): String? = meta(REMEMBERED_TRACK + kind)
+    fun rememberedTrack(profile: Long, kind: String): String? = synchronized(reader) {
+        reader.prepare("SELECT value FROM remembered_track WHERE profile = $profile AND kind = ?").use {
+            it.bindText(1, kind)
+            if (it.step()) it.getText(0) else null
+        }
+    }
 
-    fun rememberTrack(kind: String, value: String) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-            it.bindText(1, REMEMBERED_TRACK + kind)
+    fun rememberTrack(profile: Long, kind: String, value: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO remembered_track VALUES ($profile, ?, ?)").use {
+            it.bindText(1, kind)
             it.bindText(2, value)
             it.step()
         }
@@ -1333,8 +1355,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** Records that the Viewer stopped at [position] of [duration] in [id] at [at], or finished it when [watched]. */
-    fun saveProgress(id: TitleId, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?)").use {
+    fun saveProgress(profile: Long, id: TitleId, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO progress VALUES ($profile, ?, ?, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindLong(2, position)
             if (duration == null) it.bindNull(3) else it.bindLong(3, duration)
@@ -1346,8 +1368,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** Records that the Viewer stopped at [position] of [duration] in Show [id]'s [episode] at [at], or finished it when [watched]. */
-    fun saveEpisodeProgress(id: TitleId, episode: EpisodeNumber, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO episode_progress VALUES (?, ?, ?, ?, ?, ?, ?)").use {
+    fun saveEpisodeProgress(profile: Long, id: TitleId, episode: EpisodeNumber, position: Long, duration: Long?, watched: Boolean, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO episode_progress VALUES ($profile, ?, ?, ?, ?, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindLong(2, episode.season.toLong())
             it.bindLong(3, episode.number.toLong())
@@ -1361,8 +1383,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** Where the Viewer stopped in each Episode of Show [id] they played, last played first. */
-    fun episodeProgress(id: TitleId): List<StoredEpisodeProgress> = synchronized(reader) {
-        reader.prepare("SELECT season, number, position, duration, watched FROM episode_progress WHERE title_key = ? ORDER BY updated_at DESC").use {
+    fun episodeProgress(profile: Long, id: TitleId): List<StoredEpisodeProgress> = synchronized(reader) {
+        reader.prepare("SELECT season, number, position, duration, watched FROM episode_progress WHERE profile = $profile AND title_key = ? ORDER BY updated_at DESC").use {
             it.bindText(1, key(id))
             buildList {
                 while (it.step()) add(StoredEpisodeProgress(EpisodeNumber(it.getInt(0), it.getInt(1)), it.getLong(2), if (it.isNull(3)) null else it.getLong(3), it.getLong(4) != 0L))
@@ -1371,8 +1393,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** Keeps what the Viewer chose while [id] played ([body]: TitleChoices as JSON). */
-    fun saveTitleChoices(id: TitleId, body: String, at: Instant) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO title_choices VALUES (?, ?, ?)").use {
+    fun saveTitleChoices(profile: Long, id: TitleId, body: String, at: Instant) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO title_choices VALUES ($profile, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindText(2, body)
             it.bindLong(3, at.toEpochMilli())
@@ -1382,16 +1404,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
     }
 
     /** What the Viewer chose while [id] last played, as JSON; null when they never chose anything in it. */
-    fun titleChoices(id: TitleId): String? = synchronized(reader) {
-        reader.prepare("SELECT body FROM title_choices WHERE title_key = ?").use {
+    fun titleChoices(profile: Long, id: TitleId): String? = synchronized(reader) {
+        reader.prepare("SELECT body FROM title_choices WHERE profile = $profile AND title_key = ?").use {
             it.bindText(1, key(id))
             if (it.step()) it.getText(0) else null
         }
     }
 
     /** Forgets where the Viewer stopped in [id], and whether they finished it. */
-    fun forgetProgress(id: TitleId) = synchronized(writer) {
-        writer.prepare("DELETE FROM progress WHERE title_key = ?").use {
+    fun forgetProgress(profile: Long, id: TitleId) = synchronized(writer) {
+        writer.prepare("DELETE FROM progress WHERE profile = $profile AND title_key = ?").use {
             it.bindText(1, key(id))
             it.step()
         }
@@ -1434,16 +1456,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         }
     }
     /** Where the Viewer stopped in [id], or null when they never played it. */
-    fun progress(id: TitleId): StoredProgress? = synchronized(reader) {
-        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE title_key = ?").use {
+    fun progress(profile: Long, id: TitleId): StoredProgress? = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE profile = $profile AND title_key = ?").use {
             it.bindText(1, key(id))
             if (it.step()) it.progress() else null
         }
     }
 
     /** The Titles the Viewer stopped in without finishing, last played first, at most [limit]. */
-    fun inProgress(limit: Int): List<StoredProgress> = synchronized(reader) {
-        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE watched = 0 ORDER BY updated_at DESC LIMIT ?").use {
+    fun inProgress(profile: Long, limit: Int): List<StoredProgress> = synchronized(reader) {
+        reader.prepare("SELECT title_key, position, duration, watched FROM progress WHERE profile = $profile AND watched = 0 ORDER BY updated_at DESC LIMIT ?").use {
             it.bindLong(1, limit.toLong())
             buildList { while (it.step()) add(it.progress()) }
         }
@@ -1453,13 +1475,58 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         StoredProgress(titleId(getText(0)), getLong(1), if (isNull(2)) null else getLong(2), getLong(3) != 0L)
 
     /** When the Viewer last played each Title in [inProgress] and each Show they played an Episode of, last played first, at most [limit]. */
-    fun lastPlayed(limit: Int): List<Pair<TitleId, Instant>> = synchronized(reader) {
+    fun lastPlayed(profile: Long, limit: Int): List<Pair<TitleId, Instant>> = synchronized(reader) {
         reader.prepare(
-            "SELECT title_key, updated_at FROM progress WHERE watched = 0 " +
-                "UNION ALL SELECT title_key, MAX(updated_at) FROM episode_progress GROUP BY title_key ORDER BY 2 DESC LIMIT ?",
+            "SELECT title_key, updated_at FROM progress WHERE profile = $profile AND watched = 0 " +
+                "UNION ALL SELECT title_key, MAX(updated_at) FROM episode_progress WHERE profile = $profile GROUP BY title_key ORDER BY 2 DESC LIMIT ?",
         ).use {
             it.bindLong(1, limit.toLong())
             buildList { while (it.step()) add(titleId(it.getText(0)) to Instant.ofEpochMilli(it.getLong(1))) }
+        }
+    }
+
+    /** The household's Profiles, in the order they were made. */
+    fun profiles(): List<StoredProfile> = synchronized(reader) {
+        reader.prepare("SELECT id, name, kids, used_at FROM profile ORDER BY id").use {
+            buildList { while (it.step()) add(StoredProfile(it.getLong(0), if (it.isNull(1)) null else it.getText(1), it.getLong(2) != 0L, it.getLong(3))) }
+        }
+    }
+
+    /** Makes a Profile named [name] at [at], not yet used, and gives its id: never one a deleted Profile had, so nothing kept for that one comes back. */
+    fun addProfile(name: String, kids: Boolean, at: Instant): Long = synchronized(writer) {
+        writer.prepare("INSERT INTO profile (name, kids, created_at, used_at) VALUES (?, ?, ?, 0)").use {
+            it.bindText(1, name)
+            it.bindLong(2, if (kids) 1 else 0)
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        writer.prepare("SELECT last_insert_rowid()").use { it.step(); it.getLong(0) }
+    }
+
+    fun renameProfile(profile: Long, name: String) = synchronized(writer) {
+        writer.prepare("UPDATE profile SET name = ? WHERE id = $profile").use {
+            it.bindText(1, name)
+            it.step()
+        }
+        Unit
+    }
+
+    /** Records that the device is on [profile] from [at]: the one used last is the current one. */
+    fun useProfile(profile: Long, at: Instant) = synchronized(writer) {
+        // Never before the one used last, so a clock set back doesn't move the TV back to it.
+        writer.execSQL("UPDATE profile SET used_at = max(${at.toEpochMilli()}, (SELECT max(used_at) + 1 FROM profile)) WHERE id = $profile")
+    }
+
+    /** Deletes [profile] and everything kept for it, at once: its history, Favourites, "Not this game" marks and player choices. */
+    fun deleteProfile(profile: Long) = synchronized(writer) {
+        writer.execSQL("BEGIN")
+        try {
+            PROFILE_TABLES.forEach { (table, _) -> writer.execSQL("DELETE FROM $table WHERE profile = $profile") }
+            writer.execSQL("DELETE FROM profile WHERE id = $profile")
+            writer.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            if (writer.inTransaction()) writer.execSQL("ROLLBACK")
+            throw e
         }
     }
 
@@ -1531,6 +1598,34 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore {
         const val REPLAY_COLUMNS = "id, name, category, added, away, home, date, year"
         /** A variant's row as [variantRow] reads it: its Channel, whether it's a Favourite, then the variant. */
         const val CHANNEL_COLUMNS = "c.channel_key, c.channel_name, c.country, f.key, c.id, c.image, c.name, c.quality, c.hevc, c.category_id, c.guide_id"
+        /** The Profile that holds what the device kept before there were Profiles (#428). */
+        const val FIRST_PROFILE = Profile.FIRST_ID
+        /**
+         * Each Viewer's tables, kept per Profile, by name and shape (`%s` for the name), the Profile
+         * first so a table kept before Profiles copies across with it put in front of its columns.
+         */
+        val PROFILE_TABLES = listOf(
+            // The Channels the Viewer saved, by Channel key, so they outlive Syncs.
+            "favourite" to "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, key TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY (profile, key))",
+            // The Feeds the Viewer marked "Not this game" (#255), by Game (League and schedule id) and Channel key, so they outlive Syncs.
+            "not_this_game" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, game_key TEXT NOT NULL, channel_key TEXT NOT NULL, dropped_at INTEGER NOT NULL, " +
+                "PRIMARY KEY (profile, game_key, channel_key))",
+            // Where the Viewer stopped in a Title, in milliseconds, out of its `duration` when the player knew it.
+            "progress" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, position INTEGER NOT NULL, duration INTEGER, " +
+                "watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (profile, title_key))",
+            // The same for each Episode of a Show, by season and episode number.
+            "episode_progress" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, " +
+                "position INTEGER NOT NULL, duration INTEGER, watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (profile, title_key, season, number))",
+            // What the Viewer chose while a Title played (TitleChoices as JSON), kept by Title so it outlives Syncs and carries to a Show's next Episode (#291).
+            "title_choices" to
+                "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, title_key TEXT NOT NULL, body TEXT NOT NULL, updated_at INTEGER NOT NULL, " +
+                "PRIMARY KEY (profile, title_key))",
+            // What the Viewer last picked in the player, by kind (`audio`, `subtitles`).
+            "remembered_track" to "CREATE TABLE IF NOT EXISTS %s (profile INTEGER NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (profile, kind))",
+        )
         /** Where Favourites kept by stream id wait for the Sync that carries them over. */
         const val LEGACY_FAVOURITES = "favourite_by_stream"
         /** SQLite's limit on bound parameters in one statement is 999 in older builds. */
@@ -1610,6 +1705,9 @@ internal class StoredListing(val id: Long, val name: String, val category: Strin
 internal class StoredSuspect(val kind: TitleKind, val name: String, val category: String, val providerTmdbId: Long?)
 
 /** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
+/** A Profile as kept: [name] is null until the first Profile is renamed; [usedAt] is 0 for one never used. */
+internal class StoredProfile(val id: Long, val name: String?, val kids: Boolean, val usedAt: Long)
+
 internal class StoredProgress(val id: TitleId, val position: Long, val duration: Long?, val watched: Boolean)
 
 /** Where the Viewer stopped in a Show's [episode], as [StoredProgress] is for a Title. */
