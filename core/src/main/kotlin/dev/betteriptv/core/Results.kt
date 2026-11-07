@@ -24,9 +24,9 @@ sealed interface TitleId {
 }
 
 /**
- * A Title's card. [name], [year] and the [image] (a poster URL) come from TMDB in the App language,
- * falling back to English. Without TMDB metadata (an Unmatched Title, or the cloud out of reach),
- * they come from the [best] Version's Listing name and the Provider's image. Home's cards also carry
+ * A Title's card. [name] and [year] come from its Listing in the App language, else the English
+ * one, else the [best] Version's; the [image] is the poster URL most of its Listings share (ADR
+ * 0014), null when none has one, and the card then shows the name on glass. Home's cards also carry
  * [about], what the info area under a focused card shows; Search's, the Title's Top 10 [rank].
  */
 data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null, val rank: ChartRank? = null)
@@ -41,16 +41,11 @@ data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
  * What the info under a focused Home row tells of a Title, from what the device already holds, so
  * focus costs no Provider call (ADR 0014): its [genres], as the Prefix table maps the Provider's
  * Category and genre field, named in the App language, and the Provider's [rating] on a 10 scale
- * (null when it gives none or zero). The rest is TMDB's card art, until the look leaves it (#474):
- * the [logo] sized for a card and a [textlessPoster] to lay it over, only with a logo.
+ * (null when it gives none or zero).
  */
 data class TitleAbout(
     val genres: List<String> = emptyList(),
     val rating: Double? = null,
-    val logo: String? = null,
-    val textlessPoster: String? = null,
-    /** A backdrop with no text on it, sized for a card: what the card grows into once focused (#216). */
-    val textlessBackdrop: String? = null,
 )
 
 /** A screen that opens on a featured Title ([Library.featured]): Home, or the Movies or Shows tab. */

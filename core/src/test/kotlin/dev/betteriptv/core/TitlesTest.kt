@@ -106,7 +106,7 @@ class TitlesTest {
         assertTrue(cards().single { it.name == "365 Days: This Day" }.id is TitleId.Unmatched)
     }
 
-    @Test fun `a card shows the best Version's cleaned name in the Viewer's language, newest Title first`() = runBlocking {
+    @Test fun `a card shows the cleaned name of its Listing in the App language, newest Title first`() = runBlocking {
         syncListings(
             Listing("EN - Newest (2026)", "5"),
             Listing("FR - Le Parrain (1972)", "238"),
@@ -120,9 +120,11 @@ class TitlesTest {
             listOf("Newest" to 2026, "The Godfather" to 1972, "Older" to 2020),
             cards(english).map { it.name to it.year },
         )
-        assertEquals("Le Parrain", cards(listOf("fr")).single { it.id == godfather }.name)
-        // No Version in the Viewer's language: the best Version overall.
-        assertEquals("Der Pate", cards(listOf("it")).single { it.id == godfather }.name)
+        // Named in the App language (#474), whatever the Content languages.
+        assertEquals("Le Parrain", library.titles(0, 1000, english, appLanguage = "fr").single { it.id == godfather }.name)
+        assertEquals("The Godfather", cards(listOf("fr")).single { it.id == godfather }.name)
+        // No Listing in the App language: the English one's name.
+        assertEquals("The Godfather", library.titles(0, 1000, listOf("de"), appLanguage = "it").single { it.id == godfather }.name)
         cards(english).single { it.id == godfather }.best.let {
             assertEquals(Known(Quality.UHD, Provenance.Likely), it.quality)
             assertEquals(Known("en", Provenance.Likely), it.language)

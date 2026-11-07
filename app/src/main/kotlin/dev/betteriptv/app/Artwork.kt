@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.theme.Motion
 import coil3.Extras
 import coil3.PlatformContext
@@ -69,14 +68,6 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? {
 /** The request for the artwork at [url]; a [card]'s waits to settle first ([SettleFirst]). Its memory cache key is the url alone. */
 private fun artworkRequest(context: PlatformContext, url: String, card: Boolean): ImageRequest =
     ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply { if (card) extras[SettleFirst.Key] = true }.build()
-
-/**
- * Loads the [backdrop] a poster card grows into ([GrownArtwork]) into the memory cache, so the card
- * grows straight into its art when it is focused next, instead of growing as glass and fading it
- * in. It is the image [rememberArtwork] asks for, at the original size its painter loads it at, so
- * the grown card finds it there on its first grown frame.
- */
-fun preloadGrownBackdrop(context: PlatformContext, backdrop: String) = preloadArtwork(context, backdrop)
 
 /**
  * Loads the artwork at [url] into the memory cache, as [rememberArtwork] asks for it (at the
@@ -156,18 +147,3 @@ class SettleFirst(private val inMemory: (data: String) -> Boolean, private val s
     }
 }
 
-/**
- * What a focused poster card grows into ([TitleCard]'s `grown`): its Title's textless backdrop,
- * cropped to the card, with the logo at its bottom left as on a still, or the [name] in title type
- * when TMDB has no logo. The backdrop is loaded while the card is grown, like any card's artwork
- * once focus has rested on it a moment, unless it is in memory already: the rows load the backdrops
- * of the cards beside the one focus rests on ahead ([preloadGrownBackdrop]). Until it arrives the
- * glass and the name show, and it fades in.
- */
-@Composable
-fun BoxScope.GrownArtwork(art: GrownArt, name: String) {
-    val backdrop = rememberArtwork(art.backdrop, card = true)
-    if (backdrop != null) Box(Modifier.matchParentSize().paint(backdrop, contentScale = ContentScale.Crop).semantics { contentDescription = name })
-    val logo = (art as? GrownArt.WithLogo)?.logo
-    CardLogo(rememberArtwork(logo, card = true), logo != null, name, wide = true)
-}

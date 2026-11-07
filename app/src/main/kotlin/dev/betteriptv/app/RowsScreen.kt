@@ -49,7 +49,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import dev.betteriptv.app.ui.components.CardInfo
-import dev.betteriptv.app.ui.components.CardLogo
 import dev.betteriptv.app.ui.components.GameCard
 import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.components.RowHeading
@@ -174,28 +173,6 @@ private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
 }
 
 /**
- * The textless backdrops the cards on either side of [card] grow into, in [rows]: what the next Left
- * or Right grows into. On a rail that [loops] the first card's left is the last card, and the last
- * card's right is the first. From the hero ([HERO_ROW]), the first row's first card, where Down
- * lands. None for a card that doesn't grow (Continue watching's stills, Channels, Games) or a
- * neighbour with no textless backdrop.
- */
-internal fun neighbourBackdrops(rows: List<HomeRow>, card: RowCard, loops: (HomeRow) -> Boolean): List<String> {
-    if (card.row == HERO_ROW) {
-        // The first Down from the hero lands on the first row's first card (#398).
-        val first = rows.firstOrNull()?.takeUnless { it is HomeRow.ContinueWatching } ?: return emptyList()
-        return listOfNotNull(first.titles.firstOrNull()?.let { cardArt(it.image, it.about, textlessPosters = true).grown?.backdrop })
-    }
-    val row = rows.firstOrNull { it.key == card.row } ?: return emptyList()
-    if (row is HomeRow.ContinueWatching) return emptyList()
-    val titles = row.titles
-    val at = titles.indexOfFirst { it.id.toString() == card.key }
-    if (at < 0) return emptyList()
-    val around = if (loops(row)) listOf(at - 1, at + 1).map { it.mod(titles.size) } else listOf(at - 1, at + 1).filter { it in titles.indices }
-    return around.filter { it != at }.distinct().mapNotNull { titles[it].let { title -> cardArt(title.image, title.about, textlessPosters = true).grown?.backdrop } }
-}
-
-/**
  * What a screen of rows (Home, Movies, Shows) keeps while another screen shows: its scroll position
  * and each rail's, the rows read last, which show until they are read again so coming back doesn't
  * blank the screen, the card the info under its rail tells about, the one focused last, and the row
@@ -246,8 +223,7 @@ class RowsState {
  * when given, shows in place of the rows; [empty] says why there are none. Until the rows are first
  * read, the screen is bare under its tabs for the page arrival time, then waits with the pulsing dot
  * ([WaitingDot]), which crossfades out as they arrive.
- * A Title's card opens it ([onOpen]), with the textless backdrop it had grown into, if it had,
- * so the Title page can open on that picture; a Channel's watches it ([onWatch]), and its menu key adds or
+ * A Title's card opens it ([onOpen]); a Channel's watches it ([onWatch]), and its menu key adds or
  * removes the Favourite; a Game's opens its page ([onOpenGame]), unless it has no Feed; a Replay's
  * (Live's Replays row) plays it ([onPlayReplay]); a country's (Live's Channels row, named in the
  * [appLanguage]) opens its Channels screen ([onOpenCountry]). With [feature], the screen opens on the
@@ -478,19 +454,6 @@ internal fun RowsLayout(
             if (row == HERO_ROW) 0 else state.rows?.indexOfFirst { it.key == row }?.takeIf { it >= 0 }?.plus(heroItems) ?: -1
         }
     }
-    // Once focus rests on a card, the backdrops its neighbours grow into are loaded into memory, so
-    // the next Left or Right grows straight into its art. Nothing while presses come faster than
-    // the settle: each press starts the wait again. Read in a flow, so a press composes nothing.
-    LaunchedEffect(state) {
-        snapshotFlow { state.focused }.collectLatest { card ->
-            if (card == null) return@collectLatest
-            delay(SETTLE_MILLIS)
-            val rows = state.rows ?: return@collectLatest
-            val backdrops = neighbourBackdrops(rows, card) { row -> RailLoop(row.keys.size, seen.posters, row.ranked).loops }
-            backdrops.forEach { preloadGrownBackdrop(context, it) }
-        }
-    }
-
     LaunchedEffect(focusedItem) {
         if (focusedItem < 0) return@LaunchedEffect
         // Every row keeps the info's slot, so the info moves under the focused row as it slides up,
@@ -636,28 +599,18 @@ internal fun RowsLayout(
                                     val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                                     // The info under the rail shows the badges, so the card only counts as on screen.
                                     onScreen(title.id)
-                                    val logo = title.about?.logo
-                                    // A poster has its name printed on it, so the logo goes only over a textless one;
-                                    // focused, it grows into its textless backdrop (#216).
-                                    val art = remember(title) { cardArt(title.image, title.about, textlessPosters = true) }
-                                    val grown = art.grown
                                     val poster = @Composable {
+                                        // A poster carries its printed title, so nothing is laid over it (#474).
                                         TitleCard(
-                                            image = rememberArtwork(if (wide) resume?.still ?: title.image else art.poster, card = true),
+                                            image = rememberArtwork(resume?.still.takeIf { wide } ?: title.image, card = true),
                                             name = title.name,
                                             badges = emptyList(),
-                                            onClick = { onOpen(card, title.id, grown?.backdrop.takeIf { !wide }) },
+                                            onClick = { onOpen(card, title.id, null) },
                                             modifier = ends,
                                             wide = wide,
                                             progress = resume?.progress,
                                             named = false,
                                             onFocus = onFocus,
-                                            art = if (wide || art.posterLogo != null) {
-                                                { CardLogo(rememberArtwork(logo, card = true), logo != null, title.name, wide) }
-                                            } else null,
-                                            grown = if (!wide && grown != null) {
-                                                { GrownArtwork(grown, title.name) }
-                                            } else null,
                                         )
                                     }
                                     // A Chart's Titles are ranked 1…n in order.

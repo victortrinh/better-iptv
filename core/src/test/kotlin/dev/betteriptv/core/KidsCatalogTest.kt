@@ -54,11 +54,11 @@ class KidsCatalogTest {
         }
     }
 
-    private fun tmdb(tmdbId: Long, name: String, kind: String = "movie", genres: List<String> = emptyList(), hero: Boolean = false) =
+    private fun tmdb(tmdbId: Long, name: String, kind: String = "movie", popularity: Double = 10.0, genres: List<String> = emptyList(), hero: Boolean = false) =
         cloud.title(
             "en",
             tmdbTitle(
-                tmdbId, name, kind = kind, genres = genres, backdropPath = "/still-$tmdbId.jpg",
+                tmdbId, name, kind = kind, popularity = popularity, genres = genres, backdropPath = "/still-$tmdbId.jpg",
                 textlessBackdropPath = "/textless-$tmdbId.jpg".takeIf { hero }, logoPath = "/logo-$tmdbId.png".takeIf { hero },
             ),
         )
@@ -109,21 +109,19 @@ class KidsCatalogTest {
         assertEquals(listOf(movie(2)), library.kidsCatalog().getValue(TitleKind.Movie))
     }
 
-    @Test fun `TMDB's Animation and Family genres neither add to the Kids catalog nor make its genre rows`() = runBlocking {
+    @Test fun `TMDB's Animation and Family genres add to the Kids catalog while TMDB is there`() = runBlocking {
         serveMovies(*(1L..6L).map { Filed("EN - Film $it (2025)", it, "EN - MOVIES") }.toTypedArray(), Filed("EN - Kid (2025)", 7, "EN - KIDS"))
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         cloud.genre(TitleKind.Movie, "Animation", 1, 2, 999)
         cloud.genre(TitleKind.Movie, "Family", 3)
         cloud.genre(TitleKind.Movie, "Drama", 4, 5)
-        (1L..7L).forEach { tmdb(it, "Film $it", genres = listOf("Animation")) }
+        (1L..7L).forEach { tmdb(it, "Film $it") }
         val library = library()
         library.sync()
         onKidsProfile(library)
 
-        val rows = library.tabRows(TitleKind.Movie, english, "en")
-        assertTrue(rows.none { it is HomeRow.Genre })
-        val shown = rows.flatMap { row ->
+        val shown = library.tabRows(TitleKind.Movie, english, "en").flatMap { row ->
             when (row) {
                 is HomeRow.NewForKids -> row.titles
                 is HomeRow.ForKids -> row.titles
@@ -131,14 +129,17 @@ class KidsCatalogTest {
                 else -> emptyList()
             }
         }.map { it.id }.toSet()
-        assertEquals(setOf(movie(7)), shown)
+        assertEquals(setOf(movie(1), movie(2), movie(3), movie(7)), shown)
     }
 
     @Test fun `Home on a Kids profile shows Continue watching, New for kids, Movies for kids, Shows for kids, then genre rows, and no Charts`() = runBlocking {
-        // The Kids movies are all Animation by their Category; Family, which every Kids Category is, makes no row.
-        val kidsMovies = (1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS ANIMATION") }
-        serveMovies(*kidsMovies.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - ANIMATION"))
+        val kidsMovies = (1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS") }
+        serveMovies(*kidsMovies.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - MOVIES"))
         serveShows(*(1L..20L).map { Filed("EN - Kid show $it", 200 + it, "EN - KIDS") }.toTypedArray(), Filed("EN - Drama", 300, "EN - SERIES"))
+        (1L..45L).forEach { tmdb(it, "Kid movie $it", popularity = it.toDouble(), genres = listOf("Animation")) }
+        tmdb(100, "Grown-up", popularity = 1000.0)
+        (1L..20L).forEach { tmdb(200 + it, "Kid show $it", kind = "show", popularity = it.toDouble()) }
+        tmdb(300, "Drama", kind = "show", popularity = 1000.0)
         cloud.charts("CA", movies = listOf(100, 1, 2, 3), shows = listOf(300, 201, 202, 203))
         val library = library()
         library.sync()
@@ -164,9 +165,8 @@ class KidsCatalogTest {
         }.map { it.id }
         assertFalse(movie(100) in shown)
         assertFalse(show(300) in shown)
-        // The newest Kids Title leads New for kids, a movie and a show added the same second in turn.
-        assertEquals(listOf("Kid movie 1", "Kid show 1", "Kid movie 2"), rows.filterIsInstance<HomeRow.NewForKids>().single().titles.take(3).map { it.name })
-        assertEquals(listOf("Animation"), rows.filterIsInstance<HomeRow.Genre>().map { it.name })
+        // The most popular of the 40 newest Kids movies leads New for kids.
+        assertEquals("Kid movie 40", rows.filterIsInstance<HomeRow.NewForKids>().single().titles.first().name)
         // A normal profile's rows are unchanged: its Charts are there, and nothing for kids.
         assertTrue(normal.any { it is HomeRow.Chart })
         assertTrue(normal.none { it is HomeRow.NewForKids || it is HomeRow.ForKids })
@@ -175,8 +175,12 @@ class KidsCatalogTest {
     }
 
     @Test fun `the Movies and Shows tabs on a Kids profile show New for kids, the kind for kids, then genre rows, and no Charts`() = runBlocking {
-        serveMovies(*(1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS ANIMATION") }.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - MOVIES"))
-        serveShows(*(1L..45L).map { Filed("EN - Kid show $it", 200 + it, "EN - KIDS ANIMATION") }.toTypedArray())
+        serveMovies(*(1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS") }.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - MOVIES"))
+        serveShows(*(1L..45L).map { Filed("EN - Kid show $it", 200 + it, "EN - KIDS") }.toTypedArray())
+        (1L..45L).forEach {
+            tmdb(it, "Kid movie $it", popularity = it.toDouble(), genres = listOf("Animation"))
+            tmdb(200 + it, "Kid show $it", kind = "show", popularity = it.toDouble(), genres = listOf("Animation"))
+        }
         cloud.charts("CA", movies = listOf(100, 1, 2, 3))
         val library = library()
         library.sync()
@@ -196,7 +200,7 @@ class KidsCatalogTest {
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         tmdb(1, "Kid", hero = true)
-        tmdb(2, "Grown-up", hero = true)
+        tmdb(2, "Grown-up", popularity = 1000.0, hero = true)
         cloud.charts("CA", movies = listOf(2, 1, 3))
         val library = library()
         library.sync()
