@@ -12,9 +12,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.TopTab
 import dev.betteriptv.app.ui.components.TopTabs
+import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
+import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.FeaturedScreen
 import dev.betteriptv.core.FeaturedTitle
@@ -85,7 +88,7 @@ fun HomeScreen(
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Live, Movies and Shows.
     val noChannels = status.channelsAt == null
-    // Once they have, the Title rows' places wait under the rows, captioned, until the Titles land; a failure then shows on Movies and Shows.
+    // Once they have, a caption under the rows says the Titles are coming, until they land; a failure then shows on Movies and Shows.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
@@ -105,7 +108,7 @@ fun HomeScreen(
             { SyncChecklist(status, SyncStep.Channels, onRetry) }
         } else null,
         trailing = if (titlesComing) {
-            { PlaceholderRows(caption) }
+            { Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX, vertical = 12.dp)) }
         } else null,
         feature = { library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region) },
         onPlayFeatured = onPlay,

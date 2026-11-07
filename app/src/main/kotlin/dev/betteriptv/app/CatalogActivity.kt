@@ -1,11 +1,6 @@
 package dev.betteriptv.app
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -32,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -105,14 +101,7 @@ internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier
         if (words == CatalogActivity.UpToDate) {
             Box(Modifier.size(DOT_SIZE).background(Colors.ink, CircleShape))
         } else {
-            val pulse = rememberInfiniteTransition(label = "activity")
-            val dot by pulse.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.3f,
-                animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Reverse),
-                label = "pulse",
-            )
-            Box(Modifier.size(DOT_SIZE).graphicsLayer { this.alpha = dot }.background(Colors.ink, CircleShape))
+            PulsingDot(DOT_SIZE)
         }
         Spacer(Modifier.width(Spacing.s))
         // Glass over artwork: white at 85%, as the inactive tabs, keeps 4.5:1.
@@ -130,7 +119,6 @@ private fun CatalogActivity.label() = when (this) {
 /** Room between the tab capsule and the right margin, with the French "ready" line in it. */
 private val PILL_MAX_WIDTH = 240.dp
 private val DOT_SIZE = 6.dp
-private const val PULSE_MS = 900
 private const val FADE_MS = 300
 private const val APPEAR_AFTER = 1_000L
 private const val UP_TO_DATE_FOR = 3_000L

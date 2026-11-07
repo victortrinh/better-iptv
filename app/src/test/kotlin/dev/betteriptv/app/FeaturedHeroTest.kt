@@ -110,6 +110,9 @@ class FeaturedHeroTest {
     /** While set, every image waits for it, as on a slow network. */
     @Volatile private var artHeld: CompletableDeferred<Unit>? = null
 
+    /** While set, the rows wait for it, as a slow Library read. */
+    @Volatile private var rowsHeld: CompletableDeferred<Unit>? = null
+
     /** Every image is served as from disk, at once unless [artHeld]: the backdrops as [backdrop], the logos as plain colour. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -152,7 +155,7 @@ class FeaturedHeroTest {
                 RowsLayout(
                     state, restoreFocus, focusTab = false,
                     reading = reading,
-                    read = { rows },
+                    read = { rowsHeld?.await(); rows },
                     empty = "",
                     setFavourite = { _, _ -> },
                     onScreen = {},
@@ -330,39 +333,39 @@ class FeaturedHeroTest {
         focusedOn("Play")
     }
 
-    /** The screen as it is drawn at this frame. */
-    private fun drawn(): Bitmap {
-        compose.waitForIdle()
-        val screen = compose.activity.window.decorView
-        return Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888).also { screen.draw(Canvas(it)) }
-    }
-
     // It draws the screen, whose vector icons need real bitmaps.
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Test fun theRowsAndTheHeroFadeInTogetherOverThePlaceholders() {
+    @Test fun theScreenIsBareForThePageArrivalTimeThenWaitsWithTheDotUntilTheRowsFadeInOverIt() {
         val held = CompletableDeferred<Unit>()
-        artHeld = held
+        rowsHeld = held
         compose.mainClock.autoAdvance = false
         screen()
-        repeat(4) { frame() }
-        val placeholders = drawn()
-        compose.onNodeWithTag(PLACEHOLDERS).assertExists()
+
+        // Bare under the tabs for the page arrival time: no rows, and no dot either.
+        var waitedMillis = 0L
+        while (waitedMillis < Motion.pageArrivalMillis - 32) {
+            compose.onNodeWithTag(WAITING).assertDoesNotExist()
+            assertTrue(!exists("Action"))
+            frame()
+            waitedMillis += 16
+        }
+        // Then the dot, which fades in, alone.
+        compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + 100L)
+        compose.onNodeWithTag(WAITING).assertExists()
+        assertTrue(!exists("Action"))
 
         held.complete(Unit)
         while (!exists("About Dune.")) frame()
         // On their first frame, the rows and the hero are there (focus is on Play) but not yet seen:
-        // the screen is still the placeholders, rather than the rows over an empty hero (#398).
+        // the screen is still the dot over the ground, rather than the rows over an empty hero (#398).
         assertTrue(exists("Action"))
         focusedOn("Play")
-        assertTrue("the rows' first frame shows the placeholders as they were", drawn().sameAs(placeholders))
-
-        // Then they fade in as one over the placeholders, which go once they have.
-        frame()
-        frame()
-        assertTrue(!drawn().sameAs(placeholders))
-        compose.onNodeWithTag(PLACEHOLDERS).assertExists()
+        val first = backdropAlpha()
+        assertTrue("on the rows' first frame the backdrop is at $first", first < 0.5f)
+        // Then they fade in as one, the dot crossfading out under them, and it goes once they have.
+        compose.onNodeWithTag(WAITING).assertExists()
         compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + 100L)
-        compose.onNodeWithTag(PLACEHOLDERS).assertDoesNotExist()
+        compose.onNodeWithTag(WAITING).assertDoesNotExist()
         assertEquals(1f, backdropAlpha())
     }
 
@@ -373,8 +376,8 @@ class FeaturedHeroTest {
         compose.runOnIdle { entry++ }
         compose.mainClock.advanceTimeByFrame()
         compose.waitForIdle()
-        // Coming back to the screen, its rows are there on the first frame, with no placeholders under them.
-        compose.onNodeWithTag(PLACEHOLDERS).assertDoesNotExist()
+        // Coming back to the screen, its rows are there on the first frame, with no wait and no dot.
+        compose.onNodeWithTag(WAITING).assertDoesNotExist()
         compose.onNodeWithText("Action").assertExists()
     }
 
