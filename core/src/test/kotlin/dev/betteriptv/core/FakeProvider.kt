@@ -96,8 +96,72 @@ class FakeProvider : Closeable {
     /** Closes movie file requests without answering, as an unreachable Provider does. */
     @Volatile var unansweredFiles = false
 
-    /** Movie details by Provider stream id (`get_vod_info`), served instead of an empty answer. */
+    /** Movie details by Provider stream id (`get_vod_info`), as JSON, served instead of an empty answer; [serveMovieDetails] writes one. */
     val movieDetails = ConcurrentHashMap<Long, String>()
+
+    /**
+     * Serves movie details for Provider stream [id], shaped like the surveyed Provider's
+     * `get_vod_info` answer: what it says of the Movie, and its own reading of the file ([bitrate],
+     * in kbit/s). A field left null is sent as the Provider sends one it doesn't have (`""`, or `0`).
+     */
+    fun serveMovieDetails(
+        id: Long,
+        plot: String? = null,
+        genre: String? = null,
+        releaseDate: String? = null,
+        durationMinutes: Int? = null,
+        director: String? = null,
+        cast: String? = null,
+        rating: Double? = null,
+        backdrop: String? = null,
+        trailer: String? = null,
+        bitrate: Int? = null,
+        name: String = "Movie $id",
+    ) {
+        val duration = durationMinutes?.let { "%02d:%02d:00".format(it / 60, it % 60) }.orEmpty()
+        movieDetails[id] = """{"info":{"tmdb_id":"","name":${json(name)},"o_name":${json(name)},"cover_big":"","movie_image":"",""" +
+            """"releasedate":${json(releaseDate.orEmpty())},"episode_run_time":${durationMinutes ?: 0},"youtube_trailer":${json(trailer.orEmpty())},""" +
+            """"director":${json(director.orEmpty())},"actors":${json(cast.orEmpty())},"cast":${json(cast.orEmpty())},""" +
+            """"description":${json(plot.orEmpty())},"plot":${json(plot.orEmpty())},"age":"","country":"","genre":${json(genre.orEmpty())},""" +
+            """"backdrop_path":${if (backdrop == null) "[]" else "[${json(backdrop)}]"},"duration_secs":"${durationMinutes?.times(60) ?: 0}","duration":${json(duration)},""" +
+            """"bitrate":${bitrate ?: 0},"rating":${json(rating?.toString().orEmpty())},"status":"Released"},""" +
+            """"movie_data":{"stream_id":$id,"name":${json(name)},"added":"1700000000","category_id":"1","container_extension":"mkv","custom_sid":null,"direct_source":""}}"""
+    }
+
+    /**
+     * A show Listing to serve ([serveShows]), shaped like the surveyed Provider's `get_series` entry:
+     * its [name], its [category], its [tmdbId] and what the Listing says of the Show. A field left
+     * null is sent as the Provider sends one it doesn't have.
+     */
+    class ShowListing(
+        val name: String,
+        val category: String,
+        val tmdbId: Long?,
+        val plot: String? = null,
+        val genre: String? = null,
+        val cast: String? = null,
+        val director: String? = null,
+        val rating: Double? = null,
+        val releaseDate: String? = null,
+        val backdrops: List<String> = emptyList(),
+        val trailer: String? = null,
+        val modified: Long? = null,
+    )
+
+    /** Serves these show Listings, numbered from 1 in this order, filed under their Categories (numbered from 1 in order of first appearance). */
+    fun serveShows(vararg listings: ShowListing) {
+        val categories = listings.map { it.category }.distinct()
+        showCategoriesOverride = categories.withIndex()
+            .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
+        showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, show) ->
+            """{"num":${i + 1},"name":${json(show.name)},"series_id":${i + 1},"cover":"","plot":${json(show.plot.orEmpty())},"cast":${json(show.cast.orEmpty())},""" +
+                """"director":${json(show.director.orEmpty())},"genre":${json(show.genre.orEmpty())},"releaseDate":${json(show.releaseDate.orEmpty())},""" +
+                """"release_date":${json(show.releaseDate.orEmpty())},"last_modified":"${show.modified ?: (1_700_000_000 - i)}","rating":${json(show.rating?.toString().orEmpty())},""" +
+                """"rating_5based":"0","backdrop_path":${show.backdrops.joinToString(",", "[", "]") { json(it) }},"youtube_trailer":${json(show.trailer.orEmpty())},""" +
+                """"tmdb":${json(show.tmdbId?.toString().orEmpty())},"episode_run_time":"0","category_id":"${categories.indexOf(show.category) + 1}",""" +
+                """"category_ids":[${categories.indexOf(show.category) + 1}]}"""
+        }
+    }
     /** Movie Listings whose files are answered with HTTP [deadStatus], as the Provider answers for a dead link. */
     val deadStreams: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     /** 404 by default; the surveyed Provider answers some dead Movie files with 400, others with 405. */
@@ -129,6 +193,18 @@ class FakeProvider : Closeable {
 
     /** Called with each `player_api` request's action (null for the account) before it is answered. */
     @Volatile var onRequest: ((action: String?) -> Unit)? = null
+
+    private val _requests = CopyOnWriteArrayList<String>()
+
+    /**
+     * Every `player_api` request answered so far, in order, as its action with the id it asked about
+     * (`get_vod_info 1001`, `get_series_info 2008`, `get_vod_streams`; `account` for the login check),
+     * so tests can count what a screen cost the Provider.
+     */
+    val requests: List<String> get() = _requests.toList()
+
+    /** The movie Listings whose details were asked for (`get_vod_info`), in order. */
+    val movieDetailsRequests: List<Long> get() = _requests.mapNotNull { it.removePrefix("get_vod_info ").takeIf { id -> id != it }?.toLongOrNull() }
 
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
@@ -257,6 +333,7 @@ class FakeProvider : Closeable {
             return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
         onRequest?.invoke(query["action"])
+        _requests += listOfNotNull(query["action"] ?: "account", query["vod_id"] ?: query["series_id"] ?: query["stream_id"]).joinToString(" ")
         when (query["action"]) {
             null -> respond(exchange) { it.write(account().toByteArray()) }
             "get_vod_categories" -> respond(exchange) { body ->

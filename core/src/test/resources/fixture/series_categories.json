@@ -163,5 +163,10 @@
   "category_id": "33",
   "category_name": "GERMANY ZDF MEDIATHEK",
   "parent_id": 0
+ },
+ {
+  "category_id": "34",
+  "category_name": "GERMANY PARAMOUNT+",
+  "parent_id": 0
  }
 ]

@@ -107,7 +107,7 @@ class PreloadNeighboursTest {
 
     /** Ten posters, more than the screen shows so the rail loops, each growing into its own backdrop. */
     private val titles = (0 until 10).map { i ->
-        TitleSummary(TitleId.Unmatched(TitleKind.Movie, i.toLong()), "Film$i", 2024, null, VersionAttributes(), TitleAbout(null, emptyList(), null, textlessBackdrop = backdrop(i)))
+        TitleSummary(TitleId.Unmatched(TitleKind.Movie, i.toLong()), "Film$i", 2024, null, VersionAttributes(), TitleAbout(textlessBackdrop = backdrop(i)))
     }
 
     private fun screen() {

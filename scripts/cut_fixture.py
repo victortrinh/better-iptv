@@ -11,6 +11,7 @@ its own account answer.)
 Usage: python3 -I scripts/cut_fixture.py [--raw PATH]   (default: .survey/raw)
 """
 
+import hashlib
 import json
 import random
 import re
@@ -124,6 +125,14 @@ SHOW_GROUPS = [
 ]
 SHOW_SAMPLE = 15
 
+# Added after the first cut and appended to its end, so the Shows above keep their numbers. These keep
+# what the Listing says of the Show (plot, cast, genre, rating) and their Episodes' stills, which the
+# first cut left out (#473); the still URLs are made up, shaped like the Provider's.
+EXTRA_SHOW_GROUPS = [
+    # Eight Episodes with a still and a length each; its plot carries the Provider's `\r\n` line breaks.
+    ("Der Scheich, with Episode stills", lambda s, cat: str(s.get("tmdb")) == "216963" and s["name"].startswith("DE - "), 1),
+]
+
 
 def cut_shows(raw):
     shows = json.loads((raw / "series_streams.json").read_text())
@@ -144,6 +153,15 @@ def cut_shows(raw):
     rest = [s for s in shows if s["series_id"] not in seen]
     picked += rng.sample(rest, SHOW_SAMPLE)
     rng.shuffle(picked)
+    told = set()
+    for label, match, cap in EXTRA_SHOW_GROUPS:
+        hits = sorted((s for s in shows if s["series_id"] not in seen and match(s, categories[s["category_id"]]["category_name"])), key=lambda s: s["series_id"])[:cap]
+        print(f"{label}: {len(hits)}")
+        for s in hits:
+            seen.add(s["series_id"])
+            picked.append(s)
+            detailed.add(s["series_id"])
+            told.add(s["series_id"])
 
     category_ids = {}
     for s in picked:
@@ -161,9 +179,9 @@ def cut_shows(raw):
             "name": s["name"],
             "series_id": series_id,
             "cover": "",
-            "plot": "",
-            "cast": "",
-            "director": "",
+            "plot": s.get("plot", "") if s["series_id"] in told else "",
+            "cast": s.get("cast", "") if s["series_id"] in told else "",
+            "director": s.get("director", "") if s["series_id"] in told else "",
             "genre": s.get("genre", ""),
             "releaseDate": s.get("releaseDate", ""),
             "release_date": s.get("release_date", ""),
@@ -179,26 +197,29 @@ def cut_shows(raw):
         })
         if s["series_id"] in detailed:
             info = json.loads((raw / f"series_info_{s['series_id']}.json").read_text())
-            write(OUT / f"series_info_{series_id}.json", series_details(info, s, episode_ids))
+            write(OUT / f"series_info_{series_id}.json", series_details(info, s, episode_ids, stills=s["series_id"] in told))
 
     write(OUT / "series_categories.json", out_categories)
     write(OUT / "series_streams.json", out_shows)
     print(f"wrote {len(out_shows)} show Listings in {len(out_categories)} Categories, {len(detailed)} with series details")
 
 
-def series_details(info, show, episode_ids):
-    """The series details, keeping what the app reads of each Episode: numbers, title, and its video and first audio Track."""
+def series_details(info, show, episode_ids, stills=False):
+    """The series details, keeping what the app reads of each Episode: numbers, title, its length, its video and first audio Track, and with `stills` a made-up still URL where the Provider has one."""
     def episode(e):
         details = e.get("info") if isinstance(e.get("info"), dict) else {}
         video = details.get("video") if isinstance(details.get("video"), dict) else {}
         audio = details.get("audio") if isinstance(details.get("audio"), dict) else {}
         language = (audio.get("tags") or {}).get("language")
+        episode_id = next(episode_ids)
+        still = {"movie_image": f"https://stills.example/{hashlib.sha1(str(episode_id).encode()).hexdigest()[:27]}.jpg"} if stills and details.get("movie_image") else {}
         return {
-            "id": str(next(episode_ids)),
+            "id": str(episode_id),
             "episode_num": e["episode_num"],
             "title": e.get("title", ""),
             "container_extension": e.get("container_extension", "mkv"),
             "info": {
+                **still,
                 "duration_secs": details.get("duration_secs"),
                 "duration": details.get("duration"),
                 "video": {k: video[k] for k in ("codec_name", "width", "height", "color_transfer") if k in video},

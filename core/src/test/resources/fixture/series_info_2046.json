@@ -1,0 +1,251 @@
+{
+ "seasons": [
+  {
+   "name": "Season 1",
+   "episode_count": "8",
+   "air_date": "2022-12-22",
+   "season_number": 1
+  }
+ ],
+ "info": {
+  "name": "DE - Der Scheich (2022)",
+  "tmdb": "216963",
+  "last_modified": "1695026445"
+ },
+ "episodes": {
+  "1": [
+   {
+    "id": "100063",
+    "episode_num": 1,
+    "title": "DE - Der Scheich (2022) - S01E01 - Die Natur lügt nicht",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/3bb1ed0114cfd85df07b1a6f477.jpg",
+     "duration_secs": 3031,
+     "duration": "00:50:31",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2553
+    },
+    "custom_sid": null,
+    "added": "1695026444",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100064",
+    "episode_num": 2,
+    "title": "DE - Der Scheich (2022) - S01E02 - Das blühende Moor",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/918344f4db687758865d2ad8c62.jpg",
+     "duration_secs": 2737,
+     "duration": "00:45:37",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2231
+    },
+    "custom_sid": null,
+    "added": "1695026444",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100065",
+    "episode_num": 3,
+    "title": "DE - Der Scheich (2022) - S01E03 - Der Kreis des Lebens",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/a92417e61bf718f2c21d7f07ee2.jpg",
+     "duration_secs": 2977,
+     "duration": "00:49:37",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2391
+    },
+    "custom_sid": null,
+    "added": "1695026444",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100066",
+    "episode_num": 4,
+    "title": "DE - Der Scheich (2022) - S01E04 - Kein Tag zum Sterben",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/92d295e12810958db44c3ee73fa.jpg",
+     "duration_secs": 3079,
+     "duration": "00:51:19",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2173
+    },
+    "custom_sid": null,
+    "added": "1695026444",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100067",
+    "episode_num": 5,
+    "title": "DE - Der Scheich (2022) - S01E05 - Der Fisch stinkt vom Kopf",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/51583c2e93a70d34292f9035e1c.jpg",
+     "duration_secs": 2847,
+     "duration": "00:47:27",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2170
+    },
+    "custom_sid": null,
+    "added": "1695026445",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100068",
+    "episode_num": 6,
+    "title": "DE - Der Scheich (2022) - S01E06 - Schüsse in der Nacht",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/9c67d5986b2a885acb04706aa1f.jpg",
+     "duration_secs": 2497,
+     "duration": "00:41:37",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2886
+    },
+    "custom_sid": null,
+    "added": "1695026445",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100069",
+    "episode_num": 7,
+    "title": "DE - Der Scheich (2022) - S01E07 - 1001 Schweiz",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/f11c0e00adf3f084eb8f608f62e.jpg",
+     "duration_secs": 2627,
+     "duration": "00:43:47",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2237
+    },
+    "custom_sid": null,
+    "added": "1695026445",
+    "season": 1,
+    "direct_source": ""
+   },
+   {
+    "id": "100070",
+    "episode_num": 8,
+    "title": "DE - Der Scheich (2022) - S01E08 - Der traurige Willy",
+    "container_extension": "mkv",
+    "info": {
+     "movie_image": "https://stills.example/cae24a4b352d3cdc68a6d4ba7bf.jpg",
+     "duration_secs": 2717,
+     "duration": "00:45:17",
+     "video": {
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 800,
+      "color_transfer": "bt709"
+     },
+     "audio": {
+      "codec_name": "aac",
+      "channels": 2,
+      "tags": {
+       "language": "ger"
+      }
+     },
+     "bitrate": 2194
+    },
+    "custom_sid": null,
+    "added": "1695026445",
+    "season": 1,
+    "direct_source": ""
+   }
+  ]
+ }
+}

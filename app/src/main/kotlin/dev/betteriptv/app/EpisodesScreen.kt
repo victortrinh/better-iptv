@@ -1,7 +1,6 @@
 package dev.betteriptv.app
 
 import android.content.Context
-import android.text.format.DateFormat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -48,21 +47,17 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Episode
-import dev.betteriptv.core.EpisodeStill
 import dev.betteriptv.core.Season
 import dev.betteriptv.core.ShowEpisodes
-import kotlinx.coroutines.delay
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 /**
  * The Episode picker (DESIGN.md, Details): a Show's Title page's second level, opened by its
  * Episodes action, over the same backdrop under a `ground` veil at 85% ([Colors.veilDeep]), laid
  * out like the Channel browser. The seasons are in the left column, the picked season's Episodes on
- * the right, each with its TMDB still (asked for the season once focus rests on it, [stillsOf], and
- * loaded for the rows on screen once they settle, fading in), its name, its runtime, how far the
- * Viewer got in it, and its languages only when they differ from the Show's usual set
- * ([ShowEpisodes.languagesNamed]). One not out yet says when it will be, and can't be chosen.
+ * the right, each with the still the Provider's show details give it (loaded for the rows on screen
+ * once they settle, fading in), its name, its runtime, how far the Viewer got in it, and its
+ * languages only when they differ from the Show's usual set ([ShowEpisodes.languagesNamed]). The
+ * Episodes are the Provider's and no others (ADR 0014).
  *
  * It opens on the Episode to watch next ([ShowEpisodes.next]), in its season. Up and Down in the
  * column pick another season, whose Episodes show from their top; Right goes to the Episode focused
@@ -74,7 +69,6 @@ internal fun EpisodesContent(
     showName: String,
     episodes: ShowEpisodes,
     onEpisode: (Episode) -> Unit,
-    stillsOf: suspend (Int) -> Map<Int, EpisodeStill> = { emptyMap() },
 ) {
     val context = LocalContext.current
     val seasons = episodes.seasons
@@ -91,18 +85,13 @@ internal fun EpisodesContent(
     val entryNumber = lastFocused?.takeIf { number -> shown?.episodes?.any { it.number == number } == true }
         ?: next?.takeIf { it.season == shown?.number }?.number
         ?: shown?.episodes?.firstOrNull()?.number
-    // A season's stills are asked for once focus rests on it, so moving through the seasons asks for nothing.
-    var stills by remember { mutableStateOf<Map<Int, EpisodeStill>>(emptyMap()) }
     var arrived by remember { mutableStateOf(false) }
     LaunchedEffect(shown?.number) {
-        val season = shown?.number ?: return@LaunchedEffect
+        if (shown == null) return@LaunchedEffect
         if (arrived) {
             list.requestScrollToItem(0)
             lastFocused = null
         }
-        stills = emptyMap()
-        delay(SETTLE_MILLIS)
-        stills = stillsOf(season)
     }
     // It opens on the Episode to watch next, in its season, the one before it peeking above.
     LaunchedEffect(episodes) {
@@ -167,7 +156,6 @@ internal fun EpisodesContent(
                         if (episode.number == entryNumber) modifier = modifier.focusRequester(entry)
                         EpisodeRow(
                             episode,
-                            still = stills[episode.number],
                             languages = episodes.languagesNamed(episode),
                             onClick = { onEpisode(episode) },
                             modifier = modifier,
@@ -219,25 +207,22 @@ private fun SeasonRow(name: String, count: Int, picked: Boolean, onClick: () -> 
 }
 
 /**
- * An Episode in the picker's list: its [still] on a small glass tile (fading in once loaded), its
- * number and name in label type, then in muted detail its runtime and, when they differ from the
- * Show's usual set, its [languages]; or, for one not out yet, when it will be ("Available October
- * 31"), and the row is disabled. A started Episode shows its progress bar under its name, full once Watched.
+ * An Episode in the picker's list: the Provider's still on a small glass tile (fading in once loaded),
+ * its number and name in label type, then in muted detail its runtime and, when they differ from the
+ * Show's usual set, its [languages]. A started Episode shows its progress bar under its name, full once Watched.
  */
 @Composable
-private fun EpisodeRow(episode: Episode, still: EpisodeStill?, languages: List<String>, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun EpisodeRow(episode: Episode, languages: List<String>, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val available = episode.availableOn
-    val enabled = available == null
     FocusSurface(
-        { if (enabled) onClick() },
+        onClick,
         modifier.fillMaxWidth(),
         weight = FocusWeight.Row,
         container = Colors.surface,
         focusedContainer = Colors.focus,
     ) { focused ->
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            val image = rememberArtwork(still?.still, card = true)
+            val image = rememberArtwork(episode.still, card = true)
             Box(
                 Modifier.width(STILL_WIDTH).aspectRatio(16f / 9f).clip(RoundedCornerShape(Corners.badge))
                     .background(if (focused) Colors.onFocus.copy(alpha = 0.08f) else Colors.surface),
@@ -246,11 +231,7 @@ private fun EpisodeRow(episode: Episode, still: EpisodeStill?, languages: List<S
             }
             Spacer(Modifier.width(Spacing.l))
             Column(Modifier.weight(1f)) {
-                val ink = when {
-                    focused -> Colors.onFocus
-                    enabled -> Colors.ink
-                    else -> Colors.inkMuted
-                }
+                val ink = if (focused) Colors.onFocus else Colors.ink
                 Text(
                     episode.name?.let { context.getString(R.string.episode_named, episode.number, it) } ?: context.getString(R.string.episode_number, episode.number),
                     style = Type.label,
@@ -258,8 +239,7 @@ private fun EpisodeRow(episode: Episode, still: EpisodeStill?, languages: List<S
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val detail = if (available != null) context.getString(R.string.episode_available, context.monthDay(available))
-                else listOfNotNull(still?.runtimeMinutes?.let(context::runtime), languages.joinToString(", ") { languageName(it) }.ifEmpty { null }).joinToString(" · ")
+                val detail = listOfNotNull(episode.runtimeMinutes?.let(context::runtime), languages.joinToString(", ") { languageName(it) }.ifEmpty { null }).joinToString(" · ")
                 if (detail.isNotEmpty()) {
                     Text(
                         detail,
@@ -280,13 +260,6 @@ private fun EpisodeRow(episode: Episode, still: EpisodeStill?, languages: List<S
             }
         }
     }
-}
-
-/** "October 31" in the App language, with the year when it isn't this one. */
-internal fun Context.monthDay(date: LocalDate): String {
-    val locale = resources.configuration.locales[0]
-    val skeleton = if (date.year == LocalDate.now().year) "MMMMd" else "MMMMdyyyy"
-    return date.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, skeleton), locale))
 }
 
 /** The column of seasons: the Channel browser's Category column's width. */

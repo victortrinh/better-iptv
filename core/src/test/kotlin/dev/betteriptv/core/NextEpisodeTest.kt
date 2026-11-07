@@ -11,11 +11,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
-import java.time.LocalDate
 
 /**
- * Which Episode a Show's details open on, how far the Viewer got in each, and the Episodes TMDB lists
- * as not aired yet, seen through the Library.
+ * Which Episode a Show's details open on, how far the Viewer got in each, and that a Show lists
+ * the Episodes the Provider has and no others, seen through the Library.
  */
 class NextEpisodeTest {
     @get:Rule val folder = TemporaryFolder()
@@ -26,7 +25,6 @@ class NextEpisodeTest {
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
     private val bureau = TitleId.Tmdb(TitleKind.Show, 62104)
-    private val today = LocalDate.now()
 
     /** Syncs The Bureau: seasons 1 and 2 of three Episodes each, and one special. */
     @Before fun syncShow() = runBlocking {
@@ -125,42 +123,11 @@ class NextEpisodeTest {
         assertTrue(episodes().episode(1, 1).watched)
     }
 
-    @Test fun `Episodes TMDB lists as not aired yet are added until a Version has them, named in the App language`() = runBlocking {
-        cloud.upcoming(
-            62104, "fr",
-            // The Provider already has this one.
-            EpisodeNumber(2, 3) to (today.plusDays(1) to "Déjà là"),
-            EpisodeNumber(2, 4) to (today.plusDays(1) to "Le retour"),
-            EpisodeNumber(3, 1) to (today.plusDays(8) to null),
-            // The cloud's answer is half a day old: this one aired since.
-            EpisodeNumber(2, 5) to (today to "Aujourd'hui"),
-        )
-
+    @Test fun `a Show lists the Episodes the Provider has and no others`() = runBlocking {
         val show = episodes(appLanguage = "fr-CA")
 
-        assertEquals(listOf(1, 2, 3, 0), show.seasons.map { it.number })
-        assertEquals(listOf(1, 2, 3, 4), show.seasons.single { it.number == 2 }.episodes.map { it.number })
-        assertNull(show.episode(2, 3).availableOn)
-        assertEquals(today.plusDays(1), show.episode(2, 4).availableOn)
-        assertEquals("Le retour", show.episode(2, 4).name)
-        assertTrue(show.episode(2, 4).languages.isEmpty() && show.episode(2, 4).otherLanguages.isEmpty())
-        assertEquals(today.plusDays(8), show.episode(3, 1).availableOn)
-        assertNull(show.episode(3, 1).name)
-        // Nothing plays it.
-        assertNull(library.episodePlayPlan(bureau, EpisodeNumber(2, 4), english, fullHdTv))
-
-        // Caught up, the Viewer's next Episode is the one that airs next.
-        play(2, 3, minutes = 49)
-        assertEquals(EpisodeNumber(2, 4), episodes(appLanguage = "fr-CA").next)
-    }
-
-    @Test fun `without the cloud a Show lists what the Provider has`() = runBlocking {
-        cloud.upcoming(62104, "en", EpisodeNumber(2, 4) to (today.plusDays(1) to "Next"))
-        cloud.down = true
-
-        val show = episodes()
-
         assertEquals(listOf(1, 2, 3), show.seasons.single { it.number == 2 }.episodes.map { it.number })
+        assertTrue(cloud.received.none { "/v1/upcoming" in it.path })
     }
 
     @Test fun `Continue watching shows a Show at its next Episode, beside Movies, until the Viewer Watched its last`() = runBlocking {

@@ -69,7 +69,7 @@ class ShowsTest {
     @Test fun `Shows are Synced into a list of their own, one card per Show`() = runBlocking {
         val status = library.sync() as SyncStatus.Synced
 
-        assertEquals(45, status.last.showListingCount)
+        assertEquals(46, status.last.showListingCount)
         // The movie list is unchanged.
         assertEquals(150, status.last.movieListingCount)
         // Mohgiben MBBS, a Mismatch under Munna Bhai's number, is a Title of its own.

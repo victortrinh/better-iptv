@@ -90,20 +90,20 @@ class SyncProgressTest {
         assertEquals(listOf(SyncStep.Channels, SyncStep.Movies, SyncStep.Shows, SyncStep.Saving), seen.mapNotNull { (it as? SyncStatus.Running)?.step }.distinct())
         assertTrue(finished is SyncStatus.Synced)
         assertEquals(finished, seen.last())
-        // The fixture's 156 movie Listings, less 3 music videos and 3 Sports replays, and 45 shows, after 3 Channels.
-        assertEquals(3 + 150 + 45, (seen.last { it is SyncStatus.Running } as SyncStatus.Running).entriesRead)
+        // The fixture's 156 movie Listings, less 3 music videos and 3 Sports replays, and 46 shows, after 3 Channels.
+        assertEquals(3 + 150 + 46, (seen.last { it is SyncStatus.Running } as SyncStatus.Running).entriesRead)
         assertEquals(3, (finished as SyncStatus.Synced).last.channelListingCount)
     }
 
     @Test fun `a later Sync tells how far it is by the last Sync's counts`() = runBlocking {
         val last = (library.sync() as SyncStatus.Synced).last
-        assertEquals(3 + 150 + 45, last.channelListingCount + last.movieListingCount + last.showListingCount)
+        assertEquals(3 + 150 + 46, last.channelListingCount + last.movieListingCount + last.showListingCount)
 
         library.sync()
 
         val running = atShows.last() as SyncStatus.Running
         assertEquals(SyncStatus.Running(last, last.finishedAt, SyncStep.Shows, 153), running)
-        assertEquals(153f / 198, running.fraction!!, 0.0001f)
+        assertEquals(153f / 199, running.fraction!!, 0.0001f)
     }
 
     @Test fun `a Sync that reads more than the last one never says it's done before it is`() = runBlocking {
