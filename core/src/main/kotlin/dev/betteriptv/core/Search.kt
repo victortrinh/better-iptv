@@ -4,11 +4,12 @@ import java.text.Normalizer
 import java.util.Locale
 
 /**
- * What a search found, best first in each group: [movies] and [shows] whose names match, and
- * [people] (cast) and TMDB [genres] whose names match, each with their Titles the Provider has, the
- * [channels] whose names match, and the Sports [replays] whose names match (every one, highlights
- * shows included, since the Replays row shows only the Leagues'). [completions] are queries one
- * press away: Title names, people and genres the query starts, or genre shortcuts before anything is typed.
+ * What a search found, best first in each list: the [titles] whose names match, Movies and Shows
+ * together, and the same as [movies] and [shows] apart, [people] (cast) and TMDB [genres] whose
+ * names match, each with their Titles the Provider has, the [channels] whose names match, and the
+ * Sports [replays] whose names match (every one, highlights shows included, since Search alone shows
+ * them; Live shows only the Leagues'). [completions] are queries one press away: Title names, people
+ * and genres the query starts, or genre shortcuts before anything is typed.
  */
 data class SearchResults(
     val movies: List<TitleSummary>,
@@ -18,26 +19,32 @@ data class SearchResults(
     val genres: List<Genre> = emptyList(),
     val completions: List<String> = emptyList(),
     val replays: List<Replay> = emptyList(),
+    val titles: List<TitleSummary> = movies + shows,
 ) {
     /** Whether nothing was found; [completions] may still offer something. */
     val isEmpty: Boolean
         get() = movies.isEmpty() && shows.isEmpty() && people.isEmpty() && channels.isEmpty() && genres.isEmpty() && replays.isEmpty()
 
     /**
-     * The rows these results show for [query]: Movies, Shows, genres, Channels, Replays, then people.
-     * A query that is a genre's whole name (a picked genre completion or shortcut, or the name typed in
-     * full) shows that genre first, as Netflix does: the Viewer chose a genre, not a name (#170).
+     * The cards these results show for [query], as one grid rather than rows, as on Netflix: the
+     * Titles found by name, best first whatever their kind, then each genre's Titles, the Channels,
+     * the Replays, then each person's Titles, a Title shown once, where it first comes. A query that
+     * is a genre's whole name (a picked genre completion or shortcut, or the name typed in full) shows
+     * that genre's Titles first: the Viewer chose a genre, not a name (#170).
      */
-    fun groups(query: String): List<SearchGroup> = buildList {
+    fun cards(query: String): List<SearchCard> {
         val typed = SearchIndex.words(query)
         val picked = genres.firstOrNull { SearchIndex.words(it.name) == typed }
-        if (picked != null) add(SearchGroup.OfGenre(picked))
-        if (movies.isNotEmpty()) add(SearchGroup.Movies(movies))
-        if (shows.isNotEmpty()) add(SearchGroup.Shows(shows))
-        genres.filter { it !== picked }.mapTo(this, SearchGroup::OfGenre)
-        if (channels.isNotEmpty()) add(SearchGroup.Channels(channels))
-        if (replays.isNotEmpty()) add(SearchGroup.Replays(replays))
-        people.mapTo(this, SearchGroup::OfPerson)
+        val shown = HashSet<TitleId>()
+        return buildList {
+            fun once(titles: List<TitleSummary>) = titles.forEach { if (shown.add(it.id)) add(SearchCard.OfTitle(it)) }
+            if (picked != null) once(picked.titles)
+            once(titles)
+            genres.forEach { if (it !== picked) once(it.titles) }
+            channels.mapTo(this, SearchCard::OfChannel)
+            replays.mapTo(this, SearchCard::OfReplay)
+            people.forEach { once(it.titles) }
+        }
     }
 
     companion object {
@@ -45,14 +52,11 @@ data class SearchResults(
     }
 }
 
-/** One row of [SearchResults], in the order [SearchResults.groups] shows them. */
-sealed interface SearchGroup {
-    data class Movies(val titles: List<TitleSummary>) : SearchGroup
-    data class Shows(val titles: List<TitleSummary>) : SearchGroup
-    data class OfGenre(val genre: Genre) : SearchGroup
-    data class Channels(val channels: List<Channel>) : SearchGroup
-    data class Replays(val replays: List<Replay>) : SearchGroup
-    data class OfPerson(val person: Person) : SearchGroup
+/** One card of [SearchResults.cards]: a Title's poster, or a Channel's or a Replay's wide card. */
+sealed interface SearchCard {
+    data class OfTitle(val title: TitleSummary) : SearchCard
+    data class OfChannel(val channel: Channel) : SearchCard
+    data class OfReplay(val replay: Replay) : SearchCard
 }
 
 /** One of TMDB's genres ([name], in the App language), with its Titles the Provider has, best first. */

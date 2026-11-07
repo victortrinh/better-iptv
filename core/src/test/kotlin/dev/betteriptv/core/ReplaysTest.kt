@@ -254,7 +254,7 @@ class ReplaysTest {
             ),
             leafs.replays.map { it.name },
         )
-        assertEquals(listOf(SearchGroup.Replays(leafs.replays)), leafs.groups("maple leafs"))
+        assertEquals(leafs.replays.map(SearchCard::OfReplay), leafs.cards("maple leafs"))
         assertEquals(listOf("SOC - LaLiga Highlights Matchday 38"), library.search("laliga highlights", listOf("en"), "en").last().replays.map { it.name })
         assertTrue(library.search("godfather", listOf("en"), "en").last().replays.isEmpty())
     }

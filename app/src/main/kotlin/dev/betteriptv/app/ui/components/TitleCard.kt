@@ -118,7 +118,7 @@ fun TitleCard(
                                 spread = true
                                 scope.launch {
                                     growth.animateTo(1f, Motion.focus())
-                                    // Grown, it may reach past the edge of a list that scrolls only near its edges, as in Search.
+                                    // Grown, it may reach past the edge of a list that scrolls only near its edges.
                                     bring?.bringIntoView()
                                 }
                             } else {

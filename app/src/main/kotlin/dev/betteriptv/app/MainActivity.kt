@@ -277,7 +277,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
                         focusTab = byTab,
                         onTab = onTab,
-                        onOpen = { id, backdrop -> opened = OpenedTitle(id, backdrop = backdrop) },
+                        onOpen = { opened = OpenedTitle(it) },
                         onWatch = watch,
                         onPlayReplay = { playReplay(it, it.heading) },
                     )
