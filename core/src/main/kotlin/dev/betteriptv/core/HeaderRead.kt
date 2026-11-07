@@ -30,11 +30,15 @@ data class FileContents(
 /**
  * These Likely attributes with what the [file] holds Confirmed. The language stays the Prefix's
  * (keeping a regional one, `fr-CA`) when an audio Track is in it, and is otherwise the first audio
- * Track's: an `FR` Version without a French Track moves to the language it really has. An HDR
- * format the file doesn't name leaves the Prefix's standing, since not every file names it.
+ * Track's: an `FR` Version without a French Track moves to the language it really has, as long as
+ * that is one the app has reason to [expect] there (the Title's original language, a Content
+ * language, or one the Prefix table knows); a tag it has no reason to expect (`iii`, Sichuan Yi, on
+ * a Polish copy) leaves the Prefix's language Likely and is kept out of the audio languages, though
+ * it stays in the read. An HDR format the file doesn't name leaves the Prefix's standing, since not
+ * every file names it.
  */
-internal fun VersionAttributes.confirmedBy(file: FileContents): VersionAttributes {
-    val heard = file.audio.mapNotNull { iso639(it.language) }
+internal fun VersionAttributes.confirmedBy(file: FileContents, expect: (String) -> Boolean = { true }): VersionAttributes {
+    val heard = file.audio.mapNotNull { iso639(it.language) }.filter(expect)
     val likely = language?.value
     return copy(
         language = when {
@@ -42,6 +46,7 @@ internal fun VersionAttributes.confirmedBy(file: FileContents): VersionAttribute
             likely != null && primaryLanguage(likely) in heard -> Known(likely, Provenance.Confirmed)
             else -> Known(heard.first(), Provenance.Confirmed)
         },
+        audioLanguages = Known(heard.toSet(), Provenance.Confirmed),
         subtitles = Known(file.subtitles.mapNotNull { iso639(it.language) }.toSet(), Provenance.Confirmed),
         quality = quality(file.width, file.height)?.let { Known(it, Provenance.Confirmed) } ?: quality,
         hdr = file.hdr?.let { Known(it, Provenance.Confirmed) } ?: hdr,

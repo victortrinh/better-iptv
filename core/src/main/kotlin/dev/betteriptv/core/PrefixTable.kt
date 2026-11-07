@@ -31,6 +31,14 @@ internal class PrefixTable private constructor(
     /** What the Channel browser calls a live Category's country [code] that isn't a country ("Arabic" for `AR`), or null for one not listed. */
     fun countryAlias(code: String): String? = countryAliases[code.uppercase(Locale.ROOT)]
 
+    /** The languages the table names for any Prefix or Category hint, as primary subtags: `fr-CA` counts as French. */
+    private val knownLanguages: Set<String> by lazy {
+        (prefixes.values + categoryHints.map { it.second }).mapNotNull { it.language?.let(::primaryLanguage) }.filter { it.isNotEmpty() && it != "xx" }.toSet()
+    }
+
+    /** Whether the table names [language] (a primary subtag) for some Prefix or Category: a Header read may move a Version to it. */
+    fun knowsLanguage(language: String): Boolean = language in knownLanguages
+
     /**
      * Where a browsed Category named [name] (`SPORTS · FR`, `ACTUALITÉS`) stands in the table's genre
      * list, 0 for the first genre, or null when it names no genre: a service bucket (`AT&T`, `PRIME`,

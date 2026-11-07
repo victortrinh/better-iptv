@@ -75,8 +75,8 @@ class MainActivity : ComponentActivity() {
         // Only while the app shows: the Viewer may be watching in another app.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                app.settings.settings.map { it.backgroundReading.pace to it.contentLanguages }.distinctUntilChanged().collectLatest { (pace, languages) ->
-                    if (pace != null) app.library.readInBackground(languages, pace)
+                app.settings.settings.map { Triple(it.backgroundReading.pace, it.contentLanguages, it.preferOriginalAudio) }.distinctUntilChanged().collectLatest { (pace, languages, original) ->
+                    if (pace != null) app.library.readInBackground(languages, pace, original)
                 }
             }
         }
@@ -159,7 +159,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
             returnedTo = card
             scope.launch {
                 val plan = withContext(Dispatchers.Default) {
-                    app.library.titlePlayPlan(title.id, contentLanguages, appLanguage, readDeviceProfile(context), settings.qualityCap)
+                    app.library.titlePlayPlan(title.id, contentLanguages, appLanguage, readDeviceProfile(context), settings.qualityCap, settings.preferOriginalAudio)
                 }
                 if (plan != null) playing = NowPlaying(plan, title.name, art = title.startingArt) else opened = OpenedTitle(title.id, card)
             }
@@ -312,6 +312,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                 }
                 TitleScreen(
                     app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
+                    preferOriginalAudio = settings.preferOriginalAudio,
                     openedOn = title.backdrop,
                     deviceProfile = { readDeviceProfile(context) },
                     onPlay = { plan, name, art -> playing = NowPlaying(plan, name, art = art) },

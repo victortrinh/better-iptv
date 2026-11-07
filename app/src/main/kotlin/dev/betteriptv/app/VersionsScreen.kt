@@ -51,9 +51,17 @@ import kotlinx.coroutines.launch
  * What a Versions screen lists: the Versions of a Movie, or of the Episode a Show's Play starts,
  * grouped by language, the Viewer's [languages] first and the [otherLanguages] behind a row of their
  * own. [heading] names what they're Versions of, over the "Versions" headline: the Title, or the
- * Show and its Episode ("Breaking Bad · S1 E6").
+ * Show and its Episode ("Breaking Bad · S1 E6"). With the Viewer's [contentLanguages] and the Title's
+ * [originalLanguage] (when Prefer original audio acts on it), a Version whose audio is in one other
+ * language says so ("German only").
  */
-internal data class VersionsList(val heading: String, val languages: List<LanguageGroup>, val otherLanguages: List<LanguageGroup>) {
+internal data class VersionsList(
+    val heading: String,
+    val languages: List<LanguageGroup>,
+    val otherLanguages: List<LanguageGroup>,
+    val contentLanguages: List<String> = emptyList(),
+    val originalLanguage: String? = null,
+) {
     /** Every Version, Backups included. */
     val count: Int get() = (languages + otherLanguages).sumOf { it.versionCount }
 }
@@ -75,7 +83,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, fromTmd
     val shown = versions.languages.ifEmpty { versions.otherLanguages }
     val hidden = if (versions.languages.isEmpty()) emptyList() else versions.otherLanguages
     // Over every group it may show, so opening Other languages never moves a column.
-    val table = remember(versions) { versionTable(shown + hidden) }
+    val table = remember(versions) { versionTable(shown + hidden, versions.contentLanguages, versions.originalLanguage) }
     val firstVersion = remember { FocusRequester() }
     LaunchedEffect(versions.heading) { runCatching { firstVersion.requestFocus() } }
     // The cast and TMDB's notice take no focus, so the last row brings them into view when it's focused.

@@ -21,6 +21,23 @@ class VersionTableTest {
         assertEquals(listOf(VersionColumn.Audio), table.columns)
     }
 
+    @Test fun `a Version whose Confirmed audio is in one language that is neither the Viewer's nor the original is marked only`() {
+        val confirmed = { languages: Set<String> -> Known(languages, Provenance.Confirmed) }
+        val german = version(1, VersionAttributes(language = Known("de", Provenance.Confirmed), audioLanguages = confirmed(setOf("de"))))
+        val germanAndMandarin = version(2, VersionAttributes(language = Known("de", Provenance.Confirmed), audioLanguages = confirmed(setOf("de", "zh"))))
+        val germanLikely = version(3, VersionAttributes(language = likely("de")))
+        val mandarin = version(4, VersionAttributes(language = Known("zh", Provenance.Confirmed), audioLanguages = confirmed(setOf("zh"))))
+        val english = version(5, VersionAttributes(language = Known("en", Provenance.Confirmed), audioLanguages = confirmed(setOf("en"))))
+        val groups = listOf(LanguageGroup("en", listOf(english)), LanguageGroup("zh", listOf(mandarin)), LanguageGroup("de", listOf(german, germanAndMandarin, germanLikely)))
+
+        val table = versionTable(groups, listOf("en"), originalLanguage = "zh")
+
+        assertEquals(listOf(null, null, "de", null, null), table.groups.flatMap { group -> group.rows.map { it.only } })
+        assertEquals(listOf(VersionColumn.Audio), table.columns)
+        // Without the original language (the setting off), nothing is marked.
+        assertEquals(emptyList<VersionColumn>(), versionTable(groups, listOf("en")).columns)
+    }
+
     @Test fun `a column nothing is known for is hidden, so the others get its room`() {
         val versions = listOf(
             version(1, VersionAttributes(language = likely("en"), quality = Known(Quality.FullHD, Provenance.Likely), source = Known("Netflix", Provenance.Likely))),

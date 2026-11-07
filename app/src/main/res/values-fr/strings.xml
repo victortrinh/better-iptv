@@ -117,6 +117,7 @@
     <!-- The Versions screen's heading over the Versions whose language no Prefix, Category or TMDB names (#388). -->
     <string name="versions_untagged">Autres versions</string>
     <string name="version_backup">Copie de secours</string>
+    <string name="version_audio_only">%1$s seulement</string>
 
     <string name="versions_title">Versions</string>
     <string name="cast_title">Distribution</string>
@@ -226,6 +227,8 @@
     <string name="settings_app_language_detail">Menus, titres et descriptions</string>
     <string name="settings_content_languages">Langues du contenu</string>
     <string name="settings_content_languages_detail">Les fiches et la lecture choisissent d\'abord les versions dans ces langues</string>
+    <string name="settings_prefer_original_audio">Préférer la version originale</string>
+    <string name="settings_prefer_original_audio_detail">Lit un titre dans la langue où il a été tourné, sous-titré dans votre première langue de contenu, quand une copie l\'a</string>
     <string name="settings_region">Région</string>
     <string name="settings_region_detail">Détermine le Top 10 et les ligues par défaut</string>
     <string name="settings_region_suggested">Suggestions</string>

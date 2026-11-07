@@ -84,6 +84,9 @@ class FakeProvider : Closeable {
     /** Sends movie files a kilobyte at a time, slow enough for a Header read to be caught midway. */
     @Volatile var slowFiles = false
 
+    /** How many bytes of a slow file go out every 20 ms: 1 KB takes a 256 KB Header read over 5 s, 32 KB about 160 ms. */
+    @Volatile var slowFileStep = 1024
+
     /**
      * After this many range requests, answers the rest with HTTP 429, as a Provider's flood
      * protection does. Null never limits.
@@ -385,7 +388,7 @@ class FakeProvider : Closeable {
         val to = asked?.groupValues?.get(2)?.takeIf { it.isNotEmpty() }?.toInt()?.coerceAtMost(file.size - 1) ?: (file.size - 1)
         if (asked != null) exchange.responseHeaders.add("Content-Range", "bytes $from-$to/${file.size}")
         exchange.sendResponseHeaders(if (asked != null) 206 else 200, (to - from + 1).toLong())
-        val step = if (slowFiles) 1024 else 64 * 1024
+        val step = if (slowFiles) slowFileStep else 64 * 1024
         var at = from
         while (at <= to) {
             val end = minOf(at + step, to + 1)

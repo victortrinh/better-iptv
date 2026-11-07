@@ -232,6 +232,34 @@ class BackgroundReadingTest {
         assertEquals(0, provider.refusedStreams)
     }
 
+    @Test fun `a Title released outside the Viewer's languages is read in its page's order, until a copy with Original audio is Confirmed`() = runBlocking {
+        cloud.title("en", tmdbTitle(7, "The Shadow's Edge", originalLanguage = "zh"))
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"4K MOVIES"},{"category_id":"2","category_name":"NORDIC MOVIES"},{"category_id":"3","category_name":"NL - MOVIES"},{"category_id":"4","category_name":"EN - MOVIES"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"4K-DE - Shadow Chase (2025)","tmdb":"7","category_id":"1","added":"1700000004","container_extension":"mkv"},
+            {"stream_id":2,"name":"SC - The Shadow's Edge (2025)","tmdb":"7","category_id":"2","added":"1700000003","container_extension":"mkv"},
+            {"stream_id":3,"name":"NL - The Shadow's Edge (2025)","tmdb":"7","category_id":"3","added":"1700000002","container_extension":"mkv"},
+            {"stream_id":4,"name":"EN - The Shadow's Edge (2025)","tmdb":"7","category_id":"4","added":"1700000001","container_extension":"mkv"}
+        ]"""
+        provider.movieFiles[1] = matroskaFile(listOf(FileTrack("audio", "ger", "A_EAC3")), width = 3840, height = 1608)
+        // The Nordic copy is a dub; the Dutch one carries the Mandarin.
+        provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "dan", "A_AAC")))
+        provider.movieFiles[3] = matroskaFile(listOf(FileTrack("audio", "chi", "A_EAC3"), FileTrack("subtitle", "eng", "S_TEXT/UTF8")))
+        provider.movieFiles[4] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")))
+        library.sync()
+        // The page fetched TMDB's original language once; Background reading has it from then on.
+        library.title(movie(7), english, "en")
+        library.onScreen(listOf(movie(7)))
+
+        startReading()
+        awaitReads(2)
+        idle()
+
+        // `SC` then `NL`, as the page would read them; once the `NL` copy is Confirmed Mandarin, the Title is ready.
+        assertEquals(listOf(2L, 3L), read())
+        assertEquals("NL - The Shadow's Edge (2025)", library.playPlan(movie(7), english, fullHdTv)!!.version.name)
+    }
+
     /** A clock the test moves by hand, in UTC. */
     private class TestClock(@Volatile var now: Instant) : Clock() {
         override fun instant(): Instant = now

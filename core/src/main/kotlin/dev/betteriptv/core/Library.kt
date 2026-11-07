@@ -920,11 +920,12 @@ class Library private constructor(
     }
 
     /**
-     * A Title with its Versions grouped by language, the Viewer's [contentLanguages] first; null when
-     * the catalog doesn't have it. A Movie's Versions come with what other devices on the Provider
-     * read of them (from the cloud), waited for up to [SHARED_READS_WAIT].
+     * A Title with its Versions grouped by language, the Viewer's [contentLanguages] first, then,
+     * with [preferOriginalAudio] on a Title released outside them, its original language's; null
+     * when the catalog doesn't have it. A Movie's Versions come with what other devices on the
+     * Provider read of them (from the cloud), waited for up to [SHARED_READS_WAIT].
      */
-    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): TitleDetails? = withContext(Dispatchers.IO) {
+    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, preferOriginalAudio: Boolean = true): TitleDetails? = withContext(Dispatchers.IO) {
         val title = store.title(id) ?: return@withContext null
         // What other Viewers of the Provider read is asked beside TMDB's details, so a Movie's page
         // arrives with its badges and plan Confirmed and they don't change once it shows (#387). A
@@ -941,9 +942,10 @@ class Library private constructor(
         } catch (e: ExecutionException) {
             // The details stand without it, as without a cloud.
         }
-        val candidates = candidates(title)
+        val candidates = candidates(title, contentLanguages)
         val shown = shown(candidates, contentLanguages, metadata, appLanguage)
-        val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, metadata?.originalLanguage), contentLanguages)
+        val original = originalAudioLanguage(metadata?.originalLanguage, contentLanguages, preferOriginalAudio)
+        val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, metadata?.originalLanguage), contentLanguages, original)
         TitleDetails(
             id, shown.name, shown.year, shown.image, languages, otherLanguages,
             description = metadata?.description(appLanguage),
@@ -955,6 +957,7 @@ class Library private constructor(
             rank = topRanks(region, contentLanguages, appLanguage)[id],
             fromTmdb = metadata != null,
             trailer = metadata?.trailer(appLanguage),
+            originalLanguage = original,
         )
     }
 
@@ -967,7 +970,7 @@ class Library private constructor(
      * Episode has how far the Viewer got in it, and [ShowEpisodes.next] is the one to watch next.
      * Null for a Movie, or a Show the catalog doesn't have.
      */
-    suspend fun episodes(id: TitleId, contentLanguages: List<String>, appLanguage: String = "en"): ShowEpisodes? = withContext(Dispatchers.IO) {
+    suspend fun episodes(id: TitleId, contentLanguages: List<String>, appLanguage: String = "en", preferOriginalAudio: Boolean = true): ShowEpisodes? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Show) return@withContext null
         val title = store.title(id) ?: return@withContext null
         // Asked beside the Provider, which takes about a second a show Listing.
@@ -1004,7 +1007,8 @@ class Library private constructor(
         val original = originalLanguage(id)
         val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id) }
         val played = store.episodeProgress(id)
-        val merged = mergeEpisodes(shows, contentLanguages, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
+        val merged = mergeEpisodes(shows, contentLanguages, reads, originalAudioLanguage(original, contentLanguages, preferOriginalAudio), expected(title, contentLanguages))
         val seasons = withUpcomingAndProgress(merged, upcoming.await(), played, LocalDate.now())
         ShowEpisodes(seasons, unreadVersions = title.listings.count { it.id !in read }, next = nextEpisode(seasons, played))
     }
@@ -1047,20 +1051,45 @@ class Library private constructor(
      * [qualityCap], with its Backups. Null for a Show, when the catalog doesn't have the Title, or
      * when it has no Version the device can display other than Audio-description ones, which are
      * never picked automatically. A Title with nothing within the cap plays its lowest quality above
-     * it. It starts where the Viewer stopped last time, unless they finished the Title.
+     * it. It starts where the Viewer stopped last time, unless they finished the Title. With
+     * [preferOriginalAudio], a Version with Original audio comes first on a Title released outside
+     * the Content languages ([playable]).
      */
-    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
+    suspend fun playPlan(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD, preferOriginalAudio: Boolean = true): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
         val title = store.title(id) ?: return@withContext null
         val remembered = rememberedTracks()
-        val ranked = playable(candidates(title), rankingLanguages(remembered, contentLanguages), device, qualityCap)
+        val originalLanguage = originalLanguage(id)
+        val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
+        val candidates = candidates(title, contentLanguages).let { if (original != null) likelyInOriginalLanguage(it, originalLanguage) else it }
+        val ranked = playable(candidates, contentLanguages, device, qualityCap, remembered.audio, original)
         val stopped = stopped(id)
         ranked.firstOrNull()?.let {
             PlayPlan(
                 id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0,
-                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id), choices = titleChoices(id),
+                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage, choices = titleChoices(id),
+                preferOriginalAudio = preferOriginalAudio,
             )
         }
+    }
+
+    /**
+     * What pressing Play starts: the Header read in flight, if one is, is let finish (for up to
+     * [PLAY_WAITS_FOR_READ] from the press), the reads behind it are dropped, and then the plan is
+     * made, so a Version Confirmed in that moment is the one that plays: a Movie's [playPlan], or a
+     * Show's [episodePlayPlan] for [episode]. Null as those are.
+     */
+    suspend fun pressPlay(
+        id: TitleId,
+        contentLanguages: List<String>,
+        device: DeviceProfile,
+        qualityCap: QualityCap = QualityCap.UHD,
+        preferOriginalAudio: Boolean = true,
+        episode: EpisodeNumber? = null,
+    ): PlayPlan? {
+        connection.finishRead()
+        return if (episode != null) episodePlayPlan(id, episode, contentLanguages, device, qualityCap, preferOriginalAudio)
+        else playPlan(id, contentLanguages, device, qualityCap, preferOriginalAudio)
     }
 
     /**
@@ -1068,8 +1097,8 @@ class Library private constructor(
      * the Episodes [episodes] read before; it starts where the Viewer stopped, unless they finished it. Null for a Movie, or when the
      * Show has no such Episode or no Version of it the device can display.
      */
-    suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? =
-        withContext(Dispatchers.IO) { episodePlans(id, contentLanguages, device, qualityCap)?.get(episode)?.invoke() }
+    suspend fun episodePlayPlan(id: TitleId, episode: EpisodeNumber, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD, preferOriginalAudio: Boolean = true): PlayPlan? =
+        withContext(Dispatchers.IO) { episodePlans(id, contentLanguages, device, qualityCap, preferOriginalAudio)?.get(episode)?.invoke() }
 
     /**
      * What to offer once [plan]'s Episode ends: the Show's next Episode the device can play, the next
@@ -1078,27 +1107,27 @@ class Library private constructor(
      */
     suspend fun nextEpisodePlan(plan: PlayPlan, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = withContext(Dispatchers.IO) {
         val playing = plan.episode ?: return@withContext null
-        val plans = episodePlans(plan.titleId ?: return@withContext null, plan.contentLanguages, device, qualityCap) ?: return@withContext null
+        val plans = episodePlans(plan.titleId ?: return@withContext null, plan.contentLanguages, device, qualityCap, plan.preferOriginalAudio) ?: return@withContext null
         plans.tailMap(playing).entries.asSequence().filter { it.key != playing }.firstNotNullOfOrNull { it.value() }
     }
 
     /** A Show's Episodes, in order, each with what playing it starts, from the show details kept on the device. */
-    private fun episodePlans(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap): SortedMap<EpisodeNumber, () -> PlayPlan?>? {
+    private fun episodePlans(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap, preferOriginalAudio: Boolean): SortedMap<EpisodeNumber, () -> PlayPlan?>? {
         if (id.kind != TitleKind.Show) return null
-        val byEpisode = episodeCandidates(id) ?: return null
+        val byEpisode = episodeCandidates(id, contentLanguages) ?: return null
         val remembered = rememberedTracks()
-        val languages = rankingLanguages(remembered, contentLanguages)
         val stopped = store.episodeProgress(id).filter { !it.watched }.associateBy { it.episode }
-        val original = originalLanguage(id)
+        val originalLanguage = originalLanguage(id)
+        val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
         // The Show's: what the Viewer chose in one Episode carries to the next.
         val choices = titleChoices(id)
         val plans: SortedMap<EpisodeNumber, () -> PlayPlan?> = TreeMap(byEpisode.comparator())
         byEpisode.forEach { (episode, candidates) ->
             plans[episode] = {
-                val ranked = playable(candidates, languages, device, qualityCap)
+                val ranked = playable(candidates, contentLanguages, device, qualityCap, remembered.audio, original)
                 ranked.firstOrNull()?.let {
                     val at = stopped[episode]
-                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, original, choices)
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, originalLanguage, choices, preferOriginalAudio)
                 }
             }
         }
@@ -1106,11 +1135,12 @@ class Library private constructor(
     }
 
     /** Each of the Show [id]'s Episodes with its Versions' candidates, from the show details kept on the device. */
-    private fun episodeCandidates(id: TitleId): SortedMap<EpisodeNumber, List<Candidate>>? {
+    private fun episodeCandidates(id: TitleId, contentLanguages: List<String>): SortedMap<EpisodeNumber, List<Candidate>>? {
         val title = store.title(id) ?: return null
         val kept = store.showDetails(title.listings.map { it.id })
-        val shows = title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
-        return episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }))
+        val original = originalLanguage(id)
+        val shows = title.listings.filter { it.id in kept }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to kept.getValue(it.id).episodes }
+        return episodeCandidates(shows, store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } }), expected(title, contentLanguages))
     }
 
     /**
@@ -1118,9 +1148,9 @@ class Library private constructor(
      * Versions plays, as [chosenPlayPlan] does for a Movie: that Version with its Backups, then the
      * Episode's other Versions, from where the Viewer stopped in it. Null when the Show doesn't have it.
      */
-    suspend fun chosenEpisodePlayPlan(id: TitleId, episode: EpisodeNumber, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
+    suspend fun chosenEpisodePlayPlan(id: TitleId, episode: EpisodeNumber, listingId: Long, contentLanguages: List<String>, preferOriginalAudio: Boolean = true): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Show) return@withContext null
-        val candidates = episodeCandidates(id)?.get(episode) ?: return@withContext null
+        val candidates = episodeCandidates(id, contentLanguages)?.get(episode) ?: return@withContext null
         candidates.find { it.listing.id == listingId }?.let { chosen ->
             val version = withBackups(chosen, candidates)
             val remembered = rememberedTracks()
@@ -1128,7 +1158,7 @@ class Library private constructor(
             val at = store.episodeProgress(id).firstOrNull { it.episode == episode && !it.watched }
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
-                remembered, at?.duration, originalLanguage(id), titleChoices(id),
+                remembered, at?.duration, originalLanguage(id), titleChoices(id), preferOriginalAudio,
             )
         }
     }
@@ -1183,9 +1213,9 @@ class Library private constructor(
      * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
      * stopped last time; null for a Show or when the Title doesn't have it.
      */
-    suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>): PlayPlan? = withContext(Dispatchers.IO) {
+    suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>, preferOriginalAudio: Boolean = true): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
-        val candidates = store.title(id)?.let(::candidates) ?: return@withContext null
+        val candidates = store.title(id)?.let { candidates(it, contentLanguages) } ?: return@withContext null
         candidates.find { it.listing.id == listingId }?.let { chosen ->
             val version = withBackups(chosen, candidates)
             val remembered = rememberedTracks()
@@ -1195,6 +1225,7 @@ class Library private constructor(
             PlayPlan(
                 id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0,
                 remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id), choices = titleChoices(id),
+                preferOriginalAudio = preferOriginalAudio,
             )
         }
     }
@@ -1396,9 +1427,13 @@ class Library private constructor(
      * the plan of its Episode to watch next ([episodes], [episodePlayPlan]). Null when there is
      * nothing to play.
      */
-    suspend fun titlePlayPlan(id: TitleId, contentLanguages: List<String>, appLanguage: String, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD): PlayPlan? = when (id.kind) {
-        TitleKind.Movie -> playPlan(id, contentLanguages, device, qualityCap)
-        TitleKind.Show -> episodes(id, contentLanguages, appLanguage)?.next?.let { episodePlayPlan(id, it, contentLanguages, device, qualityCap) }
+    suspend fun titlePlayPlan(id: TitleId, contentLanguages: List<String>, appLanguage: String, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD, preferOriginalAudio: Boolean = true): PlayPlan? {
+        // A press of Play: a Header read in flight (Background reading's) is let finish first.
+        connection.finishRead()
+        return when (id.kind) {
+            TitleKind.Movie -> playPlan(id, contentLanguages, device, qualityCap, preferOriginalAudio)
+            TitleKind.Show -> episodes(id, contentLanguages, appLanguage, preferOriginalAudio)?.next?.let { episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio) }
+        }
     }
 
     /**
@@ -1711,23 +1746,25 @@ class Library private constructor(
      * from the Provider's movie details of its Versions (API calls, never a stream); what Viewers of
      * the same Provider read before (from the cloud); then Header reads one at a time while the
      * Viewer's connection is free. A Movie's are of the best unconfirmed Version in each language, the
-     * Viewer's [contentLanguages] first. A Show's are of each Episode's, from the show details
-     * [episodes] kept, in the Show's order: the Viewer's languages first, and among them first the
-     * Versions whose first audio Track, as the Provider's details name it, disagrees with the Prefix.
-     * Pressing Play takes the connection at once and ends the reads, and so does the Provider
-     * refusing one. Calls [changed] each time a Version's attributes change, so the page shows them.
-     * Results are kept on the device and shared through the cloud, so a Version is never read twice.
+     * Viewer's [contentLanguages] first; with [preferOriginalAudio] on a Title released outside them,
+     * in order of how likely each is to carry Original audio ([readOrder]). A Show's are of each
+     * Episode's, from the show details [episodes] kept, in the Show's order: the Viewer's languages
+     * first, and among them first the Versions whose first audio Track, as the Provider's details
+     * name it, disagrees with the Prefix. Pressing Play lets the read in flight finish (within
+     * [PLAY_WAITS_FOR_READ]) and ends the reads behind it, and the Provider refusing one ends them
+     * too. Calls [changed] each time a Version's attributes change, so the page shows them. Results
+     * are kept on the device and shared through the cloud, so a Version is never read twice.
      */
-    suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean = true, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
         detailsReading.incrementAndGet()
         try {
-            readDetailsHeaders(id, contentLanguages, changed)
+            readDetailsHeaders(id, contentLanguages, preferOriginalAudio, changed)
         } finally {
             detailsReading.decrementAndGet()
         }
     }
 
-    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, changed: suspend () -> Unit) {
+    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean, changed: suspend () -> Unit) {
         val title = store.title(id) ?: return
         val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
@@ -1745,19 +1782,25 @@ class Library private constructor(
         if (lookUpFileReads(provider, ids)) changed()
         // This page's Versions come before Background reading's.
         connection.cancelRead()
-        val unread = if (shows == null) unread(title, contentLanguages) else unreadEpisodes(shows, contentLanguages)
-        for (version in unread) {
-            val container = (if (shows == null) store.container(version.listingId) else store.episodeContainer(version.listingId)) ?: "mkv"
+        val unread = if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio)
+        for (listingId in unread) {
+            val container = (if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv"
             if (container !in HEADER_READABLE) continue
-            val location = if (shows == null) client.movieLocation(version.listingId, container) else client.episodeLocation(version.listingId, container)
+            val location = if (shows == null) client.movieLocation(listingId, container) else client.episodeLocation(listingId, container)
             val read = try {
-                reads.withLock { connection.whileFree { Read(headerReader.read(location, container)) } }
+                reads.withLock {
+                    connection.whileFree {
+                        val contents = headerReader.read(location, container)
+                        // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
+                        store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
+                        Read(contents)
+                    }
+                }
             } catch (e: IOException) {
                 // The Provider refused: no more reads for now, nor Background reading today.
                 if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
                 null
             } ?: break
-            store.saveFileRead(version.listingId, read.contents?.toJson(), Instant.now(), shared = false)
             if (read.contents != null) changed()
         }
         shareFileReads(provider)
@@ -1795,7 +1838,7 @@ class Library private constructor(
 
     /** The attributes of the Version [id]'s card shows, with what reads Confirmed; null when the catalog no longer has it. */
     fun cardBest(id: TitleId, contentLanguages: List<String>): VersionAttributes? =
-        store.title(id)?.let { preferred(candidates(it), contentLanguages).firstOrNull()?.attributes }
+        store.title(id)?.let { preferred(candidates(it, contentLanguages), contentLanguages).firstOrNull()?.attributes }
 
     /**
      * Background reading at [pace], until cancelled: a Header read of the Version a Movie's card
@@ -1804,22 +1847,28 @@ class Library private constructor(
      * newest Movies in the Viewer's [contentLanguages]. A dead file is kept as unreadable and passed
      * over; a Provider answering with another error stops it until the next day, and one not
      * answering pauses it for a quarter of an hour. Each read that Confirms a card's Version is
-     * announced in [confirmations].
+     * announced in [confirmations]. With [preferOriginalAudio], a Title released outside the Content
+     * languages is read in its details page's order ([readOrder]) until a Version is Confirmed to
+     * carry Original audio, so it is ready before the Viewer opens it.
      */
-    suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace) =
-        readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE)
+    suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, preferOriginalAudio: Boolean = true) =
+        readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE, preferOriginalAudio)
 
-    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration) = withContext(Dispatchers.IO) {
+    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration, preferOriginalAudio: Boolean = true) = withContext(Dispatchers.IO) {
         var pausedUntil = Instant.MIN
         while (true) {
             delay(pace.gap)
             val day = ReadingDay.of(store.readingDay(), LocalDate.now(clock))
             if (day.refused || day.reads >= pace.perDay || clock.instant().isBefore(pausedUntil) || detailsReading.get() > 0) continue
             val login = credentials.load() ?: continue
-            val next = nextBackgroundRead(contentLanguages) ?: continue
+            val next = nextBackgroundRead(contentLanguages, preferOriginalAudio) ?: continue
             if (!reads.tryLock()) continue
             val read = try {
-                connection.whileFree { Read(headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)) }
+                connection.whileFree {
+                    val contents = headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)
+                    store.saveFileRead(next.listingId, contents?.toJson(), Instant.now(), shared = false)
+                    Read(contents)
+                }
             } catch (e: HeaderReadRefused) {
                 store.saveReadingDay(day.copy(refused = true).kept())
                 continue
@@ -1831,7 +1880,6 @@ class Library private constructor(
             }
             // Null when Play or a details page took the connection.
             read ?: continue
-            store.saveFileRead(next.listingId, read.contents?.toJson(), Instant.now(), shared = false)
             store.saveReadingDay(day.copy(reads = day.reads + 1).kept())
             if (read.contents != null) _confirmations.emit(next.id)
         }
@@ -1839,40 +1887,57 @@ class Library private constructor(
 
     private class BackgroundRead(val id: TitleId, val listingId: Long, val container: String)
 
-    /** The first Movie, in Background reading's order, whose card shows a Version not yet read. */
-    private fun nextBackgroundRead(contentLanguages: List<String>): BackgroundRead? {
+    /**
+     * The first Movie, in Background reading's order, whose card shows a Version not yet read; on a
+     * Title Prefer original audio acts on, the first Version of its details page's order not yet
+     * read, as long as none is Confirmed to carry Original audio.
+     */
+    private fun nextBackgroundRead(contentLanguages: List<String>, preferOriginalAudio: Boolean): BackgroundRead? {
         val newest = store.titles(TitleKind.Movie, 0, NEW_MOVIES).filter { inContentLanguages(candidates(it), contentLanguages, null) }.map { it.id }
         val order = cardsOnScreen.asSequence() + store.inProgress(ROW_SIZE).asSequence().map { it.id } + newest.asSequence()
         return order.filter { it.kind == TitleKind.Movie }.distinct().firstNotNullOfOrNull { id ->
             val title = store.title(id) ?: return@firstNotNullOfOrNull null
-            val shown = preferred(candidates(title), contentLanguages).firstOrNull()?.listing ?: return@firstNotNullOfOrNull null
-            val container = store.container(shown.id) ?: "mkv"
-            if (container !in HEADER_READABLE || store.fileReads(listOf(shown.id)).containsKey(shown.id)) null
-            else BackgroundRead(id, shown.id, container)
+            val candidates = candidates(title, contentLanguages)
+            val original = originalAudioLanguage(originalLanguage(id), contentLanguages, preferOriginalAudio)
+            val next = if (original == null) {
+                val shown = preferred(candidates, contentLanguages).firstOrNull()?.listing ?: return@firstNotNullOfOrNull null
+                shown.takeUnless { store.fileReads(listOf(it.id)).containsKey(it.id) }
+            } else {
+                if (candidates.any { it.attributes.hasConfirmedOriginalAudio(original) }) null
+                else readOrder(candidates, store.fileReads(title.listings.map { it.id }).keys, contentLanguages, original).firstOrNull()?.listing
+            } ?: return@firstNotNullOfOrNull null
+            val container = store.container(next.id) ?: "mkv"
+            if (container !in HEADER_READABLE) null else BackgroundRead(id, next.id, container)
         }
     }
 
-    /** The best Version not yet read in each of [title]'s languages, the Viewer's [contentLanguages] first. */
-    private fun unread(title: StoredTitle, contentLanguages: List<String>): List<Version> {
+    /**
+     * The Listings of the best Version not yet read in each of [title]'s languages, the Viewer's
+     * [contentLanguages] first, or, with [preferOriginalAudio] on a Title released outside them,
+     * in order of how likely each is to carry Original audio ([readOrder]).
+     */
+    private fun unread(title: StoredTitle, contentLanguages: List<String>, preferOriginalAudio: Boolean): List<Long> {
         val read = store.fileReads(title.listings.map { it.id }).keys
-        val (languages, otherLanguages) = groupByLanguage(candidates(title), contentLanguages)
-        return (languages + otherLanguages).mapNotNull { firstUnread(it, read) }
+        val original = originalAudioLanguage(originalLanguage(title.id), contentLanguages, preferOriginalAudio)
+        return readOrder(candidates(title, contentLanguages), read, contentLanguages, original).map { it.listing.id }
     }
 
     /**
-     * The best Version not yet read in each language of each of [shows]' Episodes, in the Show's order:
-     * the Viewer's [contentLanguages] first, and among them first those whose first audio Track, as
-     * the Provider's details name it, disagrees with the Prefix.
+     * The Listings of the best Version not yet read in each language of each of [shows]' Episodes,
+     * in the Show's order: the Viewer's [contentLanguages] (and, with [preferOriginalAudio], the
+     * Show's original language) first, and among them first those whose first audio Track, as the
+     * Provider's details name it, disagrees with the Prefix.
      */
-    private fun unreadEpisodes(shows: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>): List<Version> {
+    private fun unreadEpisodes(title: StoredTitle, shows: List<Pair<Candidate, List<ProviderEpisode>>>, contentLanguages: List<String>, preferOriginalAudio: Boolean): List<Long> {
         val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
         val disagreeing = shows.flatMap { (show, episodes) -> episodes.filter { firstTrackDisagrees(show.attributes, it) }.map { it.id } }.toSet()
-        val unread = mergeEpisodes(shows, contentLanguages, reads).flatMap { it.episodes }.flatMap { episode ->
+        val original = originalAudioLanguage(originalLanguage(title.id), contentLanguages, preferOriginalAudio)
+        val unread = mergeEpisodes(shows, contentLanguages, reads, original, expected(title, contentLanguages)).flatMap { it.episodes }.flatMap { episode ->
             episode.languages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to true } } +
                 episode.otherLanguages.mapNotNull { firstUnread(it, reads.keys)?.let { version -> version to false } }
         }
         // A stable sort, so the Show's order stands within each.
-        return unread.sortedWith(compareBy({ (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing })).map { it.first }
+        return unread.sortedWith(compareBy({ (_, wanted) -> !wanted }, { (version, _) -> version.listingId !in disagreeing })).map { it.first.listingId }
     }
 
     private fun firstUnread(group: LanguageGroup, read: Set<Long>): Version? =
@@ -2091,22 +2156,38 @@ class Library private constructor(
         }
     }
 
-    /** [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details Confirmed. */
-    private fun candidates(title: StoredTitle): List<Candidate> = candidates(listOf(title)).getValue(title.id)
+    /**
+     * [title]'s Versions, a Movie's with what Header reads, Playback and the Provider's movie details
+     * Confirmed; a read moves a Version to a language only when it is expected there ([expected], for
+     * the Viewer's [contentLanguages]).
+     */
+    private fun candidates(title: StoredTitle, contentLanguages: List<String> = emptyList()): List<Candidate> = candidates(listOf(title), contentLanguages).getValue(title.id)
 
     /** Each of [titles]' Versions, as [candidates] gives them, read with a few queries for all of them. */
-    private fun candidates(titles: Collection<StoredTitle>): Map<TitleId, List<Candidate>> {
+    private fun candidates(titles: Collection<StoredTitle>, contentLanguages: List<String> = emptyList()): Map<TitleId, List<Candidate>> {
         val ids = titles.filter { it.id.kind == TitleKind.Movie }.flatMap { title -> title.listings.map { it.id } }
         val reads = ids.chunked(LISTINGS_PER_QUERY).flatMap { store.fileReads(it).entries }.associate { it.key to it.value }
         val bitrates = ids.chunked(LISTINGS_PER_QUERY).flatMap { store.movieBitrates(it).entries }.associate { it.key to it.value }
         return titles.associate { title ->
             val plain = title.listings.map(::candidates)
+            val expect = expected(title, contentLanguages)
             title.id to if (title.id.kind != TitleKind.Movie) plain else plain.map { candidate ->
                 val id = candidate.listing.id
                 val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
-                Candidate(candidate.listing, reads[id]?.let(withBitrate::confirmedBy) ?: withBitrate)
+                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate)
             }
         }
+    }
+
+    /**
+     * Whether a read may move one of [title]'s Versions to a language (a primary subtag), for
+     * [confirmedBy]: the Title's original language, one of the Viewer's [contentLanguages], or one
+     * the Prefix table knows. The original language is looked up only when a read names a language
+     * the table doesn't know, which is rare.
+     */
+    private fun expected(title: StoredTitle, contentLanguages: List<String>): (String) -> Boolean {
+        val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        return { language -> language in wanted || prefixTable.knowsLanguage(language) || namedOriginalLanguage(originalLanguage(title.id)) == language }
     }
 
     private fun candidates(listing: StoredListing) = Candidate(listing, prefixTable.describe(listing.name, listing.category).attributes)

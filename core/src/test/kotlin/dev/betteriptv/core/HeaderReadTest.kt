@@ -192,24 +192,39 @@ class HeaderReadTest {
         }
     }
 
-    @Test fun `pressing Play stops a read in progress at once`() = runBlocking {
-        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv")
+    @Test fun `pressing Play lets a read in progress finish within its bound, and cuts it off past it`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv", "FR - Le Film (2025)" to "FR - FILMS" with "mkv")
         provider.movieFiles[1] = matroskaFile(englishAndFrench)
+        provider.movieFiles[2] = matroskaFile(englishAndFrench)
+        // Five seconds a read: past Play's bound.
         provider.slowFiles = true
         val reading = async { readHeaders() }
         withTimeout(5_000) { while (provider.openStreamCount == 0) delay(10) }
 
         val pressed = TimeSource.Monotonic.markNow()
-        val plan = library.playPlan(movie, listOf("en"), fullHdTv)!!
+        val plan = library.pressPlay(movie, listOf("en"), fullHdTv)!!
         library.connect(plan.version).use { connection ->
-            // The read gave way, and the Provider counted it closed before playback opened the file.
-            assertTrue("Play waited ${pressed.elapsedNow()}", pressed.elapsedNow().inWholeMilliseconds < 1_500)
+            // The read gave way at the bound, and the Provider counted it closed before playback opened the file.
+            val waited = pressed.elapsedNow()
+            assertTrue("Play waited $waited", waited >= PLAY_WAITS_FOR_READ && waited < PLAY_WAITS_FOR_READ + PROVIDER_RELEASE_GRACE * 2)
             reading.await()
             provider.play(connection.location).close()
         }
         assertEquals(0, provider.refusedStreams)
-        // Nothing was kept of the cut-off read, so the next details page reads it again.
+        // Nothing was kept of the cut-off read, so the next details page reads it again; the read behind it never started.
         assertEquals(Provenance.Likely, version("EN - Movie (2025)").attributes.language?.provenance)
+        assertEquals(1, provider.ranges.size)
+
+        // A read quick enough lands whole, and the plan made after it names what it Confirmed.
+        provider.slowFileStep = 8 * 1024
+        val again = async { readHeaders() }
+        // The cut-off read's server thread may still be winding down: wait for the new range request itself.
+        withTimeout(5_000) { while (provider.ranges.size < 2) delay(10) }
+        val quick = library.pressPlay(movie, listOf("en"), fullHdTv)!!
+        library.connect(quick.version).close()
+        again.await()
+        assertEquals(Known("en", Provenance.Confirmed), quick.version.attributes.language)
+        assertEquals(2, provider.ranges.size)
     }
 
     @Test fun `nothing is read while a Version plays`() = runBlocking {
