@@ -74,6 +74,17 @@ class Provider:
         return text
 
     def api(self, **params):
+        """One catalog call, its answer kept under artwork/answers/ so a re-run doesn't ask again."""
+        kept = ART / "answers" / ("_".join(f"{k}-{v}" for k, v in sorted(params.items())) + ".json")
+        if kept.exists():
+            return json.loads(kept.read_text())
+        data = self._api(**params)
+        if data is not None:
+            kept.parent.mkdir(exist_ok=True)
+            kept.write_text(json.dumps(data, ensure_ascii=False))
+        return data
+
+    def _api(self, **params):
         query = urllib.parse.urlencode({"username": self.user, "password": self.password, **params})
         req = urllib.request.Request(f"{self.base}/player_api.php?{query}", headers={"User-Agent": UA, "Accept-Encoding": "gzip"})
         start = time.monotonic()
@@ -99,6 +110,12 @@ class Provider:
 
 def present(v):
     return v not in (None, "", "0", 0, [], {})
+
+
+def urls(v):
+    """The http(s) URLs in a field that may be a string, a list with nulls, or nothing."""
+    items = v if isinstance(v, list) else [v]
+    return [u for u in items if isinstance(u, str) and u.startswith("http")]
 
 
 def prefix(name):
@@ -142,6 +159,10 @@ def fetch_image(url, cache):
         return cache[url]
     rec = {"url": url, "host": urllib.parse.urlsplit(url).netloc, "bytes": 0, "size": None, "file": None, "status": None}
     cache[url] = rec
+    for saved in IMG.glob(hashlib.sha1(url.encode()).hexdigest()[:16] + ".*"):  # an earlier run fetched it
+        data = saved.read_bytes()
+        rec.update(bytes=len(data), size=image_size(data), file=saved.name, status=200)
+        return rec
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         start = time.monotonic()
@@ -265,13 +286,11 @@ def main():
                 info = (data or {}).get("info") if isinstance(data, dict) else None
                 if isinstance(info, dict):
                     t["details"] = {k: info.get(k) for k in ("backdrop_path", "cover_big", "movie_image", "youtube_trailer", "plot", "description", "cast", "actors", "genre", "director", "releasedate", "duration", "runtime", "rating", "country", "o_name", "name") if present(info.get(k))}
-                    bd = info.get("backdrop_path")
-                    t["backdrops"] = bd if isinstance(bd, list) else [bd] if present(bd) else []
+                    t["backdrops"] = urls(info.get("backdrop_path"))
                 else:
                     t["details"] = {"error": "no info"}
             else:
-                bd = listings[0].get("backdrop_path")
-                t["backdrops"] = bd if isinstance(bd, list) else []
+                t["backdrops"] = urls(listings[0].get("backdrop_path"))
                 t["details"] = {k: listings[0].get(k) for k in ("plot", "cast", "genre", "director", "releaseDate", "rating", "youtube_trailer", "episode_run_time") if present(listings[0].get(k))}
             if t["backdrops"]:
                 fetch_image(t["backdrops"][0], images)
@@ -305,7 +324,7 @@ def main():
         fetch_image(u, images)
     print("recognising text…", file=sys.stderr)
     ocr(list(images.values()))
-    (ART / "titles.json").write_text(json.dumps({"titles": titles, "images": images, "stills": stills, "calls": provider.calls}, ensure_ascii=False))
+    (ART / "titles.json").write_text(json.dumps({"titles": titles, "images": images, "stills": stills, "calls": provider.calls}, ensure_ascii=False, default=str))
     report(titles, images, stills, provider)
     sheet(titles, images, stills)
 
@@ -366,6 +385,9 @@ def report(titles, images, stills, provider):
         L += [f"## Episode stills", "", f"- {stills['shows']} Shows, {stills['episodes']} Episodes, a still (`info.movie_image`) on {pct(stills['withStill'], stills['episodes'])}", ""]
     if provider.calls:
         ms = sorted(c[2] for c in provider.calls)
+        L += ["## Provider calls", "", f"- {len(provider.calls)} calls, {Counter(c[0] for c in provider.calls)}, statuses {Counter(c[1] for c in provider.calls)}, median {ms[len(ms) // 2] * 1000:.0f} ms, max {ms[-1] * 1000:.0f} ms, {PROVIDER_PAUSE} s pause between calls", ""]
+    if False:
+        ms = []
         L += ["## Provider calls", "", f"- {len(provider.calls)} calls, {Counter(c[0] for c in provider.calls)}, statuses {Counter(c[1] for c in provider.calls)}, median {ms[len(ms) // 2] * 1000:.0f} ms, max {ms[-1] * 1000:.0f} ms, {PROVIDER_PAUSE} s pause between calls", ""]
     text = provider.scrub("\n".join(L) + "\n")
     (ART / "report.md").write_text(text)
