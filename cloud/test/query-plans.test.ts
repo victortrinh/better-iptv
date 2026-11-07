@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { DEVICES_QUERY } from "../src/accounts";
 import { READS_QUERY } from "../src/learned-lines";
 import { LOOKUP_QUERY } from "../src/match";
 import { CACHE_QUERY } from "../src/metadata";
@@ -32,5 +33,10 @@ describe("batch lookups", () => {
     const details = await plan(READS_QUERY, "a".repeat(64), '["EN","SC"]');
     expect(details).toContainEqual(expect.stringMatching(/SEARCH file_read USING INDEX file_read_by_prefix \(provider=\? AND prefix=\?\)/));
     expect(details.filter((detail) => detail.includes("file_read") && detail.startsWith("SCAN"))).toEqual([]);
+  });
+
+  it("search the device list by its Account, not every device", async () => {
+    const details = await plan(DEVICES_QUERY, "a".repeat(64));
+    expect(details.filter((detail) => detail.includes("device") && detail.startsWith("SCAN"))).toEqual([]);
   });
 });
