@@ -15,6 +15,7 @@ import { isLeague, type League, LEAGUES } from "./schedule";
 import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
+import { MAX_FACTS_BATCH, titleFacts } from "./title-facts";
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
@@ -52,7 +53,15 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * - `POST /v1/subtitles`, with `{"kind": "movie", "tmdbId": 238, "season": null, "episode": null,
  *   "languages": ["fr"]}`: `{"subtitles": [{"id": "…", "language": "fr", "source": "opensubtitles",
  *   "release": "…", "hearingImpaired": false, "downloads": 1200}], "unavailable": []}`, the best
- *   offers from OpenSubtitles and Subdl in each language, best first.
+ *   offers from OpenSubtitles and Subdl in each language, best first, searched by the Title number
+ *   and the IMDb ID the Title facts hold.
+ * - `POST /v1/title-facts`, with `{"titles": [{"kind": "movie", "tmdbId": 238}]}`, at most 300 Title
+ *   numbers: what Wikidata knows of each (#476), `{"titles": [{"kind": "movie", "tmdbId": 238,
+ *   "originalLanguage": "en", "imdbId": "tt0068646", "enwiki": "The Godfather", "frwiki": "Le Parrain"}],
+ *   "notFound": [{"kind": "movie", "tmdbId": 999}], "unavailable": []}`: the original language as a
+ *   primary subtag, the IMDb ID and the English and French Wikipedia article names (each null when the
+ *   item lacks it), the Titles Wikidata has no item for, and those it couldn't answer for right now,
+ *   which the device asks again. Cached for good, "no item" included.
  * - `POST /v1/upcoming`, with `{"tmdbId": 1399, "language": "fr"}`: the Show's Episodes TMDB lists
  *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
  *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
@@ -208,6 +217,11 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const { provider } = ((await request.json().catch(() => null)) ?? {}) as { provider?: unknown };
     if (!isProviderKey(provider)) return problem(400, "provider must be the SHA-256 of the Provider's host, in lowercase hex.");
     return new Response(await providerTable(env.DB, provider), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
+  if (request.method === "POST" && pathname === "/v1/title-facts") {
+    const asked = await titleFactsRequest(request);
+    if (typeof asked === "string") return problem(400, asked);
+    return json(await titleFacts(env, asked));
   }
   if (request.method === "POST" && pathname === "/v1/subtitles") {
     const asked = await subtitlesRequest(request);
@@ -419,6 +433,26 @@ async function metadataRequest(request: Request): Promise<{ language: string; ti
     keys.set(`${title.kind}/${title.tmdbId}`, { kind: title.kind, tmdbId: title.tmdbId as number });
   }
   return { language, titles: [...keys.values()] };
+}
+
+/** Reads a Title facts request, or says what's wrong with it. */
+async function titleFactsRequest(request: Request): Promise<TitleKey[] | string> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return "The body must be JSON.";
+  }
+  const { titles } = (body ?? {}) as { titles?: unknown };
+  if (!Array.isArray(titles) || titles.length > MAX_FACTS_BATCH) return `titles must be a list of at most ${MAX_FACTS_BATCH} Titles.`;
+  const keys = new Map<string, TitleKey>();
+  for (const title of titles as { kind?: unknown; tmdbId?: unknown }[]) {
+    if ((title?.kind !== "movie" && title?.kind !== "show") || !Number.isSafeInteger(title.tmdbId) || (title.tmdbId as number) <= 0) {
+      return "Each Title must be {\"kind\": \"movie\" or \"show\", \"tmdbId\": a positive integer}.";
+    }
+    keys.set(`${title.kind}/${title.tmdbId}`, { kind: title.kind, tmdbId: title.tmdbId as number });
+  }
+  return [...keys.values()];
 }
 
 /** Reads a match request, or says what's wrong with it. */

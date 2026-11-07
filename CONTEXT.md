@@ -80,6 +80,10 @@ _Avoid_: Content, media, item, movie (when a show is also meant)
 The number the Provider files a Listing under in its catalog, the same for every Listing of one work in every language (the Provider copies TMDB's numbering; movies and shows are separate number spaces). It is read from the Provider and never looked up anywhere: a Listing without one is Unmatched. It is also what subtitle services are asked by.
 _Avoid_: TMDB ID, external ID
 
+**Title facts**:
+What Wikidata (CC0) knows of a Title by its Title number, through the cloud: its original language, its IMDb ID and its English and French Wikipedia article names, or that Wikidata has no item for it. The device asks after a Sync, in batches, for every Title it has no answer for, keeps the answers with its catalog and lands them between screens like a Pending catalog; a Title the cloud couldn't answer for is asked again. Without a cloud nothing is known.
+_Avoid_: Wikidata metadata, TMDB metadata (which is being retired)
+
 **Movie**:
 A Title that is a single film.
 _Avoid_: Film, VOD

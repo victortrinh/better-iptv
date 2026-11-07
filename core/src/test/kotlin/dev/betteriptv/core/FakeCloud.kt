@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 
 /**
  * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
- * answers, Charts and Games, and signing devices in to Accounts ([phoneSignsIn]).
+ * answers, Title facts from Wikidata ([titleFacts]), Charts and Games, and signing devices in to Accounts ([phoneSignsIn]).
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -42,6 +42,51 @@ class FakeCloud : Closeable {
 
     /** Answers `/v1/unknown-prefixes` with HTTP 503, as a cloud down for that call alone would. */
     @Volatile var failingPrefixReports = false
+
+    /** How many of the next `/v1/title-facts` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
+    @Volatile var failingTitleFacts = 0
+
+    /** Called when a `/v1/title-facts` request arrives, before it is answered. */
+    @Volatile var onTitleFacts: (() -> Unit)? = null
+
+    /** What Wikidata knows of each Title the device may ask about, by `movie/238`: facts, or null for a Title Wikidata has no item for. Titles not here are unavailable. */
+    private val titleFacts = HashMap<String, Map<String, Any?>?>()
+
+    /** The Titles the device asked `/v1/title-facts` about, one list per request, in order. */
+    val titleFactsAsked: List<List<TitleId.Tmdb>>
+        get() = received.filter { it.path == "/v1/title-facts" }.map { request ->
+            ((read(request.body) as Map<*, *>)["titles"] as List<*>).map { title ->
+                (title as Map<*, *>).let { TitleId.Tmdb(if (it["kind"] == "show") TitleKind.Show else TitleKind.Movie, (it["tmdbId"] as Number).toLong()) }
+            }
+        }
+
+    /**
+     * Answers `/v1/title-facts` for [id] with what Wikidata knows (cloud/src/title-facts.ts): its
+     * original language as a primary subtag, its IMDb ID and its English and French Wikipedia article
+     * names, each null when the item lacks it. A Title never scripted comes back unavailable, as one
+     * the cloud couldn't answer for right now; [noTitleFacts] scripts one Wikidata has no item for.
+     */
+    fun titleFacts(id: TitleId.Tmdb, originalLanguage: String? = null, imdbId: String? = null, enwiki: String? = null, frwiki: String? = null) {
+        synchronized(titleFacts) {
+            titleFacts[factsKey(id)] = mapOf(
+                "kind" to kindName(id.kind), "tmdbId" to id.tmdbId, "originalLanguage" to originalLanguage, "imdbId" to imdbId, "enwiki" to enwiki, "frwiki" to frwiki,
+            )
+        }
+    }
+
+    /** Answers `/v1/title-facts` for [id] with "no item": Wikidata doesn't know the Title. */
+    fun noTitleFacts(id: TitleId.Tmdb) {
+        synchronized(titleFacts) { titleFacts[factsKey(id)] = null }
+    }
+
+    /** Forgets what was scripted for [id], so it comes back unavailable again. */
+    fun forgetTitleFacts(id: TitleId.Tmdb) {
+        synchronized(titleFacts) { titleFacts.remove(factsKey(id)) }
+    }
+
+    private fun factsKey(id: TitleId.Tmdb) = "${kindName(id.kind)}/${id.tmdbId}"
+
+    private fun kindName(kind: TitleKind) = if (kind == TitleKind.Movie) "movie" else "show"
 
     /** The Provider tables `/v1/provider-table` serves, by Provider key; a Provider not here gets an empty table, as from the real cloud. */
     val providerTables = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -459,6 +504,22 @@ class FakeCloud : Closeable {
                 respond(exchange, 200, answer)
             }
             "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
+            "/v1/title-facts" -> {
+                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                onTitleFacts?.invoke()
+                if (synchronized(this) { (failingTitleFacts > 0).also { if (it) failingTitleFacts-- } }) return exchange.sendResponseHeaders(503, -1)
+                val asked = (read(body) as Map<*, *>)["titles"] as List<*>
+                if (asked.size > 300) return respond(exchange, 400, mapOf("error" to "titles must be a list of at most 300 Titles."))
+                val keys = asked.map { (it as Map<*, *>).let { t -> "${t["kind"]}/${(t["tmdbId"] as Number).toLong()}" } }.distinct()
+                val (found, notFound) = synchronized(titleFacts) {
+                    keys.filter { it in titleFacts }.partition { titleFacts[it] != null }.let { (found, none) ->
+                        found.map { titleFacts.getValue(it)!! } to none.map { mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong()) }
+                    }
+                }
+                val unavailable = keys.filter { synchronized(titleFacts) { it !in titleFacts } }.map { mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong()) }
+                respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to unavailable))
+            }
             "/v1/provider-table" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))

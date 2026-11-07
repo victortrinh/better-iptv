@@ -181,8 +181,8 @@ data class TitleDetails(
     /** The YouTube video ID of its trailer, in the App language, else English, else the first TMDB lists (ADR 0012); null when it has none. */
     val trailer: String? = null,
     /**
-     * The language the Title was released in (TMDB's, a primary subtag), when Prefer original audio
-     * acts on it: the setting is on, TMDB names the language and it is no Content language. Its
+     * The language the Title was released in (Wikidata's, a primary subtag, #476), when Prefer original
+     * audio acts on it: the setting is on, Wikidata names the language and it is no Content language. Its
      * group then sits among [languages]. Null otherwise.
      */
     val originalLanguage: String? = null,

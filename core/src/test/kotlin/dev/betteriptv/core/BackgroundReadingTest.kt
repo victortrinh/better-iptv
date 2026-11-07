@@ -233,7 +233,7 @@ class BackgroundReadingTest {
     }
 
     @Test fun `a Title released outside the Viewer's languages is read in its page's order, until a copy with Original audio is Confirmed`() = runBlocking {
-        cloud.title("en", tmdbTitle(7, "The Shadow's Edge", originalLanguage = "zh"))
+        cloud.titleFacts(movie(7), originalLanguage = "zh")
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"4K MOVIES"},{"category_id":"2","category_name":"NORDIC MOVIES"},{"category_id":"3","category_name":"NL - MOVIES"},{"category_id":"4","category_name":"EN - MOVIES"}]"""
         provider.movieListOverride = """[
             {"stream_id":1,"name":"4K-DE - Shadow Chase (2025)","tmdb":"7","category_id":"1","added":"1700000004","container_extension":"mkv"},
@@ -247,7 +247,7 @@ class BackgroundReadingTest {
         provider.movieFiles[3] = matroskaFile(listOf(FileTrack("audio", "chi", "A_EAC3"), FileTrack("subtitle", "eng", "S_TEXT/UTF8")))
         provider.movieFiles[4] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")))
         library.sync()
-        // The page fetched TMDB's original language once; Background reading has it from then on.
+        // The Sync fetched Wikidata's original language; the page and Background reading have it from then on.
         library.title(movie(7), english, "en")
         library.onScreen(listOf(movie(7)))
 

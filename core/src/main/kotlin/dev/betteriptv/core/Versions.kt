@@ -44,13 +44,13 @@ internal fun inContentLanguages(candidates: List<Candidate>, contentLanguages: L
     }
 }
 
-/** The language a Title was released in, as a primary subtag; null when TMDB names none, or "xx" ("No Language"). */
+/** The language a Title was released in, as a primary subtag; null when Wikidata names none (#476), or for TMDB's old "xx" ("No Language"). */
 internal fun namedOriginalLanguage(originalLanguage: String?): String? =
     originalLanguage?.takeIf { it.isNotBlank() && it != "xx" }?.let(::primaryLanguage)
 
 /**
  * The language Original audio is sought in when Prefer original audio ([preferOriginalAudio]) acts on
- * a Title released in [originalLanguage]: null when the setting is off, when TMDB names no language,
+ * a Title released in [originalLanguage]: null when the setting is off, when Wikidata names no language,
  * or when the original is one of the Viewer's [contentLanguages], in which case the Title plays
  * exactly as it would without the setting.
  */
@@ -87,12 +87,12 @@ internal fun VersionAttributes.onlyAudioLanguage(contentLanguages: List<String>,
 
 /**
  * [candidates] with each Untagged one, whose Prefix names a Source but no language (`D+`, `NF`,
- * `TOP`) or is Multi-audio, Likely in the language the Title was released in ([originalLanguage], TMDB's): a streaming
- * service's or a Blu-ray's copy keeps the original audio. One whose Prefix names neither (`SC`, the
- * Nordic copies, which may be dubs) is left as it is, as is every one when TMDB names no language.
+ * `TOP`) or is Multi-audio, Likely in the language the Title was released in ([originalLanguage], Wikidata's, #476): a
+ * streaming service's or a Blu-ray's copy keeps the original audio. One whose Prefix names neither (`SC`, the
+ * Nordic copies, which may be dubs) is left as it is, as is every one when Wikidata names no language.
  */
 internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLanguage: String?): List<Candidate> {
-    // TMDB's "xx" is "No Language".
+    // TMDB's "xx" was "No Language"; Wikidata's codes are ISO 639-1, but the guard costs nothing.
     val language = originalLanguage?.takeIf { it.isNotBlank() && it != "xx" } ?: return candidates
     return candidates.map { candidate ->
         val attributes = candidate.attributes

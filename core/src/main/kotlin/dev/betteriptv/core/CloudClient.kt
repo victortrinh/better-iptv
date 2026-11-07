@@ -82,6 +82,31 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
+     * What Wikidata knows of [ids] (#476), at most [MAX_FACTS_BATCH] at a time: each found Title's
+     * facts, and the Titles Wikidata has no item for. Titles the cloud couldn't answer for right now
+     * are in neither part of the answer, so they are asked again.
+     */
+    fun titleFacts(ids: List<TitleId.Tmdb>): CloudTitleFacts {
+        require(ids.size <= MAX_FACTS_BATCH)
+        val body = mapOf("titles" to ids.map { mapOf("kind" to kindName(it.kind), "tmdbId" to it.tmdbId) })
+        val answer = authorized { token -> post("v1/title-facts", json.toJson(body), token) } as? Map<*, *>
+            ?: throw CloudException("The cloud sent something other than an object.")
+        return CloudTitleFacts(
+            found = (answer["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title ->
+                titleId(title)?.let {
+                    it to TitleFacts(
+                        originalLanguage = (title["originalLanguage"] as? String)?.takeIf { language -> language.isNotBlank() },
+                        imdbId = (title["imdbId"] as? String)?.takeIf { imdb -> imdb.isNotBlank() },
+                        enwiki = (title["enwiki"] as? String)?.takeIf { name -> name.isNotBlank() },
+                        frwiki = (title["frwiki"] as? String)?.takeIf { name -> name.isNotBlank() },
+                    )
+                }
+            }.toMap(),
+            notFound = (answer["notFound"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull(::titleId),
+        )
+    }
+
+    /**
      * What the files of [provider]'s movie Listings [listingIds] hold, as Viewers of the same Provider
      * read them, as JSON by Listing id; at most [MAX_BATCH] at a time. [provider] is [providerKey]'s.
      */
@@ -400,6 +425,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
         /** The most Listings one match request may ask about. */
         const val MAX_MATCH_BATCH = 25
+
+        /** The most Title numbers one Title facts request may ask about (cloud/src/title-facts.ts). */
+        const val MAX_FACTS_BATCH = 300
 
         /** The most history changes one sync may push (cloud/src/sync.ts). */
         const val MAX_HISTORY_BATCH = 500

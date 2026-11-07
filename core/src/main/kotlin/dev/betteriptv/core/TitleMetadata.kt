@@ -12,8 +12,11 @@ import java.util.Locale
 internal class TitleMetadata(json: String) {
     private val tree = JsonReader.of(Buffer().writeUtf8(json)).use { it.readJsonValue() } as Map<*, *>
 
-    /** The language the Title was released in (ISO 639-1), which an Untagged Version is Likely in. */
-    val originalLanguage = tree["originalLanguage"] as? String
+    /**
+     * TMDB's original language (ISO 639-1), read only to tell which name is the original one. What an
+     * Untagged Version is Likely in comes from the Title facts Wikidata gives (#476), never from here.
+     */
+    private val originalLanguage = tree["originalLanguage"] as? String
     private val originalTitle = (tree["originalTitle"] as? String).orEmpty()
     private val titles = texts("titles", "title")
     private val descriptions = texts("descriptions", "text")

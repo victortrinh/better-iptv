@@ -63,7 +63,7 @@ class UntaggedVersionsTest {
     private fun LanguageGroup.names() = versions.flatMap { listOf(it) + it.backups }.map { it.name }.toSet()
 
     @Test fun `a Source's copies are Likely in the Title's original language`() = runBlocking {
-        cloud.title("en", tmdbTitle(1084244, "Toy Story 5", originalLanguage = "en"))
+        cloud.titleFacts(toyStory5, originalLanguage = "en")
         sync()
 
         val details = library.title(toyStory5, listOf("en"), "en")!!
@@ -78,7 +78,7 @@ class UntaggedVersionsTest {
     }
 
     @Test fun `a Title released in French makes its Source copies Likely French`() = runBlocking {
-        cloud.title("en", tmdbTitle(1084244, "Toy Story 5", originalLanguage = "fr"))
+        cloud.titleFacts(toyStory5, originalLanguage = "fr")
         sync()
 
         val details = library.title(toyStory5, listOf("en"), "en")!!
@@ -86,7 +86,7 @@ class UntaggedVersionsTest {
         assertEquals(5, details.group("fr")!!.names().size)
     }
 
-    @Test fun `without TMDB's original language a Source's copies stay Untagged`() = runBlocking {
+    @Test fun `without Wikidata's original language a Source's copies stay Untagged`() = runBlocking {
         sync()
 
         val details = library.title(toyStory5, listOf("en"), "en")!!
@@ -94,8 +94,8 @@ class UntaggedVersionsTest {
         assertNull(details.group("en")!!.names().firstOrNull { it.startsWith("D+") })
     }
 
-    @Test fun `TMDB's "no language" names none`() = runBlocking {
-        cloud.title("en", tmdbTitle(1084244, "Toy Story 5", originalLanguage = "xx"))
+    @Test fun `an item naming no language names none`() = runBlocking {
+        cloud.titleFacts(toyStory5, imdbId = "tt3291150")
         sync()
 
         assertEquals(5, library.title(toyStory5, listOf("en"), "en")!!.group(null)!!.names().size)

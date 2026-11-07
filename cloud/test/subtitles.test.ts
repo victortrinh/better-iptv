@@ -8,13 +8,13 @@ let services: FakeSubtitleServices;
 let token: string;
 beforeEach(async () => {
   await env.DB.batch(
-    ["device", "title_metadata", "subtitle_search", "subtitle_file", "service_session"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
+    ["device", "title_facts", "subtitle_search", "subtitle_file", "service_session"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
   );
   services = new FakeSubtitleServices();
   token = await registerDevice();
-  // The Godfather's TMDB metadata, as a metadata request would have cached it: it carries the IMDb ID.
-  await env.DB.prepare("INSERT INTO title_metadata (kind, tmdb_id, language, body, fetched_at) VALUES ('movie', 238, 'en', ?1, ?2)")
-    .bind(JSON.stringify({ kind: "movie", tmdbId: 238, imdbId: "tt0068646" }), Date.now())
+  // The Godfather's Title facts, as a device's request would have cached them from Wikidata (#476): they carry the IMDb ID.
+  await env.DB.prepare("INSERT INTO title_facts (kind, tmdb_id, found, original_language, imdb_id, enwiki, frwiki, fetched_at) VALUES ('movie', 238, 1, 'en', 'tt0068646', 'The Godfather', 'Le Parrain', ?1)")
+    .bind(Date.now())
     .run();
 });
 afterEach(() => {
@@ -86,7 +86,7 @@ describe("subtitle search", () => {
     expect(subtitles.some((s) => s.id.includes("test-subdl-key"))).toBe(false);
   });
 
-  it("asks each service by TMDB ID and, from the cached metadata, IMDb ID, with the cloud's own keys", async () => {
+  it("asks each service by Title number and, from the Title facts Wikidata gave, IMDb ID, with the cloud's own keys", async () => {
     await search(godfather);
 
     const [os, subdl] = [services.requests.find((r) => r.url.includes("opensubtitles"))!, services.requests.find((r) => r.url.includes("subdl"))!];
@@ -98,6 +98,22 @@ describe("subtitle search", () => {
     expect(subdlUrl.searchParams.get("tmdb_id")).toBe("238");
     expect(subdlUrl.searchParams.get("imdb_id")).toBe("tt0068646");
     expect(subdlUrl.searchParams.get("type")).toBe("movie");
+  });
+
+  it("searches without an IMDb ID for a Title the facts don't know or that has none", async () => {
+    services.openSubtitles({ tmdbId: 500, language: "fr", release: "Unknown.Title", downloads: 3, files: { "u.srt": srt("Salut") } });
+    await env.DB.prepare("INSERT INTO title_facts (kind, tmdb_id, found, original_language, imdb_id, enwiki, frwiki, fetched_at) VALUES ('movie', 501, 1, 'fr', NULL, NULL, NULL, 1)").run();
+    await env.DB.prepare("INSERT INTO title_facts (kind, tmdb_id, found, original_language, imdb_id, enwiki, frwiki, fetched_at) VALUES ('movie', 502, 0, NULL, NULL, NULL, NULL, 1)").run();
+
+    for (const tmdbId of [500, 501, 502]) {
+      services.requests.length = 0;
+      const { subtitles } = await search({ kind: "movie", tmdbId, languages: ["fr"] });
+      expect(subtitles.map((s) => s.release)).toEqual(tmdbId === 500 ? ["Unknown.Title"] : []);
+      const os = new URL(services.requests.find((r) => r.url.includes("opensubtitles"))!.url);
+      expect(os.searchParams.get("tmdb_id")).toBe(String(tmdbId));
+      expect(os.searchParams.has("imdb_id")).toBe(false);
+      expect(new URL(services.requests.find((r) => r.url.includes("subdl"))!.url).searchParams.has("imdb_id")).toBe(false);
+    }
   });
 
   it("finds an Episode's subtitles by its Show, season and episode", async () => {
