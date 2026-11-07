@@ -10,12 +10,13 @@ import java.io.File
 
 /**
  * Syncs a real survey snapshot (scripts/survey.py writes it to the git-ignored .survey/raw) and
- * prints what the Prefix table makes of it. Skipped unless run with `-Psurvey=<path to .survey/raw>`.
+ * prints what the Prefix table (the Base table with the surveyed Provider's hand file) makes of it.
+ * Skipped unless run with `-Psurvey=<path to .survey/raw>`.
  */
 class SurveyCoverageTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
-    private val library by lazy { Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials()) }
+    private val library by lazy { openSurveyedLibrary(folder.root.resolve("catalog.db").path, InMemoryCredentials()) }
 
     @After fun tearDown() {
         library.close()

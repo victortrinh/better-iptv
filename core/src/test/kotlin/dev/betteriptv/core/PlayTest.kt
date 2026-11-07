@@ -22,7 +22,7 @@ class PlayTest {
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, credentials)
+        library = openSurveyedLibrary(folder.root.resolve("catalog.db").path, credentials)
         library.logIn(provider.login)
         Unit
     }

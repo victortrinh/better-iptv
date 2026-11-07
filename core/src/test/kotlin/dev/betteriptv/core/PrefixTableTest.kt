@@ -20,7 +20,7 @@ class PrefixTableTest {
     private val cloud by lazy { FakeCloud() }
 
     private fun openLibrary(file: String = "catalog.db", cloudAddress: String? = null) =
-        Library.open(folder.root.resolve(file).path, credentials, cloudAddress).also { libraries += it }
+        openSurveyedLibrary(folder.root.resolve(file).path, credentials, cloudAddress).also { libraries += it }
 
     private val library by lazy { openLibrary() }
 
@@ -262,7 +262,7 @@ class PrefixTableTest {
     }
 
     @Test fun `a Listing's language is its description's, worked out once per Prefix and Category`() {
-        val table = PrefixTable.bundled()
+        val table = surveyedPrefixTable()
         val listings = listOf(
             "EN - The Godfather (1972)" to "EN | MOVIES", "FR - Le Parrain (1972)" to "FR - FILMS VOSTFR", "QC - Le Parrain" to "QC - FILMS",
             "IT - Il Padrino" to "ITALIAN SUB ENG", "The Godfather" to "VOSTFR", "The Godfather" to "MOVIES", "4K-EN - Heat" to "4K MOVIES",

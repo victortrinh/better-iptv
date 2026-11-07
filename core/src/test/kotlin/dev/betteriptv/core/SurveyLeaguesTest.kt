@@ -28,7 +28,7 @@ class SurveyLeaguesTest {
     private val credentials = InMemoryCredentials()
 
     // No cloud for the Sync: it would ask the cloud to match the whole catalog's Titles.
-    private val library by lazy { Library.open(database, credentials) }
+    private val library by lazy { openSurveyedLibrary(database, credentials) }
 
     @After fun tearDown() {
         library.close()
@@ -62,7 +62,7 @@ class SurveyLeaguesTest {
 
         val cloud = System.getProperty("surveyCloud") ?: return@runBlocking
         library.close()
-        Library.open(database, credentials, cloud).use { withCloud ->
+        openSurveyedLibrary(database, credentials, cloud).use { withCloud ->
             withCloud.liveRows(League.entries, "CA", listOf("en"), now, ZoneId.of("America/Toronto"))
                 .flatMap { row ->
                     when (row) {

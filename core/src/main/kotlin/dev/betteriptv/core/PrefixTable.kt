@@ -8,8 +8,9 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A Provider's mapping from Prefixes and Category hints to Version attributes, read from a data
- * asset (`prefix-table.txt`, whose header documents the format) so that a new Prefix needs no code.
+ * A Provider's mapping from Prefixes and Category hints to Version attributes: the Base table
+ * (`prefix-table.txt`, whose header documents the format and the merge) with the Provider's own
+ * Provider table merged into it, read from text so that a new Prefix needs no code.
  */
 internal class PrefixTable private constructor(
     private val prefixes: Map<String, Rule>,
@@ -271,69 +272,133 @@ internal class PrefixTable private constructor(
         /** The last word of a live Listing's name, with the spaces or `/` before it: `ᴴᴰ`, `(SAT)`, `◉`, `HD+`, the `ᴿᴬᵂ` of `ᴴᴰ/ᴿᴬᵂ`. */
         private val TAIL_TOKEN = Regex("""[\s/]*(\(?[^\s/()]+\)?)\s*$""")
 
-        /** The surveyed Provider's table, bundled with the app. */
-        fun bundled(): PrefixTable = parse(
-            PrefixTable::class.java.getResourceAsStream("prefix-table.txt")!!.bufferedReader().use { it.readText() },
-        )
+        /** The Base table's text, shipped with the app. */
+        private val baseText: String by lazy { resource("prefix-table.txt")!! }
 
-        fun parse(text: String): PrefixTable {
+        /** The Base table alone: what the app knows of a Provider that has no Provider table. */
+        fun base(): PrefixTable = parse(baseText)
+
+        /** The Base table with [providerTable] (a Provider table's text, or null for none) merged into it. */
+        fun withProviderTable(providerTable: String?): PrefixTable = parse(baseText, providerTable)
+
+        /**
+         * The hand-written Provider table shipped with the app for the Provider whose host hashes to
+         * [providerKey] ([dev.betteriptv.core.providerKey]), or null for a Provider with none. The build
+         * copies them from cloud/provider-tables/ until the cloud serves them (#431).
+         */
+        fun bundledProviderTable(providerKey: String): String? =
+            if (PROVIDER_KEY.matches(providerKey)) resource("provider-tables/$providerKey.txt") else null
+
+        private val PROVIDER_KEY = Regex("[0-9a-f]{64}")
+
+        private fun resource(path: String): String? =
+            PrefixTable::class.java.getResourceAsStream(path)?.bufferedReader()?.use { it.readText() }
+
+        /**
+         * Reads the Base table's [base] text and merges a Provider table's [provider] text into it, by
+         * the rules the Base table's header documents: a Provider line for a key Base has replaces
+         * Base's, an empty rule keeps the key known and saying nothing, the event time zone replaces
+         * Base's, and every other line adds.
+         */
+        fun parse(base: String, provider: String? = null): PrefixTable {
+            val sections = Sections()
+            sections.read(base, "prefix-table.txt", ofProvider = false)
+            provider?.let { sections.read(it, "the Provider table", ofProvider = true) }
+            return sections.table()
+        }
+
+        /** What the table's sections hold so far, as [parse] reads its sources one after the other. */
+        private class Sections {
             val prefixes = LinkedHashMap<String, Rule>()
-            val hints = mutableListOf<Pair<Regex, Rule>>()
+            /** Each Category hint's phrase, as written, to its rule. */
+            val hints = LinkedHashMap<String, Rule>()
             val clutterNames = mutableListOf<Regex>()
             val liveClutterNames = mutableListOf<Regex>()
             val emptyEventSlots = mutableListOf<Regex>()
             val tierTags = LinkedHashSet<String>()
             val qualityWords = LinkedHashMap<String, Rule>()
             val countryAliases = LinkedHashMap<String, String>()
-            val genres = LinkedHashMap<String, Int>()
-            val genreWords = mutableListOf<Pair<Regex, Int>>()
+            /** Each genre word, as written, to its genre. */
+            val genreWords = LinkedHashMap<String, String>()
             var eventTimeZone: ZoneId? = null
-            var section: String? = null
-            text.lineSequence().forEachIndexed { index, raw ->
-                fun fail(why: String): Nothing = throw IllegalArgumentException("prefix-table.txt line ${index + 1}: $why")
-                if (raw.isBlank() || raw.trimStart().startsWith("#")) return@forEachIndexed
-                if (raw.startsWith("[")) {
-                    section = raw.trim().removeSurrounding("[", "]")
-                    return@forEachIndexed
-                }
-                val names = when (section) {
-                    "clutter names" -> clutterNames
-                    "live clutter names" -> liveClutterNames
-                    "empty event slots" -> emptyEventSlots
-                    else -> null
-                }
-                if (names != null) {
-                    names += Regex(raw.trim())
-                    return@forEachIndexed
-                }
-                val line = raw.replace(Regex("""\s+#.*$"""), "")
-                val key = line.substringBefore('|').trim()
-                if (section == "event time zone") {
-                    if (eventTimeZone != null) fail("a second event time zone")
-                    eventTimeZone = runCatching { ZoneId.of(key) }.getOrElse { fail("$key is not a zone") }
-                    return@forEachIndexed
-                }
-                if (section == "country aliases") {
-                    val alias = line.substringAfter('|', "").trim().ifEmpty { fail("$key has no name") }
-                    if (countryAliases.put(key.uppercase(Locale.ROOT), alias) != null) fail("$key is listed twice")
-                    return@forEachIndexed
-                }
-                if (section == "genre categories") {
-                    val genre = line.substringAfter('|', "").trim().ifEmpty { fail("$key has no genre") }
-                    genreWords += wholeWord(key) to genres.getOrPut(genre) { genres.size }
-                    return@forEachIndexed
-                }
-                val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
-                when (section) {
-                    "prefixes" -> if (prefixes.put(key, rule) != null) fail("$key is listed twice")
-                    "category hints" -> hints += wholeWord(key) to rule
-                    // The colon is where the tag ends, not part of it.
-                    "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
-                    "channel quality words" -> if (qualityWords.put(key.uppercase(Locale.ROOT), rule) != null) fail("$key is listed twice")
-                    else -> fail("outside a [section]")
+
+            fun read(text: String, source: String, ofProvider: Boolean) {
+                // A key is listed once per source; a later source may list it again to replace it.
+                val seen = HashSet<String>()
+                var zoneSeen = false
+                var section: String? = null
+                text.lineSequence().forEachIndexed { index, raw ->
+                    fun fail(why: String): Nothing = throw IllegalArgumentException("$source line ${index + 1}: $why")
+                    fun once(key: String) { if (!seen.add("$section\u0000$key")) fail("$key is listed twice") }
+                    if (raw.isBlank() || raw.trimStart().startsWith("#")) return@forEachIndexed
+                    if (raw.startsWith("[")) {
+                        section = raw.trim().removeSurrounding("[", "]")
+                        return@forEachIndexed
+                    }
+                    val names = when (section) {
+                        "clutter names" -> clutterNames
+                        "live clutter names" -> liveClutterNames
+                        "empty event slots" -> emptyEventSlots
+                        else -> null
+                    }
+                    if (names != null) {
+                        names += Regex(raw.trim())
+                        return@forEachIndexed
+                    }
+                    val line = raw.replace(Regex("""\s+#.*$"""), "")
+                    val key = line.substringBefore('|').trim()
+                    when (section) {
+                        "event time zone" -> {
+                            if (zoneSeen) fail("a second event time zone")
+                            zoneSeen = true
+                            eventTimeZone = runCatching { ZoneId.of(key) }.getOrElse { fail("$key is not a zone") }
+                        }
+                        "country aliases" -> {
+                            val code = key.uppercase(Locale.ROOT)
+                            once(code)
+                            val alias = line.substringAfter('|', "").trim()
+                            // A Provider table drops a Base alias with an empty name.
+                            if (alias.isEmpty()) {
+                                if (!ofProvider) fail("$key has no name")
+                                countryAliases.remove(code)
+                            } else {
+                                countryAliases[code] = alias
+                            }
+                        }
+                        "genre categories" -> {
+                            once(key)
+                            val genre = line.substringAfter('|', "").trim()
+                            // A Provider table drops a Base genre word with an empty genre.
+                            if (genre.isEmpty()) {
+                                if (!ofProvider) fail("$key has no genre")
+                                genreWords.remove(key)
+                            } else {
+                                genreWords[key] = genre
+                            }
+                        }
+                        else -> {
+                            val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
+                            when (section) {
+                                "prefixes" -> { once(key); prefixes[key] = rule }
+                                "category hints" -> { once(key); hints[key] = rule }
+                                // The colon is where the tag ends, not part of it.
+                                "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
+                                "channel quality words" -> key.uppercase(Locale.ROOT).let { once(it); qualityWords[it] = rule }
+                                else -> fail("outside a [section]")
+                            }
+                        }
+                    }
                 }
             }
-            return PrefixTable(prefixes, hints, clutterNames, liveClutterNames, emptyEventSlots, tierTags, qualityWords, countryAliases, genreWords, eventTimeZone ?: ZoneOffset.UTC)
+
+            fun table(): PrefixTable {
+                val genres = LinkedHashMap<String, Int>()
+                val ranked = genreWords.map { (word, genre) -> wholeWord(word) to genres.getOrPut(genre) { genres.size } }
+                return PrefixTable(
+                    prefixes, hints.map { (phrase, rule) -> wholeWord(phrase) to rule }, clutterNames, liveClutterNames, emptyEventSlots,
+                    tierTags, qualityWords, countryAliases, ranked, eventTimeZone ?: ZoneOffset.UTC,
+                )
+            }
         }
 
         private fun parseRule(text: String, fail: (String) -> Nothing): Rule =
