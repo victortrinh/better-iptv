@@ -3,7 +3,7 @@
     <string name="login_title">Connectez-vous à votre fournisseur</string>
     <string name="login_private">Vos identifiants restent sur cet appareil, chiffrés.</string>
     <string name="login_address">Adresse du fournisseur</string>
-    <string name="login_address_hint">p. ex. http://example.com:8080</string>
+    <string name="login_address_hint">p. ex. http://example.com:8080 ou une URL M3U</string>
     <string name="login_username">Nom d\'utilisateur</string>
     <string name="login_password">Mot de passe</string>
     <string name="login_button">Se connecter</string>
