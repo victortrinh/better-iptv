@@ -232,7 +232,7 @@
     <string name="profile_delete">Supprimer le profil</string>
     <string name="profile_delete_last">Le dernier profil ne peut pas être supprimé</string>
     <string name="profile_delete_confirm">Supprimer %1$s ?</string>
-    <string name="profile_delete_detail">Son historique, ses favoris et ses réglages sont supprimés de ce téléviseur.</string>
+    <string name="profile_delete_detail">Son historique, ses favoris et ses réglages sont supprimés, sur chaque téléviseur connecté à votre compte aussi.</string>
     <string name="profile_delete_yes">Supprimer</string>
     <string name="profile_cancel">Annuler</string>
     <string name="profile_name">Nom</string>
@@ -257,6 +257,20 @@
     <string name="pin_change_detail">Le code du foyer permet de quitter un profil enfant</string>
     <string name="pin_current">Saisissez le code actuel</string>
     <string name="pin_new">Choisissez un nouveau code</string>
+    <string name="pin_reset_detail">Le code du foyer a été réinitialisé. Choisissez-en un nouveau pour quitter le profil enfant.</string>
+    <string name="keep_profiles_title">Quels profils garder ?</string>
+    <string name="keep_profiles_detail">La connexion réunit les profils de ce téléviseur et ceux de votre compte, et un foyer en garde %1$d au plus. Un profil décoché est supprimé avec son historique, sur chaque téléviseur.</string>
+    <string name="keep_profiles_watching">Regarde en ce moment, sur ce téléviseur</string>
+    <string name="keep_profiles_both">Sur ce téléviseur et dans votre compte</string>
+    <string name="keep_profiles_account">Dans votre compte</string>
+    <string name="keep_profiles_this_tv">Sur ce téléviseur</string>
+    <string name="keep_profiles_keep">Garder ceux-ci</string>
+    <string name="keep_profiles_cancel">Ne pas se connecter</string>
+    <plurals name="keep_profiles_over">
+        <item quantity="one">Décochez-en encore %1$d.</item>
+        <item quantity="many">Décochez-en encore %1$d.</item>
+        <item quantity="other">Décochez-en encore %1$d.</item>
+    </plurals>
     <string name="settings_languages">Langues</string>
     <string name="settings_app_language">Langue de l\'appli</string>
     <string name="settings_app_language_detail">Menus, titres et descriptions</string>
@@ -401,7 +415,7 @@
     <string name="account_unnamed_tv">Un téléviseur</string>
     <string name="account_signed_in_on">Connecté le %1$s</string>
     <string name="account_sign_out_this_confirm">Déconnecter ce téléviseur ?</string>
-    <string name="account_sign_out_this_detail">Ce téléviseur garde son catalogue et l\'identifiant de votre service télé, et joue comme avant. Votre historique reste dans votre compte.</string>
+    <string name="account_sign_out_this_detail">Ce téléviseur garde son catalogue et l\'identifiant de votre service télé, et joue comme avant. Vos profils et votre historique restent dans votre compte.</string>
     <string name="account_sign_out_confirm">Déconnecter %1$s ?</string>
     <string name="account_sign_out_other_detail">Ce téléviseur sera déconnecté la prochaine fois qu\'il sera en ligne. Il garde son catalogue et l\'identifiant de son service télé, et joue comme avant.</string>
     <string name="sign_in_title">Se connecter à Zugig</string>

@@ -240,10 +240,35 @@ class FakeCloud : Closeable {
         accounts.entries.filter { it.value == email }.map { it.key }.forEach(::unbind)
     }
 
-    /** One Account's history as the cloud keeps it (cloud/src/sync.ts): each row with the sequence number of the push that last changed it. */
+    /**
+     * One Account's history and the rest it keeps as the cloud does (cloud/src/sync.ts): each row with
+     * the sequence number of the push that last changed it. Progress is keyed `profile|provider|title|season|episode`,
+     * entries `kind|profile|provider|key`.
+     */
     private class SyncedHistory {
         var seq = 0L
         val rows = LinkedHashMap<String, Pair<Long, Map<*, *>>>()
+        val entries = LinkedHashMap<String, Pair<Long, Map<*, *>>>()
+    }
+
+    /** The Profile each device token last said it was on. */
+    val currentProfiles = HashMap<String, String?>()
+
+    /**
+     * What tapping "Reset the Household PIN"'s link does (cloud/src/accounts.ts): clears [email]'s PIN,
+     * stamped with the cloud's time, for every TV's next pull.
+     */
+    fun resetHouseholdPin(email: String) = synchronized(histories) {
+        val history = histories.getOrPut(email) { SyncedHistory() }
+        history.seq++
+        val key = "household|||pin"
+        history.entries.remove(key)
+        history.entries[key] = history.seq to mapOf("kind" to "household", "profile" to null, "key" to "pin", "value" to null, "at" to System.currentTimeMillis())
+    }
+
+    /** The entries [email]'s Account keeps, as the cloud would answer a pull from nothing on [provider]. */
+    fun entriesOf(email: String, provider: String? = null): List<Map<*, *>> = synchronized(histories) {
+        histories[email]?.entries?.filter { (key, _) -> key.split('|')[2].let { it.isEmpty() || it == provider } }?.values?.map { it.second }.orEmpty()
     }
 
     private val histories = HashMap<String, SyncedHistory>()
@@ -254,7 +279,7 @@ class FakeCloud : Closeable {
      * cursor older than that tombstone.
      */
     fun purgeHistory(email: String, title: String) = synchronized(histories) {
-        histories.getValue(email).rows.keys.removeAll { it.split('|')[1] == title }
+        histories.getValue(email).rows.keys.removeAll { it.split('|')[2] == title }
         resetting += email
     }
 
@@ -380,23 +405,52 @@ class FakeCloud : Closeable {
                 val email = synchronized(tokens) { accounts[token] } ?: return respond(exchange, 403, mapOf("error" to "This device isn't signed in to an Account."))
                 val asked = read(body) as Map<*, *>
                 val provider = asked["provider"] as String?
+                synchronized(tokens) { currentProfiles[token!!] = asked["current"] as String? }
                 val answer = synchronized(histories) {
                     val history = histories.getOrPut(email) { SyncedHistory() }
                     val changes = (asked["progress"] as List<*>).map { it as Map<*, *> }
-                    if (changes.isNotEmpty()) history.seq++
-                    changes.forEach { change ->
+                    val entries = (asked["entries"] as List<*>?).orEmpty().map { it as Map<*, *> }
+                    if (changes.isNotEmpty() || entries.isNotEmpty()) history.seq++
+                    val now = System.currentTimeMillis()
+                    fun at(row: Map<*, *>) = (row["at"] as Number).toLong()
+                    changes.forEach { pushed ->
+                        val change = pushed + ("at" to minOf(at(pushed), now))
                         val title = change["title"] as String
-                        val key = "${if ("/listing/" in title) provider else ""}|$title|${change["season"]}|${change["episode"]}"
+                        val key = "${change["profile"]}|${if ("/listing/" in title) provider else ""}|$title|${change["season"]}|${change["episode"]}"
                         val kept = history.rows[key]
-                        if (kept == null || (change["at"] as Number).toLong() > (kept.second["at"] as Number).toLong()) {
+                        if (kept == null || at(change) > at(kept.second)) {
                             history.rows.remove(key)
                             history.rows[key] = history.seq to change
                         }
                     }
+                    entries.forEach { pushed ->
+                        val entry = pushed + ("at" to minOf(at(pushed), now))
+                        val kind = entry["kind"] as String
+                        val entryKey = entry["key"] as String
+                        val perProvider = kind == "favourite" || kind == "not_this_game" || (kind == "title_choices" && "/listing/" in entryKey)
+                        val key = "$kind|${entry["profile"] ?: ""}|${if (perProvider) provider else ""}|$entryKey"
+                        val kept = history.entries[key]
+                        val deletedProfile = kept != null && kind == "profile" && kept.second["value"] == null
+                        if (!deletedProfile && (kept == null || at(entry) > at(kept.second))) {
+                            history.entries.remove(key)
+                            history.entries[key] = history.seq to entry
+                        }
+                    }
+                    // A deleted Profile's rows go with it.
+                    val deleted = history.entries.values.filter { it.second["kind"] == "profile" && it.second["value"] == null }.map { it.second["profile"] as String }.toSet()
+                    history.rows.keys.removeAll { it.split('|')[0] in deleted }
+                    history.entries.keys.removeAll { key -> key.split('|').let { it[0] != "profile" && it[1] in deleted } }
                     val reset = resetting.remove(email)
                     val cursor = if (reset) 0 else (asked["cursor"] as Number).toLong()
-                    val since = history.rows.filter { (key, row) -> row.first > cursor && (key.startsWith("|") || key.startsWith("$provider|")) }
-                    mapOf("cursor" to history.seq, "reset" to reset, "progress" to since.values.sortedBy { it.first }.map { it.second })
+                    fun ours(providerOfRow: String) = providerOfRow.isEmpty() || providerOfRow == provider
+                    val since = history.rows.filter { (key, row) -> row.first > cursor && ours(key.split('|')[1]) }
+                    val sinceEntries = history.entries.filter { (key, row) -> row.first > cursor && ours(key.split('|')[2]) }
+                    mapOf(
+                        "cursor" to history.seq,
+                        "reset" to reset,
+                        "progress" to since.values.sortedBy { it.first }.map { it.second },
+                        "entries" to sinceEntries.values.sortedBy { it.first }.map { it.second },
+                    )
                 }
                 respond(exchange, 200, answer)
             }

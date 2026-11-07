@@ -249,7 +249,7 @@ class ProfilesSettingsTest {
         press(listOf(Key.DirectionCenter))
 
         compose.onNodeWithText("Delete Alex?").assertExists()
-        compose.onNodeWithText("Their Continue watching, Favourites and settings are deleted from this TV.").assertExists()
+        compose.onNodeWithText("Their Continue watching, Favourites and settings are deleted, on every TV signed in to your account too.").assertExists()
         row("Cancel").assertIsFocused()
         // Cancel goes back to the page, deleting nothing.
         press(listOf(Key.DirectionCenter))

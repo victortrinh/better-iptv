@@ -364,6 +364,15 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         title.section == null && title.returnedFrom == null && title.backdrop != null)
                 },
             )
+            // Signing in would bring the household past five Profiles: which to keep comes first, over any screen (#440).
+            val choice by app.library.profileChoice.collectAsStateWithLifecycle()
+            choice?.let {
+                KeepProfiles(
+                    it,
+                    onKeep = { keys -> scope.launch { app.library.keepProfiles(keys) } },
+                    onCancel = { scope.launch { app.library.signOut() } },
+                )
+            }
         }
     }
 }

@@ -301,6 +301,33 @@ class HouseholdPinPagesTest {
         compose.onNodeWithText("Change PIN").assertDoesNotExist()
     }
 
+    @Test fun afterAResetFromThePhoneLeavingAKidsProfileChoosesANewPin() {
+        // "Reset the Household PIN" cleared it on every TV of the Account (#440).
+        withKids(on = second)
+        val pin = FakePin()
+        settings(pin)
+        press(listOf(Key.DirectionUp, Key.DirectionCenter))
+
+        compose.onNodeWithText("Choose a new PIN").assertExists()
+        compose.onNodeWithText("The Household PIN was reset. Choose a new one to leave the Kids profile.").assertExists()
+        type("4321")
+        type("4321")
+        assertEquals("4321", pin.pin)
+        assertEquals(listOf<ProfileChange>(ProfileChange.Switch(first)), changes)
+    }
+
+    @Test fun afterAResetTheChipsSwitchChoosesANewPinToo() {
+        withKids(on = second)
+        val pin = FakePin()
+        switcher(pin)
+        press(listOf(Key.DirectionUp, Key.DirectionCenter))
+        compose.onNodeWithText("Choose a new PIN").assertExists()
+        type("4321")
+        type("4321")
+        assertEquals("4321", pin.pin)
+        assertEquals(listOf<ProfileChange>(ProfileChange.Switch(first)), changes)
+    }
+
     @Test fun fromTheChipAKidsProfileTakesThePinAndBackReturnsToTheList() {
         withKids(on = second)
         switcher(FakePin("2580"))

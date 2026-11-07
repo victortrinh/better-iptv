@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.PinDots
 import dev.betteriptv.app.ui.components.PinPad
@@ -89,6 +90,27 @@ fun AskPin(pin: HouseholdPin, title: String, detail: String?, onRight: () -> Uni
             }
         },
     )
+}
+
+/**
+ * What leaving a Kids profile asks: the Household PIN ([AskPin]) under [title] and [detail], then
+ * [onRight]. With no PIN, which "Reset the Household PIN" on the phone leaves every TV of the Account
+ * (#440), it asks for a new one instead ([ChoosePin]), which is then the household's, and goes on.
+ */
+@Composable
+fun LeaveKidsPin(pin: HouseholdPin, title: String, detail: String?, onRight: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val set by pin.isSet.collectAsStateWithLifecycle()
+    if (set) {
+        AskPin(pin, title, detail, onRight)
+    } else {
+        ChoosePin(stringResource(R.string.pin_new), stringResource(R.string.pin_reset_detail), onChosen = { chosen ->
+            scope.launch {
+                pin.set(chosen)
+                onRight()
+            }
+        })
+    }
 }
 
 /**

@@ -62,8 +62,12 @@ interface HouseholdPin {
     }
 }
 
-/** The [HouseholdPin] kept in the device's database. */
-internal class KeptHouseholdPin(private val store: PinStore) : HouseholdPin {
+/**
+ * The [HouseholdPin] kept in the device's database. Each PIN set is told [onSet] (its hash and when),
+ * which the Account sync sends to the household's other TVs (#440); one they set arrives through
+ * [adopt]. The wrong tries and the lock stay this TV's own.
+ */
+internal class KeptHouseholdPin(private val store: PinStore, private val onSet: (hash: String, at: Instant) -> Unit = { _, _ -> }) : HouseholdPin {
     /** Tests move it. */
     @Volatile var clock: Clock = Clock.systemUTC()
 
@@ -74,10 +78,40 @@ internal class KeptHouseholdPin(private val store: PinStore) : HouseholdPin {
     override suspend fun set(pin: String) = withContext(Dispatchers.Default) {
         require(HouseholdPin.isPin(pin)) { "A Household PIN is four digits" }
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
+        val now = clock.instant()
+        val hash = "$SCHEME:$ITERATIONS:${encode(salt)}:${encode(hash(pin, salt, ITERATIONS))}"
         synchronized(this@KeptHouseholdPin) {
-            store.saveHouseholdPin(StoredPin("$SCHEME:$ITERATIONS:${encode(salt)}:${encode(hash(pin, salt, ITERATIONS))}", failures = 0, lockedUntil = null))
+            store.saveHouseholdPin(StoredPin(hash, failures = 0, lockedUntil = null, changedAt = now))
             _isSet.value = true
         }
+        onSet(hash, now)
+    }
+
+    /** When the PIN kept was set; null when there is none. */
+    fun changedAt(): Instant? = store.householdPin()?.changedAt
+
+    /**
+     * Takes the PIN another TV of the Account set, [hash] at [at], or its reset (null): the latest
+     * wins, and the tries start again. Says whether it took it.
+     */
+    fun adopt(hash: String?, at: Instant): Boolean = synchronized(this) {
+        val kept = store.householdPin()
+        if (kept != null && !at.isAfter(kept.changedAt)) return false
+        if (hash == null) {
+            if (kept == null) return false
+            store.forgetHouseholdPin()
+        } else {
+            if (kept?.hash == hash) return false
+            store.saveHouseholdPin(StoredPin(hash, failures = 0, lockedUntil = null, changedAt = at))
+        }
+        _isSet.value = hash != null
+        true
+    }
+
+    /** Forgets the PIN, as signing out does: it was the Account's. */
+    fun forget() = synchronized(this) {
+        store.forgetHouseholdPin()
+        _isSet.value = false
     }
 
     override suspend fun check(pin: String): PinCheck = withContext(Dispatchers.Default) {
@@ -133,9 +167,10 @@ internal class KeptHouseholdPin(private val store: PinStore) : HouseholdPin {
 }
 
 /** The Household PIN as kept: its [hash], the wrong tries in a row and, once they lock it, until when. */
-internal data class StoredPin(val hash: String, val failures: Int, val lockedUntil: Instant?)
+internal data class StoredPin(val hash: String, val failures: Int, val lockedUntil: Instant?, val changedAt: Instant = Instant.ofEpochMilli(1))
 
 internal interface PinStore {
     fun householdPin(): StoredPin?
     fun saveHouseholdPin(pin: StoredPin)
+    fun forgetHouseholdPin()
 }
