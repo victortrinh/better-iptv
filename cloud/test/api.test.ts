@@ -11,7 +11,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM tier_tag_candidate"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -1522,5 +1522,44 @@ describe("unknown Prefixes", () => {
     expect(await report({ provider, prefixes: [{ prefix: "BR", listingCount: 0, example: "BR - X" }] })).toBe(400);
     expect(await report({ provider, prefixes: [{ prefix: "", listingCount: 1, example: "X" }] })).toBe(400);
     expect(await report({ provider, prefixes: "BR" })).toBe(400);
+  });
+
+  const candidates = () =>
+    env.DB.prepare("SELECT provider, word, listing_count, example, first_seen, last_seen FROM tier_tag_candidate ORDER BY provider, word").all().then((r) => r.results);
+
+  it("keeps each Provider's candidate Tier tags with when each was first and last seen (#439)", async () => {
+    const token = await registerDevice();
+    const other = "b".repeat(64);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T08:00:00Z"));
+    const first = { provider, prefixes: [], tierTags: [{ word: "PLUS", listingCount: 40, example: "PLUS: TNT SPORT 1 HD" }] };
+    expect((await call("POST", "/v1/unknown-prefixes", first, token)).status).toBe(204);
+    expect((await call("POST", "/v1/unknown-prefixes", { provider: other, prefixes: [], tierTags: [{ word: "PLUS", listingCount: 2, example: "PLUS: SKY ONE" }] }, token)).status).toBe(204);
+
+    vi.setSystemTime(new Date("2026-11-09T08:00:00Z"));
+    const second = {
+      provider,
+      prefixes: [{ prefix: "BR", listingCount: 2, example: "BR - Cold Pursuit (2019)" }],
+      tierTags: [{ word: "PLUS", listingCount: 42, example: "PLUS: TNT SPORT 2 HD" }, { word: "MAX", listingCount: 12, example: "MAX: TNT SPORT 1 SD" }],
+    };
+    expect((await call("POST", "/v1/unknown-prefixes", second, token)).status).toBe(204);
+
+    const week1 = Date.parse("2026-11-02T08:00:00Z"), week2 = Date.parse("2026-11-09T08:00:00Z");
+    expect(await candidates()).toEqual([
+      { provider, word: "MAX", listing_count: 12, example: "MAX: TNT SPORT 1 SD", first_seen: week2, last_seen: week2 },
+      { provider, word: "PLUS", listing_count: 42, example: "PLUS: TNT SPORT 2 HD", first_seen: week1, last_seen: week2 },
+      { provider: other, word: "PLUS", listing_count: 2, example: "PLUS: SKY ONE", first_seen: week1, last_seen: week1 },
+    ]);
+    expect((await rows()).map((r) => r.prefix)).toContain("BR");
+  });
+
+  it("takes a report without candidate Tier tags, as older apps send, and only well-formed ones", async () => {
+    const token = await registerDevice();
+    const report = (body: unknown) => call("POST", "/v1/unknown-prefixes", body, token).then((r) => r.status);
+    expect(await report({ provider, prefixes: [{ prefix: "BR", listingCount: 1, example: "BR - X" }] })).toBe(204);
+    expect(await report({ provider, prefixes: [], tierTags: "PLUS" })).toBe(400);
+    expect(await report({ provider, prefixes: [], tierTags: [{ word: "PLUS", listingCount: 0, example: "PLUS: X" }] })).toBe(400);
+    expect(await report({ provider, prefixes: [], tierTags: [{ word: "TWO WORDS", listingCount: 1, example: "X" }] })).toBe(400);
+    expect(await report({ provider, prefixes: [], tierTags: Array.from({ length: 51 }, (_, i) => ({ word: `W${i}`, listingCount: 1, example: "X" })) })).toBe(400);
   });
 });

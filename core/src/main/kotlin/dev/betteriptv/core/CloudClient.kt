@@ -112,13 +112,17 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     /** One file read as shared: the Listing, its file as JSON, its Prefix (null when its name has none) and its matched Category hints. */
     class SharedFileRead(val listingId: Long, val file: String, val prefix: String?, val hints: List<String>)
 
-    /** Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most [MAX_PREFIX_BATCH]. */
-    fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>) {
-        require(prefixes.size <= MAX_PREFIX_BATCH)
-        val body = mapOf(
-            "provider" to provider,
-            "prefixes" to prefixes.map { mapOf("prefix" to it.prefix, "listingCount" to it.listingCount, "example" to it.example) },
-        )
+    /**
+     * Reports the Prefixes a Sync on [provider] found that the Prefix table doesn't know, at most
+     * [MAX_PREFIX_BATCH], and its candidate Tier tags, at most [MAX_TIER_TAG_BATCH] (left out when none).
+     */
+    fun reportUnknownPrefixes(provider: String, prefixes: List<UnknownPrefix>, tierTags: List<CandidateTierTag> = emptyList()) {
+        require(prefixes.size <= MAX_PREFIX_BATCH && tierTags.size <= MAX_TIER_TAG_BATCH)
+        val body = buildMap {
+            put("provider", provider)
+            put("prefixes", prefixes.map { mapOf("prefix" to it.prefix, "listingCount" to it.listingCount, "example" to it.example) })
+            if (tierTags.isNotEmpty()) put("tierTags", tierTags.map { mapOf("word" to it.word, "listingCount" to it.listingCount, "example" to it.example) })
+        }
         authorized { token -> post("v1/unknown-prefixes", json.toJson(body), token) }
     }
 
@@ -389,6 +393,9 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
         /** The most unknown Prefixes one report may hold. */
         const val MAX_PREFIX_BATCH = 200
+
+        /** The most candidate Tier tags one report may hold. */
+        const val MAX_TIER_TAG_BATCH = 50
         /** The answer header saying whether the cloud has this device signed in: `signed-in` or `none`. */
         private const val ACCOUNT_HEADER = "Zugig-Account"
         private val JSON = "application/json".toMediaType()

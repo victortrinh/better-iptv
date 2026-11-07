@@ -27,6 +27,42 @@ export async function saveUnknownPrefixes(db: D1Database, provider: string, pref
   );
 }
 
+/** At most this many candidate Tier tags per request. */
+export const MAX_TIER_TAG_BATCH = 50;
+
+/**
+ * A candidate Tier tag (#439): a word before the colon at the start of live Listings' names whose removal
+ * made [listingCount] of them the same Channel as another live Listing, such as [example]. Kept for the
+ * weekly issue and never applied: the curator writes a hand line for one that is.
+ */
+export interface CandidateTierTag {
+  word: string;
+  listingCount: number;
+  example: string;
+}
+
+/** Keeps the candidate Tier tags one Sync on [provider] reported, keeping when each was first seen. */
+export async function saveCandidateTierTags(db: D1Database, provider: string, tags: CandidateTierTag[]): Promise<void> {
+  if (tags.length === 0) return;
+  const now = Date.now();
+  await db.batch(
+    tags.map((t) =>
+      db.prepare(
+        `INSERT INTO tier_tag_candidate (provider, word, listing_count, example, first_seen, last_seen) VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+         ON CONFLICT (provider, word) DO UPDATE SET listing_count = excluded.listing_count, example = excluded.example, last_seen = excluded.last_seen`,
+      ).bind(provider, t.word, t.listingCount, t.example, now),
+    ),
+  );
+}
+
+/** Whether [t] is a candidate Tier tag as a device reports it: one short word, a count and a Listing's name. */
+export const isCandidateTierTag = (t: unknown): t is CandidateTierTag => {
+  const { word, listingCount, example } = (t ?? {}) as Record<string, unknown>;
+  return typeof word === "string" && /^[A-Za-z0-9+]{1,5}$/.test(word) &&
+    Number.isSafeInteger(listingCount) && (listingCount as number) > 0 &&
+    typeof example === "string" && example.length >= 1 && example.length <= 300;
+};
+
 /** Whether [p] is an unknown Prefix as a device reports it: a short code, a count and a Listing's name. */
 export const isUnknownPrefix = (p: unknown): p is UnknownPrefix => {
   const { prefix, listingCount, example } = (p ?? {}) as Record<string, unknown>;

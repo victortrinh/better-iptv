@@ -372,6 +372,7 @@ class Library private constructor(
             val key = providerKey(login)
             val table = fetchProviderTable(key)?.let { (text, table) -> store.stageProviderTable(key, text); table } ?: prefixTableFor(login)
             val unknownPrefixes = LinkedHashMap<String, UnknownPrefix>()
+            val tierTags = CandidateTierTags(table)
             // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
             syncWriting = true
             try {
@@ -390,6 +391,7 @@ class Library private constructor(
                         if (listing == PrefixTable.LiveListing.EmptyEventSlot || isEventChannel(name, start)) tally[1]++
                         if (listing == PrefixTable.LiveListing.Channel) {
                             val channel = table.channelName(name)
+                            if (!isEventChannel(name, start)) tierTags.add(name, channel.key)
                             staging.channel(id, name, image, start, categoryId, guideId, channel.key, channel.name, channel.country, channel.quality, channel.hevc)
                             entriesRead++
                             running()
@@ -472,6 +474,7 @@ class Library private constructor(
                             rematched,
                             showCount,
                             channelCount,
+                            tierTags.candidates(),
                         )
                     },
                 )
@@ -591,13 +594,18 @@ class Library private constructor(
 
     /**
      * Tells the cloud which Prefixes the Sync found that the Prefix table doesn't know, so they get
-     * added to it. The Viewer never sees them; a Sync that can't report them leaves it to the next.
+     * added to it, and its candidate Tier tags (#439). The Viewer never sees them; a Sync that can't
+     * report them leaves it to the next.
      */
     private fun reportUnknownPrefixes(sync: CompletedSync) {
-        if (cloud == null || sync.unknownPrefixes.isEmpty() || !canAskCloud()) return
+        if (cloud == null || (sync.unknownPrefixes.isEmpty() && sync.candidateTierTags.isEmpty()) || !canAskCloud()) return
         val login = credentials.load() ?: return
         try {
-            cloud.reportUnknownPrefixes(providerKey(login), sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH))
+            cloud.reportUnknownPrefixes(
+                providerKey(login),
+                sync.unknownPrefixes.take(CloudClient.MAX_PREFIX_BATCH),
+                sync.candidateTierTags.take(CloudClient.MAX_TIER_TAG_BATCH),
+            )
         } catch (e: CloudException) {
             cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
         }

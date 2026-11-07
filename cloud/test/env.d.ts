@@ -6,6 +6,7 @@ declare global {
     interface Env extends WorkerEnv {
       TEST_MIGRATIONS: D1Migration[];
       TEST_PROVIDER_TABLES: { files: Record<string, string>; statements: string[] };
+      TEST_BASE_TABLE: string;
     }
   }
 }
