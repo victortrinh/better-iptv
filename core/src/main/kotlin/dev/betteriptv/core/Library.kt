@@ -252,8 +252,8 @@ class Library private constructor(
 
     /** The chip has pulsed: it never does again on this device. */
     suspend fun profileChipPulsed() = withContext(Dispatchers.IO) {
-        store.saveProfileChipPulse(PULSE_DONE)
         _profileChipPulse.value = false
+        saveLater { store.saveProfileChipPulse(PULSE_DONE) }
     }
 
     /** Names Profile [id] [name] (trimmed). */
@@ -1188,8 +1188,8 @@ class Library private constructor(
 
     /** Back or Home on the sign-in card: it never shows again on this device; Settings keeps its row. */
     suspend fun dismissSignInCard() = withContext(Dispatchers.IO) {
-        store.saveSignInCardDone()
         _offersSignInCard.value = false
+        saveLater { store.saveSignInCardDone() }
     }
 
     /**
@@ -1215,13 +1215,15 @@ class Library private constructor(
         } catch (e: CloudException) {
             return@withContext _account.value
         }
+        // Known at once, kept on the saving thread: a first Sync's Titles stage holds the writer for
+        // minutes, and the sign-in card under its checklist must turn to "Signed in as …" meanwhile.
         if (email != _account.value) {
-            store.saveAccountEmail(email)
             _account.value = email
+            saveLater { store.saveAccountEmail(email) }
         }
         if (email != null && _offersSignInCard.value) {
-            store.saveSignInCardDone()
             _offersSignInCard.value = false
+            saveLater { store.saveSignInCardDone() }
         }
         email
     }

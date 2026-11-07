@@ -1,6 +1,9 @@
 package dev.betteriptv.core
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +15,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Signing the TV in to an Account from a phone (ADR 0015), through the Library, with the cloud faked. */
 class SignInTest {
@@ -126,6 +131,33 @@ class SignInTest {
             assertFalse(again.offersSignInCard.value)
         }
         assertTrue(cloud.received.none { it.path == "/v1/sign-in" })
+    }
+
+    @Test fun `the poll sees the sign-in while a first Sync reads the Titles, and keeps it once the Sync is done`() = runBlocking {
+        val fresh = folder.root.resolve("first.db").path
+        val reading = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        provider.onRequest = { action ->
+            if (action == "get_vod_streams") {
+                reading.countDown()
+                release.await(30, TimeUnit.SECONDS)
+            }
+        }
+        Library.open(fresh, InMemoryCredentials(), cloud.url).use { first ->
+            first.logIn(provider.login)
+            val sync = launch(Dispatchers.IO) { first.sync() }
+            assertTrue(reading.await(10, TimeUnit.SECONDS))
+            cloud.phoneSignsIn(first.startSignIn()!!.code, "home@example.com")
+            assertEquals("home@example.com", withTimeout(5_000) { first.checkSignIn() })
+            assertEquals("home@example.com", first.account.value)
+            assertFalse(first.offersSignInCard.value)
+            release.countDown()
+            sync.join()
+        }
+        Library.open(fresh, InMemoryCredentials(), cloud.url).use { again ->
+            assertEquals("home@example.com", again.account.value)
+            assertFalse(again.offersSignInCard.value)
+        }
     }
 
     @Test fun `no card without a cloud`() {
