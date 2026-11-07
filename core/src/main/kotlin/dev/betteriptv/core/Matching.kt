@@ -1,30 +1,21 @@
 package dev.betteriptv.core
 
-import java.text.Normalizer
-import java.util.Locale
+/*
+ * Matching (ADR 0014): a Listing belongs to the Title its Provider files it under, by its Title
+ * number, and nothing is looked up by name. A Listing without a number is an Unmatched Title. A
+ * Mismatch is told by its year: among the Listings of one number and kind that carry a year, one
+ * dated more than [MISMATCH_YEARS] from their year (the most common one, ties going to the earliest)
+ * is an Unmatched Title of its own. CatalogStore.stageTitles applies it as a Sync stores its Titles.
+ */
+
+/** How far a Listing's year may be from its siblings' before it is a Mismatch. */
+internal const val MISMATCH_YEARS = 1
 
 /**
- * What the cloud is asked to Match a Listing (cloud/src/match.ts): its cleaned [name] and [year],
- * its Likely [language] (ISO 639) and the [tmdbId] the Provider gave it, if any.
+ * The year a Provider's release date names (`2011-04-17`, `June 4, 1970`, `25/05/2020`,
+ * `2025-02-28 (Spain)`), or null when it names none.
  */
-internal data class MatchQuestion(val kind: TitleKind, val name: String, val year: Int?, val language: String?, val tmdbId: Long?) {
-    /** The device's cache key for the answer: the same for Listings asking the same, however their names are spelled. */
-    val key: String get() = listOf(kind.name.lowercase(Locale.ROOT), tmdbId ?: "", matchName(name), year ?: "", language.orEmpty()).joinToString("|")
-}
+internal fun releaseYear(date: String?): Int? = date?.let { RELEASE_YEAR.find(it)?.value?.toInt() }
 
-/**
- * A name with case, accents and punctuation folded away (`Lilo & Stitch` is `lilo stitch`) and an
- * acronym's letters joined (`M.B.B.S.` is `mbbs`), as the cloud folds names (cloud/src/match.ts).
- */
-internal fun matchName(name: String): String =
-    Normalizer.normalize(name, Normalizer.Form.NFKD)
-        .replace(MARKS, "")
-        .lowercase(Locale.ROOT)
-        .replace(NOT_LETTERS, " ")
-        .trim()
-        .replace(ACRONYM_GAP, "$1")
-
-// Compiled once: compiling them for each Listing made a first Sync take hours on a Fire TV Stick (#23).
-private val MARKS = Regex("""\p{M}+""")
-private val NOT_LETTERS = Regex("""[^\p{L}\p{N}]+""")
-private val ACRONYM_GAP = Regex("""(?<![\p{L}\p{N}])(\p{L}) (?=\p{L}(?![\p{L}\p{N}]))""")
+// Compiled once: a Sync reads it for every show Listing.
+private val RELEASE_YEAR = Regex("""(?<!\d)(?:18[89]\d|19\d\d|20\d\d)(?!\d)""")

@@ -7,7 +7,6 @@ import android.icu.text.RelativeDateTimeFormatter.RelativeUnit
 import android.icu.util.ULocale
 import dev.betteriptv.core.CatalogNotSaved
 import dev.betteriptv.core.CompletedSync
-import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.ProviderProblem
 import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
@@ -26,11 +25,6 @@ internal fun Context.describe(status: SyncStatus): String = when (status) {
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
 }
-
-/** The Checking titles row's value: finding the names to check, or how many are checked. */
-internal fun Context.describe(matching: MatchingStatus): String =
-    matching.of?.let { resources.getQuantityString(R.plurals.matching_checking, it, count(matching.asked), count(it)) }
-        ?: getString(R.string.matching_finding)
 
 /** A first Sync names its step and counts the entries read; a later one tells how far it is by the last one's counts. */
 private fun Context.running(status: SyncStatus.Running): String {
@@ -85,10 +79,16 @@ internal fun Context.ago(then: Instant, now: Instant): String {
     return formatter.format(amount.toDouble(), RelativeDateTimeFormatter.Direction.LAST, unit)
 }
 
-/** The catalog's Title counts: "12,345 movies · 3,210 shows". */
-internal fun Context.catalogCounts(movies: Int, shows: Int): String =
-    getString(
+/**
+ * The catalog's Title counts, "12,345 movies · 3,210 shows", then the Unmatched Titles the year rule
+ * kept apart from the Title their number names when there are any (ADR 0014): "· 181 kept apart by year".
+ */
+internal fun Context.catalogCounts(movies: Int, shows: Int, mismatches: Int = 0): String {
+    val counts = getString(
         R.string.catalog_counts,
         resources.getQuantityString(R.plurals.catalog_movies, movies, count(movies)),
         resources.getQuantityString(R.plurals.catalog_shows, shows, count(shows)),
     )
+    if (mismatches == 0) return counts
+    return getString(R.string.catalog_counts, counts, resources.getQuantityString(R.plurals.catalog_mismatches, mismatches, count(mismatches)))
+}

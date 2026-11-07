@@ -110,7 +110,6 @@ fun SettingsScreen(
     catalogLanguages = library::catalogLanguages,
     catalog = {
         item { SyncRow(library, onSyncNow) }
-        item { MatchingRow(library) }
     },
     account = { open, accountRow, devicesRow -> AccountRows(library, open, accountRow, devicesRow) },
     accountPage = { page, onDone -> AccountPageContent(library, page, onDone) },
@@ -510,8 +509,8 @@ internal fun SettingsContent(
 
 /**
  * Sync now, with how the Sync is going as its value (in the error colour when it failed, its "ago"
- * ticking each minute), a later Sync's fraction as its bar, and the Title counts under it. Off only
- * while a Sync runs: Matching after it has its own row.
+ * ticking each minute), a later Sync's fraction as its bar, and the Title counts under it, with the
+ * Mismatches the year rule kept apart. Off only while a Sync runs.
  */
 @Composable
 private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
@@ -532,20 +531,12 @@ private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
         stringResource(R.string.sync_now),
         value,
         onClick = onSyncNow,
-        detail = counts?.let { (movies, shows) -> context.catalogCounts(movies, shows) },
+        detail = counts?.let { (movies, shows) -> context.catalogCounts(movies, shows, status.last?.mismatches ?: 0) },
         progress = (status as? SyncStatus.Running)?.fraction,
         enabled = status !is SyncStatus.Running,
         valueColor = if (status is SyncStatus.Failed) Colors.error else Colors.inkMuted,
         valueLines = 2,
     )
-}
-
-/** Checking titles: shown under Sync now only while the cloud is asked about the catalog's suspects, with how far it is. */
-@Composable
-private fun MatchingRow(library: Library) {
-    val matching by library.matchingStatus.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    matching?.let { SettingRow(stringResource(R.string.matching_row), context.describe(it), onClick = {}, valueLines = 2) }
 }
 
 /** How often the Sync row's "ago" is worded again while Settings is open. */

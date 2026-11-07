@@ -42,28 +42,6 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     }
 
     /**
-     * The Title each of [questions] belongs to, at most [MAX_MATCH_BATCH] at a time: TMDB's ID, or
-     * null when TMDB has no Title by that name. Questions TMDB couldn't answer for right now are left out.
-     */
-    fun match(questions: List<MatchQuestion>): Map<MatchQuestion, Long?> {
-        require(questions.size <= MAX_MATCH_BATCH)
-        val body = mapOf(
-            "listings" to questions.map {
-                mapOf("kind" to kindName(it.kind), "name" to it.name, "year" to it.year, "language" to it.language, "tmdbId" to it.tmdbId)
-            },
-        )
-        val answer = authorized { token -> post("v1/match", json.serializeNulls().toJson(body), token) } as? Map<*, *>
-            ?: throw CloudException("The cloud sent something other than an object.")
-        val matches = answer["matches"] as? List<*>
-        if (matches?.size != questions.size) throw CloudException("The cloud didn't answer every Listing.")
-        return buildMap {
-            questions.zip(matches).forEach { (question, match) ->
-                if (match is Map<*, *>) put(question, (match["tmdbId"] as? Number)?.toLong())
-            }
-        }
-    }
-
-    /**
      * What TMDB's search finds for [query] (ADR 0009): Titles by any of their names, with their
      * popularity, and people with every Title they acted in or directed.
      */
@@ -422,9 +400,6 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     companion object {
         /** The most Titles one metadata request may ask for. */
         const val MAX_BATCH = 50
-
-        /** The most Listings one match request may ask about. */
-        const val MAX_MATCH_BATCH = 25
 
         /** The most Title numbers one Title facts request may ask about (cloud/src/title-facts.ts). */
         const val MAX_FACTS_BATCH = 300

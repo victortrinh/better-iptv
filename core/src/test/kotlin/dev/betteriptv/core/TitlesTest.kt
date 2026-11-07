@@ -82,12 +82,12 @@ class TitlesTest {
     @Test fun `each Title gets one card, and Clutter and Sports replays get none`() = runBlocking {
         library.sync()
 
-        // The fixture's 150 movie Listings: 47 Titles by TMDB ID, and 9 Listings without one.
-        assertEquals(56, library.titleCount())
+        // The fixture's 150 movie Listings: 47 Titles by Title number, 9 Listings without one, and one Mismatch (Mohgiben MBBS).
+        assertEquals(57, library.titleCount())
         val cards = cards()
-        assertEquals(56, cards.size)
-        assertEquals(56, cards.map { it.id }.distinct().size)
-        assertEquals(9, cards.count { it.id is TitleId.Unmatched })
+        assertEquals(57, cards.size)
+        assertEquals(57, cards.map { it.id }.distinct().size)
+        assertEquals(10, cards.count { it.id is TitleId.Unmatched })
     }
 
     @Test fun `Titles are keyed by kind and TMDB ID, so a Show with the same number is another Title`() = runBlocking {

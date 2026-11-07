@@ -126,9 +126,10 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
 
     /**
      * Streams the show Listings as (Provider show id, name, category id, last changed in epoch
-     * seconds, TMDB ID, image URL). The Provider changes a Show when it adds Episodes to it.
+     * seconds, Title number, image URL, the year its release date names). The Provider changes a
+     * Show when it adds Episodes to it.
      */
-    fun showListings(each: (id: Long, name: String, categoryId: String?, modified: Long?, tmdbId: Long?, image: String?) -> Unit) = api("get_series") { json ->
+    fun showListings(each: (id: Long, name: String, categoryId: String?, modified: Long?, tmdbId: Long?, image: String?, releaseYear: Int?) -> Unit) = api("get_series") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
@@ -136,6 +137,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             var modified: Long? = null
             var tmdbId: Long? = null
             var image: String? = null
+            var released: String? = null
             while (hasNext()) when (nextName()) {
                 "series_id" -> id = nextScalar()?.toLongOrNull()
                 "name" -> name = nextScalar()
@@ -143,9 +145,11 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "last_modified" -> modified = nextScalar()?.toLongOrNull()
                 "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "cover" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
+                // Some Providers send both spellings; either names the same date.
+                "releaseDate", "release_date" -> nextScalar()?.takeIf { it.isNotBlank() }?.let { released = released ?: it }
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, modified, tmdbId, image)
+            if (id != null && name != null) each(id, name, categoryId, modified, tmdbId, image, releaseYear(released))
         }
     }
 

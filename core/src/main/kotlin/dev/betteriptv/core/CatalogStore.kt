@@ -19,9 +19,9 @@ import java.time.LocalDate
  * position, and a Title is found by its key (`movie/238`, `show/1399`, or `movie/listing/1001` for
  * an Unmatched one). Hidden Listings (Clutter, Sports replays) get no position and no Title.
  *
- * A Listing is Matched by its Provider's TMDB ID unless it is a suspect: it has no ID, or its name
- * matches none of the other Listings of its kind with its ID. A suspect is Matched by the cloud's
- * answer about it, once there is one; answers are kept here, so the next Sync Matches it straight away.
+ * A Listing is Matched by the Title number its Provider files it under, unless it is a Mismatch: it
+ * is dated more than a year from the year its siblings (the Listings of its kind and number) carry
+ * most (Matching.kt). A Mismatch, like a Listing without a number, is an Unmatched Title of its own.
  *
  * Title metadata from the cloud is cached here too, per Title and language, along with the
  * device's cloud token, and so are show Listings' show details, until the Provider changes the Show.
@@ -140,8 +140,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         execSQL("INSERT INTO profile (id, name, kids, created_at, used_at) SELECT $FIRST_PROFILE, NULL, 0, $now, $now WHERE NOT EXISTS (SELECT 1 FROM profile)")
         execSQL("UPDATE profile SET uid = lower(hex(randomblob(8))) WHERE uid IS NULL")
         execSQL("COMMIT")
-        // Keyed by question (MatchQuestion.key), so it outlives Syncs. A null tmdb_id: TMDB has no Title by that name.
-        execSQL("CREATE TABLE IF NOT EXISTS match_answer (key TEXT PRIMARY KEY, tmdb_id INTEGER, fetched_at INTEGER NOT NULL)")
+        // A catalog stored while the cloud Matched Listings by name (before ADR 0014) is kept, with where its Viewers stopped: the Listings it
+        // Matched otherwise than by their number are Unmatched Titles again, and its answers go.
+        if (hasColumn("listing", "suspect")) unmatchCloudMatches()
+        execSQL("DROP TABLE IF EXISTS match_answer")
         // Keyed by Title, not by Listing, so it outlives Syncs and catalog shape changes.
         execSQL(
             "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
@@ -236,7 +238,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Where a Sync writes the Titles stage: the movie and show Categories and Listings, and the Sports replays. */
     class TitleStaging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var replayPosition = 0L
 
@@ -249,25 +251,35 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
 
         /**
-         * Stores a Listing of [match]'s kind, Matched to its Title by the Provider's TMDB ID in
-         * [match], or standing alone without one, until the cloud answers [match] otherwise. A
-         * [hidden] one is kept out of the lists and gets no Title. [added] orders the list, newest
-         * first: for a Show, it is when the Provider last changed it. [container] is a movie file's
-         * extension (`mkv`), which its stream location ends with.
+         * Stores a Listing of [kind], Matched to its Title by the Title number its Provider files it
+         * under ([number]), or standing alone without one; [year] is the year it is dated, which tells
+         * a Mismatch once every Listing is stored. A [hidden] one is kept out of the lists and gets no
+         * Title. [added] orders the list, newest first: for a Show, it is when the Provider last changed
+         * it. [container] is a movie file's extension (`mkv`), which its stream location ends with.
          */
-        fun listing(id: Long, name: String, categoryId: String?, added: Long?, image: String?, hidden: Boolean, match: MatchQuestion, container: String? = null) = insertListing.run {
-            bindText(1, kindKey(match.kind))
+        fun listing(
+            kind: TitleKind,
+            id: Long,
+            name: String,
+            categoryId: String?,
+            added: Long?,
+            image: String?,
+            hidden: Boolean,
+            number: Long?,
+            year: Int?,
+            container: String? = null,
+        ) = insertListing.run {
+            bindText(1, kindKey(kind))
             bindLong(2, id)
             bindText(3, name)
             if (categoryId == null) bindNull(4) else bindText(4, categoryId)
             if (added == null) bindNull(5) else bindLong(5, added)
             bindLong(6, if (hidden) 1 else 0)
             if (image == null) bindNull(7) else bindText(7, image)
-            bindText(8, key(match.tmdbId?.let { TitleId.Tmdb(match.kind, it) } ?: TitleId.Unmatched(match.kind, id)))
-            if (match.tmdbId == null) bindNull(9) else bindLong(9, match.tmdbId)
-            bindText(10, matchName(match.name))
-            bindText(11, match.key)
-            if (container == null) bindNull(12) else bindText(12, container)
+            bindText(8, key(number?.let { TitleId.Tmdb(kind, it) } ?: TitleId.Unmatched(kind, id)))
+            if (number == null) bindNull(9) else bindLong(9, number)
+            if (year == null) bindNull(10) else bindLong(10, year.toLong())
+            if (container == null) bindNull(11) else bindText(11, container)
             stepAndReset()
         }
 
@@ -326,13 +338,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
 
     /**
-     * Writes the Titles stage of a Sync, what [fill] stores, Matching suspects by the answers kept, beside
-     * the catalog on screen. [onFilled] runs once [fill] returns, before the Titles are built. [completed]
-     * runs once they are, with the new Listing counts and how many Listings were Matched by name, and the
-     * Sync it returns is kept as pending until [swapTitles] or [applyPending] lands it, through a close
-     * and reopen if need be.
+     * Writes the Titles stage of a Sync, what [fill] stores, beside the catalog on screen, with each
+     * Mismatch an Unmatched Title of its own. [onFilled] runs once [fill] returns, before the Titles are
+     * built. [completed] runs once they are, with the new Listing counts and how many Unmatched Titles
+     * the year rule made, and the Sync it returns is kept as pending until [swapTitles] or [applyPending]
+     * lands it, through a close and reopen if need be.
      */
-    fun stageTitles(fill: (TitleStaging) -> Unit, onFilled: () -> Unit, completed: (movieCount: Int, showCount: Int, rematched: Int) -> CompletedSync): CompletedSync =
+    fun stageTitles(fill: (TitleStaging) -> Unit, onFilled: () -> Unit, completed: (movieCount: Int, showCount: Int, mismatches: Int) -> CompletedSync): CompletedSync =
         synchronized(writer) {
             writer.execSQL("DROP TABLE IF EXISTS staging_category")
             writer.execSQL("DROP TABLE IF EXISTS staging_listing")
@@ -345,7 +357,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
                 "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                    "provider_tmdb INTEGER, match_name TEXT, match_key TEXT, suspect INTEGER, container TEXT)",
+                    "provider_tmdb INTEGER, year INTEGER, container TEXT)",
             )
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
@@ -360,26 +372,34 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     staging.close()
                 }
                 onFilled()
-                // A Listing whose name no sibling shares may be a Mismatch, and one without an ID needs looking up.
-                writer.execSQL("CREATE INDEX staging_listing_siblings ON staging_listing (kind, provider_tmdb, match_name)")
+                // Each number's year: the one its dated Listings carry most, ties going to the earliest.
+                writer.execSQL("CREATE TABLE staging_number_year (kind TEXT, provider_tmdb INTEGER, year INTEGER, PRIMARY KEY (kind, provider_tmdb))")
                 writer.execSQL(
                     """
-                    UPDATE staging_listing SET suspect = 1 WHERE hidden = 0 AND (provider_tmdb IS NULL OR NOT EXISTS (
-                        SELECT 1 FROM staging_listing o
-                        WHERE o.kind = staging_listing.kind AND o.provider_tmdb = staging_listing.provider_tmdb AND o.match_name = staging_listing.match_name
-                            AND o.hidden = 0 AND o.rowid <> staging_listing.rowid
-                    ))
+                    INSERT INTO staging_number_year SELECT kind, provider_tmdb, year FROM (
+                        SELECT kind, provider_tmdb, year, row_number() OVER (PARTITION BY kind, provider_tmdb ORDER BY count(*) DESC, year) AS rank
+                        FROM staging_listing WHERE hidden = 0 AND provider_tmdb IS NOT NULL AND year IS NOT NULL GROUP BY kind, provider_tmdb, year
+                    ) WHERE rank = 1
                     """.trimIndent(),
                 )
-                writer.execSQL("UPDATE staging_listing SET title_key = $ANSWERED_KEY WHERE suspect = 1 AND match_key IN (SELECT key FROM match_answer)")
+                // A Listing dated further from it is a Mismatch, an Unmatched Title of its own.
+                writer.execSQL(
+                    """
+                    UPDATE staging_listing SET title_key = $LISTING_KEY
+                    WHERE hidden = 0 AND year IS NOT NULL AND abs(year - (
+                        SELECT n.year FROM staging_number_year n WHERE n.kind = staging_listing.kind AND n.provider_tmdb = staging_listing.provider_tmdb
+                    )) > $MISMATCH_YEARS
+                    """.trimIndent(),
+                )
+                writer.execSQL("DROP TABLE staging_number_year")
                 // Titles are listed by their newest Listing.
                 writer.execSQL("INSERT INTO staging_title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("staging_listing WHERE hidden = 0"))
                 writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
                 writer.execSQL(
                     """
-                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, match_key, suspect, container)
+                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, container)
                     SELECT l.kind, row_number() OVER (PARTITION BY l.kind ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image,
-                        t.position, l.title_key, l.provider_tmdb, l.match_key, l.suspect, l.container
+                        t.position, l.title_key, l.provider_tmdb, l.container
                     FROM staging_listing l
                     LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
                     JOIN staging_title t ON t.key = l.title_key
@@ -396,7 +416,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     it.step()
                     it.getLong(0).toInt()
                 }
-                val sync = completed(count(TitleKind.Movie), count(TitleKind.Show), rematchedCount("staging_kept_listing"))
+                val sync = completed(count(TitleKind.Movie), count(TitleKind.Show), mismatchCount("staging_kept_listing"))
                 writer.execSQL("BEGIN")
                 writer.prepare("INSERT INTO staging_unknown_prefix VALUES (?, ?, ?)").use { insert ->
                     sync.unknownPrefixes.forEach {
@@ -421,7 +441,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                         PENDING_MOVIE_LISTINGS to sync.movieListingCount.toString(),
                         PENDING_SHOW_LISTINGS to sync.showListingCount.toString(),
                         PENDING_CHANNEL_LISTINGS to sync.channelListingCount.toString(),
-                        PENDING_REMATCHED to sync.rematchedListings.toString(),
+                        PENDING_MISMATCHES to sync.mismatches.toString(),
                     ),
                 )
                 writer.execSQL("COMMIT")
@@ -554,7 +574,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 LAST_SYNC_LISTINGS to meta(PENDING_MOVIE_LISTINGS)!!,
                 LAST_SYNC_SHOW_LISTINGS to meta(PENDING_SHOW_LISTINGS)!!,
                 LAST_SYNC_CHANNELS to meta(PENDING_CHANNEL_LISTINGS)!!,
-                LAST_SYNC_REMATCHED to meta(PENDING_REMATCHED)!!,
+                LAST_SYNC_MISMATCHES to meta(PENDING_MISMATCHES)!!,
             ),
         )
         // The Provider table the staged catalog was described with is the one kept from now on.
@@ -600,88 +620,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             Duration.ofMillis(meta(LAST_SYNC_MILLIS)!!.toLong()),
             meta(LAST_SYNC_LISTINGS)!!.toInt(),
             unknownPrefixes(),
-            meta(LAST_SYNC_REMATCHED)?.toInt() ?: 0,
+            meta(LAST_SYNC_MISMATCHES)?.toInt() ?: 0,
             meta(LAST_SYNC_SHOW_LISTINGS)?.toInt() ?: 0,
             meta(LAST_SYNC_CHANNELS)?.toInt() ?: 0,
             candidateTierTags(),
         )
     }
 
-    /** How many of [table]'s Listings are Matched otherwise than by their Provider's TMDB ID. */
-    private fun rematchedCount(table: String): Int =
-        writer.prepare("SELECT count(*) FROM $table WHERE title_key <> $PROVIDER_KEY").use { it.step(); it.getLong(0).toInt() }
-
-    /**
-     * The suspects the cloud should be asked about: those without an answer, or whose answer was
-     * given before [staleBefore] ([notFoundStaleBefore] when TMDB found nothing).
-     */
-    fun unansweredSuspects(staleBefore: Instant, notFoundStaleBefore: Instant): List<StoredSuspect> = synchronized(reader) {
-        reader.prepare(
-            """
-            SELECT l.kind, l.name, l.category, l.provider_tmdb FROM listing l LEFT JOIN match_answer a ON a.key = l.match_key
-            WHERE l.suspect = 1 AND (a.key IS NULL OR a.fetched_at < CASE WHEN a.tmdb_id IS NULL THEN ? ELSE ? END)
-            ORDER BY l.kind, l.position
-            """.trimIndent(),
-        ).use {
-            it.bindLong(1, notFoundStaleBefore.toEpochMilli())
-            it.bindLong(2, staleBefore.toEpochMilli())
-            buildList {
-                while (it.step()) add(StoredSuspect(kind(it.getText(0)), it.getText(1), it.getText(2), if (it.isNull(3)) null else it.getLong(3)))
-            }
-        }
-    }
-
-    /** Keeps the cloud's [answers], by question key (a null TMDB ID: TMDB has no Title by that name), given at [at]. */
-    fun saveMatchAnswers(answers: Map<String, Long?>, at: Instant) = synchronized(writer) {
-        writer.execSQL("BEGIN")
-        try {
-            writer.prepare("INSERT OR REPLACE INTO match_answer VALUES (?, ?, ?)").use { insert ->
-                answers.forEach { (key, tmdbId) ->
-                    insert.bindText(1, key)
-                    if (tmdbId == null) insert.bindNull(2) else insert.bindLong(2, tmdbId)
-                    insert.bindLong(3, at.toEpochMilli())
-                    insert.stepAndReset()
-                }
-            }
-            writer.execSQL("COMMIT")
-        } catch (e: Throwable) {
-            writer.execSQL("ROLLBACK")
-            throw e
-        }
-    }
-
-    /**
-     * Matches the stored catalog's suspects by the answers kept, regrouping its Titles if that moves
-     * any Listing, and returns the Sync with its new count of Listings Matched by name; null when no
-     * Listing moved (answers a Matching cut short saved are applied by the next one).
-     */
-    fun applyMatchAnswers(): CompletedSync? = synchronized(writer) {
-        writer.execSQL("BEGIN IMMEDIATE")
-        val moved = try {
-            writer.execSQL(
-                "UPDATE listing SET title_key = $ANSWERED_KEY WHERE suspect = 1 AND match_key IN (SELECT key FROM match_answer) AND title_key IS NOT $ANSWERED_KEY",
-            )
-            val changed = writer.prepare("SELECT changes()").use { it.step(); it.getLong(0) }
-            if (changed > 0) {
-                writer.execSQL("DELETE FROM title")
-                writer.execSQL("INSERT INTO title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("listing"))
-                writer.execSQL("UPDATE listing SET title = (SELECT position FROM title WHERE key = listing.title_key)")
-                writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
-                    it.bindText(1, LAST_SYNC_REMATCHED)
-                    it.bindText(2, rematchedCount("listing").toString())
-                    it.step()
-                }
-            }
-            writer.execSQL("COMMIT")
-            changed
-        } catch (e: Throwable) {
-            writer.execSQL("ROLLBACK")
-            throw e
-        }
-        if (moved == 0L) return null
-        truncateLog()
-        lastSync()
-    }
+    /** How many of [table]'s Listings are Mismatches: Unmatched Titles though their Provider gave them a number. */
+    private fun mismatchCount(table: String): Int =
+        writer.prepare("SELECT count(*) FROM $table WHERE provider_tmdb IS NOT NULL AND title_key <> $PROVIDER_KEY").use { it.step(); it.getLong(0).toInt() }
 
     private fun candidateTierTags(): List<CandidateTierTag> = synchronized(reader) {
         reader.prepare("SELECT word, listings, example FROM tier_tag ORDER BY listings DESC, word").use {
@@ -2349,6 +2297,40 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         synchronized(reader) { reader.close() }
     }
 
+    /**
+     * Turns a catalog stored while the cloud Matched Listings by name (before ADR 0014) into today's
+     * shape without a Sync: each Listing the cloud had Matched otherwise than by its number is an
+     * Unmatched Title again, and where a Viewer stopped in a Title that no longer exists is kept under
+     * the Unmatched Title of its first such Listing, so it stays in Continue watching. The next Sync
+     * applies the year rule. A catalog held for the next screen, staged in the old shape, goes.
+     */
+    private fun SQLiteConnection.unmatchCloudMatches() {
+        execSQL("BEGIN")
+        try {
+            execSQL("CREATE TEMP TABLE unmatched (old_key TEXT NOT NULL, new_key TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL)")
+            execSQL("INSERT INTO unmatched SELECT title_key, $LISTING_KEY, kind, position FROM listing WHERE title_key NOT IN ($PROVIDER_KEY, $LISTING_KEY)")
+            execSQL("UPDATE listing SET title_key = $LISTING_KEY WHERE title_key NOT IN ($PROVIDER_KEY, $LISTING_KEY)")
+            execSQL("DELETE FROM title")
+            execSQL("INSERT INTO title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("listing"))
+            execSQL("UPDATE listing SET title = (SELECT position FROM title WHERE key = listing.title_key)")
+            for (table in listOf("progress", "episode_progress", "title_choices")) {
+                execSQL(
+                    "UPDATE OR IGNORE $table SET title_key = (SELECT new_key FROM unmatched u WHERE u.old_key = $table.title_key ORDER BY u.kind, u.position LIMIT 1) " +
+                        "WHERE title_key IN (SELECT old_key FROM unmatched) AND title_key NOT IN (SELECT key FROM title)",
+                )
+            }
+            execSQL("DROP TABLE unmatched")
+            execSQL("ALTER TABLE listing DROP COLUMN suspect")
+            execSQL("ALTER TABLE listing DROP COLUMN match_key")
+            execSQL("DROP TABLE IF EXISTS staging_kept_listing")
+            execSQL("DELETE FROM meta WHERE key = '$LAST_SYNC_REMATCHED' OR key LIKE 'pending_sync_%'")
+            execSQL("COMMIT")
+        } catch (e: Throwable) {
+            execSQL("ROLLBACK")
+            throw e
+        }
+    }
+
     private companion object {
         /** Raised whenever the stored catalog's shape changes, so an older one is dropped and Synced again. */
         const val SCHEMA_VERSION = 7
@@ -2360,8 +2342,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val WAL_SIZE_LIMIT = 4L * 1024 * 1024
         const val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
-                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, match_key TEXT NOT NULL, suspect INTEGER NOT NULL, " +
-                "container TEXT, PRIMARY KEY (kind, position))"
+                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, container TEXT, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
                 "category_id TEXT, guide_id TEXT NOT NULL, channel_key TEXT NOT NULL, channel_name TEXT NOT NULL, country TEXT, quality TEXT, hevc INTEGER NOT NULL, " +
@@ -2451,11 +2432,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         /** Each kind's Titles from the Listings in %s, listed by their newest Listing. */
         const val TITLES_BY_NEWEST_LISTING =
             "SELECT kind, row_number() OVER (PARTITION BY kind ORDER BY max(added) DESC, min(name), min(id)), title_key FROM %s GROUP BY kind, title_key"
-        /** A Listing's Title key by its Provider's TMDB ID, as [key] makes it. */
+        /** A Listing's Title key by its Title number, as [key] makes it. */
         const val PROVIDER_KEY = "CASE WHEN provider_tmdb IS NULL THEN kind || '/listing/' || id ELSE kind || '/' || provider_tmdb END"
-        /** A suspect Listing's Title key by the answer kept for it, as [key] makes it. */
-        const val ANSWERED_KEY =
-            "(SELECT CASE WHEN a.tmdb_id IS NULL THEN kind || '/listing/' || id ELSE kind || '/' || a.tmdb_id END FROM match_answer a WHERE a.key = match_key)"
+        /** A Listing's Title key as an Unmatched Title, as [key] makes it. */
+        const val LISTING_KEY = "kind || '/listing/' || id"
         const val UNKNOWN_PREFIX_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (prefix TEXT PRIMARY KEY, listings INTEGER NOT NULL, example TEXT NOT NULL)"
         /** A Sync's candidate Tier tags (#439), kept like its unknown Prefixes. */
@@ -2465,6 +2445,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val LAST_SYNC_MILLIS = "last_sync_millis"
         const val LAST_SYNC_LISTINGS = "last_sync_movie_listings"
         const val LAST_SYNC_SHOW_LISTINGS = "last_sync_show_listings"
+        /** How many Unmatched Titles the year rule made; an older app kept how many Listings the cloud had Matched by name, under the second. */
+        const val LAST_SYNC_MISMATCHES = "last_sync_mismatches"
         const val LAST_SYNC_REMATCHED = "last_sync_rematched_listings"
         const val LAST_SYNC_CHANNELS = "last_sync_channel_listings"
         /** When the Channels on screen landed: before the Titles on a first Sync. */
@@ -2475,7 +2457,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val PENDING_MOVIE_LISTINGS = "pending_sync_movie_listings"
         const val PENDING_SHOW_LISTINGS = "pending_sync_show_listings"
         const val PENDING_CHANNEL_LISTINGS = "pending_sync_channel_listings"
-        const val PENDING_REMATCHED = "pending_sync_rematched_listings"
+        const val PENDING_MISMATCHES = "pending_sync_mismatches"
         const val PENDING_PROVIDER_TABLE_FOR = "pending_sync_provider_table_for"
         const val PENDING_PROVIDER_TABLE = "pending_sync_provider_table"
         /** The Provider table kept ([providerTable]), and the key of the Provider it is for. */
@@ -2516,9 +2498,6 @@ internal class StoredGames(val body: String, val fetchedAt: Instant)
 
 /** [added] is when a movie Listing was added, or when the Provider last changed a show Listing. */
 internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?)
-
-/** A Listing whose Match is checked by name, with the TMDB ID its Provider gave it. */
-internal class StoredSuspect(val kind: TitleKind, val name: String, val category: String, val providerTmdbId: Long?)
 
 /** Where the Viewer stopped in a Title, in milliseconds, out of its [duration] when the player knew it. */
 /** A Profile as kept: [name] is null until the first Profile is renamed; [usedAt] is 0 for one never used. */

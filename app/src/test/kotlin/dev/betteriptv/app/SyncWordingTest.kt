@@ -2,7 +2,6 @@ package dev.betteriptv.app
 
 import android.content.Context
 import dev.betteriptv.core.CompletedSync
-import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.Unreachable
@@ -39,11 +38,8 @@ class SyncWordingTest {
     }
 
     @Test
-    fun saysTheSyncIsDoneAndHowMatchingIsGoingApart() {
+    fun saysTheSyncIsDone() {
         assertEquals("Synced just now in 239.7 s.", context.describe(SyncStatus.Synced(synced)))
-        assertEquals("Finding the names to check…", context.describe(MatchingStatus(0, null)))
-        assertEquals("1,250 of 2,385 names checked", context.describe(MatchingStatus(1_250, 2_385)))
-        assertEquals("0 of 1 name checked", context.describe(MatchingStatus(0, 1)))
     }
 
     @Test
@@ -55,7 +51,6 @@ class SyncWordingTest {
     @Config(qualifiers = "fr")
     fun saysItInFrench() {
         assertEquals("Synchronisation… Films · 12\u202f345 entrées", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))
-        assertEquals("25 noms vérifiés sur 60", context.describe(MatchingStatus(25, 60)))
         assertEquals("Synchronisé à l'instant en 239,7 s.", context.describe(SyncStatus.Synced(synced)))
         assertEquals("Synchronisé à l'instant. Il s'affichera à votre retour.", context.describe(SyncStatus.Ready(synced, Instant.now())))
     }

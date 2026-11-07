@@ -1,7 +1,6 @@
 package dev.betteriptv.app
 
 import dev.betteriptv.core.CompletedSync
-import dev.betteriptv.core.MatchingStatus
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.Unreachable
@@ -17,31 +16,26 @@ class CatalogActivityTest {
     private val synced = CompletedSync(now, Duration.ofSeconds(1), 150, emptyList())
 
     @Test fun `nothing shows while the first Sync's checklist does`() {
-        assertNull(catalogActivity(SyncStatus.NeverSynced(), null))
-        assertNull(catalogActivity(SyncStatus.Running(null, null, SyncStep.Channels), null))
+        assertNull(catalogActivity(SyncStatus.NeverSynced()))
+        assertNull(catalogActivity(SyncStatus.Running(null, null, SyncStep.Channels)))
     }
 
     @Test fun `a Sync running behind data on screen is Syncing`() {
-        assertEquals(CatalogActivity.Syncing, catalogActivity(SyncStatus.Running(null, now, SyncStep.Movies), null))
-        assertEquals(CatalogActivity.Syncing, catalogActivity(SyncStatus.Running(synced, now, SyncStep.Shows), null))
+        assertEquals(CatalogActivity.Syncing, catalogActivity(SyncStatus.Running(null, now, SyncStep.Movies)))
+        assertEquals(CatalogActivity.Syncing, catalogActivity(SyncStatus.Running(synced, now, SyncStep.Shows)))
     }
 
     @Test fun `a held catalog is ready`() {
-        assertEquals(CatalogActivity.UpdateReady, catalogActivity(SyncStatus.Ready(synced, now), null))
-    }
-
-    @Test fun `Matching is Checking titles, unless a new Sync runs meanwhile`() {
-        assertEquals(CatalogActivity.CheckingTitles, catalogActivity(SyncStatus.Synced(synced), MatchingStatus(0, null)))
-        assertEquals(CatalogActivity.Syncing, catalogActivity(SyncStatus.Running(synced, now, SyncStep.Channels), MatchingStatus(10, 20)))
+        assertEquals(CatalogActivity.UpdateReady, catalogActivity(SyncStatus.Ready(synced, now)))
     }
 
     @Test fun `an idle or failed catalog shows nothing`() {
-        assertNull(catalogActivity(SyncStatus.Synced(synced), null))
-        assertNull(catalogActivity(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Movies), null))
+        assertNull(catalogActivity(SyncStatus.Synced(synced)))
+        assertNull(catalogActivity(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Movies)))
     }
 
     @Test fun `work that finishes says Up to date, unless it failed or nothing showed`() {
-        assertEquals(CatalogActivity.UpToDate, afterword(CatalogActivity.CheckingTitles, SyncStatus.Synced(synced)))
+        assertEquals(CatalogActivity.UpToDate, afterword(CatalogActivity.UpdateReady, SyncStatus.Synced(synced)))
         assertEquals(CatalogActivity.UpToDate, afterword(CatalogActivity.Syncing, SyncStatus.Synced(synced)))
         assertNull(afterword(CatalogActivity.Syncing, SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Movies)))
         assertNull(afterword(null, SyncStatus.Synced(synced)))

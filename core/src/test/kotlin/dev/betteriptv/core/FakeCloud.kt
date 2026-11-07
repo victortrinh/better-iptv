@@ -34,12 +34,6 @@ class FakeCloud : Closeable {
     /** While set, a `/v1/file-reads/lookup` request isn't answered until the latch opens. */
     @Volatile var hangingFileReadLookUps: CountDownLatch? = null
 
-    /** How many of the next `/v1/match` requests are answered with HTTP 503, as a Worker over its CPU limit would. */
-    @Volatile var failingMatches = 0
-
-    /** Called when a `/v1/match` request arrives, before it is answered. */
-    @Volatile var onMatch: (() -> Unit)? = null
-
     /** Answers `/v1/unknown-prefixes` with HTTP 503, as a cloud down for that call alone would. */
     @Volatile var failingPrefixReports = false
 
@@ -118,7 +112,6 @@ class FakeCloud : Closeable {
 
     /** The file reads devices shared, by `<provider key>/<listing id>`. */
     val fileReads = java.util.concurrent.ConcurrentHashMap<String, Any>()
-    private val matches = HashMap<String, Long?>()
     private val tokens = HashSet<String>()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 
@@ -131,14 +124,6 @@ class FakeCloud : Closeable {
             (body["titles"] as List<*>).map { title -> (title as Map<*, *>).let { "${it["kind"]}/${(it["tmdbId"] as Number).toLong()}/${body["language"]}" } }
         }
 
-    /** The Listings the device asked to Match, as sent: kind, name, year, language and tmdbId. */
-    val matchAsked: List<Map<*, *>>
-        get() = matchRequests.flatten()
-
-    /** The same, one list per request, answered or not. */
-    val matchRequests: List<List<Map<*, *>>>
-        get() = received.filter { it.path == "/v1/match" }.map { request -> ((read(request.body) as Map<*, *>)["listings"] as List<*>).map { it as Map<*, *> } }
-
     init {
         server.executor = Executors.newCachedThreadPool()
         server.createContext("/") { exchange -> try { handle(exchange) } finally { exchange.close() } }
@@ -148,14 +133,6 @@ class FakeCloud : Closeable {
     /** Serves [title] (built with [tmdbTitle]) for requests in [language]. */
     fun title(language: String, title: Map<String, Any?>) {
         synchronized(metadata) { metadata["${title["kind"]}/${title["tmdbId"]}/$language"] = title }
-    }
-
-    /**
-     * Answers a Match for a Listing cleaned to [name] with [tmdbId] (null: TMDB has no Title by that
-     * name), whatever ID the Provider gave it. Listings without an answer keep the Provider's ID.
-     */
-    fun match(name: String, tmdbId: Long?) {
-        synchronized(matches) { matches[name] = tmdbId }
     }
 
     /** A downloadable subtitle file, as the cloud's subtitle search finds it. */
@@ -378,12 +355,9 @@ class FakeCloud : Closeable {
                 val query = ((read(body) as Map<*, *>)["query"] as String).lowercase()
                 respond(exchange, 200, synchronized(searches) { searches[query] } ?: mapOf("titles" to emptyList<Any>(), "people" to emptyList<Any>()))
             }
-            "/v1/metadata", "/v1/match" -> {
+            "/v1/metadata" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                if (exchange.requestURI.path == "/v1/match") onMatch?.invoke()
-                if (exchange.requestURI.path == "/v1/match" && synchronized(this) { (failingMatches > 0).also { if (it) failingMatches-- } }) return exchange.sendResponseHeaders(503, -1)
-                if (exchange.requestURI.path == "/v1/match") return respond(exchange, 200, mapOf("matches" to answerMatches(read(body) as Map<*, *>)))
                 val asked = read(body) as Map<*, *>
                 val language = asked["language"] as String
                 val keys = (asked["titles"] as List<*>).map { (it as Map<*, *>).let { t -> "${t["kind"]}/${(t["tmdbId"] as Number).toLong()}" } }
@@ -564,13 +538,6 @@ class FakeCloud : Closeable {
             }
             else -> respond(exchange, 404, mapOf("error" to "No such endpoint."))
         }
-    }
-
-    private fun answerMatches(asked: Map<*, *>) = (asked["listings"] as List<*>).map { listing ->
-        listing as Map<*, *>
-        val name = listing["name"] as String
-        val tmdbId = synchronized(matches) { if (name in matches) matches[name] else (listing["tmdbId"] as Number?)?.toLong() }
-        mapOf("kind" to listing["kind"], "tmdbId" to tmdbId)
     }
 
     private fun respond(exchange: HttpExchange, status: Int, body: Any) {
