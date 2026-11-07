@@ -82,6 +82,8 @@ import java.time.Duration
  * delete it, and "Add a profile" its name; each asks [onProfile]. The Languages and "Play next Episode" are the current
  * Profile's, the rest the device's.
  * [focusTab]: reached by picking its tab, which keeps focus; otherwise the current Profile's row takes it.
+ * [addProfile] opens "Add a profile"'s name at once, as "Who's watching?" asks (#432), and says so through [onAddProfileShown];
+ * Back from it lands on "Add a profile".
  */
 @Composable
 fun SettingsScreen(
@@ -95,8 +97,12 @@ fun SettingsScreen(
     onTab: (Browse) -> Unit,
     profiles: Profiles,
     onProfile: (ProfileChange) -> Unit,
+    addProfile: Boolean = false,
+    onAddProfileShown: () -> Unit = {},
 ) = SettingsContent(
     settings, update, onChange, onUpdate, focusTab, onTab, profiles, onProfile,
+    addProfile = addProfile,
+    onAddProfileShown = onAddProfileShown,
     catalogLanguages = library::catalogLanguages,
     catalog = {
         item { SyncRow(library, onSyncNow) }
@@ -125,6 +131,8 @@ internal fun SettingsContent(
     catalog: LazyListScope.() -> Unit,
     account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
     accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
+    addProfile: Boolean = false,
+    onAddProfileShown: () -> Unit = {},
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
@@ -145,6 +153,14 @@ internal fun SettingsContent(
     val settingsList = rememberLazyListState()
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
+    if (addProfile) {
+        LaunchedEffect(Unit) {
+            profileId = null
+            returnTo = Picker.ProfileName
+            picking = Picker.ProfileName
+            onAddProfileShown()
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Colors.ground).padding(top = Spacing.screenY)) {
         BrowseTabs(Browse.Settings, onTab, Modifier.padding(horizontal = Spacing.screenX), selectedFocus = tab)
