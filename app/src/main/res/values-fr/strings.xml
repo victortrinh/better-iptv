@@ -379,6 +379,10 @@
     <string name="update_downloading">Téléchargement… %1$d %%</string>
     <string name="update_installing">Confirmez avec Installer à l\'écran suivant.</string>
     <string name="update_installing_reopens">Zugig se ferme pendant la mise à jour et se rouvre tout seul.</string>
+    <string name="update_opening_installer">Ouverture du programme d\'installation d\'Android…</string>
+    <string name="update_finishing_title">Fin de la mise à jour</string>
+    <string name="update_finishing_reopens">Zugig va se fermer dans un instant et se rouvrir tout seul.</string>
+    <string name="update_finishing">Zugig va se fermer dans un instant. Rouvrez-le une fois la mise à jour installée.</string>
     <string name="update_failed">La mise à jour n\'a pas abouti. %1$s</string>
     <string name="update_retry">Réessayer</string>
     <string name="update_allow_title">Autorisez Zugig à installer ses mises à jour</string>

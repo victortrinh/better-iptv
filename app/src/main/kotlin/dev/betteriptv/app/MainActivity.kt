@@ -100,8 +100,11 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         laterFor = null
         app.update()
     }
-    if (offered != null && laterFor != offered.versionCode) {
-        UpdateScreen(update, onUpdate = onUpdate, onLater = { laterFor = offered.versionCode })
+    // Opened while an update installs (#452): says so until Android closes the app, unless the Viewer goes on with Back.
+    var finishingPutAway by rememberSaveable { mutableStateOf(false) }
+    val showUpdate = if (update == UpdateState.Finishing) !finishingPutAway else offered != null && laterFor != offered.versionCode
+    if (showUpdate) {
+        UpdateScreen(update, onUpdate = onUpdate, onLater = { if (offered != null) laterFor = offered.versionCode else finishingPutAway = true })
     } else if (!loggedIn) {
         LoginScreen(app.library, onLoggedIn = {
             loggedIn = true
