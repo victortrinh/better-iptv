@@ -101,8 +101,8 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
             PackageInstaller.STATUS_SUCCESS -> Unit
-            // Backed out of the installer: Install opens it again.
-            PackageInstaller.STATUS_FAILURE_ABORTED -> Unit
+            // Backed out of the installer: the update is offered again.
+            PackageInstaller.STATUS_FAILURE_ABORTED -> (context.applicationContext as BetterIptvApp).updates?.installAborted()
             else -> {
                 val problem = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Android's installer answered $status."
                 Log.w(UPDATE_TAG, "Update not installed: $problem")
@@ -118,7 +118,7 @@ private const val UPDATE_TAG = "Updates"
  * The update offered on launch (#21), on the bare ground before anything else: its version, then
  * "Update now" and "Later". Once the Viewer confirms it follows [state]: the first update guides
  * them through allowing this app to install apps, then the download's progress, then Android's
- * installer. [onUpdate] confirms (and carries on once the permission is allowed); [onLater] goes on to the app.
+ * installer, and back to the offer if they back out of it. [onUpdate] confirms (and carries on once the permission is allowed); [onLater] goes on to the app.
  */
 @Composable
 fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) {
@@ -163,11 +163,8 @@ fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) 
                 is UpdateState.Installing -> {
                     Heading(stringResource(R.string.update_title))
                     Body(stringResource(R.string.update_installing))
-                    Buttons {
-                        // Opens the installer again, if the Viewer backed out of it.
-                        NuageButton(stringResource(R.string.update_install), onUpdate, Modifier.focusRequester(first))
-                        NuageButton(stringResource(R.string.update_later), onLater)
-                    }
+                    // Android's installer opens over this; backing out of it offers the update again.
+                    Buttons { NuageButton(stringResource(R.string.update_later), onLater, Modifier.focusRequester(first)) }
                 }
                 is UpdateState.Failed -> {
                     Heading(stringResource(R.string.update_title))

@@ -339,7 +339,6 @@
     <string name="update_later">Plus tard</string>
     <string name="update_downloading">Téléchargement… %1$d %%</string>
     <string name="update_installing">Confirmez avec Installer à l\'écran suivant.</string>
-    <string name="update_install">Installer</string>
     <string name="update_failed">La mise à jour n\'a pas abouti. %1$s</string>
     <string name="update_retry">Réessayer</string>
     <string name="update_allow_title">Autorisez Zugig à installer ses mises à jour</string>

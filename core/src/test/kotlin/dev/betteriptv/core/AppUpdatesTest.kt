@@ -234,5 +234,18 @@ class AppUpdatesTest {
         assertEquals(2, installer.installed.size)
     }
 
+    @Test fun `backing out of the installer offers the build again, and confirming opens the installer again`() = runBlocking {
+        publish()
+        val updates = updates()
+        updates.check()
+        updates.update()
+        updates.installAborted()
+        assertEquals(95L, (updates.state.value as UpdateState.Available).update.versionCode)
+        updates.update()
+        assertTrue(updates.state.value is UpdateState.Installing)
+        assertEquals(2, installer.installed.size)
+        assertEquals(1, requested.count { it == "/build-95/better-iptv-0.1.95.apk" })
+    }
+
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }
