@@ -4,20 +4,22 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * The Title each screen's hero features (#348), seen through the Library after a Sync, with the
- * Charts and metadata from the fake Cloud: from the top five of the screen's Charts, skipping what
- * the Viewer is in and what wouldn't look right, a different one at each entry.
+ * The Title each screen's hero features (#348, #475), seen through the Library over the fake
+ * Provider: from New on your service, with the Provider's backdrop, skipping what the Viewer is in,
+ * a different one at each entry, and at most one Provider details call per entry.
  */
 class FeaturedTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
     private val cloud = FakeCloud()
+    private val credentials = InMemoryCredentials()
     private lateinit var library: Library
 
     private val english = listOf("en")
@@ -35,78 +37,133 @@ class FeaturedTest {
         cloud.close()
     }
 
-    private fun open() = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
+    private fun open() = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
 
     private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
+    private fun show(n: Long) = TitleId.Tmdb(TitleKind.Show, 500 + n)
 
-    /** Syncs movies "Film [n]" (TMDB [n]) and shows "Show [n]" (TMDB 500 + [n]), each served with a textless backdrop and a logo unless left [bare]. */
-    private suspend fun sync(movies: List<Long>, shows: List<Long> = emptyList(), bare: Set<String> = emptySet()) {
+    private fun movieBackdrop(n: Long) = "https://art.example/film-$n.jpg"
+    private fun showBackdrop(n: Long) = "https://art.example/show-$n.jpg"
+
+    /**
+     * Syncs movies "Film [n]" (Title number [n], stream id = its place from 1, newest first) and
+     * shows "Show [n]" (Title number 500 + [n]), each in English unless [french]. A movie's details
+     * give a backdrop unless it is in [bare]; a show's Listing carries two unless it is in [bare].
+     */
+    private suspend fun sync(movies: List<Long>, shows: List<Long> = emptyList(), bare: Set<Long> = emptySet(), french: Set<Long> = emptySet()) {
         provider.movieCategoriesOverride = if (movies.isEmpty()) "[]" else """[{"category_id":"1","category_name":"MOVIES"}]"""
         provider.movieListOverride = movies.withIndex().joinToString(",", "[", "]") { (i, n) ->
-            """{"stream_id":${i + 1},"name":"EN - Film $n (2025)","tmdb":"$n","category_id":"1","added":"${1_700_000_000 - i}"}"""
+            val prefix = if (n in french) "FR" else "EN"
+            """{"stream_id":${i + 1},"name":"$prefix - Film $n (2025)","tmdb":"$n","category_id":"1","added":"${1_700_000_000 - i}","stream_icon":"https://art.example/poster-$n.jpg","container_extension":"mkv"}"""
+        }
+        movies.withIndex().forEach { (i, n) ->
+            provider.serveMovieDetails(
+                (i + 1).toLong(), name = "Film $n", plot = "About Film $n.", genre = "Drama", durationMinutes = 100,
+                backdrop = movieBackdrop(n).takeUnless { n in bare },
+            )
         }
         provider.showCategoriesOverride = if (shows.isEmpty()) "[]" else """[{"category_id":"2","category_name":"SERIES"}]"""
         provider.showListOverride = shows.withIndex().joinToString(",", "[", "]") { (i, n) ->
-            """{"series_id":${i + 1},"name":"EN - Show $n (2025)","tmdb":"${500 + n}","category_id":"2","last_modified":"${1_700_000_000 - i}"}"""
+            val backdrops = if (n + 100 in bare) "[]" else """["${showBackdrop(n)}","https://art.example/show-$n-second.jpg"]"""
+            """{"series_id":${i + 1},"name":"EN - Show $n (2025)","tmdb":"${500 + n}","category_id":"2","last_modified":"${1_700_000_000 - i}","plot":"About Show $n.","backdrop_path":$backdrops}"""
         }
-        movies.forEach { serve("Film $it", it, "movie", bare) }
-        shows.forEach { serve("Show $it", 500 + it, "show", bare) }
         library.sync()
     }
 
-    private fun serve(name: String, tmdbId: Long, kind: String, bare: Set<String>) = cloud.title(
-        "en",
-        tmdbTitle(
-            tmdbId, name, kind = kind, runtimeMinutes = 100, genres = listOf("Drama"),
-            descriptions = listOf(Triple("en", "", "About $name.")),
-            backdropPath = "/backdrop-$tmdbId.jpg",
-            textlessBackdropPath = "/textless-$tmdbId.jpg".takeUnless { "$name no backdrop" in bare },
-            logoPath = "/logo-$tmdbId.png".takeUnless { "$name no logo" in bare },
-        ),
-    )
-
     private suspend fun featured(screen: FeaturedScreen = FeaturedScreen.Home) = library.featured(screen, english, "en", "CA")?.name
 
-    /** The names [screen] features at its next [entries] entries. */
-    private suspend fun entries(entries: Int, screen: FeaturedScreen = FeaturedScreen.Home) = List(entries) { featured(screen) }
-
-    @Test fun `Home features its Top movies and Top shows in turn, a different Title at each entry, from the top five of each`() = runBlocking {
-        sync(movies = (1L..7L).toList(), shows = (1L..3L).toList())
-        cloud.charts("CA", movies = (1L..7L).toList(), shows = (501L..503L).toList())
-
-        assertEquals(
-            listOf("Film 1", "Show 1", "Film 2", "Show 2", "Film 3", "Show 3", "Film 4", "Film 5", "Film 1"),
-            entries(9),
-        )
+    /** The names [screen] features at its next [entries] entries, each costing the Provider at most one details call. */
+    private suspend fun entries(entries: Int, screen: FeaturedScreen = FeaturedScreen.Home) = List(entries) {
+        val before = provider.movieDetailsRequests.size
+        featured(screen).also { assertTrue("details calls in one entry", provider.movieDetailsRequests.size - before <= 1) }
     }
 
-    @Test fun `the featured Title carries what the hero shows`() = runBlocking {
+    @Test fun `Home features New on your service's Titles in turn, a different one at each entry, the sixth repeating the first`() = runBlocking {
+        sync(movies = (1L..7L).toList())
+
+        assertEquals(listOf("Film 1", "Film 2", "Film 3", "Film 4", "Film 5", "Film 1"), entries(6))
+    }
+
+    @Test fun `once a featured Movie's details are kept, entering again costs the Provider no call`() = runBlocking {
+        sync(movies = (1L..3L).toList())
+        entries(3)
+        assertEquals(listOf(1L, 2L, 3L), provider.movieDetailsRequests)
+
+        assertEquals(listOf("Film 1", "Film 2", "Film 3"), entries(3))
+        assertEquals(3, provider.movieDetailsRequests.size)
+    }
+
+    @Test fun `Home takes movies and shows in turn, a movie first`() = runBlocking {
+        sync(movies = listOf(1, 2), shows = listOf(1, 2))
+
+        assertEquals(listOf("Film 1", "Show 1", "Film 2", "Show 2", "Film 1"), entries(5))
+    }
+
+    @Test fun `a Show's backdrop is the first on its Listing, and featuring it costs no details call`() = runBlocking {
+        sync(movies = emptyList(), shows = listOf(1, 2))
+
+        val featured = library.featured(FeaturedScreen.Shows, english, "en", "CA")!!
+        assertEquals(showBackdrop(1), featured.backdrop)
+        assertEquals("About Show 1.", featured.description)
+        assertTrue(provider.requests.none { it.startsWith("get_vod_info") || it.startsWith("get_series_info") })
+    }
+
+    @Test fun `the featured Title carries what the hero shows, from the Provider's details`() = runBlocking {
         sync(movies = listOf(1, 2, 3))
-        cloud.charts("CA", movies = listOf(1, 2, 3))
 
         val featured = library.featured(FeaturedScreen.Home, english, "en", "CA")!!
         assertEquals(movie(1), featured.id)
         assertEquals("Film 1", featured.name)
+        assertEquals(2025, featured.year)
         assertEquals(100, featured.runtimeMinutes)
         assertEquals(listOf("Drama"), featured.genres)
         assertEquals("About Film 1.", featured.description)
-        // Full size, textless: it fills the screen.
-        assertEquals("https://image.tmdb.org/t/p/w1280/textless-1.jpg", featured.backdrop)
-        assertEquals("https://image.tmdb.org/t/p/w500/logo-1.png", featured.logo)
+        assertEquals(movieBackdrop(1), featured.backdrop)
         assertEquals("en", featured.best.language?.value)
     }
 
-    @Test fun `it skips Titles in Continue watching and those without a textless backdrop or a logo`() = runBlocking {
-        sync(movies = (1L..5L).toList(), bare = setOf("Film 2 no backdrop", "Film 4 no logo"))
-        cloud.charts("CA", movies = (1L..5L).toList())
+    @Test fun `it skips Titles in Continue watching, in no Content language, and those without a backdrop`() = runBlocking {
+        sync(movies = (1L..5L).toList(), bare = setOf(2), french = setOf(4))
         library.saveProgress(movie(3), position = 30 * 60_000L, duration = 120 * 60_000L)
+        // Film 2's page was opened: its details are kept, with no backdrop.
+        library.title(movie(2), english, "en")
 
         assertEquals(listOf("Film 1", "Film 5", "Film 1"), entries(3))
     }
 
-    @Test fun `Movies and Shows feature their own kind's Top row, each rotating on its own`() = runBlocking {
+    @Test fun `a Movie read with no backdrop is passed over, and the entry reads no other`() = runBlocking {
+        sync(movies = listOf(1, 2), bare = setOf(1))
+
+        // Film 1's details give no backdrop, and Film 2's aren't read on the same entry.
+        assertNull(featured())
+        assertEquals(listOf(1L), provider.movieDetailsRequests)
+        assertEquals(listOf("Film 2", "Film 2"), entries(2))
+        assertEquals(listOf(1L, 2L), provider.movieDetailsRequests)
+    }
+
+    @Test fun `without reading details, only Titles whose backdrop is kept are featured`() = runBlocking {
+        sync(movies = listOf(1, 2), shows = listOf(1))
+
+        assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", "CA", readDetails = false)?.name)
+        assertTrue(provider.movieDetailsRequests.isEmpty())
+    }
+
+    @Test fun `a backdrop the app refused is none`() = runBlocking {
+        sync(movies = listOf(1, 2))
+        library.title(movie(1), english, "en")
+        library.refuseBackdrop(movieBackdrop(1))
+
+        assertEquals(listOf("Film 2", "Film 2"), entries(2))
+        assertNull(library.title(movie(1), english, "en")!!.backdrop)
+
+        // Remembered on the device.
+        library.close()
+        library = open()
+        assertNull(library.title(movie(1), english, "en")!!.backdrop)
+    }
+
+    @Test fun `Movies and Shows feature their own kind, each rotating on its own`() = runBlocking {
         sync(movies = listOf(1, 2, 3), shows = listOf(1, 2, 3))
-        cloud.charts("CA", movies = listOf(1, 2, 3), shows = listOf(501, 502, 503))
 
         assertEquals(listOf("Film 1", "Film 2"), entries(2, FeaturedScreen.Movies))
         assertEquals(listOf("Show 1", "Show 2"), entries(2, FeaturedScreen.Shows))
@@ -116,7 +173,6 @@ class FeaturedTest {
 
     @Test fun `the rotation goes on where it was when the app starts again`() = runBlocking {
         sync(movies = listOf(1, 2, 3))
-        cloud.charts("CA", movies = listOf(1, 2, 3))
         assertEquals(listOf("Film 1", "Film 2"), entries(2))
 
         library.close()
@@ -125,14 +181,10 @@ class FeaturedTest {
         assertEquals("Film 3", featured())
     }
 
-    @Test fun `with no Title that qualifies, or a Top row too short to show, there is no featured Title`() = runBlocking {
-        sync(movies = listOf(1, 2, 3, 4), bare = setOf("Film 1 no logo", "Film 2 no logo", "Film 3 no backdrop"))
-        cloud.charts("CA", movies = listOf(1, 2, 3))
+    @Test fun `with no Title that qualifies, there is no featured Title`() = runBlocking {
+        sync(movies = listOf(1), shows = listOf(1), bare = setOf(1, 101))
         assertNull(featured())
-
-        // Film 4 qualifies, but a Top row of two isn't shown, so it isn't on screen to feature.
-        cloud.charts("US", movies = listOf(4, 99))
-        assertNull(library.featured(FeaturedScreen.Movies, english, "en", "US"))
+        assertNull(featured())
     }
 
     @Test fun `Play starts what the Title page's Play would`() = runBlocking {
@@ -148,7 +200,7 @@ class FeaturedTest {
             """{"id":"10$n","episode_num":$n,"season":1,"title":"EN - Show 1 (2025) - S01E0$n","container_extension":"mkv","added":"1700000000","info":{"video":{"width":1920,"height":1080}}}"""
         }}]}"""
         sync(movies = emptyList(), shows = listOf(1))
-        val show = TitleId.Tmdb(TitleKind.Show, 501)
+        val show = show(1)
         // Episodes play from the show details read when the Show's details opened.
         library.episodes(show, english)
         library.saveProgress(library.episodePlayPlan(show, EpisodeNumber(1, 1), english, fullHdTv)!!, position = 49 * 60_000L, duration = 50 * 60_000L)

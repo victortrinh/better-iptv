@@ -64,7 +64,7 @@ fun TitlesScreen(
         placeholder = if (noTitles) {
             { SyncChecklist(status, SyncStep.Movies, onRetry) }
         } else null,
-        feature = { library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, region) },
+        feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, region, readDetails) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(

@@ -4,6 +4,19 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.annotation.DelicateCoilApi
+import coil3.asImage
+import coil3.decode.DataSource
+import coil3.intercept.Interceptor
+import coil3.request.ImageResult
+import coil3.request.SuccessResult
+import org.junit.After
+import org.junit.Before
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +69,13 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * The Title page in two levels (#346): the page holds the Title and its actions, a Versions action
+ * The Title page in two levels (#346): the page holds the Title, named in Display type over the
+ * Provider's backdrop or, without one, on the ground with its poster at the right (#475), and its actions, a Versions action
  * naming what Play starts, and OK on it opens the Versions screen; Back returns to the action. The
  * Library is stood in for by the states [TitlePage] is given, and the navigation by a host that
  * does what the main activity does.
  */
-@OptIn(ExperimentalTestApi::class)
+@OptIn(ExperimentalTestApi::class, DelicateCoilApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w960dp-h540dp-mdpi")
 class TitleTwoLevelsTest {
@@ -79,6 +93,18 @@ class TitleTwoLevelsTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
+    /** Every image comes from memory: a backdrop's size, or a poster's when its url says so (a poster handed over as a backdrop among them). */
+    @Before fun serveTheArt() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val serve = Interceptor { chain ->
+            val art = if ("poster" in chain.request.data.toString()) SizedArt(width = 600, height = 900) else SizedArt()
+            SuccessResult(art.asImage(), chain.request, dataSource = DataSource.MEMORY_CACHE) as ImageResult
+        }
+        SingletonImageLoader.setUnsafe(ImageLoader.Builder(context).components { add(serve) }.build())
+    }
+
+    @After fun forgetTheArt() = SingletonImageLoader.reset()
+
     private val movie = TitleId.Tmdb(TitleKind.Movie, 949)
     private val show = TitleId.Tmdb(TitleKind.Show, 1396)
 
@@ -93,8 +119,9 @@ class TitleTwoLevelsTest {
     private val english = LanguageGroup("en", listOf(best) + (3L..9L).map { Version(it, "EN - Heat $it", VersionAttributes(language = likely("en"))) })
     private val german = LanguageGroup("de", listOf(Version(10, "DE - Heat", VersionAttributes(language = likely("de")))))
 
-    private fun details(id: TitleId = movie, name: String = "Heat") = TitleDetails(
-        id, name, 1995, null, listOf(english), listOf(german),
+    private fun details(id: TitleId = movie, name: String = "Heat", backdrop: String? = null) = TitleDetails(
+        id, name, 1995, "https://provider.example/heat-poster.jpg", listOf(english), listOf(german),
+        backdrop = backdrop,
         description = "A group of professional bank robbers start to feel the heat from police when they unknowingly leave a clue at their latest heist. ".repeat(3),
         genres = listOf("Crime", "Drama", "Action"),
         runtimeMinutes = 170,
@@ -333,5 +360,43 @@ class TitleTwoLevelsTest {
         label.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
         assertTrue(label.config[SemanticsProperties.Text].isNotEmpty())
+    }
+
+    @Test fun aTitleWithABackdropSitsOnItWithItsNameInDisplayTypeAndNoPoster() {
+        open(loaded = details(backdrop = "https://provider.example/heat-backdrop.jpg") to stopped)
+
+        compose.onNodeWithTag(PAGE_BACKDROP).assertExists()
+        compose.onNodeWithTag(HEADER_POSTER).assertDoesNotExist()
+        assertEquals(displaySize, compose.onNodeWithText("Heat").fontSize())
+        // Named in type: no logo.
+        compose.onNodeWithContentDescription("Heat").assertDoesNotExist()
+    }
+
+    @Test fun aTitleWithNoBackdropKeepsTheGroundWithItsPosterAtTheRightOfTheHeader() {
+        open(loaded = details(backdrop = null) to stopped)
+
+        compose.onNodeWithTag(PAGE_BACKDROP).assertDoesNotExist()
+        val poster = compose.onNodeWithTag(HEADER_POSTER).fetchSemanticsNode().boundsInRoot
+        val name = compose.onNodeWithText("Heat").fetchSemanticsNode().boundsInRoot
+        assertTrue("the poster ($poster) is right of the header ($name)", poster.left > name.right)
+        assertTrue(poster.right / compose.activity.resources.displayMetrics.density > 960 / 2)
+    }
+
+    @Test fun aPosterHandedOverAsTheBackdropTakesTheSameLayoutOnceDecoded() {
+        val refused = mutableListOf<String>()
+        val backdrops = Backdrops(onRefused = { refused += it })
+        var read by mutableStateOf(false)
+        compose.setContent {
+            CompositionLocalProvider(LocalBackdrops provides backdrops) {
+                TitlePage(movie, null, (details(backdrop = "https://provider.example/heat-poster-as-backdrop.jpg") to stopped).takeIf { read }, null, onPlay = { _, _ -> })
+            }
+        }
+        read = true
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(PAGE_BACKDROP).assertDoesNotExist()
+        compose.onNodeWithTag(HEADER_POSTER).assertExists()
+        assertEquals(listOf("https://provider.example/heat-poster-as-backdrop.jpg"), refused)
     }
 }

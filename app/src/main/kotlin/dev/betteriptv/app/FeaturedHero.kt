@@ -51,7 +51,7 @@ internal const val HERO_DETAILS = "details"
 
 /**
  * The featured [title]'s text column, at the top of Home, Movies or Shows (DESIGN.md, Home): its
- * logo (or name), a metadata line in muted body followed by its badges, two lines of description,
+ * name in Display type, a metadata line in muted body followed by its badges, two lines of description,
  * then Play and Details 12 dp apart. Its backdrop is drawn behind the whole screen
  * ([featuredBackdrop]). [onFocus] says which button took focus ([HERO_PLAY], [HERO_DETAILS]);
  * focus coming into the hero from outside lands on the one focused [last], else on Play: the hero
@@ -73,7 +73,7 @@ internal fun FeaturedHero(
     var inside by remember { mutableStateOf(false) }
     // It starts 96 dp under the tabs, which keep 16 dp under them.
     Column(Modifier.padding(start = Spacing.screenX, top = 96.dp - 16.dp, bottom = 28.dp).width(440.dp)) {
-        TitleName(title.name, rememberArtwork(title.logo))
+        TitleName(title.name)
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             val metadata = remember(title) {
@@ -103,7 +103,7 @@ internal fun FeaturedHero(
 }
 
 /**
- * Draws the featured [title]'s textless backdrop behind what this modifies (a screen of rows, under
+ * Draws the featured [title]'s backdrop (the Provider's, checked once decoded, [rememberBackdrop]) behind what this modifies (a screen of rows, under
  * its ground), cropped to fill it under the [backdropScrims], fading in as it arrives
  * ([rememberArtwork]). It is drawn at [shown], how much of the hero is on screen, so it goes as the
  * first Down scrolls the hero away under the tabs and comes back with it on Up; only the drawing
@@ -111,7 +111,7 @@ internal fun FeaturedHero(
  */
 @Composable
 internal fun Modifier.featuredBackdrop(title: FeaturedTitle?, shown: () -> Float): Modifier {
-    val backdrop = title?.let { rememberArtwork(it.backdrop) } ?: return this
+    val backdrop = title?.let { rememberBackdrop(it.backdrop) } ?: return this
     val scrims = remember { backdropScrims(Colors.ground) }
     return drawBehind {
         val alpha = shown()

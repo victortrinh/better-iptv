@@ -85,7 +85,7 @@ class MetadataTest {
         assertFalse(plan.isOriginal(Track("eng")))
     }
 
-    @Test fun `the details show TMDB's art, but not its name, poster, description, genres, cast or trailer`() = runBlocking {
+    @Test fun `the details show nothing of TMDB's, not its name, art, description, genres, cast or trailer`() = runBlocking {
         cloud.title("fr", leParrain.plus("trailers" to listOf(trailer("fr-official", "fr"))))
 
         // A card is named and pictured by its Listings (#474), never by TMDB.
@@ -94,9 +94,8 @@ class MetadataTest {
         }
         details(godfather, "fr").let {
             assertFalse(it.image.orEmpty().startsWith("https://image.tmdb.org/"))
-            assertEquals("https://image.tmdb.org/t/p/w1280/godfather-backdrop.jpg", it.backdrop)
-            assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", it.logo)
-            assertTrue(it.fromTmdb)
+            // The backdrop is the Provider's (#475), which gave none here.
+            assertNull(it.backdrop)
             // What the Title is comes from the Provider (#473), which gave no details here: nothing from TMDB stands in.
             assertNull(it.description)
             // Its genre is its `FR - DRAME` Category's, named in the App language.
@@ -109,29 +108,12 @@ class MetadataTest {
         assertEquals("fr", details(godfather, "fr").languages.first().language)
     }
 
-    @Test fun `an SVG logo is asked for as a PNG, and a Title without one has no logo`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.svg"))
-        cloud.title("fr", tmdbTitle(541671, "Ballerina"))
-
-        assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
-        assertNull(details(ballerina, "fr").logo)
-    }
-
-    @Test fun `the details fill the screen with the picture a card grew into, at the screen's size`() = runBlocking {
-        cloud.title("fr", tmdbTitle(238, "The Godfather", backdropPath = "/godfather-titled.jpg", textlessBackdropPath = "/godfather-wide.jpg"))
-        cloud.title("fr", tmdbTitle(541671, "Ballerina", backdropPath = "/ballerina-titled.jpg"))
-
-        assertEquals("https://image.tmdb.org/t/p/w1280/godfather-wide.jpg", details(godfather, "fr").backdrop)
-        // Without a textless one, the regular backdrop.
-        assertEquals("https://image.tmdb.org/t/p/w1280/ballerina-titled.jpg", details(ballerina, "fr").backdrop)
-    }
-
     @Test fun `metadata kept from before the cloud gave textless backdrops is asked again`() = runBlocking {
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png") - "textlessBackdropPath")
         card(godfather, "fr")
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png", textlessBackdropPath = "/godfather-wide.jpg"))
 
-        assertEquals("https://image.tmdb.org/t/p/w1280/godfather-wide.jpg", details(godfather, "fr").backdrop)
+        details(godfather, "fr")
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
         // Once it has the field, even null, it is kept for the week.
         card(godfather, "fr")
@@ -143,7 +125,7 @@ class MetadataTest {
         details(godfather, "fr")
         cloud.title("fr", tmdbTitle(238, "The Godfather", logoPath = "/parrain-logo.png"))
 
-        assertEquals("https://image.tmdb.org/t/p/w500/parrain-logo.png", details(godfather, "fr").logo)
+        details(godfather, "fr")
         assertEquals(2, cloud.metadataAsked.count { it == "movie/238/fr" })
         // Once it has the field, even null, it is kept for the week.
         details(godfather, "fr")

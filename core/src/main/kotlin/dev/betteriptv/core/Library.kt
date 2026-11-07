@@ -1251,8 +1251,7 @@ class Library private constructor(
             description = details.plot,
             genres = titleGenres(title, kept).map { Genres.named(it, appLanguage) },
             runtimeMinutes = details.runtimeMinutes,
-            backdrop = metadata?.pageBackdrop,
-            logo = metadata?.logo,
+            backdrop = titleBackdrop(title, kept, shown.best.listing),
             cast = cleanList(details.cast),
             rank = topRanks(region, contentLanguages, appLanguage)[id],
             fromTmdb = metadata != null,
@@ -1305,6 +1304,30 @@ class Library private constructor(
             TitleKind.Show -> title.listings.flatMap { prefixTable.genres(it.details?.genre) }
         }
         return (if (title.id.kind == TitleKind.Movie) fromCategories + fromFields else fromFields + fromCategories).distinct()
+    }
+
+    /**
+     * [title]'s backdrop, the Provider's (ADR 0014): a Movie's the one its kept details give, a
+     * Show's the first of its Listing's backdrops, stored at Sync; the [best] Listing's, else any of
+     * its Listings'. One the app refused once decoded ([refuseBackdrop]) counts as none, so a poster
+     * handed over as a backdrop never fills the screen. Null when there is none.
+     */
+    private fun titleBackdrop(title: StoredTitle, kept: Map<Long, StoredMovieDetails>, best: StoredListing? = null): String? {
+        fun of(listing: StoredListing) = (if (title.id.kind == TitleKind.Movie) kept[listing.id]?.details else listing.details)
+            ?.backdrops?.firstOrNull()?.takeUnless { it in refusedBackdrops }
+        return best?.let(::of) ?: title.listings.firstNotNullOfOrNull(::of)
+    }
+
+    /** The backdrops the app refused ([refuseBackdrop]), read from the device once. */
+    private val refusedBackdrops: MutableSet<String> by lazy { ConcurrentHashMap.newKeySet<String>().apply { addAll(store.refusedBackdrops()) } }
+
+    /**
+     * Remembers that the backdrop at [url] isn't one: decoded, its image is less than
+     * [MIN_BACKDROP_RATIO] times as wide as tall (a poster handed over as a backdrop). From then on
+     * it counts as none, on every screen and after the app starts again.
+     */
+    suspend fun refuseBackdrop(url: String) = withContext(Dispatchers.IO) {
+        if (refusedBackdrops.add(url)) store.refuseBackdrop(url)
     }
 
     /** The Provider's rating of [title] on a 10 scale: its [best] Listing's (its details' for a Movie), else any Listing's; null when it gives none. */
@@ -1870,7 +1893,7 @@ class Library private constructor(
             }
         }
         buildList {
-            continueWatchingRow(resumes, metadata, ::card)?.let(::add)
+            continueWatchingRow(resumes, kept, ::card)?.let(::add)
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
             charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
@@ -1881,8 +1904,12 @@ class Library private constructor(
         }
     }
 
-    /** Continue watching's row of [resumes] ([continueWatching]), each with its [card], or null when there are none. */
-    private fun continueWatchingRow(resumes: List<Pair<StoredTitle, Any>>, metadata: Map<TitleId, TitleMetadata>, card: (StoredTitle) -> TitleSummary): HomeRow.ContinueWatching? {
+    /**
+     * Continue watching's row of [resumes] ([continueWatching]), each with its [card] and its still:
+     * the Title's backdrop ([titleBackdrop], a Movie's from its [kept] details), else its poster.
+     * Null when there are none.
+     */
+    private fun continueWatchingRow(resumes: List<Pair<StoredTitle, Any>>, kept: Map<Long, StoredMovieDetails>, card: (StoredTitle) -> TitleSummary): HomeRow.ContinueWatching? {
         if (resumes.isEmpty()) return null
         return HomeRow.ContinueWatching(
             resumes.map { (title, at) ->
@@ -1894,7 +1921,8 @@ class Library private constructor(
                 val duration = played?.second?.takeIf { it > 0 }
                 val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
                 val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
-                InProgress(card(title), metadata[title.id]?.backdrop, fraction, left, (at as? ShowInProgress)?.next)
+                val summary = card(title)
+                InProgress(summary, titleBackdrop(title, kept) ?: summary.image, fraction, left, (at as? ShowInProgress)?.next)
             },
         )
     }
@@ -1913,50 +1941,74 @@ class Library private constructor(
     }
 
     /**
-     * The Title [screen]'s hero features, chosen each time the screen is entered: one of the top
-     * [FEATURED_FROM] of its Charts as its Top rows show them (Top movies and Top shows on Home,
-     * taken in turn, a movie first; the kind's Top row on Movies and Shows), skipping the Titles in
-     * Continue watching and those without a textless backdrop or a logo, which the hero needs to
-     * look right. It rotates: each call features the one after the Title featured last on that
-     * screen, kept on the device, so the same Title doesn't come back on the next entry, and from
-     * the first again past the last. Null when no Title qualifies: the screen opens on its rows.
+     * The Title [screen]'s hero features, chosen each time the screen is entered: one of the newest
+     * [FEATURED_FROM] of each kind it shows, as New on your service has them (movies and shows in
+     * turn on Home, a movie first; the kind's on Movies and Shows), with a Version in the Viewer's
+     * [contentLanguages], not in Continue watching, and with a backdrop ([titleBackdrop]), which the
+     * hero is drawn on. A Show's is on its Listing since Sync; a Movie whose details were never read
+     * has them read here, as its page would, at most once per call and only when [readDetails], so
+     * an entry costs the Provider one call at most and none once they are kept. It rotates: each
+     * call features the one after the Title featured last on that screen, kept on the device, so the
+     * same Title doesn't come back on the next entry, and from the first again past the last. Null
+     * when no Title qualifies: the screen opens on its rows.
      */
-    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): FeaturedTitle? =
-        featured(screen, contentLanguages, appLanguage, region, Instant.now())
+    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, readDetails: Boolean = true): FeaturedTitle? =
+        featured(screen, contentLanguages, appLanguage, region, Instant.now(), readDetails)
 
-    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): FeaturedTitle? = withContext(Dispatchers.IO) {
-        if (kids) return@withContext kidsFeatured(screen, contentLanguages, appLanguage, region, now)
-        val charts = charts(region, appLanguage, now)
-        val lists = when (screen) {
-            FeaturedScreen.Home -> listOf(charts.topMovies, charts.topShows)
-            FeaturedScreen.Movies -> listOf(charts.topMovies)
-            FeaturedScreen.Shows -> listOf(charts.topShows)
-        }.map { it.mapNotNull(store::title) }
-        val metadata = metadata(lists.flatten().map { it.id }.distinct(), appLanguage)
-        // Each Top row as it shows, none under [MIN_CHART_SIZE], then its top few.
-        val tops = lists.map { titles -> watchable(titles, contentLanguages).takeIf { it.size >= MIN_CHART_SIZE }.orEmpty().take(FEATURED_FROM) }
-        val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
-        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }.filter {
-            val about = metadata[it.id]
-            it.id !in started && about?.heroBackdrop != null && about.logo != null
-        }
-        nextFeatured(screen.name.lowercase(), candidates, contentLanguages, appLanguage, metadata)
+    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant, readDetails: Boolean = true): FeaturedTitle? = withContext(Dispatchers.IO) {
+        if (kids) return@withContext kidsFeatured(screen, contentLanguages, appLanguage, region, now, readDetails)
+        val lists = featuredKinds(screen).map { kind -> store.titles(kind, 0, if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
+        nextFeatured(screen.name.lowercase(), lists, contentLanguages, appLanguage, readDetails)
+    }
+
+    /** The kinds of Title [screen]'s hero features, in the order it takes them in turn. */
+    private fun featuredKinds(screen: FeaturedScreen) = when (screen) {
+        FeaturedScreen.Home -> listOf(TitleKind.Movie, TitleKind.Show)
+        FeaturedScreen.Movies -> listOf(TitleKind.Movie)
+        FeaturedScreen.Shows -> listOf(TitleKind.Show)
     }
 
     /**
-     * The hero's Title among [candidates] (each with a textless backdrop and a logo in [metadata]):
-     * the one after the Title featured last on the screen kept as [key], from the first again past
-     * the last, or null when there is none.
+     * The hero's Title from [lists] (the newest Titles of each kind, newest first): of each, the first
+     * [FEATURED_FROM] that are watchable in [contentLanguages], not in Continue watching, and that
+     * have a backdrop or may get one from details not yet read, taken in turn. The one after the
+     * Title featured last on the screen kept as [key] is featured, from the first again past the
+     * last; one with no backdrop is passed over. A Movie's unread details are read for the first such
+     * Movie reached, when [readDetails], and for no other: one Provider call at most. Null when none
+     * has a backdrop.
      */
-    private fun nextFeatured(key: String, candidates: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String, metadata: Map<TitleId, TitleMetadata>): FeaturedTitle? {
+    private fun nextFeatured(key: String, lists: List<List<StoredTitle>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
+        val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
+        val kept = keptMovieDetails(lists.flatten()).toMutableMap()
+        fun unread(title: StoredTitle, best: StoredListing) = title.id.kind == TitleKind.Movie && kept[best.id]?.added != best.added
+        val tops = lists.map { titles ->
+            watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.filter { (title, shown) ->
+                titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.best.listing)
+            }.take(FEATURED_FROM).toList()
+        }
+        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
         if (candidates.isEmpty()) return null
         val last = lastFeatured[key] ?: store.lastFeatured(key)
-        val title = candidates[(candidates.indexOfFirst { it.id == last } + 1) % candidates.size]
-        lastFeatured[key] = title.id
-        saveLater { store.saveLastFeatured(key, title.id) }
-        val about = metadata.getValue(title.id)
-        val shown = shown(candidates(title), contentLanguages, appLanguage)
-        return FeaturedTitle(title.id, shown.name, shown.year, about.runtimeMinutes, about.genres, about.description(appLanguage), about.heroBackdrop!!, about.logo!!, shown.best.attributes)
+        val from = candidates.indexOfFirst { it.first.id == last } + 1
+        var mayRead = readDetails
+        for (i in candidates.indices) {
+            val (title, shown) = candidates[(from + i) % candidates.size]
+            val best = shown.best.listing
+            if (unread(title, best)) {
+                if (!mayRead) continue
+                mayRead = false
+                kept += movieDetailsForPage(title, best)
+            }
+            val backdrop = titleBackdrop(title, kept, best) ?: continue
+            lastFeatured[key] = title.id
+            saveLater { store.saveLastFeatured(key, title.id) }
+            val details = providerDetails(title, best, kept)
+            return FeaturedTitle(
+                title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
+                titleGenres(title, kept).map { Genres.named(it, appLanguage) }, details.plot, backdrop, shown.best.attributes,
+            )
+        }
+        return null
     }
 
     /** The Title featured last on each screen, by the key [nextFeatured] keeps it under, so it needn't be read from the device again. */
@@ -2246,7 +2298,7 @@ class Library private constructor(
         val ofKind = TitleKind.entries.zip(browsable).map { (kind, titles) -> kind to screen.row(titles.sortedWith(popularFirst), ROW_SIZE) }
         val genres = kidsGenres(browsable.flatten(), metadata, screen)
         return buildList {
-            continueWatchingRow(resumes, metadata) { rowCard(it, contentLanguages, appLanguage, metadata) }?.let(::add)
+            continueWatchingRow(resumes, keptMovieDetails(resumes.map { it.first })) { rowCard(it, contentLanguages, appLanguage, metadata) }?.let(::add)
             if (new.isNotEmpty()) add(HomeRow.NewForKids(cards(new)))
             ofKind.forEach { (kind, titles) -> if (titles.isNotEmpty()) add(HomeRow.ForKids(kind, cards(titles))) }
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, cards(titles))) }
@@ -2289,28 +2341,13 @@ class Library private constructor(
     }
 
     /**
-     * The hero on a Kids profile: one of the most popular of the newest Kids Titles (movies and shows
-     * in turn on Home, a movie first; the kind's on its tab), skipping those in Continue watching and
-     * those without a textless backdrop or a logo, rotating as [featured] does.
+     * The hero on a Kids profile: one of the newest Kids Titles (movies and shows in turn on Home, a
+     * movie first; the kind's on its tab), picked and rotated as [featured] does.
      */
-    private fun kidsFeatured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): FeaturedTitle? {
+    private fun kidsFeatured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant, readDetails: Boolean): FeaturedTitle? {
         val catalog = kidsCatalog(region, appLanguage, now)
-        val kinds = when (screen) {
-            FeaturedScreen.Home -> listOf(TitleKind.Movie, TitleKind.Show)
-            FeaturedScreen.Movies -> listOf(TitleKind.Movie)
-            FeaturedScreen.Shows -> listOf(TitleKind.Show)
-        }
-        val lists = kinds.map { newestKids(catalog.getValue(it), if (it == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
-        val metadata = metadata(lists.flatten().map { it.id }, appLanguage)
-        val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
-        val tops = lists.map { titles ->
-            watchable(titles, contentLanguages).filter {
-                val about = metadata[it.id]
-                it.id !in started && about?.heroBackdrop != null && about.logo != null
-            }.sortedWith(popularFirst(metadata)).take(FEATURED_FROM)
-        }
-        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
-        return nextFeatured("kids/${screen.name.lowercase()}", candidates, contentLanguages, appLanguage, metadata)
+        val lists = featuredKinds(screen).map { newestKids(catalog.getValue(it), if (it == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
+        return nextFeatured("kids/${screen.name.lowercase()}", lists, contentLanguages, appLanguage, readDetails)
     }
 
     /**
@@ -3026,8 +3063,14 @@ class Library private constructor(
         /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
         private const val MIN_CHART_SIZE = 3
 
-        /** How far down each Chart the hero picks its Title from ([featured]). */
+        /** How many of the newest Titles of each kind the hero picks its Title from ([featured]). */
         private const val FEATURED_FROM = 5
+
+        /**
+         * How many times as wide as tall a backdrop's image must be, once decoded, to be one
+         * ([refuseBackdrop]): a 16:9 picture is 1.78, a poster handed over as a backdrop 0.67.
+         */
+        const val MIN_BACKDROP_RATIO = 1.5f
 
         /** TMDB's genres whose Titles join the Kids catalog while TMDB is there, by their English names ([Genres]). */
         private val KIDS_TMDB_GENRES = setOf("Animation", "Family")

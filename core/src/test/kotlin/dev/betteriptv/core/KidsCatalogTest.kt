@@ -54,12 +54,11 @@ class KidsCatalogTest {
         }
     }
 
-    private fun tmdb(tmdbId: Long, name: String, kind: String = "movie", popularity: Double = 10.0, genres: List<String> = emptyList(), hero: Boolean = false) =
+    private fun tmdb(tmdbId: Long, name: String, kind: String = "movie", popularity: Double = 10.0, genres: List<String> = emptyList()) =
         cloud.title(
             "en",
             tmdbTitle(
                 tmdbId, name, kind = kind, popularity = popularity, genres = genres, backdropPath = "/still-$tmdbId.jpg",
-                textlessBackdropPath = "/textless-$tmdbId.jpg".takeIf { hero }, logoPath = "/logo-$tmdbId.png".takeIf { hero },
             ),
         )
 
@@ -199,9 +198,9 @@ class KidsCatalogTest {
         serveMovies(Filed("EN - Kid (2025)", 1, "EN - KIDS"), Filed("EN - Grown-up (2025)", 2, "EN - MOVIES"))
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
-        tmdb(1, "Kid", hero = true)
-        tmdb(2, "Grown-up", popularity = 1000.0, hero = true)
-        cloud.charts("CA", movies = listOf(2, 1, 3))
+        // Both have the Provider's backdrop; only the Kid is in the Kids catalog.
+        provider.serveMovieDetails(1, backdrop = "https://art.example/kid.jpg")
+        provider.serveMovieDetails(2, backdrop = "https://art.example/grown-up.jpg")
         val library = library()
         library.sync()
         onKidsProfile(library)

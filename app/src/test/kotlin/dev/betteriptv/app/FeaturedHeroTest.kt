@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,8 +71,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The featured hero on Home, Movies and Shows (#348), on the rows they share ([RowsLayout]), the
- * Library stood in: it takes first focus on Play, the first Down scrolls it away under the tabs and
+ * The featured hero on Home, Movies and Shows (#348, #475), on the rows they share ([RowsLayout]), the
+ * Library stood in: it names its Title in Display type over the Provider's backdrop, with two lines of
+ * plot, and refuses a poster handed over as a backdrop; it takes first focus on Play, the first Down scrolls it away under the tabs and
  * Up brings it back, Back goes to the tab, Play and Details do what they say, each entry features
  * the next Title and none changes while the Viewer is on the screen, and its backdrop fades in.
  */
@@ -95,7 +97,7 @@ class FeaturedHeroTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     /** A backdrop that notes the alpha it is drawn at each time. */
-    private class Art : ColorDrawable(0xFFFF0000.toInt()) {
+    private class Art : SizedArt() {
         val drawnAt = mutableListOf<Float>()
         override fun draw(canvas: Canvas) {
             drawnAt += alpha / 255f
@@ -113,13 +115,13 @@ class FeaturedHeroTest {
     /** While set, the rows wait for it, as a slow Library read. */
     @Volatile private var rowsHeld: CompletableDeferred<Unit>? = null
 
-    /** Every image is served as from disk, at once unless [artHeld]: the backdrops as [backdrop], the logos as plain colour. */
+    /** Every image is served as from disk, at once unless [artHeld]: the backdrops as [backdrop], a poster handed over as one at a poster's size. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain ->
             asked += chain.request.data.toString()
             artHeld?.await()
-            val art = if ("backdrop" in chain.request.data.toString()) backdrop else ColorDrawable(0xFFFFFFFF.toInt())
+            val art = if ("backdrop" in chain.request.data.toString()) backdrop else SizedArt(0xFFFFFFFF.toInt(), width = 600, height = 900)
             SuccessResult(art.asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult
         }
         SingletonImageLoader.setUnsafe(ImageLoader.Builder(context).components { add(serve) }.build())
@@ -127,15 +129,19 @@ class FeaturedHeroTest {
 
     @After fun forgetTheArt() = SingletonImageLoader.reset()
 
-    private fun featured(name: String) = FeaturedTitle(
-        TitleId.Tmdb(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"), "About $name.",
-        backdrop = "https://image.tmdb.org/t/p/w1280/backdrop-$name.jpg", logo = "https://image.tmdb.org/t/p/w500/logo-$name.png", best = VersionAttributes(),
+    private fun featured(name: String, backdrop: String = "https://provider.example/backdrop-$name.jpg") = FeaturedTitle(
+        TitleId.Tmdb(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"),
+        "About $name. ".repeat(40).trim(),
+        backdrop = backdrop, best = VersionAttributes(),
     )
 
     /** The Titles [feature] hands out, one per ask, in turn, as the Library's rotation does. */
     private val titles = listOf(featured("Dune"), featured("Arrival"), featured("Sicario"))
     private var featuredCount = 0
-    private val feature: suspend () -> FeaturedTitle? = { titles[featuredCount++ % titles.size] }
+
+    /** Whether each ask let the Library read a Movie's details. */
+    private val readDetails = mutableListOf<Boolean>()
+    private val feature: suspend (Boolean) -> FeaturedTitle? = { read -> readDetails += read; titles[featuredCount++ % titles.size] }
 
     private fun title(name: String) = TitleSummary(TitleId.Unmatched(TitleKind.Movie, name.hashCode().toLong()), name, 2024, null, VersionAttributes())
     private fun genre(name: String) = HomeRow.Genre(name, List(10) { title("$name$it") })
@@ -148,7 +154,7 @@ class FeaturedHeroTest {
     private val opened = ArrayList<Pair<RowCard, TitleId>>()
 
     /** The rows under a tab, with a hero; bumping [entry] enters the screen again, coming back to [restoreFocus] when set. */
-    private fun screen(feature: (suspend () -> FeaturedTitle?)? = this.feature) = compose.setContent {
+    private fun screen(feature: (suspend (Boolean) -> FeaturedTitle?)? = this.feature) = compose.setContent {
         NuageTheme {
             val state = remember { RowsState() }
             key(entry) {
@@ -178,21 +184,32 @@ class FeaturedHeroTest {
 
     private fun focusedOn(text: String) = compose.onNode(isFocused()).assert(showing(text))
 
-    /** The hero shows [name]'s Title: its logo, named for it, and its description. */
+    /** The hero shows [name]'s Title: its name, and its description. */
     private fun heroShows(name: String) {
-        compose.onNodeWithContentDescription(name).assertIsDisplayed()
-        compose.onNodeWithText("About $name.").assertIsDisplayed()
+        compose.onNodeWithText(name).assertIsDisplayed()
+        compose.onNodeWithText("About $name.", substring = true).assertIsDisplayed()
     }
 
     @Test fun theScreenOpensOnTheFeaturedTitleWithFocusOnPlay() {
         screen()
 
         heroShows("Dune")
+        // Named in Display type, never by a logo (#475).
+        assertEquals(displaySize, compose.onNodeWithText("Dune").fontSize())
+        compose.onNodeWithContentDescription("Dune").assertDoesNotExist()
         compose.onNodeWithText("2025 · 1 h 52 min · Drama").assertIsDisplayed()
         focusedOn("Play")
         compose.onNodeWithText("Details").assertIsDisplayed()
         // The first row's heading peeks under it.
         compose.onNodeWithText("Action").assertIsDisplayed()
+    }
+
+    // Text is measured, so it is laid out in lines.
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test fun theHeroShowsTwoLinesOfTheProvidersPlotHoweverLongItIs() {
+        screen()
+
+        assertEquals(2, compose.onNodeWithText("About Dune.", substring = true).lineCount())
     }
 
     @Test fun theFirstDownScrollsTheHeroAwayUnderTheTabsAndUpBringsItBack() {
@@ -201,7 +218,7 @@ class FeaturedHeroTest {
         press(listOf(Key.DirectionDown))
         focusedOn("Action0")
         compose.onNodeWithText("Play").assertIsNotDisplayed()
-        compose.onNodeWithText("About Dune.").assertIsNotDisplayed()
+        compose.onNodeWithText("About Dune.", substring = true).assertIsNotDisplayed()
         compose.onNodeWithTag("tab").assertIsDisplayed()
 
         press(listOf(Key.DirectionDown, Key.DirectionUp))
@@ -287,11 +304,48 @@ class FeaturedHeroTest {
         heroShows("Dune")
     }
 
+    @Test fun aPosterHandedOverAsTheBackdropIsRefusedAndTheNextTitleWhoseBackdropIsKeptIsFeatured() {
+        val refused = mutableListOf<String>()
+        val poster = featured("Tall", backdrop = "https://provider.example/poster-Tall.jpg")
+        var asks = 0
+        compose.setContent {
+            NuageTheme {
+                CompositionLocalProvider(LocalBackdrops provides remember { Backdrops(onRefused = { refused += it }) }) {
+                    RowsLayout(
+                        remember { RowsState() }, null, focusTab = false,
+                        reading = 0,
+                        read = { rows },
+                        empty = "",
+                        setFavourite = { _, _ -> },
+                        onScreen = {},
+                        info = { _, _, _ -> },
+                        appLanguage = "en",
+                        onOpen = { _, _, _ -> },
+                        feature = { read -> readDetails += read; if (asks++ == 0) poster else titles[0] },
+                    ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        heroShows("Dune")
+        assertEquals(listOf(poster.backdrop), refused)
+        // The second ask, for the same entry, reads no details: the entry costs the Provider one call at most.
+        assertEquals(listOf(true, false), readDetails.take(2))
+    }
+
     @Test fun withNoFeaturedTitleTheScreenOpensOnItsFirstCard() {
         screen(feature = { null })
 
         focusedOn("Action0")
         compose.onNodeWithText("Play").assertDoesNotExist()
+    }
+
+    /** How many lines this node's text is laid out on. */
+    private fun androidx.compose.ui.test.SemanticsNodeInteraction.lineCount(): Int {
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        return layouts.single().lineCount
     }
 
     /** Advances the test clock a frame, giving the image loader's own threads a moment to answer. */
@@ -301,7 +355,7 @@ class FeaturedHeroTest {
         compose.waitForIdle()
     }
 
-    private fun exists(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+    private fun exists(text: String) = compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
 
     // It draws the screen, whose vector icons need real bitmaps.
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -409,12 +463,12 @@ class FeaturedHeroTest {
     @Test fun theNextEntrysArtIsLoadedDuringThisOne() {
         screen()
         heroShows("Dune")
-        compose.waitUntil(2_000) { asked.any { "backdrop-Arrival" in it } && asked.any { "logo-Arrival" in it } }
+        compose.waitUntil(2_000) { asked.any { "backdrop-Arrival" in it } }
     }
 
     @Test fun aTitleReadAfterTheRowsIsLeftForTheNextEntry() {
         val late = CompletableDeferred<Unit>()
-        screen(feature = { late.await(); feature() })
+        screen(feature = { late.await(); feature(it) })
 
         // The rows don't wait for it past the arrival time: the screen opens on its first card.
         compose.mainClock.advanceTimeBy(Motion.pageArrivalMillis + 100L)

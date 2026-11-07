@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -83,8 +84,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val textSize by remember { app.settings.settings.map { it.textSize }.distinctUntilChanged() }
                 .collectAsStateWithLifecycle(app.settings.settings.value.textSize)
+            // Backdrops refused as they're decoded are remembered by the Library, so they count as none everywhere (#475).
+            val backdrops = remember { Backdrops(onRefused = app.library::refuseBackdrop) }
             // A Box, so the screen fade (in [Root], after the screens) is drawn over them.
-            NuageTheme(textSize) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
+            NuageTheme(textSize) {
+                CompositionLocalProvider(LocalBackdrops provides backdrops) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
+            }
         }
     }
 }
@@ -362,7 +367,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     opened != null -> TitleShown(opened!!.id, opened!!.section)
                     else -> tab
                 },
-                // A Title page opened from a grown card opens on that card's backdrop, so no veil hides it; its own
+                // A Title page opened from the hero's Details opens on the hero's backdrop, so no veil hides it; its own
                 // content still fades in (TitlePage). Its Versions screen and Episode picker, and the page again after them, fade in as any screen.
                 asIs = { shown ->
                     val title = opened
@@ -406,7 +411,7 @@ private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: 
 
 /**
  * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
- * with the textless [backdrop] that card had grown into, which the page opens on. A [section] is open over the page (its
+ * with the [backdrop] the featured hero drew when its Details opened it, which the page opens on. A [section] is open over the page (its
  * Versions screen, Episode picker or Trailer screen); [returnedFrom] is the one Back just closed, whose action takes focus.
  */
 private data class OpenedTitle(
