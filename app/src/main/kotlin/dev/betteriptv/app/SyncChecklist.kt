@@ -40,40 +40,48 @@ import dev.betteriptv.core.SyncStep
  * list the Sync is and what it is doing, readable from the couch. Only the running step's dot
  * moves, a slow pulse. A failed step names why under it, with Retry, which takes focus. Home and
  * Live show it until the Channels land; Movies and Shows, from Movies on, until the Titles do.
+ * Home's carries the sign-in card ([card], #438) under it, `xl` down, the two centred together.
  */
 @Composable
-internal fun SyncChecklist(status: SyncStatus, from: SyncStep, onRetry: () -> Unit) {
+internal fun SyncChecklist(status: SyncStatus, from: SyncStep, onRetry: () -> Unit, card: (@Composable () -> Unit)? = null) {
     val items = remember(status, from) { checklistItems(status, from) }
     val failed = status as? SyncStatus.Failed
     val retry = remember { FocusRequester() }
     if (failed != null) LaunchedEffect(failed) { retry.requestFocus() }
-    Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY), contentAlignment = Alignment.Center) {
-        Column(Modifier.widthIn(max = CHECKLIST_WIDTH)) {
-            Text(stringResource(R.string.sync_checklist_title), style = Type.headline, color = Colors.ink)
-            Spacer(Modifier.height(16.dp))
-            items.forEach { item ->
-                Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StepDot(item.state)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        stringResource(item.step.label()) + if (item.state == StepState.Running) "…" else "",
-                        style = Type.body,
-                        color = when (item.state) {
-                            StepState.Done, StepState.Running -> Colors.ink
-                            StepState.Pending -> Colors.inkMuted
-                            StepState.Failed -> Colors.error
-                        },
-                    )
+    // With the card, the two need the height the margins would take.
+    Box(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = if (card == null) Spacing.screenY else Spacing.s), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.widthIn(max = CHECKLIST_WIDTH)) {
+                Text(stringResource(R.string.sync_checklist_title), style = Type.headline, color = Colors.ink)
+                Spacer(Modifier.height(16.dp))
+                items.forEach { item ->
+                    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        StepDot(item.state)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            stringResource(item.step.label()) + if (item.state == StepState.Running) "…" else "",
+                            style = Type.body,
+                            color = when (item.state) {
+                                StepState.Done, StepState.Running -> Colors.ink
+                                StepState.Pending -> Colors.inkMuted
+                                StepState.Failed -> Colors.error
+                            },
+                        )
+                    }
+                    if (item.state == StepState.Failed && failed != null) {
+                        Text(
+                            LocalContext.current.describe(failed.problem),
+                            style = Type.caption,
+                            color = Colors.error,
+                            modifier = Modifier.padding(start = DOT_SIZE + 12.dp, bottom = 8.dp),
+                        )
+                        NuageButton(stringResource(R.string.sync_retry), onRetry, Modifier.padding(start = DOT_SIZE + 12.dp).focusRequester(retry))
+                    }
                 }
-                if (item.state == StepState.Failed && failed != null) {
-                    Text(
-                        LocalContext.current.describe(failed.problem),
-                        style = Type.caption,
-                        color = Colors.error,
-                        modifier = Modifier.padding(start = DOT_SIZE + 12.dp, bottom = 8.dp),
-                    )
-                    NuageButton(stringResource(R.string.sync_retry), onRetry, Modifier.padding(start = DOT_SIZE + 12.dp).focusRequester(retry))
-                }
+            }
+            if (card != null) {
+                Spacer(Modifier.height(Spacing.xl))
+                card()
             }
         }
     }

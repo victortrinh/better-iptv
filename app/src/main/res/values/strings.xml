@@ -433,6 +433,7 @@
     <string name="sign_in_unavailable">Can\'t reach Zugig right now. Trying again…</string>
     <string name="sign_in_new_code">New code</string>
     <string name="sign_in_qr">QR code for the sign-in page</string>
+    <string name="sign_in_card_title">Sign in to Zugig to keep your history across devices</string>
 
     <string name="settings_catalog">Catalog</string>
     <string name="catalog_counts">%1$s · %2$s</string>

@@ -18,6 +18,13 @@
 #   - every other line adds: Clutter names, live Clutter names, empty Event slots, Tier tags.
 # There is no delete syntax.
 #
+# The cloud serves a Provider table's learned lines (what that Provider's file reads agreed on, ADR
+# 0014) after its hand lines, under `[learned prefixes]`, which only a Provider table has. A learned
+# line lays its attributes over this table's line for the Prefix, one by one (a learned `fr` keeps a
+# line's `fr-CA`), and a hand line for the same Prefix wins over it. It names only what a file
+# states: language, quality, hdr, dolby-audio, or `multi-audio`, which says the Prefix's files mostly
+# carry several audio languages, so it names none and its Versions are Untagged.
+#
 # Maps each Prefix (the code before " - " in a Listing's name) and each Category hint (a phrase in a
 # Category's name) to Version attributes. Everything here is Likely: names can be wrong, and a
 # Header read or Playback Confirms or corrects it.
@@ -30,6 +37,7 @@
 #   hdr=HDR10 | hdr=DV  Dolby Vision wins over HDR10 when both are named
 #   source=Name         the streaming service the Version was copied from
 #   dolby-audio, cam, audio-description
+#   multi-audio         learned lines only: no language (see above)
 #   sports-replay       kept out of the movie list
 #   clutter             not watchable content: kept out of every list
 #

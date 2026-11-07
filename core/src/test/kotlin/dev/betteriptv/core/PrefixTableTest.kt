@@ -38,6 +38,26 @@ class PrefixTableTest {
 
     private fun likely(value: String) = Known(value, Provenance.Likely)
 
+    @Test fun `learned prefixes come only from a Provider table`() {
+        val base = "[prefixes]\nEN | language=en\n"
+        val thrown = runCatching { PrefixTable.parse("$base[learned prefixes]\nXX | language=fr\n") }.exceptionOrNull()
+        assertTrue(thrown is IllegalArgumentException)
+        val table = PrefixTable.parse(base, "[learned prefixes]\nEN | multi-audio; quality=HD\n")
+        val description = table.describe("EN - A Film (2020)", "MOVIES")
+        assertNull(description.unknownPrefix)
+        assertNull(description.attributes.language)
+        assertTrue(description.attributes.multiAudio)
+        assertEquals(Known(Quality.HD, Provenance.Likely), description.attributes.quality)
+    }
+
+    @Test fun `a report names the Prefix, known or not, and the hints as the table writes them`() {
+        val table = PrefixTable.base()
+        val reported = table.reported("ZZ - A Film (2020)", "ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ MULTI-SUBS")
+        assertEquals("ZZ", reported.prefix)
+        assertEquals(setOf("MULTI-SUBS", "DOLBY AUDIO"), reported.hints.toSet())
+        assertNull(table.reported("A Film (2020)", "MOVIES").prefix)
+    }
+
     /** Syncs these Listings, each `name` filed under the Category `category`. */
     private suspend fun syncListings(vararg listings: Pair<String, String>): SyncStatus = syncListings(library, *listings)
 

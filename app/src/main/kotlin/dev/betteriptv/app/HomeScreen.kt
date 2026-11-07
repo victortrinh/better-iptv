@@ -1,11 +1,14 @@
 package dev.betteriptv.app
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
@@ -96,6 +99,15 @@ fun HomeScreen(
     // A catalog that lands is read at once: the rows around the focused one may come and go, but the
     // focused row itself waits for focus to leave it ([RowsLayout]).
     val caption = stringResource(R.string.home_titles_pending)
+    // The first Sync's sign-in card (#438): under the checklist, then under the rows until the Titles land.
+    val scope = rememberCoroutineScope()
+    val signIn = firstSyncSignIn(
+        offered = library.offersSignInCard.value,
+        firstSync = status.last == null,
+        start = library::startSignIn,
+        check = library::checkSignIn,
+        onDismiss = { scope.launch { library.dismissSignInCard() } },
+    )
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
         reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage, catalog),
@@ -105,10 +117,15 @@ fun HomeScreen(
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         placeholder = if (noChannels) {
-            { SyncChecklist(status, SyncStep.Channels, onRetry) }
+            { SyncChecklist(status, SyncStep.Channels, onRetry, card = signIn?.let { { SignInCard(it) } }) }
         } else null,
         trailing = if (titlesComing) {
-            { Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX, vertical = 12.dp)) }
+            {
+                Column(Modifier.padding(horizontal = Spacing.screenX)) {
+                    Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
+                    signIn?.let { SignInCard(it, Modifier.padding(top = Spacing.m)) }
+                }
+            }
         } else null,
         feature = { library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region) },
         onPlayFeatured = onPlay,

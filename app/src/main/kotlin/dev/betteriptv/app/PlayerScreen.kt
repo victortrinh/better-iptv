@@ -262,7 +262,7 @@ fun PlayerScreen(
         }
     }
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
-    MatchRefreshRate(player)
+    MatchRefreshRate(player.takeIf { plan.matchesRefreshRate })
     KeepScreenOn(player.takeIf { playing })
     // A scrub pauses the picture and moves only a target, until OK, or the remote resting, seeks
     // there once and plays on as before; Back goes back to playing where it was. No request is made
