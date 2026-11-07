@@ -1057,71 +1057,36 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
 
     /**
-     * Calls [each] with every Title of [kind], in list order, and its Listings' names and Categories.
-     * Read a page at a time, so other reads go on while [each] works through one.
+     * Calls [each] with every Title of [kind], in list order, and what search needs of its Listings:
+     * their names and Categories, and the Provider's genre field and cast (a Show's from its Listing
+     * at Sync, a Movie's from its details once read; null otherwise). Read a page at a time, so other
+     * reads go on while [each] works through one.
      */
-    fun forEachTitle(kind: TitleKind, each: (TitleId, List<Pair<String, String>>) -> Unit) {
+    fun forEachTitle(kind: TitleKind, each: (TitleId, List<SearchListing>) -> Unit) {
         val count = titleCount(kind)
         for (offset in 0 until count step SCAN_PAGE) {
             titleNames(kind, offset, SCAN_PAGE).forEach { (key, listings) -> each(titleId(key), listings) }
         }
     }
 
-    private fun titleNames(kind: TitleKind, offset: Int, limit: Int): Map<String, List<Pair<String, String>>> = synchronized(reader) {
+    private fun titleNames(kind: TitleKind, offset: Int, limit: Int): Map<String, List<SearchListing>> = synchronized(reader) {
         reader.prepare(
             """
-            SELECT t.key, l.name, l.category FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
+            SELECT t.key, l.name, l.category, CASE WHEN l.kind = 'movie' THEN d.genre ELSE l.genre END, CASE WHEN l.kind = 'movie' THEN d.actors ELSE l.actors END
+            FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
+            LEFT JOIN movie_details d ON l.kind = 'movie' AND d.listing_id = l.id
             WHERE t.kind = ? AND t.position > ? AND t.position <= ? ORDER BY t.position
             """.trimIndent(),
         ).use {
             it.bindText(1, kindKey(kind))
             it.bindLong(2, offset.toLong())
             it.bindLong(3, offset.toLong() + limit)
-            val titles = LinkedHashMap<String, MutableList<Pair<String, String>>>()
-            while (it.step()) titles.getOrPut(it.getText(0)) { mutableListOf() } += it.getText(1) to it.getText(2)
-            titles
-        }
-    }
-
-    /**
-     * Calls [each] with what search needs of the metadata cached for each Title TMDB has, in
-     * whichever language was cached, a page at a time like [forEachTitle]: the names it's found by
-     * (as released, in each language TMDB has, and its other names, some more than once), its cast,
-     * its genres (in the cached language) and its popularity.
-     * SQLite picks them out of the JSON ([TitleMetadata]'s shape), so the bodies, descriptions and
-     * all, never reach the heap: for the whole catalog they're hundreds of MB (#106).
-     */
-    fun forEachSearchMetadata(each: (id: TitleId.Tmdb, names: List<String>, cast: List<String>, genres: List<String>, popularity: Double) -> Unit) {
-        class Row(val key: String, val names: List<String>, val cast: List<String>, val genres: List<String>, val popularity: Double)
-        val listed = { column: Int, it: SQLiteStatement -> if (it.isNull(column)) emptyList() else it.getText(column).split(SEPARATOR) }
-        var after = ""
-        while (true) {
-            val page = synchronized(reader) {
-                reader.prepare(
-                    """
-                    SELECT key, json_extract(body, '$.originalTitle'), json_extract(body, '$.popularity'),
-                        (SELECT group_concat(json_extract(value, '$.title'), char(31)) FROM json_each(body, '$.titles')),
-                        (SELECT group_concat(value, char(31)) FROM json_each(body, '$.alternativeTitles')),
-                        (SELECT group_concat(json_extract(value, '$.name'), char(31)) FROM json_each(body, '$.cast')),
-                        (SELECT group_concat(value, char(31)) FROM json_each(body, '$.genres'))
-                    FROM (
-                        SELECT title_key AS key, jsonb(max(body)) AS body FROM title_metadata WHERE body IS NOT NULL AND title_key > ?
-                        GROUP BY title_key ORDER BY title_key LIMIT $SCAN_PAGE
-                    )
-                    """.trimIndent(),
-                ).use {
-                    it.bindText(1, after)
-                    buildList {
-                        while (it.step()) {
-                            val names = listOfNotNull(if (it.isNull(1)) null else it.getText(1)) + listed(3, it) + listed(4, it)
-                            add(Row(it.getText(0), names.distinct(), listed(5, it), listed(6, it), if (it.isNull(2)) 0.0 else it.getDouble(2)))
-                        }
-                    }
-                }
+            val titles = LinkedHashMap<String, MutableList<SearchListing>>()
+            while (it.step()) {
+                titles.getOrPut(it.getText(0)) { mutableListOf() } +=
+                    SearchListing(it.getText(1), it.getText(2), if (it.isNull(3)) null else it.getText(3), if (it.isNull(4)) null else it.getText(4))
             }
-            page.forEach { row -> (titleId(row.key) as? TitleId.Tmdb)?.let { id -> each(id, row.names, row.cast, row.genres, row.popularity) } }
-            if (page.size < SCAN_PAGE) return
-            after = page.last().key
+            titles
         }
     }
 
@@ -2439,8 +2404,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val SCHEMA_VERSION = 7
         /** Titles read per lock by a whole-catalog scan: a few milliseconds, even on the stick. */
         const val SCAN_PAGE = 2_000
-        /** What [forEachSearchMetadata] joins names with: the ASCII unit separator, which no name has. */
-        const val SEPARATOR = '\u001f'
         /** The most the write-ahead log keeps on the device's storage between checkpoints, in bytes. */
         const val WAL_SIZE_LIMIT = 4L * 1024 * 1024
         /**
@@ -2615,6 +2578,9 @@ internal class StoredGames(val body: String, val fetchedAt: Instant)
  * Listing says of its Show (ADR 0014); a movie Listing's details are kept apart ([StoredMovieDetails]).
  */
 internal class StoredListing(val id: Long, val name: String, val category: String, val added: Long?, val image: String?, val rating: Double? = null, val details: ProviderDetails? = null)
+
+/** What search reads of a Listing ([CatalogStore.forEachTitle]): its [name], its [category], and the Provider's [genre] field and [cast] as written, null when not read. */
+internal class SearchListing(val name: String, val category: String, val genre: String?, val cast: String?)
 
 /**
  * A movie Listing's kept Provider details: the [bitrate] they gave (null when none), what they say
