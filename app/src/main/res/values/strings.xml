@@ -358,6 +358,17 @@
     <string name="update_allow_old">Settings → My Fire TV → Developer options → Apps from Unknown Sources: On, then come back here.</string>
     <string name="update_open_settings">Open settings</string>
 
+    <string name="settings_account">Account</string>
+    <string name="settings_sign_in">Sign in</string>
+    <string name="settings_sign_in_detail">Keep your history across the TVs in your home</string>
+    <string name="settings_signed_in_as">Signed in as %1$s</string>
+    <string name="sign_in_title">Sign in to Zugig</string>
+    <string name="sign_in_steps">On your phone, scan the QR or go to %1$s. Type this code and your email, then tap the link we send you.</string>
+    <string name="sign_in_waiting">Waiting for your phone…</string>
+    <string name="sign_in_unavailable">Can\'t reach Zugig right now. Trying again…</string>
+    <string name="sign_in_new_code">New code</string>
+    <string name="sign_in_qr">QR code for the sign-in page</string>
+
     <string name="settings_catalog">Catalog</string>
     <string name="catalog_counts">%1$s · %2$s</string>
     <plurals name="catalog_movies">

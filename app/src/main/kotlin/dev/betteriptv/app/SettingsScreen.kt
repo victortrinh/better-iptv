@@ -70,10 +70,12 @@ import java.time.Duration
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
- * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback, Sync now
+ * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback,
+ * Sign in (or who the device is signed in as) under Account, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
  * App, which offers the [update] when there is one ([onUpdate]). Content languages and Region
- * each open a list, and Leagues its logo grid ([LeaguePicker]), in place of the column; Back returns to the row that opened it.
+ * each open a list, Leagues its logo grid ([LeaguePicker]) and Sign in its code and QR ([SignInScreen]), in place of the
+ * column; Back returns to the row that opened it, as signing in does.
  * [focusTab]: reached by picking its tab, which keeps focus.
  */
 @Composable
@@ -92,6 +94,7 @@ fun SettingsScreen(
     val contentLanguagesRow = remember { FocusRequester() }
     val regionRow = remember { FocusRequester() }
     val leaguesRow = remember { FocusRequester() }
+    val accountRow = remember { FocusRequester() }
     var returnTo by rememberSaveable { mutableStateOf<Picker?>(null) }
     val tab = remember { FocusRequester() }
     FocusTabOnArrival(focusTab, tab)
@@ -114,6 +117,10 @@ fun SettingsScreen(
             Picker.Leagues -> {
                 BackHandler { picking = null }
                 LeaguePicker(settings.leaguesOn, onChange = { leagues -> onChange { it.copy(leagues = leagues) } })
+            }
+            Picker.SignIn -> {
+                BackHandler { picking = null }
+                SignInScreen(library, onSignedIn = { picking = null })
             }
             null -> LazyColumn(
                 contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 20.dp),
@@ -222,6 +229,13 @@ fun SettingsScreen(
                         )
                     }
                 }
+                item { Heading(stringResource(R.string.settings_account)) }
+                item {
+                    AccountRow(library, onSignIn = {
+                        returnTo = Picker.SignIn
+                        picking = Picker.SignIn
+                    }, Modifier.focusRequester(accountRow))
+                }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 item { SyncRow(library, onSyncNow) }
                 item { MatchingRow(library) }
@@ -249,6 +263,7 @@ fun SettingsScreen(
                 Picker.ContentLanguages -> contentLanguagesRow
                 Picker.Region -> regionRow
                 Picker.Leagues -> leaguesRow
+                Picker.SignIn -> accountRow
                 // Reached by its tab, which keeps focus.
                 null -> appLanguageRow.takeUnless { focusTab }
             }?.requestFocus()
@@ -299,7 +314,22 @@ private fun MatchingRow(library: Library) {
 /** How often the Sync row's "ago" is worded again while Settings is open. */
 private val AGO_REFRESH: Duration = Duration.ofMinutes(1)
 
-private enum class Picker { ContentLanguages, Region, Leagues }
+private enum class Picker { ContentLanguages, Region, Leagues, SignIn }
+
+/**
+ * The Account row (ADR 0015): "Sign in", which opens the Sign-in screen, or "Signed in as …" once
+ * the device is, read from the device alone. Signing out comes with the device list (#434).
+ */
+@Composable
+private fun AccountRow(library: Library, onSignIn: () -> Unit, modifier: Modifier) {
+    val account by library.account.collectAsStateWithLifecycle()
+    val email = account
+    if (email == null) {
+        SettingRow(stringResource(R.string.settings_sign_in), "", onClick = onSignIn, modifier, detail = stringResource(R.string.settings_sign_in_detail))
+    } else {
+        SettingRow(stringResource(R.string.settings_signed_in_as, email), "", onClick = {}, modifier)
+    }
+}
 
 /**
  * The catalog's languages to turn on and off as Content languages, the chosen ones first in the

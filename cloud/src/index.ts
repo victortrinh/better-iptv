@@ -1,5 +1,6 @@
 import { charts, fill, SUBREQUESTS } from "./charts";
-import { isRegistered, register } from "./devices";
+import { accountOf, isMagicToken, sendMagicLink, startSignIn, useMagicLink, type LinkOutcome, type SendOutcome } from "./accounts";
+import { deviceOf, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { fillGames, games } from "./games";
@@ -13,9 +14,10 @@ import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type Subti
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
+import { confirmPage, htmlResponse, messagePage, signInPage } from "./page";
 
 /**
- * The cloud's HTTP API (test seam 2). It serves only data that is the same for every Viewer;
+ * The cloud's HTTP API (test seam 2). It serves data that is the same for every Viewer, and signs TVs in to Accounts by email (ADR 0015);
  * Provider logins, stream URLs and Provider requests never come here (ADR 0001).
  *
  * - `POST /v1/devices`: registers a device, `201 {"token": "…"}`.
@@ -72,6 +74,13 @@ import { season } from "./season";
  *   device wants it (#252). A League not read yet is absent; one read with no Games has `[]`.
  * - `POST /v1/subtitles/download`, with `{"id": "…"}` from a search: `{"format": "srt", "text": "…"}`,
  *   `404` when the service no longer has it, `503` when it can't give it right now.
+ * - `POST /v1/sign-in`: a fresh Sign-in code for this device, `{"code": "K7M2QX", "url":
+ *   "https://zugig.app/sign-in?code=K7M2QX", "expiresIn": 600}`, the url for the TV's QR (ADR 0015).
+ * - `POST /v1/account`: the Account this device is signed in to, `{"email": "…"}`, or `{"email": null}`.
+ *
+ * And the sign-in page, for the phone: `GET /sign-in` (the code from the QR filled in), `POST /sign-in`
+ * (a code and an email: emails the magic link), `GET /sign-in/link?token=…` (the link: a button) and
+ * `POST /sign-in/link` (the button: signs the TV in). See src/accounts.ts.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -79,8 +88,16 @@ export default {
     if (request.method === "POST" && pathname === "/v1/devices") {
       return json({ token: await register(env.DB) }, 201);
     }
+    if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
+    if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);
     if (!pathname.startsWith("/v1/")) return problem(404, "No such endpoint.");
-    if (!(await isRegistered(env.DB, request))) return problem(401, "A registered device token is required.");
+    const device = await deviceOf(env.DB, request);
+    if (device === null) return problem(401, "A registered device token is required.");
+    if (request.method === "POST" && pathname === "/v1/sign-in") {
+      const { code, expiresIn } = await startSignIn(env.DB, device);
+      return json({ code, url: `${site(request, env)}/sign-in?code=${code}`, expiresIn });
+    }
+    if (request.method === "POST" && pathname === "/v1/account") return json({ email: await accountOf(env.DB, device) });
     if (request.method === "POST" && pathname === "/v1/metadata") {
       const asked = await metadataRequest(request);
       if (typeof asked === "string") return problem(400, asked);
@@ -185,6 +202,58 @@ export default {
     await fill(env, SUBREQUESTS - sent);
   },
 } satisfies ExportedHandler<Env>;
+
+/** The sign-in page's address: the app's own domain, or wherever this request came. */
+const site = (request: Request, env: Env) => (env.SITE_URL ?? new URL(request.url).origin).replace(/\/+$/, "");
+
+/** The sign-in page and its magic links, for the phone. */
+async function signInPages(request: Request, env: Env, pathname: string): Promise<Response> {
+  const url = new URL(request.url);
+  if (pathname === "/sign-in" && request.method === "GET") {
+    const code = url.searchParams.get("code") ?? "";
+    return htmlResponse(signInPage(/^[2-9A-HJ-NP-Z]{6}$/.test(code) ? code : ""));
+  }
+  if (pathname === "/sign-in/link" && request.method === "GET") {
+    const token = url.searchParams.get("token");
+    if (!isMagicToken(token)) return htmlResponse(linkPage({ kind: "used" }), 410);
+    return htmlResponse(confirmPage(token));
+  }
+  if (request.method !== "POST") return htmlResponse(messagePage("Not here", "This page only takes its own form."), 405);
+  const form = await request.formData().catch(() => null);
+  const field = (name: string) => {
+    const value = form?.get(name);
+    return typeof value === "string" ? value : "";
+  };
+  if (pathname === "/sign-in/link") {
+    const token = field("token");
+    const outcome: LinkOutcome = isMagicToken(token) ? await useMagicLink(env.DB, token) : { kind: "used" };
+    return htmlResponse(linkPage(outcome), outcome.kind === "signed-in" ? 200 : 410);
+  }
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const outcome = await sendMagicLink(env, site(request, env), field("code"), field("email"), ip);
+  const [status, text] = sendWords(outcome);
+  if (outcome.kind === "sent") return htmlResponse(messagePage("Check your email", text), status);
+  return htmlResponse(signInPage(field("code").trim().toUpperCase().slice(0, 8), { text, error: true }), status);
+}
+
+function sendWords(outcome: SendOutcome): [number, string] {
+  switch (outcome.kind) {
+    case "sent": return [200, `Check your email: we sent a link to ${outcome.email}. Tap it within 15 minutes to sign the TV in.`];
+    case "bad-email": return [400, "That doesn't look like an email address."];
+    case "wrong-code": return [400, "That code isn't right or has expired. Check the code the TV shows now."];
+    case "too-many-tries": return [429, "Too many wrong codes. Wait 10 minutes and try again."];
+    case "too-many-sends": return [429, "That code has sent all the links it can. Open Sign in again on the TV for a new code."];
+    case "not-sent": return [503, "We couldn't send the email right now. Try again in a moment."];
+  }
+}
+
+function linkPage(outcome: LinkOutcome): string {
+  switch (outcome.kind) {
+    case "signed-in": return messagePage("You're signed in", `The TV is signed in as ${outcome.email}. You can close this page.`);
+    case "used": return messagePage("This link doesn't work", "This link was already used or isn't one we sent. Open Sign in on the TV for a new code.");
+    case "expired": return messagePage("This link doesn't work", "This link has expired: links work for 15 minutes. Open Sign in on the TV for a new code.");
+  }
+}
 
 /** Reads a metadata request, or says what's wrong with it. */
 async function metadataRequest(request: Request): Promise<{ language: string; titles: TitleKey[] } | string> {

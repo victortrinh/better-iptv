@@ -178,7 +178,7 @@ Settled 2026-11-06 in a grilling session against the code, the cloud README, ADR
 
 - M1: design direction; how the Viewer enters the Provider login on the TV.
 - M2: matching Netflix's titles (names only, no TMDB IDs) to Titles.
-- M5: the sign-in page, the profile list, the PIN pad and the profile chip in DESIGN.md.
+- M5: the profile list, the PIN pad and the profile chip in DESIGN.md (the Sign-in screen and page are in its Settings section, #429).
 - M6: everything, in its own grilling, after the two surveys.
 - M7: the Unlock screen's layout and the device list, and the Locked state's exact look in DESIGN.md.
 

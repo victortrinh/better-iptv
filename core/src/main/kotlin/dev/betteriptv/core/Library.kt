@@ -1016,6 +1016,44 @@ class Library private constructor(
     }
 
     /** The Episodes TMDB lists Show [id] as airing next, through the cloud; none when it can't say right now. */
+    private val _account = MutableStateFlow(store.accountEmail())
+
+    /**
+     * The email of the Account this device is signed in to (ADR 0015), or null: kept on the device,
+     * so it reads without the cloud. A device that never signs in never asks the cloud about one.
+     */
+    val account: StateFlow<String?> = _account.asStateFlow()
+
+    /**
+     * A fresh Sign-in code for the TV to show with its QR, replacing the one before; null without a
+     * cloud or while it can't be reached. The phone signs the TV in with it; [checkSignIn] notices.
+     */
+    suspend fun startSignIn(): SignInCode? = withContext(Dispatchers.IO) {
+        try {
+            cloud?.startSignIn()
+        } catch (e: CloudException) {
+            null
+        }
+    }
+
+    /**
+     * Asks the cloud which Account this device is signed in to, keeps the answer in [account] and
+     * returns it. While the cloud can't answer, what the device last knew.
+     */
+    suspend fun checkSignIn(): String? = withContext(Dispatchers.IO) {
+        if (cloud == null) return@withContext null
+        val email = try {
+            cloud.account()
+        } catch (e: CloudException) {
+            return@withContext _account.value
+        }
+        if (email != _account.value) {
+            store.saveAccountEmail(email)
+            _account.value = email
+        }
+        email
+    }
+
     /**
      * What TMDB knows of each Episode of season [season] of Show [id] for the Episode picker: its
      * still and runtime, by episode number, in the [appLanguage]. Asked of the cloud once a season

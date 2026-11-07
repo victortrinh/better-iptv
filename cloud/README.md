@@ -1,6 +1,6 @@
 # Cloud
 
-The Cloudflare Workers cloud (ADR 0004): a Worker in TypeScript with a D1 database. It serves only data that is the same for every Viewer. Provider logins, stream URLs and Provider requests never come here (ADR 0001).
+The Cloudflare Workers cloud (ADR 0004): a Worker in TypeScript with a D1 database. It serves data that is the same for every Viewer, and keeps an email address for each Account (below). Provider logins, stream URLs and Provider requests never come here (ADR 0001).
 
 Deployed at `https://better-iptv-cloud.victor-trinh.workers.dev`; the app's `cloudUrl` (in `gradle.properties`) points there.
 
@@ -20,21 +20,53 @@ Every endpoint but registration needs `Authorization: Bearer <device token>`, an
 
 TMDB's answers (including "no such Title") are cached in D1 per Title and language for a week (a day for "no such Title"), so a repeat request doesn't reach TMDB; an answer cached before textless backdrops were asked for is fetched again. When TMDB can't answer, the last cached answer is served, and Titles never fetched are listed as `unavailable`. The app also caches what it gets, for a week. Lookups by name are cached for 30 days (a day when TMDB found nothing); the app keeps match answers for 30 days (a week when TMDB found nothing).
 
-Registration is open: a token identifies a device, so it can be revoked, but it doesn't stop someone from registering one. That's acceptable while the cloud only serves public TMDB data at personal scale.
+Registration is open: a token identifies a device, so it can be revoked, but it doesn't stop someone from registering one. Registrations and sign-in codes are rate-limited per IP by a Cloudflare rule (Accounts, below).
+
+## Accounts
+
+A TV signs in to an Account from a phone, with no password (ADR 0015). The device token stays the credential: signing in binds it to the Account (`device.account_id`, `device.signed_in_at`), so every endpoint keeps answering the same token, and a device that never signs in is as before. See `src/accounts.ts` and `src/page.ts`.
+
+- `POST /v1/sign-in` answers a fresh Sign-in code for the device, `{"code": "K7M2QX", "url": "https://zugig.app/sign-in?code=K7M2QX", "expiresIn": 600}`: 6 digits and capitals without 0, O, 1 and I, for 10 minutes, replacing the device's previous code. The TV shows the code and a QR of `url`.
+- `POST /v1/account` answers `{"email": "…"}`, the Account the device is signed in to, or `{"email": null}`. The TV polls it every 2 s while it shows the code.
+- `GET /sign-in` is the page the QR opens (the code filled in from `?code=`): the code, an email, a "Send me a link" button and the privacy note. No script, nothing loaded from elsewhere. `POST /sign-in` emails a magic link to the address when the code is live. Each IP may type 5 wrong codes in 10 minutes; the sixth try is refused, right or wrong, until they age out (kept by a hash of the IP). A code sends at most 5 links.
+- The magic link, `GET /sign-in/link?token=…`, works once, for 15 minutes (even after its code expired). It opens a page with one "Sign in the TV" button, `POST /sign-in/link`, so a mail scanner that opens links (Outlook's Safe Links does) signs nobody in. The button binds the TV to the email's Account, creating it when the email is new. A used, unknown or expired link gets a plain message.
+- The cloud keeps the email address (`account`), the live codes, and only SHA-256 hashes of the magic tokens (`magic_link`) and of the IPs that typed wrong codes (`sign_in_miss`). The Provider login never comes here.
+
+### Setting up the domain and the sender
+
+The QR must point at the app's own domain, not `workers.dev`, which on a TV reads as phishing.
+
+1. **Domain.** Add the domain (say `zugig.app`) to Cloudflare, then attach it to the Worker: Workers & Pages → `better-iptv-cloud` → Settings → Domains & Routes → Add → Custom domain → `zugig.app`. Then set `SITE_URL` (`https://zugig.app`) and `EMAIL_FROM` (`Zugig <sign-in@zugig.app>`) under `vars` in `wrangler.jsonc`. Until `SITE_URL` is set, the QR and the links name whatever address the request came to.
+2. **Sender.** In Resend (free tier: 3,000 emails a month, 100 a day), Domains → Add domain → `zugig.app`. Resend lists the DNS records to add in Cloudflare's DNS, all DNS-only (grey cloud):
+   - `TXT resend._domainkey` with the DKIM key Resend shows,
+   - `MX send` → `feedback-smtp.<region>.amazonses.com`, priority 10 (the bounce path),
+   - `TXT send` → `v=spf1 include:amazonses.com ~all` (SPF for the bounce path),
+   - and, recommended, `TXT _dmarc` → `v=DMARC1; p=none;`.
+
+   Once Resend says Verified, create an API key with Sending access for that domain and set it with `npx wrangler secret put RESEND_API_KEY`. Without it no email goes out, and the page says it couldn't send one.
+3. **Rate limit.** Security → WAF → Rate limiting rules → Create rule, on the domain's zone (and on the `workers.dev` route turned off, Settings → Domains & Routes, so the rule can't be walked around):
+   - If incoming requests match: `(http.request.method eq "POST" and http.request.uri.path in {"/v1/devices" "/v1/sign-in" "/sign-in"})`
+   - With the same characteristics: IP
+   - When rate exceeds: 10 requests per 10 seconds (the free plan's period), then Block for 10 seconds.
+
+   A TV asks one code per 10 minutes and a phone sends a link or two, so no household meets it; a script registering devices or guessing codes does. The per-IP wrong-code count above is the Worker's own second line.
+
+Point the app at the domain by changing `cloudUrl` in `gradle.properties` once it serves the API.
 
 ## Secrets
 
 - `TMDB_TOKEN`: TMDB's API read access token or its short API key (from themoviedb.org → Settings → API). It lives only here, never in the APK. Set it with `npx wrangler secret put TMDB_TOKEN`.
 - `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USERNAME`, `OPENSUBTITLES_PASSWORD`: an API consumer's key (opensubtitles.com → API consumers) and the free account its downloads count against; downloads without a login are capped per IP, and the Worker's IPs are shared. Without them, OpenSubtitles isn't asked.
 - `SUBDL_API_KEY`: from subdl.com → account → API. Without it, Subdl isn't asked.
+- `RESEND_API_KEY`: a Resend API key with Sending access for the app's domain (Accounts, above). Without it, no sign-in email goes out.
 
 ## Develop
 
 ```sh
 npm install
-npm test          # seam 2: the API in the Workers runtime (Miniflare), with TMDB faked
+npm test          # seam 2: the API in the Workers runtime (Miniflare), with TMDB and the email sender faked
 npm run typecheck
-npm run dev       # a local Worker on :8787; put TMDB_TOKEN=… (and the subtitle secrets) in .dev.vars
+npm run dev       # a local Worker on :8787; put TMDB_TOKEN=… (and the subtitle secrets, RESEND_API_KEY) in .dev.vars
 ```
 
 Point a debug build at a local Worker with `./gradlew assembleDebug -PcloudUrl=http://<this Mac's IP>:8787`.
