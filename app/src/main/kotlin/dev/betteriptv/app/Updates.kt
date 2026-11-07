@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +40,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
+import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -80,6 +82,27 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
                 throw e
             }
         }
+    }
+
+    /**
+     * The app was opened while Android installs the update it committed: between the stop as the
+     * install starts and the one as it lands, 15–20 s on the stick (#418, #452). The mark says the
+     * app committed it, and Android lists the session until the install finishes. Its progress tells
+     * installing from Android's installer still waiting for the Viewer's Install, which the Viewer
+     * may have left open: Android 9 holds a committed session at 0.8 until then, and moves it to 0.9
+     * as the install starts (measured on the emulator, 2026-11-07).
+     *
+     * A mark without a session is from an install that has landed (the Viewer opened the new build
+     * before [UpdateReopenReceiver] heard of it), so it is cleared: the app is open already.
+     */
+    override fun installing(): Boolean {
+        if (!ReopenAfterUpdate.marked(context)) return false
+        val sessions = context.packageManager.packageInstaller.mySessions
+        if (sessions.isEmpty()) {
+            ReopenAfterUpdate.clear(context)
+            return false
+        }
+        return sessions.any { it.progress > INSTALLER_WAITING }
     }
 
     private fun PackageInstaller.Session.add(name: String, file: File) {
@@ -167,17 +190,23 @@ internal object ReopenAfterUpdate {
         file(context).delete()
     }
 
+    fun marked(context: Context): Boolean = file(context).exists()
+
     /** Whether the mark was set, clearing it. */
     fun take(context: Context): Boolean = file(context).delete()
 }
 
 private const val UPDATE_TAG = "Updates"
 
+/** A committed install session's progress while Android's installer waits for the Viewer's Install: 0.8, with a margin. */
+private const val INSTALLER_WAITING = 0.85f
+
 /**
  * The update offered on launch (#21), on the bare ground before anything else: its version, then
  * "Update now" and "Later". Once the Viewer confirms it follows [state]: the first update guides
- * them through allowing this app to install apps, then the download's progress, then Android's
- * installer, and back to the offer if they back out of it. [onUpdate] confirms (and carries on once the permission is allowed); [onLater] goes on to the app.
+ * them through allowing this app to install apps, then the download's progress, then a wait for
+ * Android's installer, and back to the offer if they back out of it. Opened while the update
+ * installs, it says the update is finishing ([UpdateState.Finishing]). [onUpdate] confirms (and carries on once the permission is allowed); [onLater] goes on to the app.
  */
 @Composable
 fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) {
@@ -220,13 +249,24 @@ fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) 
                     Buttons { NuageButton(stringResource(R.string.update_later), onLater, Modifier.focusRequester(first)) }
                 }
                 is UpdateState.Installing -> {
+                    // The build is copied into an install session and Android's installer comes up over
+                    // this, seconds later on the stick: a wait, with nothing to press (#452). Backing out
+                    // of the installer offers the update again; Back here goes on to the app.
                     Heading(stringResource(R.string.update_title))
-                    Body(stringResource(R.string.update_installing))
+                    Waiting(stringResource(R.string.update_opening_installer))
+                    Caption(stringResource(R.string.update_installing))
                     // Installing closes the app for 15–20 s on the stick. UpdateReopenReceiver brings it back
                     // on Android 9 and earlier; later Androids don't let it, so nothing is promised there.
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) Caption(stringResource(R.string.update_installing_reopens))
-                    // Android's installer opens over this; backing out of it offers the update again.
-                    Buttons { NuageButton(stringResource(R.string.update_later), onLater, Modifier.focusRequester(first)) }
+                }
+                UpdateState.Finishing -> {
+                    // Opened while the update installs: Android closes the app again when it lands (#452).
+                    Heading(stringResource(R.string.update_finishing_title))
+                    Waiting(
+                        stringResource(
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) R.string.update_finishing_reopens else R.string.update_finishing,
+                        ),
+                    )
                 }
                 is UpdateState.Failed -> {
                     Heading(stringResource(R.string.update_title))
@@ -281,6 +321,16 @@ private fun Body(text: String) = Text(text, style = Type.body, color = Colors.in
 
 @Composable
 private fun Caption(text: String) = Text(text, style = Type.caption, color = Colors.inkMuted, textAlign = TextAlign.Center)
+
+/** A wait: the pulsing dot beside what is coming (DESIGN.md, Waiting). */
+@Composable
+private fun Waiting(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        PulsingDot(6.dp)
+        Spacer(Modifier.width(Spacing.s))
+        Text(text, style = Type.body, color = Colors.inkMuted)
+    }
+}
 
 @Composable
 private fun Buttons(content: @Composable () -> Unit) {

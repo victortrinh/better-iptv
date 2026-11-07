@@ -58,8 +58,17 @@ sealed interface UpdateState {
     /** [downloaded] of [update]'s bytes are here. */
     data class Downloading(val update: AppUpdate, val downloaded: Long) : UpdateState
 
-    /** Android's installer was opened on [update]; installing replaces the running app, backing out offers it again. */
+    /**
+     * [update] is downloaded and handed to Android's installer, which comes up over the app to ask
+     * the Viewer to confirm; installing replaces the running app, backing out offers it again.
+     */
     data class Installing(val update: AppUpdate) : UpdateState
+
+    /**
+     * An update this app committed is still being installed: the app was opened while Android
+     * installs it, and Android closes it again when the install lands (#452). Nothing is checked.
+     */
+    data object Finishing : UpdateState
 
     /** Downloading [update], opening the installer or installing failed, for [problem]. Asking again starts over. */
     data class Failed(val update: AppUpdate, val problem: String) : UpdateState
@@ -73,7 +82,7 @@ val UpdateState.offered: AppUpdate?
         is UpdateState.Downloading -> update
         is UpdateState.Installing -> update
         is UpdateState.Failed -> update
-        UpdateState.Unknown, UpdateState.UpToDate -> null
+        UpdateState.Unknown, UpdateState.UpToDate, UpdateState.Finishing -> null
     }
 
 /** Hands a downloaded APK to the system. The app's is Android's package installer. */
@@ -83,6 +92,9 @@ interface ApkInstaller {
 
     /** Opens the installer on [apk], with its [dexMetadata] when there is one; the installer asks the Viewer to confirm. */
     fun install(apk: File, dexMetadata: File?)
+
+    /** Whether an install this app committed is still running, from an earlier process Android closed for it. */
+    fun installing(): Boolean = false
 }
 
 /**
@@ -123,7 +135,7 @@ class AppUpdates(
     suspend fun checkIfStale(after: Duration): Boolean = busy.withLock {
         val last = lastChecked
         if (last != null && Duration.between(last, clock.instant()) < after) return@withLock false
-        if (_state.value is UpdateState.Downloading || _state.value is UpdateState.Installing) return@withLock false
+        if (_state.value is UpdateState.Downloading || _state.value is UpdateState.Installing || _state.value == UpdateState.Finishing) return@withLock false
         checkLocked()
         true
     }
@@ -131,6 +143,12 @@ class AppUpdates(
     private suspend fun checkLocked() {
         lastChecked = clock.instant()
         withContext(Dispatchers.IO) {
+            // Opened while Android installs the update this app committed: it is about to close the
+            // app and reopen the new build, so nothing is offered and the download stays (#452).
+            if (_state.value == UpdateState.Finishing || installer.installing()) {
+                _state.value = UpdateState.Finishing
+                return@withContext
+            }
             val update = try {
                 manifest()
             } catch (e: IOException) {
@@ -160,10 +178,13 @@ class AppUpdates(
         try {
             withContext(Dispatchers.IO) {
                 val apk = download(update)
+                val dexMetadata = downloadDexMetadata(update)
+                // Copying the build into the install session takes seconds on the stick, and Android's
+                // installer comes up after: the screen says it's on its way meanwhile (#452).
+                _state.value = UpdateState.Installing(update)
                 // Copied into an install session, so off the main thread too.
-                installer.install(apk, downloadDexMetadata(update))
+                installer.install(apk, dexMetadata)
             }
-            _state.value = UpdateState.Installing(update)
         } catch (e: IOException) {
             _state.value = UpdateState.Failed(update, e.message ?: e.javaClass.simpleName)
         } catch (e: RuntimeException) {
