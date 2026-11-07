@@ -125,6 +125,8 @@ fun TitleScreen(
     var reads by remember(id) { mutableIntStateOf(0) }
     // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
     var removals by remember(id) { mutableIntStateOf(0) }
+    // Whether the Header reads still have Versions to read, so the page can say so (#457).
+    var checking by remember(id) { mutableStateOf(false) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
     val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, region, qualityCap, reads, removals) {
         val details = library.title(id, contentLanguages, appLanguage, region, preferOriginalAudio) ?: return@produceState
@@ -139,7 +141,7 @@ fun TitleScreen(
     }
     // A Show's reads need its show details, so they start once its Episodes are in.
     val readable = id.kind == TitleKind.Movie || show != null
-    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) { if (readable) library.readHeaders(id, contentLanguages, preferOriginalAudio) { reads++ } }
+    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) { if (readable) library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own backdrop, already in memory.
     val start = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop, it?.logo) }) }
@@ -155,6 +157,7 @@ fun TitleScreen(
     TitlePage(
         id, openedOn, loaded, show,
         onPlay = play,
+        checking = checking,
         kids = library.kids,
         contentLanguages = contentLanguages,
         section = section,
@@ -198,6 +201,9 @@ fun TitleScreen(
  *
  * On a Kids profile ([kids]) the page has no Trailer row (YouTube's end screen shows what it likes)
  * and no Versions action: Play picks the Best playable Version, as on any profile.
+ *
+ * While the Header reads are [checking] Versions, the page says so under its actions and the Versions
+ * screen beside its legend ([CheckingVersions], #457); a Kids page doesn't.
  */
 @Composable
 internal fun TitlePage(
@@ -216,6 +222,7 @@ internal fun TitlePage(
     stillsOf: suspend (Int) -> Map<Int, EpisodeStill> = { emptyMap() },
     contentLanguages: List<String> = emptyList(),
     kids: Boolean = false,
+    checking: Boolean = false,
 ) {
     val title = loaded?.first
     var waited by remember(id) { mutableStateOf(false) }
@@ -237,7 +244,7 @@ internal fun TitlePage(
             val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
-                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) })
+                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.fromTmdb, onChoose = { onChoose(it, title.name) }, checking = checking)
                     TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop, title.logo), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }, stillsOf = stillsOf) }
                     null -> TitleContent(
@@ -249,6 +256,7 @@ internal fun TitlePage(
                         onRemove = onRemove,
                         onSection = onSection,
                         kids = kids,
+                        checking = checking,
                     )
                 }
             }
@@ -292,6 +300,7 @@ private fun TitleContent(
     onRemove: () -> Unit,
     onSection: (TitleSection) -> Unit,
     kids: Boolean = false,
+    checking: Boolean = false,
 ) {
     val context = LocalContext.current
     val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
@@ -443,6 +452,8 @@ private fun TitleContent(
                 Spacer(Modifier.height(Spacing.s))
                 PlayLabel(episodes.note(context) ?: stringResource(R.string.play_nothing))
             }
+            // What the Header reads Confirm changes the badges and the Versions value in place; this says why (#457).
+            if (showVersions) CheckingVersions(checking, Modifier.padding(top = Spacing.s).testTag("checking versions"))
         }
         Spacer(Modifier.weight(1f))
         if (image != null) {

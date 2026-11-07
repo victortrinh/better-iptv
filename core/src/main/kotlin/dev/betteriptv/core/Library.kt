@@ -2326,19 +2326,30 @@ class Library private constructor(
      * nor the Provider table knows come first, so what the app knows least about is Confirmed within
      * the first seconds. Pressing Play lets the read in flight finish (within
      * [PLAY_WAITS_FOR_READ]) and ends the reads behind it, and the Provider refusing one ends them
-     * too. Calls [changed] each time a Version's attributes change, so the page shows them. Results
-     * are kept on the device and shared through the cloud, so a Version is never read twice.
+     * too. Calls [changed] each time a Version's attributes change, so the page shows them, and
+     * [checking] with how many Versions are left to read once that is known, after each read, and
+     * with 0 once the reads end, however they end (#457); a Title whose Versions are all read hears
+     * nothing. Results are kept on the device and shared through the cloud, so a Version
+     * is never read twice.
      */
-    suspend fun readHeaders(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean = true, changed: suspend () -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun readHeaders(
+        id: TitleId,
+        contentLanguages: List<String>,
+        preferOriginalAudio: Boolean = true,
+        checking: (left: Int) -> Unit = {},
+        changed: suspend () -> Unit,
+    ) = withContext(Dispatchers.IO) {
         detailsReading.incrementAndGet()
+        var left = 0
         try {
-            readDetailsHeaders(id, contentLanguages, preferOriginalAudio, changed)
+            readDetailsHeaders(id, contentLanguages, preferOriginalAudio, { left = it; checking(it) }, changed)
         } finally {
+            if (left > 0) checking(0)
             detailsReading.decrementAndGet()
         }
     }
 
-    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean, changed: suspend () -> Unit) {
+    private suspend fun readDetailsHeaders(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean, checking: (Int) -> Unit, changed: suspend () -> Unit) {
         val title = store.title(id) ?: return
         val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
@@ -2356,10 +2367,12 @@ class Library private constructor(
         if (lookUpFileReads(provider, ids)) changed()
         // This page's Versions come before Background reading's.
         connection.cancelRead()
-        val unread = if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio)
-        for (listingId in unread) {
-            val container = (if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv"
-            if (container !in HEADER_READABLE) continue
+        val unread = (if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio))
+            .map { listingId -> listingId to ((if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv") }
+            .filter { (_, container) -> container in HEADER_READABLE }
+        var left = unread.size
+        if (left > 0) checking(left)
+        for ((listingId, container) in unread) {
             val location = if (shows == null) client.movieLocation(listingId, container) else client.episodeLocation(listingId, container)
             val read = try {
                 reads.withLock {
@@ -2376,6 +2389,7 @@ class Library private constructor(
                 null
             } ?: break
             if (read.contents != null) changed()
+            checking(--left)
         }
         shareFileReads(provider)
     }
