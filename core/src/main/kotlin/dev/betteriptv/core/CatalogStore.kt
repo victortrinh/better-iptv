@@ -1737,6 +1737,24 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
+    /**
+     * The name and Category whose Prefix and hints a file read of each of [ids] reports: a movie
+     * Listing's or Sports replay's own, an Episode's Show's. Ids the catalog no longer has are left out.
+     */
+    fun fileReadSources(ids: Collection<Long>): Map<Long, Pair<String, String>> = synchronized(reader) {
+        if (ids.isEmpty()) return emptyMap()
+        val marks = ids.joinToString(",") { "?" }
+        reader.prepare(
+            "SELECT id, name, category FROM listing WHERE kind = 'movie' AND id IN ($marks) " +
+                "UNION ALL SELECT id, name, category FROM replay WHERE id IN ($marks) " +
+                "UNION ALL SELECT e.id, l.name, l.category FROM episode e JOIN listing l ON l.kind = 'show' AND l.id = e.listing_id WHERE e.id IN ($marks)",
+        ).use { query ->
+            var i = 1
+            repeat(3) { ids.forEach { id -> query.bindLong(i++, id) } }
+            buildMap { while (query.step()) putIfAbsent(query.getLong(0), query.getText(1) to query.getText(2)) }
+        }
+    }
+
     fun markFileReadsShared(listingIds: Collection<Long>) = synchronized(writer) {
         writer.prepare("UPDATE file_read SET shared = 1 WHERE listing_id = ?").use { update ->
             listingIds.forEach {

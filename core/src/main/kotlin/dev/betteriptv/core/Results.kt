@@ -328,7 +328,15 @@ data class VersionAttributes(
     val audioDescription: Boolean = false,
     /** The file's bitrate in bits per second, from a Header read or the Provider's movie details. */
     val bitrate: Known<Long>? = null,
-)
+    /**
+     * Whether the Prefix is Multi-audio: its Provider's files mostly carry several audio languages
+     * (learned, ADR 0014), so it names no language and its Versions are Untagged, as a Source's are.
+     */
+    val multiAudio: Boolean = false,
+) {
+    /** Whether an unnamed language is Likely the Title's original: the Prefix names a Source (`NF`, `D+`) or is Multi-audio. */
+    internal val untaggedCopy: Boolean get() = source != null || multiAudio
+}
 
 /** A Prefix the Prefix table doesn't know, seen on [listingCount] Listings such as [example]. */
 data class UnknownPrefix(val prefix: String, val listingCount: Int, val example: String)
