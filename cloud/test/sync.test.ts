@@ -1,16 +1,19 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
-import { MAX_CHANGES, type ProgressChange, type SyncAnswer, TOMBSTONE_KEPT_MS } from "../src/sync";
+import { type Entry, MAX_CHANGES, type ProgressChange, type SyncAnswer, TOMBSTONE_KEPT_MS } from "../src/sync";
 
 /** Seam 2: history sync between a household's TVs (#435), two devices over one Account. */
 beforeEach(async () => {
-  await env.DB.batch(["progress", "device", "account"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+  await env.DB.batch(["progress", "synced", "device", "account"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
 });
 afterEach(() => vi.useRealTimers());
 
 const PROVIDER = "a".repeat(64);
 const OTHER_PROVIDER = "b".repeat(64);
+/** Two Profiles' ids, as their devices made them. */
+const SAM = "0123456789abcdef";
+const KIDS = "fedcba9876543210";
 
 const call = (path: string, body: unknown, token?: string) =>
   worker.fetch(
@@ -36,17 +39,17 @@ async function signedIn(email = "home@example.com"): Promise<string> {
   return token;
 }
 
-async function sync(token: string, cursor: number, progress: ProgressChange[] = [], provider: string | null = PROVIDER): Promise<SyncAnswer> {
-  const response = await call("/v1/sync", { cursor, provider, progress }, token);
+async function sync(token: string, cursor: number, progress: ProgressChange[] = [], provider: string | null = PROVIDER, entries: Entry[] = [], current: string | null = null): Promise<SyncAnswer> {
+  const response = await call("/v1/sync", { cursor, provider, current, progress, entries }, token);
   expect(response.status).toBe(200);
   return (await response.json()) as SyncAnswer;
 }
 
 const movie = (tmdbId: number, position: number, at: number, extra: Partial<ProgressChange> = {}): ProgressChange =>
-  ({ title: `movie/${tmdbId}`, season: null, episode: null, position, duration: 7_200_000, watched: false, removed: false, at, ...extra });
+  ({ profile: SAM, title: `movie/${tmdbId}`, season: null, episode: null, position, duration: 7_200_000, watched: false, removed: false, at, ...extra });
 
 const episode = (tmdbId: number, season: number, number: number, position: number, at: number): ProgressChange =>
-  ({ title: `show/${tmdbId}`, season, episode: number, position, duration: 3_600_000, watched: false, removed: false, at });
+  ({ profile: SAM, title: `show/${tmdbId}`, season, episode: number, position, duration: 3_600_000, watched: false, removed: false, at });
 
 const removal = (tmdbId: number, at: number): ProgressChange => movie(tmdbId, 0, at, { duration: null, removed: true });
 
@@ -169,6 +172,8 @@ describe("POST /v1/sync", () => {
     await refused({ cursor: 0, provider: PROVIDER, progress: [{ ...episode(1399, 1, 1, 0, T), season: null }] });
     await refused({ cursor: 0, provider: PROVIDER, progress: [{ ...movie(238, 0, T), season: 1, episode: 1 }] });
     await refused({ cursor: 0, provider: PROVIDER, progress: [{ ...movie(238, 0, T), watched: "yes" }] });
+    // #435's pushes name no Profile.
+    await refused({ cursor: 0, provider: PROVIDER, progress: [{ ...movie(238, 0, T), profile: undefined }] });
     await refused({ cursor: 0, provider: PROVIDER, progress: Array.from({ length: MAX_CHANGES + 1 }, (_, i) => movie(i + 1, 0, T)) });
     expect((await sync(token, 0)).progress).toEqual([]);
   });
@@ -178,5 +183,105 @@ describe("POST /v1/sync", () => {
     const bedroom = await signedIn();
     await sync(living, 0, Array.from({ length: MAX_CHANGES }, (_, i) => movie(i + 1, 100_000, T + i)));
     expect((await sync(bedroom, 0)).progress).toHaveLength(MAX_CHANGES);
+  });
+});
+
+/** One entry of what else the Account keeps (#440). */
+const entry = (kind: Entry["kind"], profile: string | null, key: string, value: string | null, at: number): Entry => ({ kind, profile, key, value, at });
+const profile = (id: string, name: string | null, kids: boolean, at: number) => entry("profile", id, "", JSON.stringify({ name, kids }), at);
+
+describe("POST /v1/sync, the rest of what the Account keeps (#440)", () => {
+  it("answers a Profile, its Favourites and its settings to the Account's other devices, latest change winning", async () => {
+    const living = await signedIn();
+    const bedroom = await signedIn();
+    await sync(living, 0, [], PROVIDER, [
+      profile(SAM, "Sam", false, T),
+      entry("favourite", SAM, "tsn 1", "1", T),
+      entry("setting", SAM, "contentLanguages", "fr,en", T),
+      entry("household", null, "region", "CA", T),
+    ]);
+    // The bedroom renamed Sam later, and changed the Region earlier than the living room did.
+    await sync(bedroom, 0, [], PROVIDER, [profile(SAM, "Samuel", false, T + 5), entry("household", null, "region", "FR", T - 5)]);
+
+    const pulled = await sync(bedroom, 0);
+    expect(pulled.entries).toContainEqual(profile(SAM, "Samuel", false, T + 5));
+    expect(pulled.entries).toContainEqual(entry("favourite", SAM, "tsn 1", "1", T));
+    expect(pulled.entries).toContainEqual(entry("setting", SAM, "contentLanguages", "fr,en", T));
+    expect(pulled.entries).toContainEqual(entry("household", null, "region", "CA", T));
+    expect(pulled.entries).toHaveLength(4);
+    expect((await sync(bedroom, pulled.cursor)).entries).toEqual([]);
+  });
+
+  it("keeps progress per Profile", async () => {
+    const living = await signedIn();
+    const bedroom = await signedIn();
+    await sync(living, 0, [movie(238, 100_000, T), { ...movie(238, 900_000, T + 1), profile: KIDS }]);
+    const pulled = (await sync(bedroom, 0)).progress;
+    expect(pulled).toEqual([movie(238, 100_000, T), { ...movie(238, 900_000, T + 1), profile: KIDS }]);
+  });
+
+  it("keeps Favourites and \"Not this game\" marks per Provider, and settings for every Provider", async () => {
+    const living = await signedIn();
+    const elsewhere = await signedIn();
+    await sync(living, 0, [], PROVIDER, [
+      entry("favourite", SAM, "tsn 1", "1", T),
+      entry("not_this_game", SAM, "nhl/401|tsn 1", "1", T),
+      entry("title_choices", SAM, "movie/listing/77", "{}", T),
+      entry("title_choices", SAM, "movie/238", "{}", T),
+      entry("setting", SAM, "appLanguage", "fr", T),
+    ]);
+    const keys = async (provider: string | null) => (await sync(elsewhere, 0, [], provider)).entries.map((e) => `${e.kind}:${e.key}`);
+    expect(await keys(OTHER_PROVIDER)).toEqual(["title_choices:movie/238", "setting:appLanguage"]);
+    expect(await keys(null)).toEqual(["title_choices:movie/238", "setting:appLanguage"]);
+    expect(await keys(PROVIDER)).toHaveLength(5);
+  });
+
+  it("takes a deleted Profile's rows with it, and drops what an offline TV pushes for it later", async () => {
+    const living = await signedIn();
+    const bedroom = await signedIn();
+    await sync(living, 0, [movie(238, 100_000, T), { ...movie(550, 100_000, T), profile: KIDS }], PROVIDER, [
+      profile(SAM, "Sam", false, T),
+      profile(KIDS, "Kids", true, T),
+      entry("favourite", KIDS, "cartoons", "1", T),
+      entry("setting", KIDS, "appLanguage", "fr", T),
+    ]);
+    const { cursor } = await sync(bedroom, 0);
+    await sync(living, cursor, [], PROVIDER, [entry("profile", KIDS, "", null, T + 10)]);
+    // The bedroom, offline meanwhile, stopped a Movie and renamed the Profile later still.
+    await sync(bedroom, cursor, [{ ...movie(551, 100_000, T + 20), profile: KIDS }], PROVIDER, [profile(KIDS, "Kiddos", true, T + 30), entry("favourite", KIDS, "more cartoons", "1", T + 20)]);
+
+    const everything = await sync(bedroom, 0);
+    expect(everything.progress).toEqual([movie(238, 100_000, T)]);
+    expect(everything.entries).toContainEqual(entry("profile", KIDS, "", null, T + 10));
+    expect(everything.entries.filter((e) => e.profile === KIDS)).toHaveLength(1);
+    const since = await sync(living, cursor);
+    expect(since.entries).toEqual([entry("profile", KIDS, "", null, T + 10)]);
+  });
+
+  it("keeps the Profile each device is on", async () => {
+    const living = await signedIn();
+    await sync(living, 0, [], PROVIDER, [], KIDS);
+    const row = await env.DB.prepare("SELECT profile FROM device WHERE profile IS NOT NULL").first<{ profile: string }>();
+    expect(row?.profile).toBe(KIDS);
+  });
+
+  it("refuses entries that aren't what the Account keeps", async () => {
+    const token = await signedIn();
+    const refused = async (entries: unknown[], provider: string | null = PROVIDER) =>
+      expect((await call("/v1/sync", { cursor: 0, provider, progress: [], entries }, token)).status).toBe(400);
+    await refused([entry("password" as Entry["kind"], SAM, "x", "1", T)]);
+    await refused([entry("favourite", "sam", "tsn 1", "1", T)]);
+    await refused([entry("favourite", SAM, "tsn 1", "1", T)], null);
+    await refused([entry("favourite", SAM, "", "1", T)]);
+    await refused([entry("not_this_game", SAM, "tsn 1", "1", T)]);
+    await refused([entry("household", SAM, "region", "CA", T)]);
+    await refused([entry("household", null, "login", "x", T)]);
+    await refused([entry("profile", SAM, "", "{\"name\": 5, \"kids\": false}", T)]);
+    await refused([entry("profile", SAM, "", "{\"name\": \"Sam\"}", T)]);
+    await refused([entry("setting", SAM, "contentLanguages", "x".repeat(4097), T)]);
+    await refused([entry("title_choices", SAM, "channel/1", "{}", T)]);
+    await refused([{ ...entry("setting", SAM, "appLanguage", "fr", T), at: "now" }]);
+    await refused(Array.from({ length: MAX_CHANGES + 1 }, (_, i) => entry("favourite", SAM, `c${i}`, "1", T)));
+    expect((await sync(token, 0)).entries).toEqual([]);
   });
 });

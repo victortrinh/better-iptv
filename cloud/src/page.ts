@@ -23,7 +23,7 @@ ${message ? `<p class="${message.error ? "error" : "note"}">${escape(message.tex
 <input id="email" name="email" type="email" required autocomplete="email" maxlength="254">
 <button type="submit">Send me a link</button>
 </form>
-<p class="aside"><a href="/delete-account">Delete my account</a></p>`,
+<p class="aside"><a href="/reset-pin">Reset the Household PIN</a> · <a href="/delete-account">Delete my account</a></p>`,
   );
 }
 
@@ -39,6 +39,35 @@ ${message ? `<p class="${message.error ? "error" : "note"}">${escape(message.tex
 <input id="email" name="email" type="email" required autocomplete="email" maxlength="254">
 <button type="submit">Send me a link</button>
 </form>`,
+  );
+}
+
+/** "Reset the Household PIN" (#440): an email, to which a link that clears the Account's PIN is sent. */
+export function resetPinPage(message?: { text: string; error: boolean }): string {
+  return page(
+    "Reset the Household PIN",
+    `<h1>Reset the Household PIN</h1>
+<p>Forgot the PIN that lets you leave a Kids profile? Type your account's email. We'll send you a link: tap it, and each TV asks for a new PIN the next time someone leaves a Kids profile.</p>
+${message ? `<p class="${message.error ? "error" : "note"}">${escape(message.text)}</p>` : ""}
+<form method="post" action="/reset-pin">
+<label for="email">Your email</label>
+<input id="email" name="email" type="email" required autocomplete="email" maxlength="254">
+<button type="submit">Send me a link</button>
+</form>`,
+  );
+}
+
+/** The page a reset link opens: one button, so a mail scanner opening the link resets nothing. */
+export function confirmResetPinPage(token: string): string {
+  return page(
+    "Reset the Household PIN",
+    `<h1>Reset the Household PIN</h1>
+<p>This clears the Household PIN on every TV signed in to your account. The next time someone leaves a Kids profile, the TV asks for a new one.</p>
+<form method="post" action="/reset-pin/link">
+<input type="hidden" name="token" value="${escape(token)}">
+<button type="submit">Reset the PIN</button>
+</form>`,
+    false,
   );
 }
 

@@ -8,7 +8,7 @@ import { FakeTmdb } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 let email: FakeEmail;
 beforeEach(async () => {
-  await env.DB.batch(["device", "account", "sign_in_code", "sign_in_miss", "magic_link", "delete_link", "delete_request", "unknown_prefix"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+  await env.DB.batch(["device", "account", "sign_in_code", "sign_in_miss", "magic_link", "delete_link", "delete_request", "unknown_prefix", "synced"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   tmdb = new FakeTmdb();
   email = new FakeEmail(tmdb);
 });
@@ -544,5 +544,83 @@ describe("Delete my account", () => {
     expect(kept).not.toContain(token);
     expect(kept).not.toContain(PHONE);
     expect(kept).not.toContain("home@example.com");
+  });
+});
+
+/** A pull of everything the Account keeps, by [tv]: its household PIN entry, if any. */
+async function pinOf(tv: string): Promise<{ value: string | null; at: number } | undefined> {
+  const response = await call("POST", "/v1/sync", { cursor: 0, provider: null, progress: [], entries: [] }, tv);
+  expect(response.status).toBe(200);
+  const { entries } = (await response.json()) as { entries: { kind: string; key: string; value: string | null; at: number }[] };
+  return entries.find((e) => e.kind === "household" && e.key === "pin");
+}
+
+describe("Reset the Household PIN (#440)", () => {
+  const HASH = "pbkdf2-sha256:10000:c2FsdA:aGFzaA";
+
+  async function withPin(address: string): Promise<string> {
+    const tv = await signedInTv(address);
+    const at = Date.now() - 60_000;
+    const pushed = await call("POST", "/v1/sync", { cursor: 0, provider: null, progress: [], entries: [{ kind: "household", profile: null, key: "pin", value: HASH, at }] }, tv);
+    expect(pushed.status).toBe(200);
+    return tv;
+  }
+
+  async function tapResetLink(link: string): Promise<Response> {
+    const url = new URL(link);
+    const page = await call("GET", url.pathname + url.search);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('<form method="post" action="/reset-pin/link">');
+    return form(url.pathname, { token: url.searchParams.get("token")! });
+  }
+
+  it("is offered from the sign-in page", async () => {
+    expect(await (await call("GET", "/sign-in")).text()).toContain('href="/reset-pin"');
+    const page = await call("GET", "/reset-pin");
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('<form method="post" action="/reset-pin">');
+  });
+
+  it("emails a link, and tapping it clears the PIN every TV of the Account pulls next", async () => {
+    const living = await withPin("home@example.com");
+    const neighbours = await withPin("neighbours@example.com");
+    expect((await form("/reset-pin", { email: "Home@Example.com" })).status).toBe(200);
+    const link = email.lastResetPinLinkTo("home@example.com");
+    expect(link).toMatch(/^https:\/\/zugig\.example\/reset-pin\/link\?token=[A-Za-z0-9_-]{43}$/);
+    // Asking, and opening the link, change nothing.
+    expect((await pinOf(living))?.value).toBe(HASH);
+
+    const done = await tapResetLink(link!);
+    expect(done.status).toBe(200);
+    expect(await done.text()).toContain("reset");
+    const pin = await pinOf(living);
+    expect(pin?.value).toBeNull();
+    expect(pin!.at).toBeGreaterThan(Date.now() - 60_000);
+    expect((await pinOf(neighbours))?.value).toBe(HASH);
+    // The Account is still there.
+    expect(await account(living)).toBe("home@example.com");
+  });
+
+  it("works once, and a delete link doesn't reset nor a reset link delete", async () => {
+    const tv = await withPin("home@example.com");
+    await form("/reset-pin", { email: "home@example.com" });
+    const link = email.lastResetPinLinkTo("home@example.com")!;
+    const token = new URL(link).searchParams.get("token")!;
+    expect((await form("/delete-account/link", { token })).status).toBe(410);
+    expect(await account(tv)).toBe("home@example.com");
+    expect((await tapResetLink(link)).status).toBe(200);
+    expect((await tapResetLink(link)).status).toBe(410);
+
+    await askToDelete("home@example.com");
+    const deleteToken = new URL(email.lastDeleteLinkTo("home@example.com")!).searchParams.get("token")!;
+    expect((await form("/reset-pin/link", { token: deleteToken })).status).toBe(410);
+  });
+
+  it("answers the same for an address with no Account, and emails nobody", async () => {
+    const sentBefore = email.sent.length;
+    const asked = await form("/reset-pin", { email: "nobody@example.com" });
+    expect(asked.status).toBe(200);
+    expect(email.sent.length).toBe(sentBefore);
+    expect((await form("/reset-pin", { email: "not an address" })).status).toBe(400);
   });
 });
