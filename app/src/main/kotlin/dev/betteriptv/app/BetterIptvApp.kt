@@ -125,8 +125,11 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
      * the first time, Matching a closed app left unfinished resumes. Nothing while the player is
      * open or before login. Updates are checked again too, unless checked recently: the process
      * lives for days on a stick, so the launch check alone misses every build released since.
+     * A signed-in TV also syncs its history with the Account (#435): what it pulls lands at the
+     * next screen entry.
      */
     fun onResumed() {
+        scope.launch { library.syncHistory() }
         if (playerOpen) return
         updates?.let { scope.launch { it.checkIfStale(RECHECK_UPDATES_AFTER) } }
         if (!library.isLoggedIn) return
@@ -137,9 +140,14 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         }
     }
 
-    /** Lands a held Sync's catalog ([Library.applyPendingCatalog]), on entering a top-level screen; never while the player is open. */
+    /**
+     * Lands a held Sync's catalog ([Library.applyPendingCatalog]) and the history pulled from the
+     * Account ([Library.applyPendingHistory]), on entering a top-level screen; never while the player is open.
+     */
     fun applyPendingCatalog() {
-        if (playerOpen || !library.hasPendingCatalog) return
+        if (playerOpen) return
+        scope.launch { library.applyPendingHistory() }
+        if (!library.hasPendingCatalog) return
         scope.launch { keepingAlive { library.applyPendingCatalog() } }
     }
 

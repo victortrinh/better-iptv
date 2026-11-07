@@ -15,6 +15,7 @@ import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
 import { confirmPage, htmlResponse, messagePage, signInPage } from "./page";
+import { accountIdOf, readSyncRequest, sync } from "./sync";
 
 /**
  * The cloud's HTTP API (test seam 2). It serves data that is the same for every Viewer, and signs TVs in to Accounts by email (ADR 0015);
@@ -77,6 +78,10 @@ import { confirmPage, htmlResponse, messagePage, signInPage } from "./page";
  * - `POST /v1/sign-in`: a fresh Sign-in code for this device, `{"code": "K7M2QX", "url":
  *   "https://zugig.app/sign-in?code=K7M2QX", "expiresIn": 600}`, the url for the TV's QR (ADR 0015).
  * - `POST /v1/account`: the Account this device is signed in to, `{"email": "…"}`, or `{"email": null}`.
+ * - `POST /v1/sync`, with `{"cursor": 0, "provider": "<SHA-256 of the Provider's host>", "progress": [{"title":
+ *   "show/1399", "season": 1, "episode": 2, "position": 600000, "duration": 3600000, "watched": false, "removed":
+ *   false, "at": 1762500000000}]}`: keeps the device's history changes, latest winning, and answers the Account's
+ *   since the cursor, `{"cursor": 42, "reset": false, "progress": […]}` (#435). `403` when the device isn't signed in.
  *
  * And the sign-in page, for the phone: `GET /sign-in` (the code from the QR filled in), `POST /sign-in`
  * (a code and an email: emails the magic link), `GET /sign-in/link?token=…` (the link: a button) and
@@ -98,6 +103,13 @@ export default {
       return json({ code, url: `${site(request, env)}/sign-in?code=${code}`, expiresIn });
     }
     if (request.method === "POST" && pathname === "/v1/account") return json({ email: await accountOf(env.DB, device) });
+    if (request.method === "POST" && pathname === "/v1/sync") {
+      const accountId = await accountIdOf(env.DB, device);
+      if (accountId === null) return problem(403, "This device isn't signed in to an Account.");
+      const asked = readSyncRequest(await request.json().catch(() => null));
+      if (typeof asked === "string") return problem(400, asked);
+      return json(await sync(env.DB, accountId, asked));
+    }
     if (request.method === "POST" && pathname === "/v1/metadata") {
       const asked = await metadataRequest(request);
       if (typeof asked === "string") return problem(400, asked);

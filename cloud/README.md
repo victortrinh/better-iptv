@@ -32,6 +32,17 @@ A TV signs in to an Account from a phone, with no password (ADR 0015). The devic
 - The magic link, `GET /sign-in/link?token=…`, works once, for 15 minutes (even after its code expired). It opens a page with one "Sign in the TV" button, `POST /sign-in/link`, so a mail scanner that opens links (Outlook's Safe Links does) signs nobody in. The button binds the TV to the email's Account, creating it when the email is new. A used, unknown or expired link gets a plain message.
 - The cloud keeps the email address (`account`), the live codes, and only SHA-256 hashes of the magic tokens (`magic_link`) and of the IPs that typed wrong codes (`sign_in_miss`). The Provider login never comes here.
 
+### History sync
+
+Where a Viewer stopped and what they Watched follow them between the Account's TVs (#435). See `src/sync.ts`.
+
+- `POST /v1/sync` takes `{"cursor": 0, "provider": "<SHA-256 of the Provider's host>", "progress": [{"title": "show/1399", "season": 1, "episode": 2, "position": 600000, "duration": 3600000, "watched": false, "removed": false, "at": 1762500000000}]}`, at most 500 changes, and answers `{"cursor": 42, "reset": false, "progress": […]}`: the Account's changes stamped after the cursor, in the same shape, the device's own included. `403` when the device isn't signed in, which the device takes as signed out.
+- A change is a Movie's (`season` and `episode` null) or an Episode's position, duration, Watched, or `removed` ("Remove from Continue watching", a tombstone), at `at` by the device's clock, held to the cloud's so a clock that runs ahead can't win every change after it. Per Movie or Episode the latest `at` wins, whichever arrives first, so of two TVs watching one Title the last to stop wins.
+- `title` is the device's Title key. By TMDB ID (`movie/238`, `show/1399`) it is the same on every Provider; by Listing (`movie/listing/123`, an Unmatched Title or a Sports replay) it is kept under `provider` and only answered to a device on that Provider.
+- The cursor is the Account's sync sequence number (`account.sync_seq`), bumped once per push and stamped on every row it changes, so a device offline for a week gets everything since its cursor. Tombstones are dropped 30 days after `at`; a device whose cursor is older than a dropped tombstone gets everything the Account has, marked `reset`, and forgets the history it pulled before that isn't in it. A device that just signed in asks from `0` and merges.
+- #440 adds profiles, Favourites and settings as more sections of the same request and answer, stamped from the same sequence, so one cursor covers them.
+- The device pushes after each stop and syncs on launch and on coming to the front; what it pulls lands between screens. A device that never signs in never calls it.
+
 ### Setting up the domain and the sender
 
 The QR must point at the app's own domain, not `workers.dev`, which on a TV reads as phishing.
