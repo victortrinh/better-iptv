@@ -36,7 +36,8 @@ dependencies {
     testImplementation(libs.coroutines.test)
 }
 
-// The hand-written Provider tables ship with the app, by host hash, until the cloud serves them (#431).
+// The hand-written Provider tables ship with the app, by host hash: a device uses its Provider's until
+// the cloud has answered for it once, so a first launch on a new build looks the same (#431).
 tasks.processResources {
     from(rootProject.file("cloud/provider-tables")) {
         include("*.txt")
