@@ -457,7 +457,6 @@ fun PlayerScreen(
                 downloads = offeredSubtitles(offers.orEmpty(), downloadLanguages, suggestedDownloads),
                 shown = shown,
                 suggested = suggestedDownloads,
-                source = plan.version.attributes.source?.value,
                 onDownloaded = { offer ->
                     player?.chooseSubtitles(null)
                     scope.launch { showing.show(offer) }
@@ -1052,7 +1051,6 @@ private fun TracksPanel(
     downloads: List<SubtitleOffer>,
     shown: SubtitleShowing.State<*>,
     suggested: Set<String>,
-    source: String?,
     onDownloaded: (SubtitleOffer) -> Unit,
     onAudio: (Int, Track) -> Unit,
     onSubtitles: (Int?, Track?) -> Unit,
@@ -1090,8 +1088,6 @@ private fun TracksPanel(
     }
     val downloaded = downloads.map { offer ->
         val release = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
-        // A suggested file says why: it was ripped from the same service as this copy, so it is likeliest timed to it.
-        val why = if (offer.id in suggested && source != null) stringResource(R.string.subtitle_same_source, source) else null
         TrackOption(
             stringResource(R.string.subtitle_downloaded, context.trackName(Track(offer.language))),
             offer.id == shownDownload?.id,
@@ -1099,7 +1095,7 @@ private fun TracksPanel(
                 onDownloaded(offer)
                 picks++
             },
-            detail = listOfNotNull(why, release.takeIf { it.isNotBlank() }).joinToString(" · ").ifEmpty { null },
+            detail = release.takeIf { it.isNotBlank() },
             value = when {
                 offer.id == shown.loading?.id -> stringResource(R.string.subtitle_loading)
                 offer.id in shown.failed -> stringResource(R.string.subtitle_failed)

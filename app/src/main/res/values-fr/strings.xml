@@ -186,7 +186,6 @@
     <string name="subtitle_downloaded">%1$s · Téléchargés</string>
     <string name="subtitle_hearing_impaired">%1$s · Pour sourds et malentendants</string>
     <string name="subtitle_suggested">Suggérés</string>
-    <string name="subtitle_same_source">De %1$s, comme cette copie</string>
     <string name="subtitle_loading">Chargement…</string>
     <string name="subtitle_failed">Impossible à charger</string>
     <plurals name="versions_count">
