@@ -1173,7 +1173,8 @@ class Library private constructor(
      * Provider read of them (from the cloud), waited for up to [SHARED_READS_WAIT].
      *
      * What the Title is comes from the Provider (ADR 0014): a Movie's details are read from the
-     * Provider for its best Version's Listing when the page opens, unless kept from before, and kept
+     * Provider for its best Version's Listing when the page opens, and for the Listing that names it
+     * when that is another (its overview, cast and director are that one's, #504), unless kept from before, and kept
      * for good (read again only once the Provider changes that Listing); a Show's are on its Listing
      * since Sync. With the Provider unreachable the page opens whole from what is kept.
      */
@@ -1195,13 +1196,16 @@ class Library private constructor(
         }
         var candidates = candidates(title, contentLanguages)
         var shown = shown(candidates, contentLanguages, appLanguage)
-        val kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing) else emptyMap()
+        var kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing) else emptyMap()
         if (kept[shown.best.listing.id]?.bitrate != null) {
             // The details just read Confirm the bitrate: the page arrives with it, as with the shared reads.
             candidates = candidates(title, contentLanguages)
             shown = shown(candidates, contentLanguages, appLanguage)
         }
-        val details = providerDetails(title, shown.best.listing, kept)
+        // What the page tells of the Title is in the language of the Listing that names it (#504): an `ES`
+        // copy with English audio may be the best Version while the English Listing names the Title.
+        if (id.kind == TitleKind.Movie && shown.naming.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, shown.naming.listing)
+        val details = providerDetails(title, shown.naming.listing, kept)
         val originalLanguage = originalLanguage(id)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
         val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, originalLanguage), contentLanguages, original)
@@ -1241,12 +1245,12 @@ class Library private constructor(
     }
 
     /**
-     * What the Provider says of [title]: the [best] Listing's details (a Movie's from [kept], a Show's
+     * What the Provider says of [title]: the [listing]'s details (a Movie's from [kept], a Show's
      * from its Listing), else any of its Listings' that say something, else nothing.
      */
-    private fun providerDetails(title: StoredTitle, best: StoredListing, kept: Map<Long, StoredMovieDetails>): ProviderDetails {
+    private fun providerDetails(title: StoredTitle, listing: StoredListing, kept: Map<Long, StoredMovieDetails>): ProviderDetails {
         fun of(listing: StoredListing) = (if (title.id.kind == TitleKind.Movie) kept[listing.id]?.details else listing.details)?.takeUnless { it.isEmpty }
-        return of(best) ?: title.listings.firstNotNullOfOrNull(::of) ?: ProviderDetails.NONE
+        return of(listing) ?: title.listings.firstNotNullOfOrNull(::of) ?: ProviderDetails.NONE
     }
 
     /**
@@ -2822,11 +2826,14 @@ class Library private constructor(
     /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
     internal fun relay(location: String) = StreamRelay(location, http)
 
-    private class Shown(val best: Candidate, val name: String, val year: Int?, val image: String?)
+    /** What a Title shows: its [best] Version, the Listing [naming] it, and that name, year and poster. */
+    private class Shown(val best: Candidate, val naming: Candidate, val name: String, val year: Int?, val image: String?)
 
     /**
      * What a Title's card and header show, from its Listings (ADR 0014): the cleaned name of its
-     * Listing in the [appLanguage], else of the English one, else of the best Version's; the year in
+     * Listing in the [appLanguage], else of the English one, else of the best Version's, a Listing's
+     * language being its Prefix's ([Candidate.listedLanguage]: an `ES` copy whose audio a read found
+     * English is still named in Spanish, #504); the year in
      * that name, else a Show's release date; and the poster most of its languages share, ties going to
      * the [appLanguage]'s Listing, then the English one, then the Best playable Version's. Worked out
      * from the stored Listings each time, so a Listing added in another language changes nothing.
@@ -2834,10 +2841,10 @@ class Library private constructor(
     private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, appLanguage: String): Shown {
         val ranked = preferred(candidates, contentLanguages)
         val language = primaryLanguage(appLanguage)
-        fun inLanguage(wanted: String) = ranked.firstOrNull { it.attributes.language?.value?.let(::primaryLanguage) == wanted }
+        fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
         val cleaned = prefixTable.cleanName(naming.listing.name)
-        return Shown(ranked.first(), cleaned.name, cleaned.year ?: naming.listing.details?.year, poster(ranked, language))
+        return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, poster(ranked, language))
     }
 
     /**
@@ -2847,11 +2854,11 @@ class Library private constructor(
      */
     private fun poster(ranked: List<Candidate>, language: String): String? {
         val counts = ranked.filter { it.listing.image != null }
-            .groupBy({ it.listing.image!! }, { it.attributes.language?.value?.let(::primaryLanguage) })
+            .groupBy({ it.listing.image!! }, { it.listedLanguage })
             .mapValues { (_, languages) -> languages.distinct().size }
         val most = counts.values.maxOrNull() ?: return null
         val tied = ranked.filter { counts[it.listing.image] == most }
-        fun inLanguage(wanted: String) = tied.firstOrNull { it.attributes.language?.value?.let(::primaryLanguage) == wanted }
+        fun inLanguage(wanted: String) = tied.firstOrNull { it.listedLanguage == wanted }
         return (inLanguage(language) ?: inLanguage("en") ?: tied.first()).listing.image
     }
 
@@ -2988,7 +2995,7 @@ class Library private constructor(
             title.id to if (title.id.kind != TitleKind.Movie) plain else plain.map { candidate ->
                 val id = candidate.listing.id
                 val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
-                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate, candidate.unknownPrefix)
+                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate, candidate.unknownPrefix, candidate.listedLanguage)
             }
         }
     }
