@@ -72,10 +72,8 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
                 if (dexMetadata != null && Build.VERSION.SDK_INT in Build.VERSION_CODES.P..Build.VERSION_CODES.R) {
                     session.add("base.dm", dexMetadata)
                 }
-                val answer = Intent(context, UpdateInstallReceiver::class.java)
-                val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
                 ReopenAfterUpdate.mark(context)
-                session.commit(PendingIntent.getBroadcast(context, id, answer, PendingIntent.FLAG_UPDATE_CURRENT or mutable).intentSender)
+                session.commit(installAnswer(context, id).intentSender)
             } catch (e: Exception) {
                 ReopenAfterUpdate.clear(context)
                 session.abandon()
@@ -110,6 +108,18 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
             }
         }
     }
+}
+
+/**
+ * Where Android answers install session [id], at [UpdateInstallReceiver]. On the foreground broadcast
+ * queue: on the background one the answer that opens Android's installer waits behind every ordered
+ * broadcast, and on the stick, woken with a day's `BOOT_COMPLETED` held back, it waited 1 min 20 s
+ * while the screen said the installer was opening (2026-11-08).
+ */
+internal fun installAnswer(context: Context, id: Int): PendingIntent {
+    val answer = Intent(context, UpdateInstallReceiver::class.java).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+    val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+    return PendingIntent.getBroadcast(context, id, answer, PendingIntent.FLAG_UPDATE_CURRENT or mutable)
 }
 
 /**
