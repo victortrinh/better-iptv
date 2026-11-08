@@ -47,7 +47,7 @@ fun FocusSurface(
     modifier: Modifier = Modifier,
     weight: FocusWeight = FocusWeight.Card,
     corner: Dp = if (weight == FocusWeight.Card) Corners.card else Corners.control,
-    /** How much a [FocusWeight.Card] grows: less for a wide one. */
+    /** How much a [FocusWeight.Card] grows: less for a wide Game card. */
     cardScale: Float = FocusScale.card,
     container: Color = Color.Transparent,
     focusedContainer: Color = container,
