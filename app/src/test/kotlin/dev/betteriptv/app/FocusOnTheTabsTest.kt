@@ -93,7 +93,7 @@ class FocusOnTheTabsTest {
 
     private val hero = FeaturedTitle(
         TitleId.Numbered(TitleKind.Movie, 1), "War", 2025, 112, listOf("Drama"), "About War.",
-        backdrop = "https://provider.example/backdrop-war.jpg", best = VersionAttributes(),
+        backdrop = "https://provider.example/backdrop-war.jpg", badge = VersionAttributes(),
     )
 
     private fun title(name: String) = TitleSummary(TitleId.Unmatched(TitleKind.Movie, name.hashCode().toLong()), name, 2024, null, VersionAttributes())

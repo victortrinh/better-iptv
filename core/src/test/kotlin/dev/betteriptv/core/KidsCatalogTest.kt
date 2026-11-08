@@ -195,9 +195,9 @@ class KidsCatalogTest {
         library.sync()
         onKidsProfile(library)
 
-        repeat(3) { assertEquals(movie(1), library.featured(FeaturedScreen.Home, english, "en")?.id) }
-        assertEquals(movie(1), library.featured(FeaturedScreen.Movies, english, "en")?.id)
-        assertEquals(null, library.featured(FeaturedScreen.Shows, english, "en"))
+        repeat(3) { assertEquals(movie(1), library.featured(FeaturedScreen.Home, english, "en", DeviceProfile(maxHeight = 1080, hdr = emptySet()))?.id) }
+        assertEquals(movie(1), library.featured(FeaturedScreen.Movies, english, "en", DeviceProfile(maxHeight = 1080, hdr = emptySet()))?.id)
+        assertEquals(null, library.featured(FeaturedScreen.Shows, english, "en", DeviceProfile(maxHeight = 1080, hdr = emptySet())))
     }
 
     @Test fun `Live on a Kids profile shows the Favourites, then the Channels of Kids Categories as one row per country`() = runBlocking {

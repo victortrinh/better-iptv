@@ -81,6 +81,7 @@ import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
+import dev.betteriptv.core.VersionAttributes
 
 /**
  * A card on Home, Movies or Shows: the [row] it is in, by the row's key (not its place, which
@@ -249,6 +250,7 @@ fun RowsScreen(
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
+    featureBadge: (suspend (TitleId) -> VersionAttributes?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
@@ -270,6 +272,7 @@ fun RowsScreen(
         placeholder = placeholder,
         trailing = trailing,
         feature = feature,
+        featureBadge = featureBadge,
         onPlayFeatured = onPlayFeatured,
         header = header,
     )
@@ -290,7 +293,9 @@ fun RowsScreen(
  * [restoreFocus] from a page the screen opened), and the hero then never changes until the screen is
  * entered again. The Title for the next entry is read during this one, so it shows at once with
  * the rows kept from last time; the first time, it is read with the rows. The first Down scrolls the
- * hero away under the tabs, and Up from the first row brings it back whole.
+ * hero away under the tabs, and Up from the first row brings it back whole. Its badge alone is read
+ * again ([featureBadge]) each time it shows, coming back from a page included, so it follows what
+ * that page read.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -313,11 +318,13 @@ internal fun RowsLayout(
     placeholder: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
+    featureBadge: (suspend (TitleId) -> VersionAttributes?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val reader by rememberUpdatedState(read)
     val featurer by rememberUpdatedState(feature)
+    val badger by rememberUpdatedState(featureBadge)
     val context = LocalPlatformContext.current
     val backdrops = LocalBackdrops.current
     // Entered (by its tab, or as the app starts), not come back to from a page it opened.
@@ -333,6 +340,16 @@ internal fun RowsLayout(
         }
     }
     val hero = if (feature != null) state.featured else null
+    // Each time the hero shows, its badge is read again from the device ([featureBadge], #521): back
+    // from the page it opened, a Show's Episodes may have been read there, and the Title read for this
+    // entry during the last one may have had its page opened since. No Provider call.
+    LaunchedEffect(hero?.id) {
+        val shown = hero ?: return@LaunchedEffect
+        val read = badger ?: return@LaunchedEffect
+        val badge = read(shown.id)
+        val now = state.featured
+        if (now?.id == shown.id && now.badge != badge) state.featured = now.copy(badge = badge)
+    }
     // Rows that arrive after the screen is up (the first entry's, with the hero read beside them) fade
     // in as one with the hero, its backdrop included, over the bare ground. The fade shows over frames
     // even when the first of them comes late, as on the stick's cold start (#398). Rows kept from last

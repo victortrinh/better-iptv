@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -12,6 +13,9 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.FeaturedScreen
 import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.QualityCap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
@@ -47,7 +51,12 @@ fun TitlesScreen(
     onOpen: (RowCard, TitleId, String?) -> Unit,
     onPlay: (RowCard, FeaturedTitle) -> Unit,
     onRetry: () -> Unit,
+    qualityCap: QualityCap,
+    preferOriginalAudio: Boolean,
 ) {
+    // The hero badges what its Play starts, for this TV ([Library.featured]), read as Play reads it.
+    val context = LocalContext.current
+    val device = suspend { withContext(Dispatchers.Default) { readDeviceProfile(context) } }
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Read again when a Sync lands, a held catalog is applied or Matches regroup the Titles.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
@@ -63,7 +72,8 @@ fun TitlesScreen(
         placeholder = if (noTitles) {
             { SyncChecklist(status, SyncStep.Movies, onRetry) }
         } else null,
-        feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, readDetails) },
+        feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, device(), qualityCap, preferOriginalAudio, readDetails) },
+        featureBadge = { id -> library.featuredBadge(id, contentLanguages, device(), qualityCap, preferOriginalAudio) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(

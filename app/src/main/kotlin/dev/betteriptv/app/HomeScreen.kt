@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -26,6 +27,9 @@ import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.QualityCap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.TitleId
@@ -87,7 +91,12 @@ fun HomeScreen(
     onOpenGame: (RowCard, GameFeeds) -> Unit,
     onPlay: (RowCard, FeaturedTitle) -> Unit,
     onRetry: () -> Unit,
+    qualityCap: QualityCap,
+    preferOriginalAudio: Boolean,
 ) {
+    // The hero badges what its Play starts, for this TV ([Library.featured]), read as Play reads it.
+    val context = LocalContext.current
+    val device = suspend { withContext(Dispatchers.Default) { readDeviceProfile(context) } }
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Live, Movies and Shows.
     val noChannels = status.channelsAt == null
@@ -127,7 +136,8 @@ fun HomeScreen(
                 }
             }
         } else null,
-        feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, readDetails) },
+        feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, device(), qualityCap, preferOriginalAudio, readDetails) },
+        featureBadge = { id -> library.featuredBadge(id, contentLanguages, device(), qualityCap, preferOriginalAudio) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)

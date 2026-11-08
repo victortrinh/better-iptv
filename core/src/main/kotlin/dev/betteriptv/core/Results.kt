@@ -52,7 +52,8 @@ enum class FeaturedScreen { Home, Movies, Shows }
 /**
  * The Title a screen's hero features: its [name] and [year] as on its card, its [runtimeMinutes],
  * [genres] and [description] (the plot) as the Provider gives them, its [backdrop] (the Provider's,
- * ADR 0014), and the [best] Version's attributes in the Viewer's Content languages, for its badges.
+ * ADR 0014), and the attributes its badges name ([badge], [Library.featuredBadge]): the Version its
+ * Play starts, as on its page; null for a Show whose Episodes were never read.
  * It is named in type: no logo exists.
  */
 data class FeaturedTitle(
@@ -63,7 +64,7 @@ data class FeaturedTitle(
     val genres: List<String>,
     val description: String?,
     val backdrop: String,
-    val best: VersionAttributes,
+    val badge: VersionAttributes?,
 )
 
 /** A row on Home, on the Movies or Shows tab, or on Live (CONTEXT.md: Row). */

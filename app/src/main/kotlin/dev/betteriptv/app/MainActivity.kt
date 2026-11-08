@@ -276,6 +276,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         onOpenGame = { card, entry -> openedGame = OpenedGame(entry, card) },
                         onPlay = playFeatured,
                         onRetry = app::sync,
+                        qualityCap = settings.qualityCap,
+                        preferOriginalAudio = settings.preferOriginalAudio,
                     )
                     Browse.Live -> LiveScreen(
                         // In Settings' order, which the League rows follow.
@@ -330,6 +332,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                                 onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
                                 onPlay = playFeatured,
                                 onRetry = app::sync,
+                                qualityCap = settings.qualityCap,
+                                preferOriginalAudio = settings.preferOriginalAudio,
                             )
                         }
                     }

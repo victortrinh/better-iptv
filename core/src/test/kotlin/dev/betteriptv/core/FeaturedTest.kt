@@ -3,6 +3,7 @@ package dev.betteriptv.core
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -70,7 +71,7 @@ class FeaturedTest {
         library.sync()
     }
 
-    private suspend fun featured(screen: FeaturedScreen = FeaturedScreen.Home) = library.featured(screen, english, "en")?.name
+    private suspend fun featured(screen: FeaturedScreen = FeaturedScreen.Home) = library.featured(screen, english, "en", fullHdTv)?.name
 
     /** The names [screen] features at its next [entries] entries, each costing the Provider at most one details call. */
     private suspend fun entries(entries: Int, screen: FeaturedScreen = FeaturedScreen.Home) = List(entries) {
@@ -127,7 +128,7 @@ class FeaturedTest {
     @Test fun `a Show's backdrop is the first on its Listing, and featuring it costs no details call`() = runBlocking {
         sync(movies = emptyList(), shows = listOf(1, 2))
 
-        val featured = library.featured(FeaturedScreen.Shows, english, "en")!!
+        val featured = library.featured(FeaturedScreen.Shows, english, "en", fullHdTv)!!
         assertEquals(showBackdrop(1), featured.backdrop)
         assertEquals("About Show 1.", featured.description)
         assertTrue(provider.requests.none { it.startsWith("get_vod_info") || it.startsWith("get_series_info") })
@@ -136,7 +137,7 @@ class FeaturedTest {
     @Test fun `the featured Title carries what the hero shows, from the Provider's details`() = runBlocking {
         sync(movies = listOf(1, 2, 3))
 
-        val featured = library.featured(FeaturedScreen.Home, english, "en")!!
+        val featured = library.featured(FeaturedScreen.Home, english, "en", fullHdTv)!!
         assertEquals(movie(1), featured.id)
         assertEquals("Film 1", featured.name)
         assertEquals(2025, featured.year)
@@ -144,7 +145,7 @@ class FeaturedTest {
         assertEquals(listOf("Drama"), featured.genres)
         assertEquals("About Film 1.", featured.description)
         assertEquals(movieBackdrop(1), featured.backdrop)
-        assertEquals("en", featured.best.language?.value)
+        assertEquals("en", featured.badge!!.language?.value)
     }
 
     @Test fun `it skips Titles in Continue watching, in no Content language, and those without a backdrop`() = runBlocking {
@@ -169,7 +170,7 @@ class FeaturedTest {
     @Test fun `without reading details, only Titles whose backdrop is kept are featured`() = runBlocking {
         sync(movies = listOf(1, 2), shows = listOf(1))
 
-        assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", readDetails = false)?.name)
+        assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", fullHdTv, readDetails = false)?.name)
         assertTrue(provider.movieDetailsRequests.isEmpty())
     }
 
@@ -233,5 +234,50 @@ class FeaturedTest {
         val plan = library.titlePlayPlan(show, english, "en", fullHdTv)!!
         assertEquals(EpisodeNumber(1, 2), plan.episode)
         assertEquals(library.episodePlayPlan(show, EpisodeNumber(1, 2), english, fullHdTv), plan)
+    }
+
+    // #521: the hero's badges follow the Title page's, which name the Version Play starts (#515).
+
+    @Test fun `a featured Movie is badged with the Version Play starts, not a better one the TV can't display`() = runBlocking {
+        provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"MOVIES"}]"""
+        provider.movieListOverride = listOf("4K-EN - Film 1 (2025)", "EN - Film 1 (2025)").withIndex().joinToString(",", "[", "]") { (i, name) ->
+            """{"stream_id":${i + 1},"name":"$name","tmdb":"1","category_id":"1","added":"${1_700_000_000 - i}","stream_icon":"","container_extension":"mkv"}"""
+        }
+        (1L..2L).forEach { provider.serveMovieDetails(it, name = "Film 1", backdrop = movieBackdrop(1)) }
+        provider.showCategoriesOverride = "[]"
+        provider.showListOverride = "[]"
+        library.sync()
+
+        val badge = library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.badge!!
+        assertNotEquals(Quality.UHD, badge.quality?.value)
+        assertEquals(library.playPlan(movie(1), english, fullHdTv)!!.version.attributes, badge)
+    }
+
+    private fun serveEpisodes() {
+        provider.showDetailsOverride[1] = """{"seasons":[],"info":{},"episodes":[${listOf(1, 2).joinToString(",") { n ->
+            """{"id":"10$n","episode_num":$n,"season":1,"title":"EN - Show 1 (2025) - S01E0$n","container_extension":"mkv","added":"1700000000","info":{"video":{"width":1920,"height":1080}}}"""
+        }}]}"""
+    }
+
+    @Test fun `a featured Show whose Episodes were never read has no badge, and featuring it reads none`() = runBlocking {
+        serveEpisodes()
+        sync(movies = emptyList(), shows = listOf(1))
+
+        assertNull(library.featured(FeaturedScreen.Shows, english, "en", fullHdTv)!!.badge)
+        assertTrue(provider.requests.none { it.startsWith("get_series_info") })
+    }
+
+    @Test fun `once its Episodes are read, a featured Show is badged with the Episode Play starts, from the device`() = runBlocking {
+        serveEpisodes()
+        sync(movies = emptyList(), shows = listOf(1))
+        // Its page opened once: the Episodes are kept.
+        library.episodes(show(1), english)
+        val asked = provider.requests.size
+
+        val featured = library.featured(FeaturedScreen.Shows, english, "en", fullHdTv)!!
+        assertEquals(Quality.FullHD, featured.badge!!.quality?.value)
+        assertEquals(library.titlePlayPlan(show(1), english, "en", fullHdTv)!!.version.attributes, featured.badge)
+        assertEquals(featured.badge, library.featuredBadge(show(1), english, fullHdTv))
+        assertEquals(asked, provider.requests.size)
     }
 }

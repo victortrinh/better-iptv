@@ -244,7 +244,7 @@ class StartingCoverTest {
         val featured = FeaturedTitle(
             TitleId.Numbered(TitleKind.Show, 1), "The Fall", 2025, null, emptyList(), null,
             backdrop = "https://provider.example/fall-backdrop.jpg",
-            best = VersionAttributes(),
+            badge = VersionAttributes(),
         )
 
         assertEquals(StartingArt.Title(featured.backdrop), featured.startingArt)
