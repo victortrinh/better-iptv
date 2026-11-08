@@ -124,6 +124,28 @@ class PlaybackTest {
         job.cancel()
     }
 
+    @Test fun `stopping when the app leaves the screen lets go of the stream, and coming back plays on from there`() = runBlocking {
+        val session = session()
+        var job = launch { session.play() }
+        session.awaitPlaying(Engine.Media3, count = 1)
+        session.tryOtherPlayer()
+        val vlc = session.awaitPlaying(Engine.Vlc, count = 2)
+        vlc.position = 42 * 60_000L
+
+        // Home, another app, the TV going to sleep (#503).
+        job.cancel()
+        job.join()
+        assertTrue(vlc.released)
+        withTimeout(5_000) { while (provider.openStreamCount > 0) delay(10) }
+
+        // Back in the app: the same Version on the same engine, where it was.
+        job = launch { session.play() }
+        assertEquals(42 * 60_000L, session.awaitPlaying(Engine.Vlc, count = 3).startedFrom)
+        assertEquals(listOf(Engine.Media3, Engine.Vlc, Engine.Vlc), created.map { it.engine })
+        assertEquals(0, provider.refusedStreams)
+        job.cancel()
+    }
+
     @Test fun `after a failure, Try other player tries again on the other engine`() = runBlocking {
         scripts[Engine.Media3] = Script.Breaks
         val session = session()

@@ -134,7 +134,8 @@ import kotlin.time.Duration.Companion.seconds
  * or a Channel's logo on glass, under the starting label; it then fades to the picture ([StartingCover]).
  * While a [channel] plays, the top scrim names the programme on now, from the Library's guide cache
  * (#261), which is asked for the Channel as it plays.
- * Leaving the screen stops playback and gives back the Viewer's connection. An Episode's overlay
+ * Leaving the screen, or the app leaving the TV (Home, another app, a screensaver, sleep), stops
+ * playback and gives back the Viewer's connection; coming back to the app plays on from there. An Episode's overlay
  * has "Next Episode", and from its credits a card offers the next one, counting down to play it by
  * itself (see [UpNext]) when [settings] allow and it isn't the [inARow]th to start by itself with no
  * key pressed; the card stays when the Episode ends. Playing the next Episode calls [onPlay] with
@@ -187,11 +188,14 @@ fun PlayerScreen(
     val subtitleDelay = choices.subtitleDelay
     val screen = remember { FocusRequester() }
 
+    val onScreen = rememberOnScreen()
     LaunchedEffect(session) {
         // Looked up as the Episode starts, so the overlay and the credits can offer it.
         val lookup = async { if (plan.episode == null) null else library.nextEpisodePlan(plan, withContext(Dispatchers.Default) { deviceProfile() }, settings.qualityCap) }
         launch { next = lookup.await() }
-        session.play()
+        // Only while the app shows: leaving it, a screensaver or the TV sleeping stops playback and
+        // gives back the Viewer's one stream; coming back plays on from there (#503).
+        onScreen.whileTrue { session.play() }
         if (lookup.await() == null) onEnded()
     }
 

@@ -143,7 +143,11 @@ fun TitleScreen(
     }
     // A Show's reads need its show details, so they start once its Episodes are in.
     val readable = id.kind == TitleKind.Movie || show != null
-    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) { if (readable) library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
+    // Only while the app shows: a Show's reads can take minutes, each holding the Viewer's one stream (#503).
+    val onScreen = rememberOnScreen()
+    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) {
+        if (readable) onScreen.whileTrue { library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
+    }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own backdrop, already in memory.
     val start = { plan: PlayPlan, name: String -> onPlay(plan, name, loaded?.first.let { StartingArt.Title(it?.backdrop) }) }
