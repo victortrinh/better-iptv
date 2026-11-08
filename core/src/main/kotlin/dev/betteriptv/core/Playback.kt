@@ -189,7 +189,7 @@ data class PlayPlan(
     /** Whether [track] is in the language the Title was released in: the player calls such audio "Original". */
     fun isOriginal(track: Track): Boolean = originalLanguage?.let { track.isIn(primaryLanguage(it)) } == true
 
-    private fun Track.isIn(language: String) = this.language?.let(::trackLanguage) == language
+    private fun Track.isIn(language: String) = spokenLanguage == language
 }
 
 /** The most languages one search for downloaded subtitles asks about, as the cloud allows. */
@@ -343,12 +343,36 @@ private const val FRAME_RATE_SNAP = 0.0005f
 
 /**
  * An audio or subtitle Track found in a file, with its [language] as the file tags it (ISO 639-1
- * or 639-2), its format as a [mimeType] (`audio/true-hd`) and an audio Track's [channels], if the
- * file names them.
+ * or 639-2), its format as a [mimeType] (`audio/true-hd`), an audio Track's [channels] and the
+ * [label] the file gives it ("English SDH", "Forced"), if the file names them.
  */
-data class Track(val language: String?, val mimeType: String? = null, val channels: Int? = null) {
+data class Track(val language: String?, val mimeType: String? = null, val channels: Int? = null, val label: String? = null) {
     /** Whether it is a live Channel's closed captions (CEA-608 or 708), which carry no language. */
     val isClosedCaptions get() = mimeType == CEA_608 || mimeType == CEA_708
+
+    /**
+     * The language it is in, as a primary language subtag (ISO 639-1 where there is one): its tag's,
+     * or for a Track tagged with none (`und`, or no tag), the one its [label] names ("English SDH",
+     * "Français"). Null when neither says.
+     */
+    val spokenLanguage: String?
+        get() = language?.let(::trackLanguage)?.takeUnless { it.isEmpty() || it in NO_LANGUAGE } ?: label?.let(::languageInName)
+}
+
+/**
+ * The language a Track's name names in one of its words, by its English name or its own: "English
+ * SDH" is `en`, "Français (forcés)" is `fr`. Words under four letters aren't read, so "SDH" or
+ * "CC" never pass for one.
+ */
+internal fun languageInName(name: String): String? =
+    name.lowercase(Locale.ROOT).split(Regex("[^\\p{L}]+")).filter { it.length >= 4 }.firstNotNullOfOrNull { LANGUAGES_BY_ANY_NAME[it] }
+
+/** ISO 639-1 codes by their languages' English names and their own, lower case. */
+private val LANGUAGES_BY_ANY_NAME: Map<String, String> by lazy {
+    Locale.getISOLanguages().flatMap { code ->
+        val locale = Locale.forLanguageTag(code)
+        listOf(locale.getDisplayLanguage(locale), locale.getDisplayLanguage(Locale.ENGLISH)).map { it.lowercase(locale) to code }
+    }.filter { (name, code) -> name.isNotEmpty() && name != code }.reversed().toMap()
 }
 
 /** The MIME types of closed captions carried in a live Channel's picture, as Media3 names them. */

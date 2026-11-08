@@ -150,7 +150,7 @@ fun iso639(code: String?): String? {
     return THREE_LETTER[BIBLIOGRAPHIC[folded] ?: folded]
 }
 
-private val NO_LANGUAGE = setOf("und", "mul", "zxx", "mis", "qaa")
+internal val NO_LANGUAGE = setOf("und", "mul", "zxx", "mis", "qaa")
 private val TWO_LETTER: Set<String> = Locale.getISOLanguages().toSet()
 private val THREE_LETTER: Map<String, String> =
     Locale.getISOLanguages().mapNotNull { language -> runCatching { Locale(language).isO3Language }.getOrNull()?.let { it to language } }.toMap()

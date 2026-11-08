@@ -60,8 +60,9 @@ import dev.betteriptv.app.ui.theme.Type
 /**
  * An audio or subtitle Track to pick: its [name], a [detail] under it, and whether it is [on]. Its
  * card names it [short] when it is on, as an audio Track's format would push "Original" out of sight.
+ * Its row's value says "Playing" when it is on, else its [value] ("Suggested", "Loading…").
  */
-internal class TrackOption(val name: String, val on: Boolean, val onClick: () -> Unit, val detail: String? = null, val short: String = name)
+internal class TrackOption(val name: String, val on: Boolean, val onClick: () -> Unit, val detail: String? = null, val short: String = name, val value: String? = null)
 
 /**
  * Audio and subtitles, along the bottom of the picture as four cards, Audio, Subtitles, Subtitle
@@ -234,7 +235,7 @@ private fun CardHeader(title: String, value: String, open: Boolean, onOpen: () -
     }
 }
 
-/** A list of Tracks, the one on marked "Playing" and taking [focus] (the first, when none is on). */
+/** A list of Tracks, the one on marked "Playing" and taking [focus] (the first, when none is on); the others show their value. */
 @Composable
 private fun TrackRows(options: List<TrackOption>, focus: FocusRequester) {
     val on = stringResource(R.string.player_playing)
@@ -242,7 +243,7 @@ private fun TrackRows(options: List<TrackOption>, focus: FocusRequester) {
     options.forEachIndexed { index, option ->
         SettingRow(
             option.name,
-            if (option.on) on else "",
+            if (option.on) on else option.value.orEmpty(),
             option.onClick,
             modifier = if (index == focused) Modifier.focusRequester(focus) else Modifier,
             detail = option.detail,

@@ -78,6 +78,55 @@ class SubtitleDownloadsTest {
         assertNull(library.downloadSubtitle(SubtitleOffer("opensubtitles:fr:404", "fr", "gone", false)))
     }
 
+    @Test fun `a subtitle ripped from the Version's Source is suggested, not moved or shown by itself`() = runBlocking {
+        cloud.subtitle(1, "en", "Movie.2025.1080p.BluRay.x264")
+        val netflix = cloud.subtitle(1, "en", "Movie.2025.1080p.NF.WEB-DL.DDP5.1")
+        val amazon = cloud.subtitle(1, "en", "Movie 2025 2160p AMZN WEB-DL")
+        val french = cloud.subtitle(1, "fr", "Movie.2025.NF.WEB")
+        val fromNetflix = plan(listOf("en", "fr")).withSource("Netflix")
+
+        // The cloud's order stands: the file shown by itself is still its first in the language.
+        val offers = library.subtitleOffers(fromNetflix, listOf("en", "fr"))
+        assertEquals(listOf("Movie.2025.1080p.BluRay.x264", netflix.release, amazon.release, french.release), offers.map { it.release })
+        assertEquals(setOf(netflix.id, french.id), suggestedSubtitles(fromNetflix, offers))
+        assertEquals(setOf(amazon.id), suggestedSubtitles(fromNetflix.withSource("Prime Video"), offers))
+        assertEquals(emptySet<String>(), suggestedSubtitles(plan(listOf("en")), offers))
+        assertEquals(emptySet<String>(), suggestedSubtitles(fromNetflix.withSource("Universal"), offers))
+    }
+
+    @Test fun `the suggested file is offered even when it is further down than the first three`() {
+        val offers = (1..5).map { SubtitleOffer("opensubtitles:en:$it", "en", if (it == 5) "Movie.NF.WEB" else "Movie.WEB.$it", false) } +
+            SubtitleOffer("opensubtitles:fr:6", "fr", "Film.WEB", false)
+
+        assertEquals(listOf(1, 2, 3, 5, 6), offeredSubtitles(offers, listOf("en", "fr"), setOf("opensubtitles:en:5")).map { it.id.substringAfterLast(':').toInt() })
+        assertEquals(listOf(1, 2, 3), offeredSubtitles(offers, listOf("en"), emptySet()).map { it.id.substringAfterLast(':').toInt() })
+    }
+
+    @Test fun `a Source's tag counts only as a whole word of the release`() {
+        assertEquals(true, fromSource("The.Movie.2025.720p.NF.WEB-DL", "Netflix"))
+        assertEquals(true, fromSource("Movie (2025) [Blu-ray] 1080p", "Blu-ray"))
+        assertEquals(true, fromSource("Movie.2025.DSNP.WEB-DL", "Marvel"))
+        assertEquals(false, fromSource("Mad.Max.Fury.Road.2015.1080p.WEB-DL", "Max"))
+        assertEquals(false, fromSource("Movie.2025.NFO.WEB", "Netflix"))
+        assertEquals(false, fromSource("Movie.2025.WEB", "Universal"))
+    }
+
+    @Test fun `a subtitle Track tagged with no language is in the one its name says`() = runBlocking {
+        assertEquals("en", Track("und", label = "English SDH").spokenLanguage)
+        assertEquals("fr", Track(null, label = "Français (forcés)").spokenLanguage)
+        assertEquals("de", Track("und", label = "German").spokenLanguage)
+        // The tag wins over the name, and a name naming no language says nothing.
+        assertEquals("fr", Track("fre", label = "English").spokenLanguage)
+        assertNull(Track("und", label = "SDH").spokenLanguage)
+        assertNull(Track("und", label = "Track 2").spokenLanguage)
+        assertNull(Track("und").spokenLanguage)
+
+        // So a file whose only English subtitles are untagged but named needs no download.
+        val plan = plan(listOf("en"))
+        assertEquals(emptyList<String>(), plan.downloadLanguages(listOf(Track("und", label = "English"))))
+        assertEquals(listOf("en"), plan.downloadLanguages(listOf(Track("und"))))
+    }
+
     @Test fun `without the cloud, or a TMDB ID, the Viewer plays on without downloads`() = runBlocking {
         cloud.subtitle(1, "fr", "Movie.2025.WEB")
         cloud.down = true
@@ -89,4 +138,6 @@ class SubtitleDownloadsTest {
         assertEquals(emptyList<SubtitleOffer>(), library.subtitleOffers(unmatched, listOf("fr")))
         assertEquals(emptyList<FakeCloud.Received>(), cloud.received.toList())
     }
+
+    private fun PlayPlan.withSource(source: String) = copy(version = version.copy(attributes = version.attributes.copy(source = Known(source, Provenance.Likely))))
 }
