@@ -339,6 +339,7 @@ INFANTILES      | Kids
 FAMILIAS        | Kids
 ΠΑΙΔΙΚΑ         | Kids
 ΠΑΙΔΙΑ          | Kids
+ΟΙΚΟΓΕΝΕΙΑΚΗ    | Kids
 COCUK           | Kids
 ÇOCUK           | Kids
 BARN            | Kids
@@ -364,6 +365,8 @@ DOCUMENTAL      | Documentaries
 DOCUMENTÁRIO    | Documentaries
 DOKUMENTARFILM  | Documentaries
 BELGESEL        | Documentaries
+ΝΤΟΚΥΜΑΝΤΕΡ     | Documentaries
+דוקומנטרי        | Documentaries
 # Music
 MUSIC           | Music
 MUSIQUE         | Music
@@ -413,6 +416,8 @@ ANIMAÇÃO        | Animation
 ANIMATIE        | Animation
 ANIMASYON       | Animation
 ANIMACJA        | Animation
+ΚΙΝΟΥΜΕΝΑ ΣΧΕΔΙΑ | Animation
+אנימציה          | Animation
 # Comedy
 COMEDY          | Comedy
 COMÉDIE         | Comedy
@@ -423,6 +428,7 @@ KOMEDIE         | Comedy
 KOMEDI          | Comedy
 KOMEDIA         | Comedy
 ΚΩΜΩΔΙΑ         | Comedy
+קומדיה           | Comedy
 # Crime
 CRIME           | Crime
 KRIMI           | Crime
@@ -472,6 +478,7 @@ MISTÉRIO        | Mystery
 MYSTERIE        | Mystery
 GIZEM           | Mystery
 ΜΥΣΤΗΡΙΟΥ       | Mystery
+מסתורין          | Mystery
 # Romance
 ROMANCE         | Romance
 LIEBESFILM      | Romance

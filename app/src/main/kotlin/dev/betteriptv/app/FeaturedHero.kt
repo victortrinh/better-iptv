@@ -37,6 +37,7 @@ import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.app.ui.theme.inLayoutDirection
 import dev.betteriptv.core.FeaturedTitle
 import kotlin.math.max
 
@@ -77,9 +78,9 @@ internal fun FeaturedHero(
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             val metadata = remember(title) {
-                listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null }).joinToString(" · ")
+                metaLine(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), genresPart(title.genres))
             }
-            Text(metadata, style = Type.body, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text(metadata, style = Type.body.inLayoutDirection(), color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(12.dp))
             BadgeRow(title.best.cardBadges())
         }

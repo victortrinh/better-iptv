@@ -15,6 +15,7 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.app.ui.theme.inLayoutDirection
 
 /** What Home's [RailInfo] tells about the focused card. Not its name: the artwork and its logo carry that. */
 sealed interface CardInfo {
@@ -60,7 +61,7 @@ fun RailInfo(info: CardInfo?, badges: List<BadgeSpec>, short: Boolean, modifier:
             }
             is CardInfo.About -> {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("rail info")) {
-                    Text(info.metadata, style = Type.railMeta, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(info.metadata, style = Type.railMeta.inLayoutDirection(), color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (badges.isNotEmpty()) BadgeRow(badges, Modifier.padding(start = Spacing.s), compact = true)
                 }
             }

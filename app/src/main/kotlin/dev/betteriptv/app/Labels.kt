@@ -28,7 +28,31 @@ fun ratingLabel(rating: Double): String = "★ " + String.format(Locale.getDefau
  * Title with none of them reads as nothing. From stored data alone: no Provider call on focus (ADR 0014).
  */
 fun aboutLine(year: Int?, genres: List<String>, rating: Double?): String =
-    listOfNotNull(year?.toString(), genres.firstOrNull(), rating?.let(::ratingLabel)).joinToString(" · ")
+    metaLine(year?.toString(), genres.firstOrNull()?.let(::isolated), rating?.let(::ratingLabel))
+
+/**
+ * A metadata line from its [parts] ("2024 · 2h 50m · Drama, Comedy · ★ 6.6"), leaving out the
+ * missing ones. A part holding right-to-left text (a Hebrew or Arabic genre) is isolated
+ * ([isolated]), so it stays in its slot and the rating after it keeps its order (#514).
+ */
+fun metaLine(vararg parts: String?): String = parts.filterNotNull().filter { it.isNotEmpty() }.joinToString(" · ") { isolated(it) }
+
+/** The first two of [genres], each [isolated], as the metadata lines show them: "Drama, Comedy". Empty for none. */
+fun genresPart(genres: List<String>): String = genres.take(2).joinToString(", ") { isolated(it) }
+
+/**
+ * [text] wrapped in first-strong isolate marks (U+2068 … U+2069) when it holds a right-to-left
+ * letter, so the bidi algorithm lays it out on its own and the line around it keeps its direction;
+ * left-to-right text is returned as it is.
+ */
+fun isolated(text: String): String =
+    if (text.none { Character.getDirectionality(it).let { d -> d == Character.DIRECTIONALITY_RIGHT_TO_LEFT || d == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC } }) text
+    else if (text.startsWith(FSI) && text.endsWith(PDI)) text
+    else "$FSI$text$PDI"
+
+private const val FSI = '\u2068'
+private const val PDI = '\u2069'
+
 
 /** A card's badges: quality, HDR, then language, as in "4K · HDR · EN". */
 fun VersionAttributes.cardBadges(): List<BadgeSpec> =

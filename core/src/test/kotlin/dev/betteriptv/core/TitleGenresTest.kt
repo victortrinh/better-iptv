@@ -27,6 +27,18 @@ class TitleGenresTest {
         assertEquals(listOf("Family", "Drama"), table.genres("Familial / Drame"))
     }
 
+    @Test fun `the Greek and Hebrew genre words the survey found most fold into the English names (#514)`() {
+        assertEquals(listOf("Drama", "Comedy"), table.genres("דרמה / קומדיה"))
+        assertEquals(listOf("Animation"), table.genres("Κινούμενα Σχέδια"))
+        assertEquals(listOf("Animation", "Mystery", "Documentary"), table.genres("אנימציה / מסתורין / דוקומנטרי"))
+        assertEquals(listOf("Family", "Documentary"), table.genres("Οικογενειακή / Ντοκυμαντέρ"))
+    }
+
+    @Test fun `a genre field read without its unknown words keeps only what the table maps`() {
+        assertEquals(listOf("Drama"), table.genres("Drama / Kabuki", unknown = false))
+        assertEquals(emptyList<String>(), table.genres("Watch India's Best", unknown = false))
+    }
+
     @Test fun `a genre word the table doesn't know is kept as written, and an empty field names none`() {
         assertEquals(listOf("Watch India's Best"), table.genres("Watch India's Best"))
         assertEquals(listOf("Drama", "Kabuki"), table.genres("Drama / Kabuki"))
