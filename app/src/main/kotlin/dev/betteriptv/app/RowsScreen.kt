@@ -28,6 +28,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -362,7 +363,12 @@ internal fun RowsLayout(
     var focused by remember(restoreFocus) { mutableStateOf(false) }
     var checked by remember(restoreFocus) { mutableStateOf(false) }
     val tab = remember { FocusRequester() }
-    FocusTabOnArrival(focusTab, tab)
+    // Whether the Viewer was last on the tabs (rather than the rows), saved so the screen made again
+    // (the Activity recreated as a keyboard or remote attaches) puts focus back on the tab, not on
+    // the hero's Play, where one OK meant for a tab would start a stream (#498).
+    var onTabs by rememberSaveable { mutableStateOf(false) }
+    val backOnTabs = remember { onTabs }
+    FocusTabOnArrival(focusTab || backOnTabs, tab)
     // The row focus is in, while it is in the rows (not up on the tabs): the one row a reading mustn't change.
     var inRows by remember { mutableStateOf(false) }
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
@@ -416,9 +422,10 @@ internal fun RowsLayout(
         if (shown == fresh) state.held = null
     }
     val rows = state.rows
-    // First focus goes to the hero's Play when there is a hero, else to the first card.
+    // First focus goes to the hero's Play when there is a hero, else to the first card; never once
+    // the Viewer is on the tabs (rows and a hero arriving late, #498).
     val focusOn = pending?.takeUnless { it.row == HERO_ROW && hero == null } ?: when {
-        focused || focusTab -> null
+        focused || focusTab || backOnTabs -> null
         hero != null -> RowCard(HERO_ROW, HERO_PLAY)
         else -> rows?.firstOrNull()?.let { RowCard(it.key, it.keys.first()) }
     }
@@ -470,7 +477,16 @@ internal fun RowsLayout(
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
     Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * arrival.value }) {
-        header(tab)
+        // Focus the Viewer put on the tabs stays there: no card or Play waiting for first focus takes it.
+        Box(
+            Modifier.onFocusChanged {
+                if (it.hasFocus) {
+                    onTabs = true
+                    pending = null
+                    focused = true
+                }
+            },
+        ) { header(tab) }
         if (placeholder != null) return@Column placeholder()
         if (rows == null) {
             if (waiting) WaitingDot { waitingFade.value }
@@ -480,7 +496,11 @@ internal fun RowsLayout(
             if (arriving && waiting) WaitingDot { waitingFade.value * (1f - arrival.value) }
             CompositionLocalProvider(LocalBringIntoViewSpec provides StayPut) {
                 LazyColumn(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = arrival.value }.onFocusChanged { inRows = it.hasFocus }.backToTab(tab),
+                    Modifier.fillMaxSize().graphicsLayer { alpha = arrival.value }.onFocusChanged {
+                        inRows = it.hasFocus
+                        // Only focus moving into the rows clears it: focus let go as the screen is torn down keeps it.
+                        if (it.hasFocus) onTabs = false
+                    }.backToTab(tab),
                     state = state.list,
                 ) {
                     if (hero != null) item(key = HERO_ROW, contentType = HERO_ROW) {
