@@ -148,6 +148,47 @@ class FeaturedTest {
         assertEquals("en", featured.badge!!.language?.value)
     }
 
+    /**
+     * The surveyed Provider's Primetime (2026): an `EN` Listing and a subtitled `GR` copy whose file a
+     * read Confirms is in English, in 1080p, so the Greek copy is its best English Version.
+     */
+    private suspend fun syncPrimetime() {
+        provider.movieCategoriesOverride = """[{"category_id":"163","category_name":"EN - NEW RELEASE"},{"category_id":"2067","category_name":"GR - NEW RELEASES"}]"""
+        provider.movieListOverride = """[
+            {"stream_id":1,"name":"EN - Primetime  (2026)","tmdb":"1","category_id":"163","added":"1793968800","stream_icon":"","container_extension":"mkv"},
+            {"stream_id":2,"name":"GR - Primetime (2026)","tmdb":"1","category_id":"2067","added":"1793856210","stream_icon":"","container_extension":"mkv"}]"""
+        provider.serveMovieDetails(1, name = "Primetime", plot = ENGLISH_PLOT, backdrop = movieBackdrop(1))
+        provider.serveMovieDetails(2, name = "Primetime", plot = "Το 2006, ένας παρουσιαστής ετοιμάζεται να γράψει ιστορία.", backdrop = "https://art.example/film-1-gr.jpg")
+        provider.showCategoriesOverride = "[]"
+        provider.showListOverride = "[]"
+        library.sync()
+        val greekCopy = library.title(movie(1), english, "en")!!.let { it.languages + it.otherLanguages }.flatMap { it.versions }.single { it.listingId == 2L }
+        library.confirm(greekCopy, FileContents(listOf(Track("eng", "audio/eac3", 6)), emptyList(), width = 1920, height = 1080))
+    }
+
+    private val ENGLISH_PLOT = "In 2006, a host sets out to make television history."
+
+    @Test fun `the hero tells of a Title in the language of the Listing that names it, as its page does`() = runBlocking {
+        // A Greek plot over an English hero: the hero read the best Version's details, the `GR` copy's.
+        syncPrimetime()
+        val page = library.title(movie(1), english, "en")!!
+        assertEquals(2L, page.languages.first().versions.first().listingId)
+        assertEquals(ENGLISH_PLOT, page.description)
+
+        assertEquals(ENGLISH_PLOT, library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.description)
+    }
+
+    @Test fun `a hero whose naming Listing's details aren't kept reads them, and no other`() = runBlocking {
+        syncPrimetime()
+        // The Provider changes the `EN` Listing: its details are read again when next shown.
+        provider.movieListOverride = provider.movieListOverride!!.replace("1793968800", "1793968900")
+        library.sync()
+        val before = provider.movieDetailsRequests.size
+
+        assertEquals(ENGLISH_PLOT, library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.description)
+        assertEquals(listOf(1L), provider.movieDetailsRequests.drop(before))
+    }
+
     @Test fun `it skips Titles in Continue watching, in no Content language, and those without a backdrop`() = runBlocking {
         sync(movies = (1L..5L).toList(), bare = setOf(2), french = setOf(4))
         library.saveProgress(movie(3), position = 30 * 60_000L, duration = 120 * 60_000L)
