@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.Closeable
 import java.io.IOException
@@ -123,6 +124,9 @@ class Library private constructor(
     @Volatile private var searchIndex: BuiltIndex? = null
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
+
+    /** How long a Header read may take before it counts as the Provider not answering ([HEADER_READ_BOUND]); tests shorten it. */
+    internal var headerReadBound by headerReader::bound
     /** One Header read at a time, a details page's or Background reading's. */
     private val reads = Mutex()
     /** Details pages reading right now: Background reading waits for them. */
@@ -2588,19 +2592,21 @@ class Library private constructor(
         if (left > 0) checking(left)
         for ((listingId, container) in unread) {
             val location = if (shows == null) client.movieLocation(listingId, container) else client.episodeLocation(listingId, container)
+            // A Background read that started before this page's turn ends within its bound: never wait past it (#505).
+            withTimeoutOrNull(headerReader.bound + PROVIDER_RELEASE_GRACE) { reads.lock() } ?: break
             val read = try {
-                reads.withLock {
-                    connection.whileFree {
-                        val contents = headerReader.read(location, container)
-                        // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
-                        store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
-                        Read(contents)
-                    }
+                connection.whileFree {
+                    val contents = headerReader.read(location, container)
+                    // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
+                    store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
+                    Read(contents)
                 }
             } catch (e: IOException) {
                 // The Provider refused: no more reads for now, nor Background reading today.
                 if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
                 null
+            } finally {
+                reads.unlock()
             } ?: break
             if (read.contents != null) changed()
             checking(--left)
@@ -2672,6 +2678,11 @@ class Library private constructor(
             val login = credentials.load() ?: continue
             val next = nextBackgroundRead(contentLanguages, preferOriginalAudio) ?: continue
             if (!reads.tryLock()) continue
+            // A details page that opened while this one was chosen reads first.
+            if (detailsReading.get() > 0) {
+                reads.unlock()
+                continue
+            }
             val read = try {
                 connection.whileFree {
                     val contents = headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)

@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.util.concurrent.CountDownLatch
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /** Header reads on a Movie's details page: Confirming Versions from their files, and giving way to Play. */
@@ -143,6 +144,49 @@ class HeaderReadTest {
         library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
 
         assertEquals(0, left.last())
+    }
+
+    /** Glass Onion's 13 Listings on the surveyed Provider, as the stick's catalog has them (#505). */
+    private val glassOnion = arrayOf(
+        "GR - Glass Onion: Στα Μαχαίρια (2022)" to "GR - NETFLIX" with "mkv",
+        "JP - Glass Onion: A Knives Out Mystery (2022)" to "JP - JAPANESE FILM" with "mkv",
+        "GR - Glass Onion A Knives Out Mystery (2022)" to "GR - NETFLIX" with "mkv",
+        "4K-PL - Glass Onion: Film z serii „Na noże” (2022)" to "PL - FILMY 4K" with "mkv",
+        "4K-NF - Glass Onion: A Knives Out Mystery (2022)" to "NETFLIX MOVIES ⁴ᴷ ³⁸⁴⁰ᴾ ᴰᵒˡᵇʸ ⱽᶦˢᶦᵒⁿ" with "mkv",
+        "ES - Puñales por la espalda: El misterio de Glass Onion (2022)" to "ES - NETFLIX" with "mkv",
+        "IR - Glass Onion: A Knives Out Mystery (2022) چاقو کشی 2" to "IR - PERSIAN SUB/DUB" with "mkv",
+        "NL - Glass Onion: A Knives Out Mystery (2022)" to "NL - 2022 & OUD" with "mkv",
+        "SE - Glass Onion: A Knives Out Mystery (2022)" to "SVENSKA NYA UTGÅVAN" with "mp4",
+        "4K-EN - Glass Onion: A Knives Out Mystery  (2022)" to "EN - MOVIES ⁴ᴷ ³⁸⁴⁰ᴾ" with "mkv",
+        "DE - Glass Onion: A Knives Out Mystery (2022)" to "DE - FILME 1940/2024" with "mkv",
+        "NF - Glass Onion: A Knives Out Mystery (2022)" to "NETFLIX MOVIES" with "mkv",
+        "EN - Glass Onion: A Knives Out Mystery  (2022)" to "EN - NEW RELEASE" with "mp4",
+    )
+
+    @Test fun `on a 13-Version Title, the page stops saying it checks once its reads end`() = runBlocking {
+        syncVersions(*glassOnion)
+        (1L..13L).forEach { provider.movieFiles[it] = if (glassOnion[it.toInt() - 1].third == "mp4") mp4File(listOf(FileTrack("audio", "eng", "mp4a"))) else matroskaFile(englishAndFrench) }
+
+        val left = mutableListOf<Int>()
+        library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
+
+        // The best unread Version of each language and Prefix no table knows, down to none.
+        assertEquals((10 downTo 0).toList(), left)
+    }
+
+    @Test fun `a Provider that stops sending a file mid-read ends the checking within the read's bound`() = runBlocking {
+        syncVersions(*glassOnion)
+        provider.stalledFiles = true
+        library.headerReadBound = 1.seconds
+
+        val left = mutableListOf<Int>()
+        val started = TimeSource.Monotonic.markNow()
+        withTimeout(10_000) { library.readHeaders(movie, listOf("en"), checking = { left += it }) {} }
+
+        assertEquals(listOf(10, 0), left)
+        assertTrue("took ${started.elapsedNow()}", started.elapsedNow() < 3.seconds)
+        // One request, then nothing more for now: the Provider isn't answering.
+        assertEquals(1, provider.streamRequests)
     }
 
     @Test fun `an MP4 with its track index at the end is read at its start and its end`() = runBlocking {
