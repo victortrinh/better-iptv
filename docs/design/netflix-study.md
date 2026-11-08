@@ -4,6 +4,8 @@ Studied 2026-10-30 for [#129](https://github.com/victortrinh/better-iptv/issues/
 
 Sizes are estimated from those photos and given in dp/sp on our 960 x 540 canvas (see [DESIGN.md](../../DESIGN.md)). Treat them as ±15%.
 
+> 2026-11-07: this study is history. Where it describes Netflix's logos, its focused card growing into wide art, or its Top 10 row, Zugig no longer follows (M6, ADR 0014). DESIGN.md is the look as shipped.
+
 ## The short list
 
 Worth adopting, most valuable first:
@@ -95,4 +97,4 @@ Netflix spends size on descriptions and artwork and keeps headings modest. We do
 - The focus grammar is the same: white fill on controls and tabs, a white rim on artwork, glass for selected.
 - Back returns to the card that opened a page, in the same row.
 - Our Versions table, certainty badges and per-language grouping have no Netflix equivalent, and are why the app exists.
-- TMDB serves title logos (`/images` → `logos`). Using them in the hero and on details, as Netflix does, is cheap and needs no new source.
+- ~~TMDB serves title logos (`/images` → `logos`). Using them in the hero and on details, as Netflix does, is cheap and needs no new source.~~ Superseded 2026-11-07 by M6 (ADR 0014, #470): the app no longer uses TMDB, there are no logos, and a Title is named in Display type. The grown card and the Top 10 row with its numerals, taken from Netflix later, are retired with it. DESIGN.md describes the look as shipped.
