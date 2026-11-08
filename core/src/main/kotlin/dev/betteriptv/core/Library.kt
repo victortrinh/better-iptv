@@ -2826,7 +2826,9 @@ class Library private constructor(
 
     /**
      * What a Title's card and header show, from its Listings (ADR 0014): the cleaned name of its
-     * Listing in the [appLanguage], else of the English one, else of the best Version's; the year in
+     * Listing in the [appLanguage], else of the English one, else of the best Version's, a Listing's
+     * language being its Prefix's ([Candidate.listedLanguage]: an `ES` copy whose audio a read found
+     * English is still named in Spanish, #504); the year in
      * that name, else a Show's release date; and the poster most of its languages share, ties going to
      * the [appLanguage]'s Listing, then the English one, then the Best playable Version's. Worked out
      * from the stored Listings each time, so a Listing added in another language changes nothing.
@@ -2834,7 +2836,7 @@ class Library private constructor(
     private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, appLanguage: String): Shown {
         val ranked = preferred(candidates, contentLanguages)
         val language = primaryLanguage(appLanguage)
-        fun inLanguage(wanted: String) = ranked.firstOrNull { it.attributes.language?.value?.let(::primaryLanguage) == wanted }
+        fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
         val cleaned = prefixTable.cleanName(naming.listing.name)
         return Shown(ranked.first(), cleaned.name, cleaned.year ?: naming.listing.details?.year, poster(ranked, language))
@@ -2847,11 +2849,11 @@ class Library private constructor(
      */
     private fun poster(ranked: List<Candidate>, language: String): String? {
         val counts = ranked.filter { it.listing.image != null }
-            .groupBy({ it.listing.image!! }, { it.attributes.language?.value?.let(::primaryLanguage) })
+            .groupBy({ it.listing.image!! }, { it.listedLanguage })
             .mapValues { (_, languages) -> languages.distinct().size }
         val most = counts.values.maxOrNull() ?: return null
         val tied = ranked.filter { counts[it.listing.image] == most }
-        fun inLanguage(wanted: String) = tied.firstOrNull { it.attributes.language?.value?.let(::primaryLanguage) == wanted }
+        fun inLanguage(wanted: String) = tied.firstOrNull { it.listedLanguage == wanted }
         return (inLanguage(language) ?: inLanguage("en") ?: tied.first()).listing.image
     }
 
@@ -2988,7 +2990,7 @@ class Library private constructor(
             title.id to if (title.id.kind != TitleKind.Movie) plain else plain.map { candidate ->
                 val id = candidate.listing.id
                 val withBitrate = bitrates[id]?.let { candidate.attributes.copy(bitrate = Known(it, Provenance.Confirmed)) } ?: candidate.attributes
-                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate, candidate.unknownPrefix)
+                Candidate(candidate.listing, reads[id]?.let { withBitrate.confirmedBy(it, expect) } ?: withBitrate, candidate.unknownPrefix, candidate.listedLanguage)
             }
         }
     }

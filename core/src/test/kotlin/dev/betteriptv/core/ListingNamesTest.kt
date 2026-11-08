@@ -64,6 +64,21 @@ class ListingNamesTest {
         assertEquals("Le Film", library.title(film, every, "fr")!!.name)
     }
 
+    @Test fun aListingIsNamedInTheLanguageItsPrefixSaysEvenWhenItsFileTurnsOutToBeInEnglish() = runBlocking {
+        // The surveyed Provider's Forgotten Island (#504): the `ES` copy's file has English audio, so a
+        // read moves it to English, where it is the best Version; its name is still the Spanish one.
+        syncFilm("EN - Forgotten Island (2026)" to "https://art/en.jpg", "ES-4K - La isla olvidada (2026)" to "https://art/es.jpg")
+        val spanishCopy = library.title(film, listOf("en"), "en")!!.let { it.languages + it.otherLanguages }.flatMap { it.versions }.single { it.listingId == 2L }
+        library.confirm(spanishCopy, FileContents(listOf(Track("eng", "audio/eac3", 6)), emptyList(), width = 3840, height = 2160))
+
+        val page = library.title(film, listOf("en"), "en")!!
+        assertEquals(listOf(2L, 1L), page.languages.single { it.language == "en" }.versions.map { it.listingId })
+        assertEquals("Forgotten Island", card("en", listOf("en")).name)
+        assertEquals("Forgotten Island", page.name)
+        assertEquals("https://art/en.jpg", page.image)
+        assertEquals("La isla olvidada", library.title(film, listOf("en", "es"), "es")!!.name)
+    }
+
     @Test fun aTitleWithOnlyAGreekListingIsNamedByIt() = runBlocking {
         syncFilm("GR - Η Ταινία (2024)" to null)
 
