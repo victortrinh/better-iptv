@@ -8,10 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -154,6 +157,14 @@ object Type {
     val label: TextStyle @Composable @ReadOnlyComposable get() = LocalTypeScale.current.label
     val caption: TextStyle @Composable @ReadOnlyComposable get() = LocalTypeScale.current.caption
 }
+
+/**
+ * This style laid out in the UI's direction whatever its text holds: a metadata line that starts
+ * with a right-to-left genre still reads left to right in an English UI (#514).
+ */
+@Composable
+fun TextStyle.inLayoutDirection(): TextStyle =
+    copy(textDirection = if (LocalLayoutDirection.current == LayoutDirection.Rtl) TextDirection.Rtl else TextDirection.Ltr)
 
 /** Corner radii. Controls are capsules at their 40 dp height. */
 object Corners {

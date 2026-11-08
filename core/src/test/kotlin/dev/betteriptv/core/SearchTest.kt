@@ -214,6 +214,20 @@ class SearchTest {
         assertTrue(provider.requests.none { it.startsWith("get_series_info") || it.startsWith("get_vod_info") })
     }
 
+    @Test fun `a synopsis in a Show's cast is not taken for people (#516)`() = runBlocking {
+        syncShows(
+            FakeProvider.ShowListing(
+                "EN - Florentina (2024)", "EN - SERIES", 1,
+                cast = "Florentina: a charming woman with a lot to offer, but who has never really felt accepted. " +
+                    "It doesn't help that she works in her mother's wellness and fitness empire - she is surrounded by color, Lou-Pascal Tremblay",
+            ),
+        )
+
+        assertEquals(emptyList<String>(), search("new").people.map { it.name })
+        assertEquals(emptyList<String>(), search("never really").people.map { it.name })
+        assertEquals(listOf("Lou-Pascal Tremblay"), search("tremblay").people.map { it.name })
+    }
+
     @Test fun `a Movie's cast is found once its page was opened, and not before`() = runBlocking {
         syncMovies("EN - Heat (1995)" to 949, "EN - Ronin (1998)" to 8195)
         provider.serveMovieDetails(1, cast = "Al Pacino, Robert De Niro, Val Kilmer")

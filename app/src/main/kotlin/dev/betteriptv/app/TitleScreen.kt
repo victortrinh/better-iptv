@@ -54,6 +54,7 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.app.ui.theme.inLayoutDirection
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Episode
@@ -364,10 +365,9 @@ private fun TitleContent(
             ) {
                 // The Version count is the Versions action's. What the Provider doesn't give is left out (ADR 0014).
                 Text(
-                    listOfNotNull(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), title.genres.take(2).joinToString(", ").ifEmpty { null }, title.rating?.let(::ratingLabel))
-                        .joinToString(" · "),
+                    metaLine(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), genresPart(title.genres), title.rating?.let(::ratingLabel)),
                     modifier = Modifier.testTag("metadata line"),
-                    style = Type.body,
+                    style = Type.body.inLayoutDirection(),
                     color = Colors.inkMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

@@ -437,7 +437,7 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
                 listOfNotNull(clean.name, clean.year?.let { "${clean.name} $it" })
             }
             val languages = listings.mapNotNullTo(HashSet()) { prefixTable.language(it.name, it.category)?.let(::primaryLanguage) }
-            val cast = listings.flatMapTo(LinkedHashSet()) { cleanList(it.cast) }
+            val cast = listings.flatMapTo(LinkedHashSet()) { castNames(it.cast) }
             val genres = listings.flatMapTo(LinkedHashSet()) { categoryGenres.getOrPut(it.category) { prefixTable.titleGenres(it.category) } + prefixTable.genres(it.genre) }
             builder.title(id, names, languages, cast, genres)
         }

@@ -25,4 +25,30 @@ class ProviderTextTest {
         assertEquals(emptyList<String>(), cleanList(""))
         assertEquals(emptyList<String>(), cleanList(null))
     }
+
+    @Test fun `a cast keeps the pieces that read as names (#516)`() {
+        val names = listOf(
+            "Lou-Pascal Tremblay", "Jean-Pascal Zadi", "Robert De Niro", "J.K. Simmons", "Michael J. Fox", "Clifton Collins Jr.",
+            "Patrick St. Esprit", "Dr. Sandra Lee", "Matthijs van de Sande Bakhuyzen", "Óscar de la Fuente", "Noor ul Hasan",
+            "Chris 'C.T.' Tamburello", "Seo In-guk", "Rohan roy", "Οσάμα μπιν Λάντεν", "ილია თოფურია", "رحمان باقریان", "Johan H:son Kjellgren",
+        )
+        assertEquals(names, castNames(names.joinToString(", ")))
+    }
+
+    @Test fun `a cast leaves out pieces that read as prose (#516)`() {
+        val prose = listOf(
+            "Florentina: a charming woman with a lot to offer",
+            "but who has never really felt accepted. It doesn't help that she works in her mother's wellness and fitness empire - she is surrounded by color",
+            "Hira Khan. Guru",
+            "where she talks about her childhood",
+            "a veteran actor",
+            "reality",
+            "Riaan Cruywagen as himself",
+            "Mrinal Kulkarni as Godavari Eisha Singh as Kaveri",
+            "مجری: مهران مدیری",
+            "看黄片网：4488.com",
+        )
+        assertEquals(listOf("Brian Cox"), castNames((prose + "Brian Cox").joinToString(", ")))
+        assertEquals(emptyList<String>(), castNames(null))
+    }
 }
