@@ -52,7 +52,8 @@ internal const val HERO_DETAILS = "details"
 
 /**
  * The featured [title]'s text column, at the top of Home, Movies or Shows (DESIGN.md, Home): its
- * name in Display type, a metadata line in muted body followed by its badges, two lines of description,
+ * name in Display type, a metadata line in muted body followed by its badges (those of the Version its
+ * Play starts, [FeaturedTitle.badge]; none when it has none), two lines of description,
  * then Play and Details 12 dp apart. Its backdrop is drawn behind the whole screen
  * ([featuredBackdrop]). [onFocus] says which button took focus ([HERO_PLAY], [HERO_DETAILS]);
  * focus coming into the hero from outside lands on the one focused [last], else on Play: the hero
@@ -81,8 +82,11 @@ internal fun FeaturedHero(
                 metaLine(title.year?.toString(), title.runtimeMinutes?.let(context::runtime), genresPart(title.genres))
             }
             Text(metadata, style = Type.body.inLayoutDirection(), color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            Spacer(Modifier.width(12.dp))
-            BadgeRow(title.best.cardBadges())
+            // The Version its Play starts, as on its page (#521); none on a Show whose Episodes were never read.
+            title.badge?.let {
+                Spacer(Modifier.width(12.dp))
+                BadgeRow(it.cardBadges())
+            }
         }
         title.description?.let {
             Spacer(Modifier.height(10.dp))

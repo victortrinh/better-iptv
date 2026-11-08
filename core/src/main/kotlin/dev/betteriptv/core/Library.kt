@@ -1920,19 +1920,71 @@ class Library private constructor(
      * has them read here, as its page would, at most once per call and only when [readDetails], so
      * an entry costs the Provider one call at most and none once they are kept. It rotates: each
      * call features the one after the Title featured last on that screen, kept on the device, so the
-     * same Title doesn't come back on the next entry, and from the first again past the last. Null
-     * when no Title qualifies: the screen opens on its rows.
+     * same Title doesn't come back on the next entry, and from the first again past the last. Its
+     * badge is the Title page's ([featuredBadge]), for the [device], [qualityCap] and
+     * [preferOriginalAudio] its Play goes by. Null when no Title qualifies: the screen opens on its rows.
      */
-    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean = true): FeaturedTitle? =
-        featured(screen, contentLanguages, appLanguage, Instant.now(), readDetails)
+    suspend fun featured(
+        screen: FeaturedScreen,
+        contentLanguages: List<String>,
+        appLanguage: String,
+        device: DeviceProfile,
+        qualityCap: QualityCap = QualityCap.UHD,
+        preferOriginalAudio: Boolean = true,
+        readDetails: Boolean = true,
+    ): FeaturedTitle? = featured(screen, contentLanguages, appLanguage, Instant.now(), device, qualityCap, preferOriginalAudio, readDetails)
 
-    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, now: Instant, readDetails: Boolean = true): FeaturedTitle? = withContext(Dispatchers.IO) {
-        if (kids) return@withContext kidsFeatured(screen, contentLanguages, appLanguage, readDetails)
+    internal suspend fun featured(
+        screen: FeaturedScreen,
+        contentLanguages: List<String>,
+        appLanguage: String,
+        now: Instant,
+        device: DeviceProfile,
+        qualityCap: QualityCap = QualityCap.UHD,
+        preferOriginalAudio: Boolean = true,
+        readDetails: Boolean = true,
+    ): FeaturedTitle? = withContext(Dispatchers.IO) {
+        val title = featuredTitle(screen, contentLanguages, appLanguage, now, readDetails) ?: return@withContext null
+        title.copy(badge = featuredBadge(title.id, contentLanguages, device, qualityCap, preferOriginalAudio))
+    }
+
+    /**
+     * The quality and language the hero badges a featured Title with, those of the Version its Play
+     * starts, as the Title page's badges (#515, #521), from what the device keeps and never the
+     * Provider: a Movie's [playPlan]'s Version (its best Version when nothing plays); a Show's, that
+     * of the Episode to watch next, from the Episodes read when its page last opened. Null for a Show
+     * whose Episodes were never read, which no badge could name truthfully, and for a Title the
+     * catalog doesn't have.
+     */
+    suspend fun featuredBadge(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD, preferOriginalAudio: Boolean = true): VersionAttributes? = withContext(Dispatchers.IO) {
+        when (id.kind) {
+            TitleKind.Movie -> playPlan(id, contentLanguages, device, qualityCap, preferOriginalAudio)?.version?.attributes
+                ?: store.title(id)?.let { shown(candidates(it), contentLanguages, "en").best.attributes }
+            TitleKind.Show -> keptNextEpisode(id, contentLanguages, preferOriginalAudio)?.let { episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio)?.version?.attributes }
+        }
+    }
+
+    /** The Show [id]'s Episode to watch next, from the show details kept on the device; null when none were read. */
+    private fun keptNextEpisode(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean): EpisodeNumber? {
+        val title = store.title(id) ?: return null
+        val read = store.showDetails(title.listings.map { it.id })
+        if (read.isEmpty()) return null
+        val original = originalLanguage(id)
+        val shows = title.listings.filter { it.id in read }.map { likelyInOriginalLanguage(listOf(candidates(it)), original).single() to read.getValue(it.id).episodes }
+        val played = store.episodeProgress(profile, id)
+        val reads = store.fileReads(shows.flatMap { (_, episodes) -> episodes.map { it.id } })
+        val merged = mergeEpisodes(shows, contentLanguages, reads, originalAudioLanguage(original, contentLanguages, preferOriginalAudio), expected(title, contentLanguages))
+        return nextEpisode(withProgress(merged, played), played)
+    }
+
+    /** The Title [screen]'s hero features, as [featured] picks it, with no badge yet. */
+    private fun featuredTitle(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, now: Instant, readDetails: Boolean): FeaturedTitle? {
+        if (kids) return kidsFeatured(screen, contentLanguages, appLanguage, readDetails)
         val kinds = featuredKinds(screen)
         val trends = trendingTitles(appLanguage, now)
         val trending = kinds.map { kind -> trends.filter { it.id.kind == kind } }
         val newest = kinds.map { kind -> store.titles(kind, 0, if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
-        nextFeatured(screen.name.lowercase(), listOf(trending, newest), contentLanguages, appLanguage, readDetails)
+        return nextFeatured(screen.name.lowercase(), listOf(trending, newest), contentLanguages, appLanguage, readDetails)
     }
 
     /** The kinds of Title [screen]'s hero features, in the order it takes them in turn. */
@@ -1982,7 +2034,7 @@ class Library private constructor(
                 val details = providerDetails(title, best, kept)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
-                    titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, shown.best.attributes,
+                    titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, badge = null,
                 )
             }
         }

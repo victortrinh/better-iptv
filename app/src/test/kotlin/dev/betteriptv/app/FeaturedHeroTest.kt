@@ -51,6 +51,9 @@ import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.HomeRow
+import dev.betteriptv.core.Known
+import dev.betteriptv.core.Provenance
+import dev.betteriptv.core.Quality
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
@@ -132,7 +135,7 @@ class FeaturedHeroTest {
     private fun featured(name: String, backdrop: String = "https://provider.example/backdrop-$name.jpg") = FeaturedTitle(
         TitleId.Numbered(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"),
         "About $name. ".repeat(40).trim(),
-        backdrop = backdrop, best = VersionAttributes(),
+        backdrop = backdrop, badge = VersionAttributes(),
     )
 
     /** The Titles [feature] hands out, one per ask, in turn, as the Library's rotation does. */
@@ -154,7 +157,10 @@ class FeaturedHeroTest {
     private val opened = ArrayList<Pair<RowCard, TitleId>>()
 
     /** The rows under a tab, with a hero; bumping [entry] enters the screen again, coming back to [restoreFocus] when set. */
-    private fun screen(feature: (suspend (Boolean) -> FeaturedTitle?)? = this.feature) = compose.setContent {
+    private fun screen(
+        feature: (suspend (Boolean) -> FeaturedTitle?)? = this.feature,
+        featureBadge: (suspend (TitleId) -> VersionAttributes?)? = null,
+    ) = compose.setContent {
         NuageTheme {
             val state = remember { RowsState() }
             key(entry) {
@@ -169,6 +175,7 @@ class FeaturedHeroTest {
                     appLanguage = "en",
                     onOpen = { card, id, _ -> opened += card to id },
                     feature = feature,
+                    featureBadge = featureBadge,
                     onPlayFeatured = { card, title -> played += card to title },
                 ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
             }
@@ -509,5 +516,51 @@ class FeaturedHeroTest {
         val screen = compose.activity.window.decorView
         screen.draw(Canvas(Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888)))
         return backdrop.drawnAt.lastOrNull() ?: 0f
+    }
+
+    // #521: the hero badges the Version its Play starts, as the Title page does.
+
+    /** How many nodes read exactly [text], as a badge does. */
+    private fun badges(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().size
+
+    private val fullHd = VersionAttributes(language = Known("en", Provenance.Likely), quality = Known(Quality.FullHD, Provenance.Confirmed))
+
+    @Test fun aShowWhoseEpisodesWereNeverReadIsShownWithNoBadge() {
+        screen(feature = { featured("Severance").copy(badge = null) }, featureBadge = { null })
+
+        heroShows("Severance")
+        compose.onNodeWithText("2025 · 1 h 52 min · Drama").assertIsDisplayed()
+        assertEquals(0, badges("EN"))
+    }
+
+    @Test fun comingBackFromTheTitlePageTheHeroBadgesWhatThePageRead() {
+        // A Show never opened: no badge, until its page reads the Episodes, and Back shows theirs.
+        var kept: VersionAttributes? = null
+        val asked = ArrayList<TitleId>()
+        val severance = featured("Severance").copy(badge = null)
+        screen(feature = { severance }, featureBadge = { id -> asked += id; kept })
+        assertEquals(0, badges("1080p"))
+
+        press(listOf(Key.DirectionRight))
+        kept = fullHd
+        restoreFocus = RowCard(HERO_ROW, HERO_DETAILS)
+        entry++
+        compose.waitForIdle()
+
+        heroShows("Severance")
+        assertEquals(1, badges("1080p"))
+        assertEquals(1, badges("EN"))
+        assertTrue(asked.all { it == severance.id })
+        focusedOn("Details")
+    }
+
+    @Test fun theTitleReadForThisEntryDuringTheLastIsBadgedAsItIsNow() {
+        // Arrival is read for the next entry while Dune shows, its page opened meanwhile.
+        screen(featureBadge = { id -> if (id == titles[1].id) fullHd else null })
+        compose.runOnIdle { entry++ }
+        compose.waitForIdle()
+
+        heroShows("Arrival")
+        assertEquals(1, badges("1080p"))
     }
 }
