@@ -44,6 +44,18 @@ class TitleGenresTest {
         assertEquals(emptyList<String>(), table.titleGenres("EN - NEW RELEASE"))
     }
 
+    @Test fun `a genre word names a genre only as whole words, not with a letter, digit or hyphen beside it`() {
+        assertEquals(emptyList<String>(), table.titleGenres("EN - DRAMATIC"))
+        assertEquals(emptyList<String>(), table.titleGenres("EN - ACTION-PACKED"))
+        assertEquals(emptyList<String>(), table.titleGenres("EN - DRAMA2"))
+        assertEquals(emptyList<String>(), table.titleGenres("EN - 4DRAMA"))
+        assertEquals(listOf("Drama"), table.titleGenres("EN|DRAMA"))
+        assertEquals(listOf("Drama"), table.titleGenres("EN - DRÁMA"))
+        // Part of a word first, then a word of its own.
+        assertEquals(listOf("Drama"), table.titleGenres("EN - DRAMATIC DRAMA"))
+        assertEquals(listOf("Comedy", "Drama"), table.titleGenres("EN - COMEDY-DRAMAS COMEDY DRAMA"))
+    }
+
     @Test fun `the Channel browser still ranks live Categories by the Channel genres alone`() {
         assertNull(table.genreRank("EN - DRAMA"))
         assertNull(table.genreRank("HISTORY"))

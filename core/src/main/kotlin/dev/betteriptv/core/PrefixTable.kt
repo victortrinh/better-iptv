@@ -27,8 +27,8 @@ internal class PrefixTable private constructor(
     private val countryAliases: Map<String, String>,
     /** Each genre word of the `[genre categories]` section, in the table's order. */
     private val genreWords: List<GenreWord>,
-    /** The genre list's Kids words, as whole-word patterns over the folded name: what files a Title in the Kids catalog. */
-    private val kidsWords: List<Regex>,
+    /** The genre list's Kids words, as whole words of the folded name: what files a Title in the Kids catalog. */
+    private val kidsWords: List<WholeWord>,
     /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
     val eventTimeZone: ZoneId,
 ) {
@@ -51,7 +51,7 @@ internal class PrefixTable private constructor(
      */
     fun genreRank(name: String): Int? {
         val folded = fold(name)
-        return genreWords.filter { Genres.ranksChannels(it.genre) && it.pattern.containsMatchIn(folded) }.minOfOrNull { it.rank }
+        return genreWords.filter { Genres.ranksChannels(it.genre) && it.pattern.isIn(folded) }.minOfOrNull { it.rank }
     }
 
     /**
@@ -64,7 +64,7 @@ internal class PrefixTable private constructor(
 
     /** The genres whose words are in the [folded] text, in the order they come, each once. */
     private fun namedGenres(folded: String): List<String> =
-        genreWords.mapNotNull { word -> word.pattern.find(folded)?.let { it.range.first to word.genre } }.sortedBy { it.first }.map { it.second }.distinct()
+        genreWords.mapNotNull { word -> word.pattern.find(folded).takeIf { it >= 0 }?.let { it to word.genre } }.sortedBy { it.first }.map { it.second }.distinct()
 
     /**
      * The genres the Provider's genre [field] names (`Sci-Fi & Fantasy / Drama`, `Komödie, Drama`),
@@ -85,7 +85,35 @@ internal class PrefixTable private constructor(
     }
 
     /** One word of the `[genre categories]` section: as written, [folded], as a whole-word [pattern] over a folded name, its [genre] and the genre's [rank] in the list. */
-    internal class GenreWord(val word: String, val folded: String, val pattern: Regex, val genre: String, val rank: Int)
+    internal class GenreWord(val word: String, val folded: String, val pattern: WholeWord, val genre: String, val rank: Int)
+
+    /**
+     * A [fold]ed phrase as whole words of a folded name, as [wholeWord]'s pattern matches it (a letter,
+     * digit or hyphen on either side makes it part of another word), found with [String.indexOf]
+     * instead of a regex: genre rows match every genre word against thousands of genre fields and
+     * Categories, and a regex match costs too much on a Fire TV Stick (#497).
+     */
+    internal class WholeWord(private val folded: String) {
+        /** Where the phrase first stands as whole words in [text], or -1 when it doesn't. */
+        fun find(text: String): Int {
+            var at = text.indexOf(folded)
+            while (at >= 0) {
+                val end = at + folded.length
+                if ((at == 0 || !joins(text.codePointBefore(at))) && (end == text.length || !joins(text.codePointAt(end)))) return at
+                at = text.indexOf(folded, at + 1)
+            }
+            return -1
+        }
+
+        fun isIn(text: String): Boolean = find(text) >= 0
+
+        /** Whether [codePoint] would make the phrase part of another word: a letter (`\p{L}`), a number (`\p{N}`) or a hyphen. */
+        private fun joins(codePoint: Int): Boolean =
+            codePoint == '-'.code || Character.isLetter(codePoint) || when (Character.getType(codePoint).toByte()) {
+                Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER -> true
+                else -> false
+            }
+    }
 
     /**
      * Whether a Category named [name] (`EN - KIDS`, `GR| ΓΙΑ ΠΑΙΔΙΑ/KIDS`, `FR - DESSINS ANIMÉS`) is a
@@ -94,7 +122,7 @@ internal class PrefixTable private constructor(
      */
     fun isKids(name: String): Boolean {
         val folded = fold(name)
-        return kidsWords.any { it.containsMatchIn(folded) }
+        return kidsWords.any { it.isIn(folded) }
     }
 
     /** The genres the table's words name, in its order, as [Genres.titleGenre] names them: the genre rows a Provider can have (#478). */
@@ -517,10 +545,10 @@ internal class PrefixTable private constructor(
                 // A hand line over a learned line over Base (ADR 0014).
                 learnedPrefixes.forEach { (key, learned) -> if (key !in handPrefixes) prefixes[key] = (prefixes[key] ?: Rule()).learned(learned) }
                 val genres = LinkedHashMap<String, Int>()
-                val ranked = genreWords.map { (word, genre) -> GenreWord(word, fold(word), wholeWord(word), genre, genres.getOrPut(genre) { genres.size }) }
+                val ranked = genreWords.map { (word, genre) -> GenreWord(word, fold(word), WholeWord(fold(word)), genre, genres.getOrPut(genre) { genres.size }) }
                 return PrefixTable(
                     prefixes, hints.map { (phrase, rule) -> Hint(phrase, wholeWord(phrase), rule) }, clutterNames, liveClutterNames, emptyEventSlots,
-                    tierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map(::wholeWord), eventTimeZone ?: ZoneOffset.UTC,
+                    tierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map { WholeWord(fold(it)) }, eventTimeZone ?: ZoneOffset.UTC,
                 )
             }
         }
@@ -553,6 +581,8 @@ internal class PrefixTable private constructor(
 
         /** Folds superscripts (`ᴰᴼᴸᴮʸ`), small capitals (`ɴᴇᴡꜱ`, and the small capital I that NFKC makes of `ᶦ`), accents and case, so Category hints match however they're styled. */
         private fun fold(text: String): String {
+            // Plain ASCII has nothing to fold but case: most Categories and genre fields are, and folding thousands costs on the stick (#497).
+            if (text.all { it < '\u0080' }) return text.uppercase(Locale.ROOT)
             val compatible = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC))
             val unaccented = Normalizer.normalize(compatible, Normalizer.Form.NFD).replace(MARKS, "")
             return unaccented.uppercase(Locale.ROOT)
