@@ -2,24 +2,24 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import { FACTS_CACHED_A_DAY, MAX_FACTS_BATCH, USER_AGENT } from "../src/title-facts";
-import { FakeTmdb } from "./fake-tmdb";
+import { FakeWeb } from "./fake-web";
 import { FakeWikidata } from "./fake-wikidata";
 
 /** Seam 2: the Title facts endpoint (#476), run in the Workers runtime with the Wikidata Query Service faked. */
-let tmdb: FakeTmdb;
+let web: FakeWeb;
 let wikidata: FakeWikidata;
 let token: string;
 beforeEach(async () => {
   await env.DB.batch(["device", "title_facts", "facts_cached"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
-  tmdb = new FakeTmdb();
-  wikidata = new FakeWikidata(tmdb);
+  web = new FakeWeb();
+  wikidata = new FakeWikidata(web);
   wikidata.movie(238, { language: "en", imdbId: "tt0068646", enwiki: "The Godfather", frwiki: "Le Parrain" });
   wikidata.show(1396, { language: "en", imdbId: "tt0903747", enwiki: "Breaking Bad", frwiki: "Breaking Bad (série télévisée)" });
   // Squid Game: Korean, with no French article.
   wikidata.show(93405, { language: "ko", imdbId: "tt10919420", enwiki: "Squid Game" });
   token = await registerDevice();
 });
-afterEach(() => tmdb.restore());
+afterEach(() => web.restore());
 
 const call = (path: string, body?: unknown, auth: string | null = token) =>
   worker.fetch(

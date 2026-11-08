@@ -1,11 +1,5 @@
 export interface Env {
   DB: D1Database;
-  /** TMDB's API root, `https://api.themoviedb.org/3`. */
-  TMDB_API: string;
-  /** TMDB's API read access token, or its short API key. A secret: it lives only in the cloud, never in the APK. */
-  TMDB_TOKEN: string;
-  /** Where Netflix publishes its Top 10 files, `https://www.netflix.com/tudum/top10/data`. */
-  NETFLIX_TOP10: string;
   /** ESPN's site API root, `https://site.api.espn.com/apis/site/v2/sports`, whose scoreboard needs no key. */
   ESPN_API: string;
   /** The Wikidata Query Service's SPARQL endpoint, `https://query.wikidata.org/sparql`, which needs no key (#476). */
@@ -16,7 +10,7 @@ export interface Env {
   OPENSUBTITLES_API: string;
   /** The User-Agent OpenSubtitles asks every request to name the app by. */
   OPENSUBTITLES_USER_AGENT: string;
-  /** Secrets, like TMDB_TOKEN. Without them, OpenSubtitles isn't asked. */
+  /** Secrets, set with `wrangler secret put`. Without them, OpenSubtitles isn't asked. */
   OPENSUBTITLES_API_KEY?: string;
   OPENSUBTITLES_USERNAME?: string;
   OPENSUBTITLES_PASSWORD?: string;

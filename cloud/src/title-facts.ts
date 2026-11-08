@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import type { Kind, TitleKey } from "./tmdb";
+import type { Kind, TitleKey } from "./title";
 
 /**
  * Title facts from Wikidata (#476, ADR 0014): what no Provider field holds about a Title, by its Title

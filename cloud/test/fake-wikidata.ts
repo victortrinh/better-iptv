@@ -1,4 +1,4 @@
-import type { FakeTmdb } from "./fake-tmdb";
+import type { FakeWeb } from "./fake-web";
 
 /** The Wikidata Query Service's SPARQL endpoint, as the Worker's `WIKIDATA_SPARQL` says. */
 const SPARQL = "https://query.wikidata.org/sparql";
@@ -14,7 +14,7 @@ export interface Item {
 }
 
 /**
- * Stands in for the Wikidata Query Service, served through [tmdb]'s fetch stand-in. Items are added
+ * Stands in for the Wikidata Query Service, served through [web]'s fetch stand-in. Items are added
  * with [movie] and [show], by the TMDB ID Wikidata files them under (P4947 and P4983); [requests]
  * records every query that reached it. Like the service, it refuses a request that names no
  * User-Agent (403), and answers only what the query asks for: a field the SPARQL doesn't mention
@@ -28,8 +28,8 @@ export class FakeWikidata {
   breakAnswers = false;
   private readonly items = new Map<string, Item>();
 
-  constructor(tmdb: FakeTmdb) {
-    tmdb.alsoServe(SPARQL, (url, init) => {
+  constructor(web: FakeWeb) {
+    web.alsoServe(SPARQL, (url, init) => {
       const headers = new Headers(init?.headers);
       const query = init?.body instanceof URLSearchParams ? init.body.get("query") ?? "" : typeof init?.body === "string" ? new URLSearchParams(init.body).get("query") ?? "" : url.searchParams.get("query") ?? "";
       const userAgent = headers.get("User-Agent");

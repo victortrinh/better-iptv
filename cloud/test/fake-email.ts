@@ -1,4 +1,4 @@
-import type { FakeTmdb } from "./fake-tmdb";
+import type { FakeWeb } from "./fake-web";
 
 /** Where the Worker's `RESEND_API` sends email, as wrangler.jsonc says. */
 const RESEND = "https://api.resend.com/";
@@ -13,14 +13,14 @@ export interface SentEmail {
   authorization: string | null;
 }
 
-/** Stands in for Resend's API, served through [tmdb]'s fetch stand-in: it records each email instead of sending it. */
+/** Stands in for Resend's API, served through [web]'s fetch stand-in: it records each email instead of sending it. */
 export class FakeEmail {
   readonly sent: SentEmail[] = [];
   /** Answers with this HTTP status instead, as when Resend is down or refuses the key. */
   failWith: number | null = null;
 
-  constructor(tmdb: FakeTmdb) {
-    tmdb.alsoServe(RESEND, (url, init) => {
+  constructor(web: FakeWeb) {
+    web.alsoServe(RESEND, (url, init) => {
       if (url.pathname !== "/emails" || init?.method !== "POST") return Response.json({ message: "Not found" }, { status: 404 });
       if (this.failWith !== null) return Response.json({ message: "failed" }, { status: this.failWith });
       const body = JSON.parse(init.body as string) as Omit<SentEmail, "authorization">;

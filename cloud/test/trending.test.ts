@@ -2,23 +2,23 @@ import { createScheduledController, env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { USER_AGENT } from "../src/title-facts";
-import { FakeTmdb } from "./fake-tmdb";
+import { FakeWeb } from "./fake-web";
 import { FakeWikipedia } from "./fake-wikipedia";
 
 /** Seam 2: Trending's feed and the cron that reads Wikipedia's most viewed articles (#477), run in the Workers runtime with the pageviews API faked. */
-let tmdb: FakeTmdb;
+let web: FakeWeb;
 let wikipedia: FakeWikipedia;
 let token: string;
 beforeEach(async () => {
   await env.DB.batch(["device", "trending_day", "trending_wanted"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
-  tmdb = new FakeTmdb();
-  wikipedia = new FakeWikipedia(tmdb);
+  web = new FakeWeb();
+  wikipedia = new FakeWikipedia(web);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-11-07T08:00:00Z"));
   token = await registerDevice();
 });
 afterEach(() => {
-  tmdb.restore();
+  web.restore();
   vi.useRealTimers();
 });
 

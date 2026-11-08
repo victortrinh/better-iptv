@@ -31,8 +31,14 @@ const WANTED_FOR = 2 * 24 * 3600_000;
 /** How long when a League was asked for is left as it is, so most answers write nothing. */
 const ASKED_EVERY = 3600_000;
 /**
+ * The requests one run of the Cron Trigger may send out. A Worker on the free plan may send 50 an
+ * invocation, a Cron Trigger's too; 10 are left spare. The Games' part goes first, and Trending's
+ * (trending.ts) sends what is left.
+ */
+export const SUBREQUESTS = 40;
+/**
  * The requests one run of the Cron Trigger may send a schedule source, out of the run's
- * {@link SUBREQUESTS} that the Charts share: twenty-nine Leagues' current days every 5 minutes and
+ * {@link SUBREQUESTS} that Trending shares: twenty-nine Leagues' current days every 5 minutes and
  * their coming days hourly need 17 a minute at most (sized for #354's twenty-nine), a golf League's day two and its tomorrow
  * read as a current day (12 did for the twenty-one before #354).
  */
@@ -112,7 +118,7 @@ interface Part {
 }
 
 /**
- * One run of the Cron Trigger, each minute, before the Charts' part: reads the days of the wanted
+ * One run of the Cron Trigger, each minute, before Trending's part: reads the days of the wanted
  * Leagues that are missing or due, the current days (yesterday's and today's: ESPN's days run on
  * US Eastern time, so a Game in progress may be on either; a golf League's tomorrow too) first, then the Leagues' teams, then
  * the coming days, missing ones before the oldest. A day is due again [LIVE_FRESH_FOR] after it was

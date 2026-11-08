@@ -8,7 +8,7 @@ when a quote comes in or a line is settled.
 
 | Line | For | Starts | Cost | Status |
 | --- | --- | --- | --- | --- |
-| TMDB commercial API licence | Posters, metadata, search, trending. A paid app is commercial use under TMDB's terms, whichever tier shows the data. | Before the first sale | 149 USD/month for under 1M USD revenue (TMDB's own site, read 2026-11-06) | Not carried: TMDB leaves before the first sale (M6). The line stays here as the reason why. |
+| TMDB commercial API licence | Posters, metadata, search, trending. A paid app is commercial use under TMDB's terms, whichever tier shows the data. | Before the first sale | 149 USD/month for under 1M USD revenue (TMDB's own site, read 2026-11-06) | Not carried: TMDB left in M6 (#481: the cloud holds no TMDB key or data). The line stays here as the reason why. |
 | Cloudflare Workers Paid | The cloud past the free tier's 100k requests a day and D1's free caps | When daily requests near 100k | 5 USD/month plus usage (negligible at hundreds of households) | Not needed yet |
 | OpenSubtitles Pro package | Subtitle downloads past the free account's 20 a day, and commercial use | Before the first sale, if subtitles stay a paid feature | Unknown; OpenSubtitles steers commercial apps to Pro | Quote to ask |
 | Subdl API | Second subtitle source | Before the first sale | Free key today; commercial terms unknown | To check |
@@ -28,8 +28,8 @@ when a quote comes in or a line is settled.
 
 ## Free today, and why it may stop being free
 
-- **TMDB free key**: non-commercial use only. Revoked if used by a paid app.
-- **Netflix Top 10** (Netflix's Tudum data file) and **ESPN's scoreboard** (undocumented endpoint): no fee, no agreement, can be shut off any day.
+- **ESPN's scoreboard** (undocumented endpoint): no fee, no agreement, can be shut off any day.
+- **Wikidata** (Title facts) and **Wikipedia's pageviews** (Trending): CC0 data, no key, no fee; the Query Service and the API ask only for a User-Agent naming the app.
 - **Cloudflare free tier**: 100k Worker requests a day, D1 5M row reads a day.
 - **OpenSubtitles free account**: 20 downloads a day for everyone together.
 
