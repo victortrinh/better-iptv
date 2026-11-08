@@ -79,6 +79,22 @@ class ListingNamesTest {
         assertEquals("La isla olvidada", library.title(film, listOf("en", "es"), "es")!!.name)
     }
 
+    @Test fun theTitlePageTellsOfATitleInTheLanguageOfTheListingThatNamesIt() = runBlocking {
+        // #504: the page read the best Version's details only, the `ES` copy's, and told of the Title in Spanish.
+        syncFilm("EN - Forgotten Island (2026)" to null, "ES-4K - La isla olvidada (2026)" to null)
+        provider.serveMovieDetails(1, plot = "Two friends are stranded.", cast = "Ana", director = "Joe", name = "Forgotten Island")
+        provider.serveMovieDetails(2, plot = "Dos amigas se quedan varadas.", cast = "Ana (voz)", director = "José", name = "La isla olvidada")
+        val spanishCopy = library.title(film, listOf("en"), "en")!!.let { it.languages + it.otherLanguages }.flatMap { it.versions }.single { it.listingId == 2L }
+        library.confirm(spanishCopy, FileContents(listOf(Track("eng", "audio/eac3", 6)), emptyList(), width = 3840, height = 2160))
+
+        val page = library.title(film, listOf("en"), "en")!!
+        assertEquals(2L, page.languages.first().versions.first().listingId)
+        assertEquals("Two friends are stranded.", page.description)
+        assertEquals(listOf("Ana"), page.cast)
+        assertEquals(listOf("Joe"), page.directors)
+        assertEquals("Dos amigas se quedan varadas.", library.title(film, listOf("en", "es"), "es")!!.description)
+    }
+
     @Test fun aTitleWithOnlyAGreekListingIsNamedByIt() = runBlocking {
         syncFilm("GR - Η Ταινία (2024)" to null)
 
