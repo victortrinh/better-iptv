@@ -24,6 +24,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import dev.betteriptv.app.ui.components.TITLE_CARD_PROGRESS
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.FocusScale
@@ -40,7 +41,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * A poster card stays a poster (#474): focused, it lifts 1.12x from its centre and its row never
- * widens; on a named row its name shows under it; a Title with no poster is its name on glass.
+ * widens; on a named row its name shows under it; Continue watching's is the same poster with its
+ * progress bar; a Title with no poster is its name on glass.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -69,7 +71,7 @@ class TitleCardTest {
     private val focus = FocusRequester()
 
     @Composable
-    private fun Poster(named: Boolean, poster: Boolean = true) {
+    private fun Poster(named: Boolean, poster: Boolean = true, progress: Float? = null) {
         // As on a TV: in touch mode a card can't take focus.
         val input = LocalInputModeManager.current
         SideEffect { input.requestInputMode(InputMode.Keyboard) }
@@ -79,12 +81,13 @@ class TitleCardTest {
             badges = emptyList(),
             onClick = {},
             modifier = Modifier.focusRequester(focus).testTag("card"),
+            progress = progress,
             named = named,
         )
     }
 
-    private fun row(named: Boolean, poster: Boolean = true) = compose.setContent {
-        Row(Modifier.fillMaxSize().padding(start = 120.dp, top = 120.dp)) { Poster(named, poster) }
+    private fun row(named: Boolean, poster: Boolean = true, progress: Float? = null) = compose.setContent {
+        Row(Modifier.fillMaxSize().padding(start = 120.dp, top = 120.dp)) { Poster(named, poster, progress) }
     }
 
     private fun focus() {
@@ -128,6 +131,28 @@ class TitleCardTest {
         focus()
 
         compose.onNodeWithText("Before I Wake").assertDoesNotExist()
+    }
+
+    @Test
+    fun aContinueWatchingPosterIsAPosterWithItsProgressAlongItsBottomEdge() {
+        row(named = false, progress = 0.4f)
+        val poster = art()
+        val bar = compose.onNodeWithTag(TITLE_CARD_PROGRESS, useUnmergedTree = true).getBoundsInRoot()
+
+        // The same 2:3 poster as any row's.
+        assertEquals(Cards.posterWidth.value, (poster.right - poster.left).value, 0.5f)
+        assertEquals(Cards.posterHeight.value, (poster.bottom - poster.top).value, 0.5f)
+        // 40% along, 6 dp tall, on the poster's bottom edge.
+        assertEquals(poster.left.value, bar.left.value, 0.5f)
+        assertEquals(Cards.posterWidth.value * 0.4f, (bar.right - bar.left).value, 0.5f)
+        assertEquals(6f, (bar.bottom - bar.top).value, 0.5f)
+        assertEquals(poster.bottom.value, bar.bottom.value, 0.5f)
+
+        // Focused, it lifts 1.12x like any poster, its bar with it.
+        focus()
+        val lifted = art()
+        assertEquals(Cards.posterWidth.value * FocusScale.card, (lifted.right - lifted.left).value, 0.5f)
+        assertEquals(lifted.bottom.value, compose.onNodeWithTag(TITLE_CARD_PROGRESS, useUnmergedTree = true).getBoundsInRoot().bottom.value, 0.5f)
     }
 
     @Test

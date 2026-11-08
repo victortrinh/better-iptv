@@ -362,7 +362,7 @@ internal fun RowsLayout(
     // tabs, which fades in and then crossfades out as they fade in. Rows that land within the time
     // show no dot, so most entries show nothing but the tabs for one beat (DESIGN.md, Motion). It
     // isn't drawn under a [placeholder] (a first Sync's checklist). Not a shape of the rows to come:
-    // Home opens on a hero and wide stills, Live on Game cards, and a row of posters promised them wrongly.
+    // Home opens on a hero, Live on Game cards, and a row of posters promised them wrongly.
     val waitingForRows = placeholder == null && state.rows == null
     var waiting by remember(state) { mutableStateOf(false) }
     val waitingFade = remember(state) { Fade(0f) }
@@ -473,7 +473,7 @@ internal fun RowsLayout(
     // How many cards of each width the screen shows at once, on the 960 dp canvas.
     val seen = remember {
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
-        Seen(posters = seen(Cards.posterWidth), stills = seen(Cards.continueWidth), channels = seen(Cards.wideWidth))
+        Seen(posters = seen(Cards.posterWidth), channels = seen(Cards.wideWidth))
     }
     // Only the focused row's place is read here, so a press along a row doesn't compose the screen
     // again (#63). The hero, when there is one, is the list's first item, before the rows.
@@ -544,20 +544,13 @@ internal fun RowsLayout(
                     rows.orEmpty().forEach { row ->
                         item(key = "row-${row.key}", contentType = "row") {
                             row.Heading(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, bottom = 12.dp))
-                            val wide = row is HomeRow.ContinueWatching
                             // Channels, countries, Games and Replays are wide cards alike.
                             val channels = row is HomeRow.Favourites || row is HomeRow.KidsChannels || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
                             // Kept with the row: new lists would compose each of its cards again.
                             val keys = remember(row) { row.keys }
                             val titles = remember(row) { row.titles }
-                            val loop = remember(keys.size, wide, channels) {
-                                RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters)
-                            }
-                            val cardWidth = when {
-                                wide -> Cards.continueWidth
-                                channels -> Cards.wideWidth
-                                else -> Cards.posterWidth
-                            }
+                            val loop = remember(keys.size, channels) { RailLoop(keys.size, if (channels) seen.channels else seen.posters) }
+                            val cardWidth = if (channels) Cards.wideWidth else Cards.posterWidth
                             val rail = state.rail(row.key, loop)
                             val resting = with(LocalDensity.current) { cardWidth.roundToPx() }
                             // The card a row entered for the first time starts at.
@@ -640,23 +633,18 @@ internal fun RowsLayout(
                                     val resume = (row as? HomeRow.ContinueWatching)?.titles?.get(index)
                                     // The info under the rail shows the badges, so the card only counts as on screen.
                                     onScreen(title.id)
-                                    val poster = @Composable {
-                                        // A poster carries its printed title, so nothing is laid over it (#474).
-                                        // Continue watching's still is the Title's backdrop, else (none, or refused once decoded) its poster.
-                                        val still = resume?.still.takeIf { wide }?.takeUnless { it == title.image }
-                                        TitleCard(
-                                            image = still?.let { rememberBackdrop(it, card = true) } ?: rememberPoster(title.posters, card = true),
-                                            name = title.name,
-                                            badges = emptyList(),
-                                            onClick = { onOpen(card, title.id, null) },
-                                            modifier = ends,
-                                            wide = wide,
-                                            progress = resume?.progress,
-                                            named = false,
-                                            onFocus = onFocus,
-                                        )
-                                    }
-                                    poster()
+                                    // A poster carries its printed title, so nothing is laid over it (#474); Continue
+                                    // watching's is the same poster, a Show's for its Episode, with how far the Viewer got.
+                                    TitleCard(
+                                        image = rememberPoster(title.posters, card = true),
+                                        name = title.name,
+                                        badges = emptyList(),
+                                        onClick = { onOpen(card, title.id, null) },
+                                        modifier = ends,
+                                        progress = resume?.progress,
+                                        named = false,
+                                        onFocus = onFocus,
+                                    )
                                 }
                             }
                             SettledInfo(row, state, info)
@@ -906,7 +894,7 @@ private val CANVAS_WIDTH = 960.dp
 private val ROW_CACHE = 300.dp
 
 /** How many cards each kind of rail shows at once ([RailLoop.seen]). */
-private class Seen(val posters: Int, val stills: Int, val channels: Int)
+private class Seen(val posters: Int, val channels: Int)
 
 /** A row's heading: its name, and on a League's row the League's logo before it ([RowHeading]), the name alone while the logo can't be loaded. */
 @Composable

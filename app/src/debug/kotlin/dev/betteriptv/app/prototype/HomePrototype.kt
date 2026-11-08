@@ -109,8 +109,6 @@ fun HomePrototype(focusCard: Boolean) {
                 Text(row.heading, style = Type.headline, color = Colors.ink, modifier = Modifier.padding(start = Spacing.screenX, top = if (rowIndex == 0) Spacing.screenY else 0.dp, bottom = 12.dp))
                 }
                 item {
-                    // Continue watching shows where you are in the film, so it uses stills; other rows use posters.
-                    val wide = row.progress != null
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(Cards.gap),
@@ -119,11 +117,10 @@ fun HomePrototype(focusCard: Boolean) {
                         itemsIndexed(row.titles) { index, title ->
                             val first = if (rowIndex == 0 && index == 0) Modifier.focusRequester(firstCard) else Modifier
                             TitleCard(
-                                painterResource(if (wide) title.still else title.poster),
+                                painterResource(title.poster),
                                 title.name,
                                 title.badges,
                                 onClick = {},
-                                wide = wide,
                                 progress = row.progress?.getOrNull(index),
                                 modifier = first,
                             )

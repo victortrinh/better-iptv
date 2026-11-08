@@ -80,7 +80,7 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, f
                 if (!failed) TitleName(name, Modifier.align(Alignment.Center).padding(horizontal = Spacing.screenX), TextAlign.Center)
             }
             is StartingArt.Channel -> if (!failed) Box(
-                Modifier.align(Alignment.Center).width(Cards.continueWidth).aspectRatio(16f / 9f)
+                Modifier.align(Alignment.Center).width(GLASS_WIDTH).aspectRatio(16f / 9f)
                     .background(Colors.surface, RoundedCornerShape(Corners.card))
                     .testTag(STARTING_GLASS),
             ) {
@@ -96,6 +96,9 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, f
         }
     }
 }
+
+/** A Channel's glass card, 16:9 and as tall as a poster. */
+private val GLASS_WIDTH = Cards.posterHeight * 16 / 9
 
 internal const val STARTING_COVER = "starting-cover"
 internal const val STARTING_BACKDROP = "starting-backdrop"
