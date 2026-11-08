@@ -645,7 +645,7 @@ internal fun RowsLayout(
                                         // Continue watching's still is the Title's backdrop, else (none, or refused once decoded) its poster.
                                         val still = resume?.still.takeIf { wide }?.takeUnless { it == title.image }
                                         TitleCard(
-                                            image = still?.let { rememberBackdrop(it, card = true) } ?: rememberArtwork(title.image, card = true),
+                                            image = still?.let { rememberBackdrop(it, card = true) } ?: rememberPoster(title.posters, card = true),
                                             name = title.name,
                                             badges = emptyList(),
                                             onClick = { onOpen(card, title.id, null) },

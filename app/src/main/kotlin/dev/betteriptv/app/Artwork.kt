@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -22,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import dev.betteriptv.app.ui.theme.Motion
 import dev.betteriptv.core.Library.Companion.MIN_BACKDROP_RATIO
+import dev.betteriptv.core.Library.Companion.MIN_POSTER_WIDTH
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.launch
 import coil3.Extras
@@ -33,6 +35,10 @@ import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
 import coil3.decode.DataSource
+import coil3.decode.Decoder
+import coil3.fetch.SourceFetchResult
+import coil3.request.Options
+import android.graphics.BitmapFactory
 import coil3.intercept.Interceptor
 import coil3.request.ImageRequest
 import coil3.request.ImageResult
@@ -56,14 +62,43 @@ import kotlinx.coroutines.flow.first
 @Composable
 fun rememberArtwork(url: String?, card: Boolean = false): Painter? = rememberArtwork(url, card, onArrived = null)
 
-/** [rememberArtwork], calling [onArrived] with the image's decoded width and height once it arrives. */
+/**
+ * A Title's poster: the first of its [posters] (the order [dev.betteriptv.core.TitleSummary.posters]
+ * gives) that isn't refused as it decodes, its file under [MIN_POSTER_WIDTH] wide ([PosterFloor],
+ * #526), as [rememberArtwork] gives it. Null when there is none, every one is refused, or the one
+ * tried couldn't be loaded, so the card shows the Title's name on glass. A poster refused once is
+ * passed over at once on every card while the app runs.
+ */
 @Composable
-private fun rememberArtwork(url: String?, card: Boolean, onArrived: ((width: Int, height: Int) -> Unit)?): Painter? {
+fun rememberPoster(posters: List<String>, card: Boolean = false): Painter? {
+    var refusedHere by remember(posters) { mutableIntStateOf(0) }
+    val url = remember(posters, refusedHere) { posters.firstOrNull { it !in PosterFloor.refused } }
+    return rememberArtwork(url, card, onArrived = null, poster = true, onRefused = {
+        PosterFloor.refused.add(it)
+        refusedHere++
+    })
+}
+
+/**
+ * [rememberArtwork], calling [onArrived] with the image's decoded width and height once it arrives.
+ * A [poster] whose file is too narrow ([PosterFloor]) fails to load, and [onRefused] is called with it.
+ */
+@Composable
+private fun rememberArtwork(
+    url: String?,
+    card: Boolean,
+    onArrived: ((width: Int, height: Int) -> Unit)?,
+    poster: Boolean = false,
+    onRefused: (String) -> Unit = {},
+): Painter? {
     if (url == null) return null
     var failed by remember(url) { mutableStateOf(false) }
     val context = LocalPlatformContext.current
-    val request = remember(url, card) { artworkRequest(context, url, card) }
-    val image = rememberAsyncImagePainter(request, onError = { failed = true })
+    val request = remember(url, card, poster) { artworkRequest(context, url, card, poster) }
+    val image = rememberAsyncImagePainter(request, onError = {
+        failed = true
+        if (it.result.throwable is PosterFloor.TooNarrow) onRefused(url)
+    })
     val fade = remember(url) { Fade(0f) }
     LaunchedEffect(image, fade) {
         // This url's image, not the one the painter showed before it.
@@ -76,9 +111,15 @@ private fun rememberArtwork(url: String?, card: Boolean, onArrived: ((width: Int
     return if (failed) null else painter
 }
 
-/** The request for the artwork at [url]; a [card]'s waits to settle first ([SettleFirst]). Its memory cache key is the url alone. */
-private fun artworkRequest(context: PlatformContext, url: String, card: Boolean): ImageRequest =
-    ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply { if (card) extras[SettleFirst.Key] = true }.build()
+/**
+ * The request for the artwork at [url]; a [card]'s waits to settle first ([SettleFirst]), a
+ * [poster]'s is refused when its file is too narrow ([PosterFloor]). Its memory cache key is the url alone.
+ */
+private fun artworkRequest(context: PlatformContext, url: String, card: Boolean, poster: Boolean = false): ImageRequest =
+    ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply {
+        if (card) extras[SettleFirst.Key] = true
+        if (poster) extras[PosterFloor.Key] = true
+    }.build()
 
 /**
  * Empties [loader]'s caches, on disk and in memory, so every artwork is loaded again from the link
@@ -146,12 +187,12 @@ fun rememberBackdrop(url: String?, card: Boolean = false): Painter? {
     val backdrops = LocalBackdrops.current
     var refused by remember(url) { mutableStateOf(url != null && backdrops.refused(url)) }
     val scope = rememberCoroutineScope()
-    val painter = rememberArtwork(url.takeUnless { refused }, card) { width, height ->
+    val painter = rememberArtwork(url.takeUnless { refused }, card, onArrived = { width, height ->
         if (url != null && !isBackdrop(width, height)) {
             refused = true
             scope.launch { backdrops.check(url, width, height) }
         }
-    }
+    })
     return painter.takeUnless { refused }
 }
 
@@ -229,3 +270,36 @@ class SettleFirst(private val inMemory: (data: String) -> Boolean, private val s
     }
 }
 
+
+/**
+ * Refuses a poster whose file is under [MIN_POSTER_WIDTH] wide (#526): a 154 × 231 file blurs at
+ * card size. The Provider's catalog gives no sizes and a card decodes its art at the card's size,
+ * so the file's own width is read from its header, before Coil's decoder runs; a request marked
+ * with [Key] ([rememberPoster]) then fails with [TooNarrow], and the card takes the Title's next
+ * poster. A file whose width can't be read passes. [refused] holds the posters refused while the app runs.
+ */
+class PosterFloor : Decoder.Factory {
+    override fun create(result: SourceFetchResult, options: Options, imageLoader: ImageLoader): Decoder? {
+        if (options.extras[Key] != true) return null
+        val width = width(result)
+        if (width <= 0 || width >= MIN_POSTER_WIDTH) return null
+        return Decoder { throw TooNarrow(width) }
+    }
+
+    /** The width the file's header names, read without consuming it; -1 when it can't be read. */
+    private fun width(result: SourceFetchResult): Int = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        result.source.source().peek().inputStream().use { BitmapFactory.decodeStream(it, null, bounds) }
+        bounds.outWidth
+    } catch (e: Exception) {
+        -1
+    }
+
+    /** A poster's file is [width] px wide, under [MIN_POSTER_WIDTH]. */
+    class TooNarrow(val width: Int) : Exception("The poster is $width px wide")
+
+    companion object {
+        val Key = Extras.Key(default = false)
+        val refused: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    }
+}

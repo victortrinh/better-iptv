@@ -12,8 +12,9 @@ import org.junit.rules.TemporaryFolder
 /**
  * A Title's card names and pictures it from the Provider's Listings (#474, ADR 0014), seen through
  * the Library over the fake Provider: the App language's Listing names it, else the English one,
- * else the first; its poster is the file most Listings share, ties to the App language's Listing,
- * then the English one, then the Best playable Version's.
+ * else the first. Its poster is the App language Listing's, else a Content language Listing's (in
+ * the Viewer's order), else the English one's, else the file most Listings share, ties to the Best
+ * playable Version's; a poster under 300 px wide is refused for the next one (#526).
  */
 class ListingNamesTest {
     @get:Rule val folder = TemporaryFolder()
@@ -102,10 +103,68 @@ class ListingNamesTest {
         assertEquals(2024, card("fr").year)
     }
 
-    @Test fun thePosterIsTheFileMostListingsShare() = runBlocking {
-        syncFilm("EN - Film (2024)" to "https://art/b.jpg", "FR - Le Film (2024)" to "https://art/a.jpg", "DE - Der Film (2024)" to "https://art/a.jpg")
+    @Test fun aFrenchViewerSeesTheFrenchPosterWhereSpanishListingsOutnumberIt() = runBlocking {
+        // Survey B (#526): each Prefix language mostly links a poster of its own, and the Spanish one is
+        // often the file most Listings share.
+        syncFilm(
+            "ES - La Película (2024)" to "https://art/es.jpg", "LAT - La Película (2024)" to "https://art/es.jpg",
+            "IT - Il Film (2024)" to "https://art/es.jpg", "FR - Le Film (2024)" to "https://art/fr.jpg",
+            "EN - Film (2024)" to "https://art/en.jpg",
+        )
 
-        assertEquals("https://art/a.jpg", card("en").image)
+        assertEquals("https://art/fr.jpg", card("fr").image)
+        assertEquals("https://art/en.jpg", card("en").image)
+        assertEquals("https://art/fr.jpg", card("tr", listOf("fr", "en")).image)
+    }
+
+    @Test fun aTitleWithNoListingInTheViewersLanguagesShowsTheFileMostListingsShare() = runBlocking {
+        syncFilm("ES - La Película (2024)" to "https://art/es.jpg", "IT - Il Film (2024)" to "https://art/es.jpg", "DE - Der Film (2024)" to "https://art/de.jpg")
+
+        assertEquals("https://art/es.jpg", card("tr", listOf("tr")).image)
+    }
+
+    @Test fun theCardKeepsTheRestOfThePostersInOrderForWhenOneIsRefusedAsItDecodes() = runBlocking {
+        syncFilm(
+            "ES - La Película (2024)" to "https://art/es.jpg", "IT - Il Film (2024)" to "https://art/es.jpg",
+            "DE - Der Film (2024)" to "https://art/de.jpg", "FR - Le Film (2024)" to "https://art/fr.jpg",
+            "EN - Film (2024)" to "https://art/en.jpg",
+        )
+
+        assertEquals(
+            listOf("https://art/fr.jpg", "https://art/de.jpg", "https://art/en.jpg", "https://art/es.jpg"),
+            card("fr", listOf("fr", "de", "en")).posters,
+        )
+    }
+
+    @Test fun aPosterTmdbNamesUnder300PxWideIsRefusedForTheNextOne() = runBlocking {
+        // 13% of the surveyed Provider's show posters are 154 × 231 and blur at card size.
+        syncFilm(
+            "EN - Film (2024)" to "https://image.tmdb.org/t/p/w154/en.jpg", "FR - Le Film (2024)" to "https://image.tmdb.org/t/p/w185/fr.jpg",
+            "DE - Der Film (2024)" to "https://image.tmdb.org/t/p/w220_and_h330_face/de.jpg",
+            "IT - Il Film (2024)" to "https://image.tmdb.org/t/p/w500/it.jpg",
+        )
+
+        assertEquals("https://image.tmdb.org/t/p/w500/it.jpg", card("en").image)
+        assertEquals(listOf("https://image.tmdb.org/t/p/w500/it.jpg"), card("fr").posters)
+    }
+
+    @Test fun postersTmdbNamesAt300PxOrItsOriginalAreKept() = runBlocking {
+        syncFilm(
+            "EN - Film (2024)" to "https://image.tmdb.org/t/p/w300/en.jpg", "FR - Le Film (2024)" to "https://image.tmdb.org/t/p/original/fr.jpg",
+            "DE - Der Film (2024)" to "https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg",
+        )
+
+        assertEquals("https://image.tmdb.org/t/p/w300/en.jpg", card("en").image)
+        assertEquals("https://image.tmdb.org/t/p/original/fr.jpg", card("fr").image)
+        assertEquals("https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg", card("de").image)
+    }
+
+    @Test fun aTitleWhosePostersAreAllRefusedHasNone() = runBlocking {
+        syncFilm("EN - Film (2024)" to "https://image.tmdb.org/t/p/w154/en.jpg", "FR - Le Film (2024)" to "https://image.tmdb.org/t/p/w154/fr.jpg")
+
+        assertNull(card("en").image)
+        assertEquals(emptyList<String>(), card("en").posters)
+        assertNull(library.title(film, every, "en")!!.image)
     }
 
     @Test fun aFileCountsOncePerLanguageSoACopyListedTwiceDoesNotOutvoteTheOthers() = runBlocking {
@@ -128,12 +187,17 @@ class ListingNamesTest {
         assertEquals("https://art/en.jpg", card("es").image)
     }
 
-    @Test fun withoutTheAppLanguageOrEnglishTheBestPlayableVersionsPosterWins() = runBlocking {
+    @Test fun withoutTheAppLanguageTheContentLanguagesPostersGoInTheViewersOrder() = runBlocking {
         syncFilm("DE - Der Film (2024)" to "https://art/de.jpg", "FR-4K - Le Film (2024)" to "https://art/fr.jpg")
 
-        // The 4K French Version is the best playable one in German and French; in German alone, the German one.
-        assertEquals("https://art/fr.jpg", card("es", listOf("de", "fr")).image)
-        assertEquals("https://art/de.jpg", card("es", listOf("de")).image)
+        assertEquals("https://art/de.jpg", card("es", listOf("de", "fr")).image)
+        assertEquals("https://art/fr.jpg", card("es", listOf("fr", "de")).image)
+    }
+
+    @Test fun withinALanguageTheBestPlayableVersionsPosterWins() = runBlocking {
+        syncFilm("FR - Le Film (2024)" to "https://art/fr.jpg", "FR-4K - Le Film (2024)" to "https://art/fr4k.jpg")
+
+        assertEquals("https://art/fr4k.jpg", card("fr").image)
     }
 
     @Test fun aListingAddedInAnotherLanguageChangesNoPoster() = runBlocking {

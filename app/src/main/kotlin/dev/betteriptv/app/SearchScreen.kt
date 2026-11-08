@@ -236,7 +236,7 @@ private val SearchCard.key: String
  */
 @Composable
 private fun ResultTitle(title: TitleSummary, onOpen: (TitleId) -> Unit, modifier: Modifier) {
-    TitleCard(rememberArtwork(title.image, card = true), title.name, emptyList(), onClick = { onOpen(title.id) }, modifier = modifier, named = false)
+    TitleCard(rememberPoster(title.posters, card = true), title.name, emptyList(), onClick = { onOpen(title.id) }, modifier = modifier, named = false)
 }
 
 /**

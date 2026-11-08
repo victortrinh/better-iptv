@@ -1224,6 +1224,7 @@ class Library private constructor(
             directors = cleanList(details.director),
             rating = titleRating(title, shown.best.listing, kept),
             originalLanguage = original,
+            posters = shown.posters,
         )
     }
 
@@ -2416,7 +2417,7 @@ class Library private constructor(
             titleGenres(title, candidates, kept, appLanguage),
             titleRating(title, shown.best.listing, kept),
         )
-        return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)
+        return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about, shown.posters)
     }
 
     /**
@@ -2898,17 +2899,21 @@ class Library private constructor(
     /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
     internal fun relay(location: String) = StreamRelay(location, http)
 
-    /** What a Title shows: its [best] Version, the Listing [naming] it, and that name, year and poster. */
-    private class Shown(val best: Candidate, val naming: Candidate, val name: String, val year: Int?, val image: String?)
+    /**
+     * What a Title shows: its [best] Version, the Listing [naming] it, that name and year, and its
+     * [posters] in the order a card tries them, the first being its [image].
+     */
+    private class Shown(val best: Candidate, val naming: Candidate, val name: String, val year: Int?, val posters: List<String>) {
+        val image get() = posters.firstOrNull()
+    }
 
     /**
      * What a Title's card and header show, from its Listings (ADR 0014): the cleaned name of its
      * Listing in the [appLanguage], else of the English one, else of the best Version's, a Listing's
      * language being its Prefix's ([Candidate.listedLanguage]: an `ES` copy whose audio a read found
-     * English is still named in Spanish, #504); the year in
-     * that name, else a Show's release date; and the poster most of its languages share, ties going to
-     * the [appLanguage]'s Listing, then the English one, then the Best playable Version's. Worked out
-     * from the stored Listings each time, so a Listing added in another language changes nothing.
+     * English is still named in Spanish, #504); the year in that name, else a Show's release date;
+     * and its [posters]. Worked out from the stored Listings each time, so a Listing added in another
+     * language changes nothing.
      */
     private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, appLanguage: String): Shown {
         val ranked = preferred(candidates, contentLanguages)
@@ -2916,22 +2921,25 @@ class Library private constructor(
         fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
         val cleaned = prefixTable.cleanName(naming.listing.name)
-        return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, poster(ranked, language))
+        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en").distinct()
+        return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, posters(ranked, languages))
     }
 
     /**
-     * The poster most of [ranked]'s Listings share, a file counting once per language, so a copy the
-     * Provider lists twice doesn't outvote the others; among those tied, the [language]'s Listing's,
-     * then the English one's, then the best Version's.
+     * A Title's posters in the order its card tries them (#526), so the poster's printed title is in
+     * the language the Viewer reads: the Listings' in each of the Viewer's [languages] in turn (the
+     * App language, the Content languages in their order, English), the best Version's first within
+     * one; then the file most of [ranked]'s Listings share, a file counting once per language so a
+     * copy the Provider lists twice doesn't outvote the others, ties to the best Version's; then the
+     * rest. A poster whose URL names a width under [MIN_POSTER_WIDTH] ([posterTooSmall]) is left out;
+     * one that turns out that narrow as it decodes is the app's to pass over for the next.
      */
-    private fun poster(ranked: List<Candidate>, language: String): String? {
-        val counts = ranked.filter { it.listing.image != null }
-            .groupBy({ it.listing.image!! }, { it.listedLanguage })
-            .mapValues { (_, languages) -> languages.distinct().size }
-        val most = counts.values.maxOrNull() ?: return null
-        val tied = ranked.filter { counts[it.listing.image] == most }
-        fun inLanguage(wanted: String) = tied.firstOrNull { it.listedLanguage == wanted }
-        return (inLanguage(language) ?: inLanguage("en") ?: tied.first()).listing.image
+    private fun posters(ranked: List<Candidate>, languages: List<String>): List<String> {
+        val pictured = ranked.filter { it.listing.image != null && !posterTooSmall(it.listing.image) }
+        val inLanguages = languages.flatMap { wanted -> pictured.filter { it.listedLanguage == wanted } }
+        val votes = pictured.groupBy({ it.listing.image!! }, { it.listedLanguage }).mapValues { (_, listed) -> listed.distinct().size }
+        val byVotes = pictured.sortedByDescending { votes.getValue(it.listing.image!!) }
+        return (inLanguages + byVotes).map { it.listing.image!! }.distinct()
     }
 
     /**
@@ -3152,6 +3160,22 @@ class Library private constructor(
          * ([refuseBackdrop]): a 16:9 picture is 1.78, a poster handed over as a backdrop 0.67.
          */
         const val MIN_BACKDROP_RATIO = 1.5f
+
+        /**
+         * The narrowest a poster may be, in pixels, before a card refuses it for the Title's next one
+         * (#526): a 154 × 231 file blurs at card size.
+         */
+        const val MIN_POSTER_WIDTH = 300
+
+        private val TMDB_WIDTH = Regex("/t/p/w(\\d+)[/_]")
+
+        /**
+         * Whether the poster at [url] is narrower than [MIN_POSTER_WIDTH] by its URL alone: a TMDB
+         * path names the width it was cut to (`/t/p/w154/`, `/t/p/w220_and_h330_face/`). The Provider's catalog gives no sizes, so
+         * any other URL passes here, and the app judges it as it decodes.
+         */
+        fun posterTooSmall(url: String): Boolean =
+            TMDB_WIDTH.find(url)?.groupValues?.get(1)?.toIntOrNull()?.let { it < MIN_POSTER_WIDTH } ?: false
 
         /** The genre every Kids Category names, so no row on a Kids profile (#478). */
         private val KIDS_GENRE = setOf("Family")

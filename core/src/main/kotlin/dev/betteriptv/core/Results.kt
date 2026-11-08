@@ -29,11 +29,23 @@ sealed interface TitleId {
 
 /**
  * A Title's card. [name] and [year] come from its Listing in the App language, else the English
- * one, else the [best] Version's; the [image] is the poster URL most of its Listings share (ADR
- * 0014), null when none has one, and the card then shows the name on glass. Home's cards also carry
- * [about], what the info area under a focused card shows. No card carries a rank (#477).
+ * one, else the [best] Version's. Its [posters] are the Provider's poster URLs in the order the card
+ * tries them (ADR 0014, #526): the App language Listing's, else a Content language Listing's in the
+ * Viewer's order, else the English one's, else the file most Listings share; one under 300 px wide
+ * ([Library.MIN_POSTER_WIDTH]) is left out where its URL names the width, and passed over for the
+ * next where it decodes that narrow. The [image] is the first, null when none is left, and the card
+ * then shows the name on glass. Home's cards also carry [about], what the info area under a focused
+ * card shows. No card carries a rank (#477).
  */
-data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null)
+data class TitleSummary(
+    val id: TitleId,
+    val name: String,
+    val year: Int?,
+    val image: String?,
+    val best: VersionAttributes,
+    val about: TitleAbout? = null,
+    val posters: List<String> = listOfNotNull(image),
+)
 
 /**
  * What the info under a focused Home row tells of a Title, from what the device already holds, so
@@ -178,6 +190,8 @@ data class TitleDetails(
      * group then sits among [languages]. Null otherwise.
      */
     val originalLanguage: String? = null,
+    /** Its posters in the order its page tries them, as a card's ([TitleSummary.posters]); [image] is the first. */
+    val posters: List<String> = listOfNotNull(image),
 )
 
 /**
