@@ -36,7 +36,7 @@ class ListingNamesTest {
         cloud.close()
     }
 
-    private val film = TitleId.Tmdb(TitleKind.Movie, 4242)
+    private val film = TitleId.Numbered(TitleKind.Movie, 4242)
     private val every = listOf("en", "fr", "de", "el", "tr")
 
     private fun json(text: String?) = if (text == null) "\"\"" else "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

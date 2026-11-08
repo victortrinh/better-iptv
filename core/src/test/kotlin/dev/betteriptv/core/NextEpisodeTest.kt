@@ -24,7 +24,7 @@ class NextEpisodeTest {
 
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
-    private val bureau = TitleId.Tmdb(TitleKind.Show, 62104)
+    private val bureau = TitleId.Numbered(TitleKind.Show, 62104)
 
     /** Syncs The Bureau: seasons 1 and 2 of three Episodes each, and one special. */
     @Before fun syncShow() = runBlocking {

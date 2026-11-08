@@ -85,6 +85,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             execSQL("PRAGMA user_version = $SCHEMA_VERSION")
         }
         execSQL(LISTING_TABLE.format("listing"))
+        // The Title number's column had another name before #480: a catalog kept from then, and one a Sync left held, keep theirs under the new one.
+        for (table in listOf("listing", "staging_kept_listing")) {
+            if (hasColumn(table, OLD_NUMBER_COLUMN)) execSQL("ALTER TABLE $table RENAME COLUMN $OLD_NUMBER_COLUMN TO title_number")
+        }
         // What the Provider says of a Title on its Listing (ADR 0014), kept at Sync; a catalog from before these columns gets them empty until its next Sync.
         DETAILS_COLUMNS.forEach { (column, type) -> if (!hasColumn("listing", column)) execSQL("ALTER TABLE listing ADD COLUMN $column $type") }
         execSQL(TITLE_TABLE.format("title"))
@@ -149,11 +153,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         // Matched otherwise than by their number are Unmatched Titles again, and its answers go.
         if (hasColumn("listing", "suspect")) unmatchCloudMatches()
         execSQL("DROP TABLE IF EXISTS match_answer")
-        // Keyed by Title, not by Listing, so it outlives Syncs and catalog shape changes.
-        execSQL(
-            "CREATE TABLE IF NOT EXISTS title_metadata (title_key TEXT NOT NULL, language TEXT NOT NULL, body TEXT, fetched_at INTEGER NOT NULL, " +
-                "PRIMARY KEY (title_key, language))",
-        )
+        // The cloud's metadata and Charts answers an older app kept go (#480): the device holds none of that data now.
+        execSQL("DROP TABLE IF EXISTS title_metadata")
+        execSQL("DROP TABLE IF EXISTS chart")
         // What Wikidata knows of a Title (#476), by Title key, kept for good: found is 0 when Wikidata has no item for its
         // number, and the other columns are then null. The cloud's answers wait in the pending table until they land
         // between screens (ADR 0011), so nothing moves under focus.
@@ -171,8 +173,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             execSQL("DROP TABLE show_details")
             execSQL("DROP TABLE episode")
         }
-        // The cloud's Charts answer for a Region in an App language, as its JSON, so Home builds without it.
-        execSQL("CREATE TABLE IF NOT EXISTS chart (region TEXT NOT NULL, language TEXT NOT NULL, body TEXT NOT NULL, fetched_at INTEGER NOT NULL, PRIMARY KEY (region, language))")
         // The cloud's Games answer for a League, as its JSON, so the Live tab builds without the cloud (#252).
         execSQL("CREATE TABLE IF NOT EXISTS game (league TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at INTEGER NOT NULL)")
         // A show Listing's show details as the Provider gave them while the Show was last changed at `modified`.
@@ -296,7 +296,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             if (added == null) bindNull(5) else bindLong(5, added)
             bindLong(6, if (hidden) 1 else 0)
             if (image == null) bindNull(7) else bindText(7, image)
-            bindText(8, key(number?.let { TitleId.Tmdb(kind, it) } ?: TitleId.Unmatched(kind, id)))
+            bindText(8, key(number?.let { TitleId.Numbered(kind, it) } ?: TitleId.Unmatched(kind, id)))
             if (number == null) bindNull(9) else bindLong(9, number)
             if (year == null) bindNull(10) else bindLong(10, year.toLong())
             if (container == null) bindNull(11) else bindText(11, container)
@@ -379,7 +379,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
                 "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                    "provider_tmdb INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES)",
+                    "title_number INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES)",
             )
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
@@ -395,12 +395,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 }
                 onFilled()
                 // Each number's year: the one its dated Listings carry most, ties going to the earliest.
-                writer.execSQL("CREATE TABLE staging_number_year (kind TEXT, provider_tmdb INTEGER, year INTEGER, PRIMARY KEY (kind, provider_tmdb))")
+                writer.execSQL("CREATE TABLE staging_number_year (kind TEXT, title_number INTEGER, year INTEGER, PRIMARY KEY (kind, title_number))")
                 writer.execSQL(
                     """
-                    INSERT INTO staging_number_year SELECT kind, provider_tmdb, year FROM (
-                        SELECT kind, provider_tmdb, year, row_number() OVER (PARTITION BY kind, provider_tmdb ORDER BY count(*) DESC, year) AS rank
-                        FROM staging_listing WHERE hidden = 0 AND provider_tmdb IS NOT NULL AND year IS NOT NULL GROUP BY kind, provider_tmdb, year
+                    INSERT INTO staging_number_year SELECT kind, title_number, year FROM (
+                        SELECT kind, title_number, year, row_number() OVER (PARTITION BY kind, title_number ORDER BY count(*) DESC, year) AS rank
+                        FROM staging_listing WHERE hidden = 0 AND title_number IS NOT NULL AND year IS NOT NULL GROUP BY kind, title_number, year
                     ) WHERE rank = 1
                     """.trimIndent(),
                 )
@@ -409,7 +409,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     """
                     UPDATE staging_listing SET title_key = $LISTING_KEY
                     WHERE hidden = 0 AND year IS NOT NULL AND abs(year - (
-                        SELECT n.year FROM staging_number_year n WHERE n.kind = staging_listing.kind AND n.provider_tmdb = staging_listing.provider_tmdb
+                        SELECT n.year FROM staging_number_year n WHERE n.kind = staging_listing.kind AND n.title_number = staging_listing.title_number
                     )) > $MISMATCH_YEARS
                     """.trimIndent(),
                 )
@@ -419,9 +419,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
                 writer.execSQL(
                     """
-                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, provider_tmdb, container, $DETAILS_COLUMN_NAMES)
+                    INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, title_number, container, $DETAILS_COLUMN_NAMES)
                     SELECT l.kind, row_number() OVER (PARTITION BY l.kind ORDER BY l.added DESC, l.name, l.id), l.id, l.name, coalesce(c.name, ''), l.added, l.image,
-                        t.position, l.title_key, l.provider_tmdb, l.container, ${DETAILS_COLUMNS.joinToString(", ") { "l." + it.first }}
+                        t.position, l.title_key, l.title_number, l.container, ${DETAILS_COLUMNS.joinToString(", ") { "l." + it.first }}
                     FROM staging_listing l
                     LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
                     JOIN staging_title t ON t.key = l.title_key
@@ -651,7 +651,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     /** How many of [table]'s Listings are Mismatches: Unmatched Titles though their Provider gave them a number. */
     private fun mismatchCount(table: String): Int =
-        writer.prepare("SELECT count(*) FROM $table WHERE provider_tmdb IS NOT NULL AND title_key <> $PROVIDER_KEY").use { it.step(); it.getLong(0).toInt() }
+        writer.prepare("SELECT count(*) FROM $table WHERE title_number IS NOT NULL AND title_key <> $PROVIDER_KEY").use { it.step(); it.getLong(0).toInt() }
 
     private fun candidateTierTags(): List<CandidateTierTag> = synchronized(reader) {
         reader.prepare("SELECT word, listings, example FROM tier_tag ORDER BY listings DESC, word").use {
@@ -1320,26 +1320,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         }
     }
 
-    /** The Charts the cloud last gave for [region] in [language] (ISO 639-1), as JSON, and when; null before it ever did. */
-    fun charts(region: String, language: String): StoredCharts? = synchronized(reader) {
-        reader.prepare("SELECT body, fetched_at FROM chart WHERE region = ? AND language = ?").use {
-            it.bindText(1, region)
-            it.bindText(2, language)
-            if (it.step()) StoredCharts(it.getText(0), Instant.ofEpochMilli(it.getLong(1))) else null
-        }
-    }
-
-    fun saveCharts(region: String, language: String, body: String, at: Instant) = synchronized(writer) {
-        writer.prepare("INSERT OR REPLACE INTO chart VALUES (?, ?, ?, ?)").use {
-            it.bindText(1, region)
-            it.bindText(2, language)
-            it.bindText(3, body)
-            it.bindLong(4, at.toEpochMilli())
-            it.step()
-        }
-        Unit
-    }
-
     /** The Games the cloud last gave for each of [leagues], as JSON, and when; a League it never did is absent. */
     fun games(leagues: List<String>): Map<String, StoredGames> = synchronized(reader) {
         reader.prepare("SELECT body, fetched_at FROM game WHERE league = ?").use { statement ->
@@ -1361,38 +1341,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         Unit
     }
 
-    /** Any cached metadata of [id], in whichever language was fetched last; null when none is. */
-    fun anyMetadata(id: TitleId.Tmdb): String? = synchronized(reader) {
-        reader.prepare("SELECT body FROM title_metadata WHERE title_key = ? AND body IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").use {
-            it.bindText(1, key(id))
-            if (it.step()) it.getText(0) else null
-        }
-    }
-
-    /** The cached metadata of [ids] in [language] (ISO 639-1), by Title. A null body means TMDB has no such Title. */
-    fun metadata(ids: List<TitleId.Tmdb>, language: String): Map<TitleId.Tmdb, StoredMetadata> = synchronized(reader) {
-        if (ids.isEmpty()) return emptyMap()
-        val byKey = ids.associateBy(::key)
-        reader.prepare(
-            "SELECT title_key, body, fetched_at FROM title_metadata WHERE language = ? AND title_key IN (${ids.joinToString(",") { "?" }})",
-        ).use {
-            it.bindText(1, language)
-            byKey.keys.forEachIndexed { i, key -> it.bindText(i + 2, key) }
-            buildMap {
-                while (it.step()) {
-                    put(byKey.getValue(it.getText(0)), StoredMetadata(if (it.isNull(1)) null else it.getText(1), Instant.ofEpochMilli(it.getLong(2))))
-                }
-            }
-        }
-    }
-
     /**
      * What Wikidata knows of [ids] (#476), as landed: a Title mapped to null is one Wikidata has no item
      * for; one absent was never answered, or its answer waits to land.
      */
     fun titleFacts(ids: Collection<TitleId>): Map<TitleId, TitleFacts?> = synchronized(reader) {
         buildMap {
-            ids.distinct().filterIsInstance<TitleId.Tmdb>().chunked(MAX_BOUND).forEach { chunk ->
+            ids.distinct().filterIsInstance<TitleId.Numbered>().chunked(MAX_BOUND).forEach { chunk ->
                 val byKey = chunk.associateBy(::key)
                 reader.prepare(
                     "SELECT title_key, found, original_language, imdb_id, enwiki, frwiki FROM title_facts WHERE title_key IN (${chunk.joinToString(",") { "?" }})",
@@ -1411,17 +1366,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     fun titleFacts(id: TitleId): TitleFacts? = titleFacts(listOf(id))[id]
 
     /** The Title numbers of the catalog on screen with no facts, landed or waiting, in list order: what to ask the cloud for. */
-    fun titlesWithoutFacts(): List<TitleId.Tmdb> = synchronized(reader) {
+    fun titlesWithoutFacts(): List<TitleId.Numbered> = synchronized(reader) {
         reader.prepare(
             "SELECT key FROM title WHERE key NOT LIKE '%/listing/%' AND key NOT IN (SELECT title_key FROM title_facts) " +
                 "AND key NOT IN (SELECT title_key FROM title_facts_pending) ORDER BY kind, position",
         ).use {
-            buildList { while (it.step()) (titleId(it.getText(0)) as? TitleId.Tmdb)?.let(::add) }
+            buildList { while (it.step()) (titleId(it.getText(0)) as? TitleId.Numbered)?.let(::add) }
         }
     }
 
     /** Keeps what the cloud answered at [at] to land later: [found] Titles' facts, and the Titles Wikidata has no item for. */
-    fun stageTitleFacts(found: Map<TitleId.Tmdb, TitleFacts>, notFound: List<TitleId.Tmdb>, at: Instant) = synchronized(writer) {
+    fun stageTitleFacts(found: Map<TitleId.Numbered, TitleFacts>, notFound: List<TitleId.Numbered>, at: Instant) = synchronized(writer) {
         writer.execSQL("BEGIN")
         try {
             writer.prepare("INSERT OR REPLACE INTO title_facts_pending VALUES (?, ?, ?, ?, ?, ?, ?)").use { insert ->
@@ -1462,26 +1417,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Whether any facts wait to land. */
     fun hasPendingTitleFacts(): Boolean = synchronized(reader) {
         reader.prepare("SELECT 1 FROM title_facts_pending LIMIT 1").use { it.step() }
-    }
-
-    /** Caches what the cloud answered at [at]: [found] Titles' metadata as JSON, and the Titles TMDB doesn't have. */
-    fun saveMetadata(language: String, found: Map<TitleId.Tmdb, String>, notFound: List<TitleId.Tmdb>, at: Instant) = synchronized(writer) {
-        writer.execSQL("BEGIN")
-        try {
-            writer.prepare("INSERT OR REPLACE INTO title_metadata VALUES (?, ?, ?, ?)").use { insert ->
-                (found.entries.map { it.key to it.value } + notFound.map { it to null }).forEach { (id, body) ->
-                    insert.bindText(1, key(id))
-                    insert.bindText(2, language)
-                    if (body == null) insert.bindNull(3) else insert.bindText(3, body)
-                    insert.bindLong(4, at.toEpochMilli())
-                    insert.stepAndReset()
-                }
-            }
-            writer.execSQL("COMMIT")
-        } catch (e: Throwable) {
-            writer.execSQL("ROLLBACK")
-            throw e
-        }
     }
 
     /** The show details kept for these show Listings, by Listing id. */
@@ -2424,6 +2359,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     fun saveSignInCardDone() = synchronized(writer) { writeMeta(mapOf(SIGN_IN_CARD to "done")) }
 
+    /** Whether the image cache was cleared since the release that dropped the cloud's metadata (#480). */
+    fun imagesCleared(): Boolean = meta(IMAGES_CLEARED) != null
+
+    fun saveImagesCleared() = synchronized(writer) { writeMeta(mapOf(IMAGES_CLEARED to "done")) }
+
     /** Whether the profile chip's one pulse is due ("pending"), has played ("done"), or neither yet (null) (#438). */
     fun profileChipPulse(): String? = meta(PROFILE_CHIP_PULSE)
 
@@ -2493,7 +2433,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val DETAILS_COLUMN_NAMES = DETAILS_COLUMNS.joinToString(", ") { it.first }
         val LISTING_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (kind TEXT NOT NULL, position INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
-                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, provider_tmdb INTEGER, " +
+                "added INTEGER, image TEXT, title INTEGER NOT NULL, title_key TEXT NOT NULL, title_number INTEGER, " +
                 "container TEXT, ${DETAILS_COLUMNS.joinToString(", ") { "${it.first} ${it.second}" }}, PRIMARY KEY (kind, position))"
         const val CHANNEL_TABLE =
             "CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, image TEXT, event_start INTEGER, " +
@@ -2585,7 +2525,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val TITLES_BY_NEWEST_LISTING =
             "SELECT kind, row_number() OVER (PARTITION BY kind ORDER BY max(added) DESC, min(name), min(id)), title_key FROM %s GROUP BY kind, title_key"
         /** A Listing's Title key by its Title number, as [key] makes it. */
-        const val PROVIDER_KEY = "CASE WHEN provider_tmdb IS NULL THEN kind || '/listing/' || id ELSE kind || '/' || provider_tmdb END"
+        const val PROVIDER_KEY = "CASE WHEN title_number IS NULL THEN kind || '/listing/' || id ELSE kind || '/' || title_number END"
         /** A Listing's Title key as an Unmatched Title, as [key] makes it. */
         const val LISTING_KEY = "kind || '/listing/' || id"
         const val UNKNOWN_PREFIX_TABLE =
@@ -2620,6 +2560,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val ACCOUNT_EMAIL = "account_email"
         const val SIGN_IN_CARD = "sign_in_card"
         const val PROFILE_CHIP_PULSE = "profile_chip_pulse"
+        /** Set once the image cache was cleared after the release that dropped the cloud's metadata (#480). */
+        const val IMAGES_CLEARED = "images_cleared"
+        /** What the Title number's column was called before #480. */
+        const val OLD_NUMBER_COLUMN = "provider_tmdb"
         const val SIGN_OUT_PENDING = "account_sign_out_pending"
         /** History sync (#435): the Profile that syncs, the cursor of its last sync and the Provider key that was for, and a reset waiting to land. */
         const val SYNC_CURSOR = "sync_cursor"
@@ -2638,12 +2582,6 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
 /** A Title as stored: its Listings, before the Prefix table describes them. */
 internal class StoredTitle(val id: TitleId, val listings: List<StoredListing>)
-
-/** A Title's cached metadata JSON (null: TMDB has no such Title) and when the cloud sent it. */
-internal class StoredMetadata(val body: String?, val fetchedAt: Instant)
-
-/** The cloud's Charts answer as JSON ([Charts]) and when it sent it. */
-internal class StoredCharts(val body: String, val fetchedAt: Instant)
 
 /** Trending's feed summed over its week ([CatalogStore.trending]): each wiki's article names with their views, and when the cloud sent it. */
 internal class StoredTrending(val views: Map<String, Map<String, Long>>, val fetchedAt: Instant)
@@ -2751,14 +2689,14 @@ private fun kindKey(kind: CategoryKind): String = kind.name.lowercase()
 private fun categoryKind(key: String): CategoryKind = CategoryKind.entries.single { kindKey(it) == key }
 
 private fun key(id: TitleId): String = when (id) {
-    is TitleId.Tmdb -> "${kindKey(id.kind)}/${id.tmdbId}"
+    is TitleId.Numbered -> "${kindKey(id.kind)}/${id.titleNumber}"
     is TitleId.Unmatched -> "${kindKey(id.kind)}/listing/${id.listingId}"
 }
 
 private fun titleId(key: String): TitleId {
     val parts = key.split('/')
     val kind = kind(parts[0])
-    return if (parts[1] == "listing") TitleId.Unmatched(kind, parts[2].toLong()) else TitleId.Tmdb(kind, parts[1].toLong())
+    return if (parts[1] == "listing") TitleId.Unmatched(kind, parts[2].toLong()) else TitleId.Numbered(kind, parts[1].toLong())
 }
 
 /** The text in column [index], or null when it is NULL. */

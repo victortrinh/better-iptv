@@ -83,14 +83,13 @@ class TrailerRowTest {
 
     private val packageManager get() = ApplicationProvider.getApplicationContext<Context>().packageManager
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 949)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 949)
     private val best = Version(1, "EN - Heat (1995) 1080p", VersionAttributes(language = Known("en", Provenance.Likely)))
     private fun details(trailer: String?) = TitleDetails(
         movie, "Heat", 1995, null, listOf(LanguageGroup("en", listOf(best))), emptyList(),
         description = "A group of professional bank robbers start to feel the heat from police. ".repeat(4),
         genres = listOf("Crime", "Drama"),
         runtimeMinutes = 170,
-        fromTmdb = true,
         trailer = trailer,
     )
 
@@ -399,7 +398,7 @@ class TrailerRowTest {
         assertTrue(page, page.contains("e.data == 2"))
     }
 
-    @Test fun theTrailersPageCarriesOnlyTheVideosIdWhateverTmdbSent() {
+    @Test fun theTrailersPageCarriesOnlyTheVideosIdWhateverTheProviderSent() {
         // A key with quotes or tags can't break out of the page's script.
         val page = trailerPage("x\"</script><script>alert(1)", "en", "https://dev.betteriptv")
         assertFalse(page, page.contains("</script><script>alert"))

@@ -23,9 +23,9 @@ class BackdropsTest {
     private lateinit var library: Library
 
     private val english = listOf("en")
-    private val heat = TitleId.Tmdb(TitleKind.Movie, 949)
-    private val ronin = TitleId.Tmdb(TitleKind.Movie, 8195)
-    private val theWire = TitleId.Tmdb(TitleKind.Show, 1438)
+    private val heat = TitleId.Numbered(TitleKind.Movie, 949)
+    private val ronin = TitleId.Numbered(TitleKind.Movie, 8195)
+    private val theWire = TitleId.Numbered(TitleKind.Show, 1438)
 
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)

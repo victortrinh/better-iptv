@@ -95,20 +95,20 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     }
 
     /**
-     * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, TMDB ID,
-     * image URL, file extension, the Provider's rating). A TMDB ID that isn't a positive number (empty,
+     * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, Title
+     * number from its `tmdb` field, image URL, file extension, the Provider's rating). A number that isn't positive (empty,
      * `0`, an IMDb `tt…` ID) is null, and so is an extension that isn't a short word (`mkv`, `mp4`).
      * The rating is on a 10 scale; absent or zero is null.
      */
     fun movieListings(
-        each: (id: Long, name: String, categoryId: String?, added: Long?, tmdbId: Long?, image: String?, container: String?, rating: Double?) -> Unit,
+        each: (id: Long, name: String, categoryId: String?, added: Long?, titleNumber: Long?, image: String?, container: String?, rating: Double?) -> Unit,
     ) = api("get_vod_streams") { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
             var categoryId: String? = null
             var added: Long? = null
-            var tmdbId: Long? = null
+            var titleNumber: Long? = null
             var image: String? = null
             var container: String? = null
             var rating: Double? = null
@@ -117,19 +117,19 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "name" -> name = nextScalar()
                 "category_id" -> categoryId = nextScalar()
                 "added" -> added = nextScalar()?.toLongOrNull()
-                "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+                "tmdb" -> titleNumber = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "stream_icon" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
                 "container_extension" -> container = nextScalar()?.trim()?.lowercase()?.takeIf { CONTAINER.matches(it) }
                 "rating" -> rating = rating(nextScalar())
                 else -> skipValue()
             }
-            if (id != null && name != null) each(id, name, categoryId, added, tmdbId, image, container, rating)
+            if (id != null && name != null) each(id, name, categoryId, added, titleNumber, image, container, rating)
         }
     }
 
     /**
      * Streams the show Listings ([ProviderShowListing]): the Provider show id, name, category id, last
-     * changed in epoch seconds (the Provider changes a Show when it adds Episodes to it), TMDB ID,
+     * changed in epoch seconds (the Provider changes a Show when it adds Episodes to it), Title number,
      * image URL, and what the Listing says of the Show: plot, genre, cast, director, rating, release
      * date, backdrops and trailer key.
      */
@@ -139,7 +139,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             var name: String? = null
             var categoryId: String? = null
             var modified: Long? = null
-            var tmdbId: Long? = null
+            var titleNumber: Long? = null
             var image: String? = null
             var plot: String? = null
             var genre: String? = null
@@ -154,7 +154,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 "name" -> name = nextScalar()
                 "category_id" -> categoryId = nextScalar()
                 "last_modified" -> modified = nextScalar()?.toLongOrNull()
-                "tmdb" -> tmdbId = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+                "tmdb" -> titleNumber = nextScalar()?.trim()?.toLongOrNull()?.takeIf { it > 0 }
                 "cover" -> image = nextScalar()?.trim()?.takeIf { it.isNotEmpty() }
                 "plot" -> plot = cleanText(nextScalar())
                 "genre" -> genre = cleanText(nextScalar())
@@ -167,7 +167,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 else -> skipValue()
             }
             if (id != null && name != null) {
-                each(ProviderShowListing(id, name, categoryId, modified, tmdbId, image, ProviderDetails(plot, genre, releaseDate, null, director, cast, rating, backdrops.firstOrNull(), trailer, backdrops)))
+                each(ProviderShowListing(id, name, categoryId, modified, titleNumber, image, ProviderDetails(plot, genre, releaseDate, null, director, cast, rating, backdrops.firstOrNull(), trailer, backdrops)))
             }
         }
     }
@@ -553,7 +553,7 @@ internal class ProviderShowListing(
     val name: String,
     val categoryId: String?,
     val modified: Long?,
-    val tmdbId: Long?,
+    val titleNumber: Long?,
     val image: String?,
     val details: ProviderDetails,
 )

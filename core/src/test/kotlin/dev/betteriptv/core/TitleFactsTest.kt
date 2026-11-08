@@ -14,7 +14,7 @@ import org.junit.rules.TemporaryFolder
  * Title facts from Wikidata through the cloud (#476, ADR 0014): after a Sync the device asks the cloud,
  * in batches, for every Title number it has no answer for, keeps the answers with its catalog and lands
  * them between screens like a Pending catalog (ADR 0011). The Untagged Version's Likely and Prefer
- * original audio read the original language from them, never from TMDB's metadata; a Title Wikidata
+ * original audio read the original language from them alone; a Title Wikidata
  * doesn't know says nothing until a Header read Confirms it, and without a cloud nothing is known.
  */
 class TitleFactsTest {
@@ -53,14 +53,14 @@ class TitleFactsTest {
         }
     }
 
-    private val squidGame = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val squidGame = TitleId.Numbered(TitleKind.Movie, 1)
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
     /** Squid Game as the Provider files it: a Netflix copy (Untagged: `NF` names a Source, no language) and an English dub. Listing 1 is the `NF` copy. */
     private val squidGameSpread = listOf(Listing("NF - Squid Game (2021)", "NETFLIX", 1), Listing("EN - Squid Game (2021)", "EN - MOVIES", 1))
 
-    private fun movie(id: Long) = TitleId.Tmdb(TitleKind.Movie, id)
+    private fun movie(id: Long) = TitleId.Numbered(TitleKind.Movie, id)
 
     private fun tracks(vararg languages: String?) = languages.map { Track(it) }
 
@@ -273,19 +273,5 @@ class TitleFactsTest {
         assertNull(plan.originalLanguage)
         assertFalse(plan.isOriginal(Track("kor")))
         assertFalse(library.applyPendingTitleFacts())
-    }
-
-    @Test fun `TMDB's metadata names no original language any more, whatever it says`() = runBlocking {
-        serve(squidGameSpread)
-        // TMDB's answer, as an older cloud cached it on the device: its original language is never read.
-        cloud.title("en", tmdbTitle(1, "Squid Game", originalLanguage = "ko"))
-        val library = library()
-        library.sync()
-
-        val details = library.title(squidGame, english, "en")!!
-        assertTrue(details.fromTmdb)
-        assertNull(details.originalLanguage)
-        assertEquals(setOf("NF - Squid Game (2021)"), details.group(null)!!.names())
-        assertNull(library.playPlan(squidGame, english, fullHdTv)!!.originalLanguage)
     }
 }

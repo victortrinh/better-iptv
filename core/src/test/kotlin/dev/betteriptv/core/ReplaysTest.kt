@@ -62,7 +62,7 @@ class ReplaysTest {
     private suspend fun replay(name: String): Replay = library.replays().single { it.name == name }
 
     @Test fun `the teams and the date are read off the survey's name patterns, and a Replay is never a Title`() = runBlocking {
-        // Every one carries TMDB ID 1 (FakeProvider.serveMovies), which is wrong for all of them and ignored.
+        // Every one carries Title number 1 (FakeProvider.serveMovies), which is wrong for all of them and ignored.
         provider.serveMovies(
             "SOC - Boston Bruins at Toronto Maple Leafs 09.11.25" to "SOCCER HOCKEY",
             "SOC - Villarreal - Rayo Vallecano 01.11.2025" to "SOCCER FOOTBALL",
@@ -106,7 +106,7 @@ class ReplaysTest {
         assertEquals("Boston Bruins at Toronto Maple Leafs 09.11.25", replay("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25").heading)
         assertEquals("WWE NXT 2024.04.23", replay("Wresling: WWE NXT 2024.04.23").heading)
         assertEquals("LAFC - LA Galaxy 05.10.2025", replay("SOC - LAFC - LA Galaxy 05.10.2025").heading)
-        // The Godfather alone is a Title; the Replays' shared TMDB ID makes none.
+        // The Godfather alone is a Title; the Replays' shared Title number makes none.
         assertEquals(1, library.movieListingCount())
         assertEquals(1, library.titleCount())
         assertEquals(14, library.replays().size)

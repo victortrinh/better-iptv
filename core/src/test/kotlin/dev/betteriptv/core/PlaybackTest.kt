@@ -39,7 +39,7 @@ class PlaybackTest {
         provider.movieListOverride =
             """[{"stream_id":1,"name":"EN - Movie (2025)","tmdb":"1","category_id":"1","added":"1700000000","container_extension":"mkv"}]"""
         library.sync()
-        plan = library.playPlan(TitleId.Tmdb(TitleKind.Movie, 1), listOf("en"), DeviceProfile(maxHeight = 1080, hdr = emptySet()))!!
+        plan = library.playPlan(TitleId.Numbered(TitleKind.Movie, 1), listOf("en"), DeviceProfile(maxHeight = 1080, hdr = emptySet()))!!
     }
 
     @After fun tearDown() {

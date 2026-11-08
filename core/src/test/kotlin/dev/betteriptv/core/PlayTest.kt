@@ -33,7 +33,7 @@ class PlayTest {
     }
 
     private val english = listOf("en")
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
 
     private val dolbyVisionTv = DeviceProfile(maxHeight = 2160, hdr = setOf(Hdr.HDR10, Hdr.DolbyVision))
     private val hdr10Tv = DeviceProfile(maxHeight = 2160, hdr = setOf(Hdr.HDR10))

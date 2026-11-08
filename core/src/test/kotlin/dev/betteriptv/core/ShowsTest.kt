@@ -34,9 +34,9 @@ class ShowsTest {
     }
 
     private val english = listOf("en")
-    private val gameOfThrones = TitleId.Tmdb(TitleKind.Show, 1399)
-    private val chelseaDetective = TitleId.Tmdb(TitleKind.Show, 156240)
-    private val dogImpossible = TitleId.Tmdb(TitleKind.Show, 93422)
+    private val gameOfThrones = TitleId.Numbered(TitleKind.Show, 1399)
+    private val chelseaDetective = TitleId.Numbered(TitleKind.Show, 156240)
+    private val dogImpossible = TitleId.Numbered(TitleKind.Show, 93422)
 
     // The fixture's Provider ids for The Chelsea Detective's Versions.
     private val chelseaEn = 2008L
@@ -79,7 +79,7 @@ class ShowsTest {
         assertEquals(1, cards.count { it.id == gameOfThrones })
         assertEquals(5, versionNames(chelseaDetective).size)
         assertTrue(cards.none { it.id.kind == TitleKind.Movie })
-        assertNull(library.title(TitleId.Tmdb(TitleKind.Movie, 156240), english, "en"))
+        assertNull(library.title(TitleId.Numbered(TitleKind.Movie, 156240), english, "en"))
     }
 
     @Test fun `FR - Trotro, filed under Game of Thrones' number with its release date, sits under Game of Thrones`() = runBlocking {
@@ -118,7 +118,7 @@ class ShowsTest {
         provider.showDetailsOverride[2] = details((1..4).map { season -> episode(200L + season, season, 1, "EN - The Bureau (2015) - S0${season}E01", "eng") })
         library.sync()
 
-        val show = episodes(TitleId.Tmdb(TitleKind.Show, 62104), contentLanguages = listOf("fr", "en"))
+        val show = episodes(TitleId.Numbered(TitleKind.Show, 62104), contentLanguages = listOf("fr", "en"))
 
         assertEquals(listOf(1, 2, 3, 4), show.seasons.map { it.number })
         assertEquals(listOf("fr", "en"), show.episode(3, 1).languageTags())
@@ -147,12 +147,12 @@ class ShowsTest {
     }
 
     @Test fun `a Source's Episodes whose details name no language are Likely in the Show's original language`() = runBlocking {
-        cloud.titleFacts(TitleId.Tmdb(TitleKind.Show, 332649), originalLanguage = "ja")
+        cloud.titleFacts(TitleId.Numbered(TitleKind.Show, 332649), originalLanguage = "ja")
         provider.showCategoriesOverride = """[{"category_id":"1","category_name":"NETFLIX SERIES"}]"""
         provider.showListOverride = """[{"series_id":1,"name":"NF - Shadows of the Ten Ninja (2026) (JP)","tmdb":"332649","category_id":"1","last_modified":"1700000000"}]"""
         provider.showDetailsOverride[1] = details(listOf(episode(101, 1, 1, "NF - Shadows of the Ten Ninja (2026) (JP) - S01E01", "")))
         library.sync()
-        val id = TitleId.Tmdb(TitleKind.Show, 332649)
+        val id = TitleId.Numbered(TitleKind.Show, 332649)
         // The Title page asks for the Show's details before its Episodes; its original language came from Wikidata at the Sync.
         library.title(id, english, "en")
 
@@ -208,7 +208,7 @@ class ShowsTest {
     @Test fun `a Movie has no Episodes`() = runBlocking {
         library.sync()
 
-        assertNull(library.episodes(TitleId.Tmdb(TitleKind.Movie, 238), english))
+        assertNull(library.episodes(TitleId.Numbered(TitleKind.Movie, 238), english))
     }
 
     private fun details(episodes: List<String>) = """{"seasons":[],"info":{},"episodes":[${episodes.joinToString(",")}]}"""

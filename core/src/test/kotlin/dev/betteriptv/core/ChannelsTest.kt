@@ -244,7 +244,7 @@ class ChannelsTest {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
         library.sync()
         library.setFavourite(channel("US: ESPN HD").key, true)
-        library.saveProgress(TitleId.Tmdb(TitleKind.Movie, 1), position = 10 * 60_000L, duration = 100 * 60_000L)
+        library.saveProgress(TitleId.Numbered(TitleKind.Movie, 1), position = 10 * 60_000L, duration = 100 * 60_000L)
 
         val rows = library.homeRows(english, "en")
         assertTrue(rows[0] is HomeRow.ContinueWatching)

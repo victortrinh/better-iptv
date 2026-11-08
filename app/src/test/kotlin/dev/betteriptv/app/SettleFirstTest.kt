@@ -25,7 +25,7 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class SettleFirstTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
-    private val url = "https://image.tmdb.org/t/p/w342/poster.jpg"
+    private val url = "https://img.example/poster.jpg"
 
     private class Chain(override val request: ImageRequest) : Interceptor.Chain {
         var loaded = false

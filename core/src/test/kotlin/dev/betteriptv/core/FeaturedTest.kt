@@ -39,8 +39,8 @@ class FeaturedTest {
 
     private fun open() = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
 
-    private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
-    private fun show(n: Long) = TitleId.Tmdb(TitleKind.Show, 500 + n)
+    private fun movie(titleNumber: Long) = TitleId.Numbered(TitleKind.Movie, titleNumber)
+    private fun show(n: Long) = TitleId.Numbered(TitleKind.Show, 500 + n)
 
     private fun movieBackdrop(n: Long) = "https://art.example/film-$n.jpg"
     private fun showBackdrop(n: Long) = "https://art.example/show-$n.jpg"
@@ -85,7 +85,7 @@ class FeaturedTest {
     }
 
     /** Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title facts, and the article in the cloud's feed. Before the Sync. */
-    private fun trending(vararg ids: TitleId.Tmdb) {
+    private fun trending(vararg ids: TitleId.Numbered) {
         ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = "Article $it") }
         cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> "Article $id" to 1_000L - i }.toTypedArray())
     }

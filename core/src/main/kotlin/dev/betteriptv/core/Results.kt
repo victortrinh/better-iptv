@@ -10,16 +10,20 @@ data class MovieListing(val id: Long, val name: String, val category: String, va
 enum class TitleKind { Movie, Show }
 
 /**
- * Which Title a card or details page is about. Movie and show TMDB IDs are separate number spaces,
- * so a Title is keyed by kind and TMDB ID.
+ * Which Title a card or details page is about. Movie and show Title numbers are separate number
+ * spaces, so a Title is keyed by kind and number.
  */
 sealed interface TitleId {
     val kind: TitleKind
 
-    /** A Title Matched by the TMDB ID its Listings carry. */
-    data class Tmdb(override val kind: TitleKind, val tmdbId: Long) : TitleId
+    /**
+     * A Title grouped by the Title number its Listings carry: the number the Provider files each
+     * Listing under (Xtream's `tmdb` field, TMDB's numbering, which the Provider copies), read from
+     * the catalog and never looked up (ADR 0014).
+     */
+    data class Numbered(override val kind: TitleKind, val titleNumber: Long) : TitleId
 
-    /** A Listing with no usable TMDB ID, standing alone until it can be looked up by name. */
+    /** A Listing with no usable Title number, or a Mismatch: a Title of its own, never grouped with another. */
     data class Unmatched(override val kind: TitleKind, val listingId: Long) : TitleId
 }
 
@@ -81,24 +85,24 @@ sealed interface HomeRow {
     data class Trending(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
     /**
-     * Titles with recently added Listings, most popular on TMDB first: movies and shows on Home
+     * Titles with recently added Listings, newest first: movies and shows on Home
      * ([kind] null), one kind on its tab (New movies, New shows).
      */
     data class NewOnYourService(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
     /**
-     * On a Kids profile: the newest Titles of the Kids catalog, most popular on TMDB first: movies
+     * On a Kids profile: the newest Titles of the Kids catalog, newest first: movies
      * and shows on Home ([kind] null), one kind on its tab.
      */
     data class NewForKids(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
-    /** On a Kids profile: the Kids catalog's most popular Titles of [kind] (Movies for kids, Shows for kids). */
+    /** On a Kids profile: the Kids catalog's newest Titles of [kind] left after New for kids (Movies for kids, Shows for kids). */
     data class ForKids(val kind: TitleKind, val titles: List<TitleSummary>) : HomeRow
 
     /** On Live on a Kids profile: the Channels of [country]'s Kids Categories, in the Provider's order. */
     data class KidsChannels(val country: LiveCountry, val channels: List<Channel>) : HomeRow
 
-    /** Titles in one of TMDB's genres ([name], in the App language), most popular first. */
+    /** Titles in one genre ([name], in the App language), from the Provider's genre fields and Category names. */
     data class Genre(val name: String, val titles: List<TitleSummary>) : HomeRow
 
     /** On Live, and on Home after Continue watching: the Games in progress that have a Feed, by start. A live Game with no Feed is left out. */
@@ -161,8 +165,6 @@ data class TitleDetails(
     val backdrop: String? = null,
     /** The main cast's names, as the Provider lists them. */
     val cast: List<String> = emptyList(),
-    /** Whether TMDB's art (the backdrop, the logo) is on the page: its terms ask for attribution where its data is shown. */
-    val fromTmdb: Boolean = false,
     /** The YouTube video ID of its trailer, as the Provider gives it (ADR 0012); null when it gives none, and the Trailer action stays out. */
     val trailer: String? = null,
     /** The director's name, or the directors', as the Provider lists them. */

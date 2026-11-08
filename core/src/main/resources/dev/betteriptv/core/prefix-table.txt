@@ -381,7 +381,7 @@ RÉGIONAL        | Local
 RELIGIOUS       | Religion
 RELIGION        | Religion
 
-# The genres of Titles (ADR 0014), as TMDB names them in English and in the languages the Provider's
+# The genres of Titles (ADR 0014), by their English names and in the languages the Provider's
 # genre fields and Categories were surveyed in (2026-11-07): a Movie's genre comes from its Category
 # where a word here names one, else from its details' genre field; a Show's from its Listing's field.
 # `Drame`, `Komödie` and `Comedia` all fold into Comedy and Drama. These describe Titles, not Channels:

@@ -33,7 +33,7 @@ class UnknownPrefixFirstTest {
         cloud.close()
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
     private val english = listOf("en")
 
     private val germanFullHd = matroskaFile(listOf(FileTrack("audio", "ger", "A_EAC3", channels = 6)), width = 1920, height = 1080)

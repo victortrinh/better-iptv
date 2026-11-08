@@ -28,7 +28,7 @@ class EpisodeHeaderReadTest {
         cloud.close()
     }
 
-    private val show = TitleId.Tmdb(TitleKind.Show, 1399)
+    private val show = TitleId.Numbered(TitleKind.Show, 1399)
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
     /**

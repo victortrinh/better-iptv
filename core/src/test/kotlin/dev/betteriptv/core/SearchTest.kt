@@ -42,13 +42,13 @@ class SearchTest {
     }
 
     private val english = listOf("en")
-    private val godfather = TitleId.Tmdb(TitleKind.Movie, 238)
-    private val gameOfThrones = TitleId.Tmdb(TitleKind.Show, 1399)
+    private val godfather = TitleId.Numbered(TitleKind.Movie, 238)
+    private val gameOfThrones = TitleId.Numbered(TitleKind.Show, 1399)
 
     private suspend fun search(query: String, contentLanguages: List<String> = english, appLanguage: String = "en") =
         library.search(query, contentLanguages, appLanguage).last()
 
-    private fun ids(titles: List<TitleSummary>) = titles.map { (it.id as TitleId.Tmdb).tmdbId }
+    private fun ids(titles: List<TitleSummary>) = titles.map { (it.id as TitleId.Numbered).titleNumber }
 
     /** A movie Listing to Sync: its name, its Title number, and the Category it is filed under. */
     private class Movie(val name: String, val number: Long, val category: String = "MOVIES")
@@ -115,9 +115,9 @@ class SearchTest {
     @Test fun `accents and case don't matter`() = runBlocking {
         syncMovies("EN - Pokémon: Detective Pikachu (2019)" to 447404, "FR - Amélie (2001)" to 194)
 
-        assertEquals(TitleId.Tmdb(TitleKind.Movie, 447404), search("pokemon").movies.single().id)
-        assertEquals(TitleId.Tmdb(TitleKind.Movie, 447404), search("POKÉMON").movies.single().id)
-        assertEquals(TitleId.Tmdb(TitleKind.Movie, 194), search("amelie").movies.single().id)
+        assertEquals(TitleId.Numbered(TitleKind.Movie, 447404), search("pokemon").movies.single().id)
+        assertEquals(TitleId.Numbered(TitleKind.Movie, 447404), search("POKÉMON").movies.single().id)
+        assertEquals(TitleId.Numbered(TitleKind.Movie, 194), search("amelie").movies.single().id)
     }
 
     @Test fun `small typos are tolerated`() = runBlocking {
@@ -194,7 +194,7 @@ class SearchTest {
         syncMovies("EN - Heat (1995)" to 949)
         cloud.down = true
 
-        assertEquals(listOf(TitleId.Tmdb(TitleKind.Movie, 949)), library.search("heat", english, "en").toList().single().movies.map { it.id })
+        assertEquals(listOf(TitleId.Numbered(TitleKind.Movie, 949)), library.search("heat", english, "en").toList().single().movies.map { it.id })
     }
 
     // People
@@ -222,7 +222,7 @@ class SearchTest {
         assertTrue(search("pacino").people.isEmpty())
         assertTrue("Search read details", provider.movieDetailsRequests.isEmpty())
 
-        library.title(TitleId.Tmdb(TitleKind.Movie, 949), english, "en")
+        library.title(TitleId.Numbered(TitleKind.Movie, 949), english, "en")
         assertTrue("no search index with the details", awaitSearchIndexAfterSearching("pacino"))
 
         assertEquals(listOf(949L), ids(search("pacino").people.single().titles))
@@ -265,10 +265,10 @@ class SearchTest {
         provider.serveMovieDetails(1, genre = "Crime, Thriller")
         assertEquals(listOf(115004L), ids(search("crime").genres.single().titles))
 
-        library.title(TitleId.Tmdb(TitleKind.Movie, 949), english, "en")
+        library.title(TitleId.Numbered(TitleKind.Movie, 949), english, "en")
         assertTrue(awaitSearchIndexAfterSearching("crime"))
 
-        assertEquals(listOf(949L, 115004L), search("crime").genres.single().titles.map { (it.id as TitleId.Tmdb).tmdbId })
+        assertEquals(listOf(949L, 115004L), search("crime").genres.single().titles.map { (it.id as TitleId.Numbered).titleNumber })
     }
 
     @Test fun `a query that is a genre's whole name shows that genre first (#170)`() = runBlocking {
@@ -341,9 +341,9 @@ class SearchTest {
     private val dramaTv = Channel("Drama TV", "Drama TV", null, null, false, listOf(ChannelVariant(7, "Drama TV", null, false)))
 
     @Test fun `results are one grid of cards, Titles by name first, then genres', Channels, Replays and people's, each Title once`() {
-        val movie = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
-        val show = TitleSummary(TitleId.Tmdb(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
-        val brooklyn = TitleSummary(TitleId.Tmdb(TitleKind.Movie, 3), "Brooklyn", null, null, VersionAttributes())
+        val movie = TitleSummary(TitleId.Numbered(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
+        val show = TitleSummary(TitleId.Numbered(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
+        val brooklyn = TitleSummary(TitleId.Numbered(TitleKind.Movie, 3), "Brooklyn", null, null, VersionAttributes())
         val replay = Replay(9, "SOC - Drama FC - Comedy United 01.11.2025", "SOCCER FOOTBALL", null, "Comedy United", "Drama FC", java.time.LocalDate.of(2025, 11, 1), 2025)
         val results = SearchResults(
             movies = listOf(movie),

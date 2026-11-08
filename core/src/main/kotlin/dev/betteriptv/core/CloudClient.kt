@@ -24,31 +24,13 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     private val base: HttpUrl = address.toHttpUrl()
 
     /**
-     * TMDB metadata for [ids] in [language] (ISO 639-1), at most [MAX_BATCH] at a time. Titles TMDB
-     * couldn't answer for right now are in neither part of the answer.
-     */
-    fun metadata(language: String, ids: List<TitleId.Tmdb>): CloudMetadata {
-        require(ids.size <= MAX_BATCH)
-        val body = mapOf(
-            "language" to language,
-            "titles" to ids.map { mapOf("kind" to kindName(it.kind), "tmdbId" to it.tmdbId) },
-        )
-        val answer = authorized { token -> post("v1/metadata", json.toJson(body), token) } as? Map<*, *>
-            ?: throw CloudException("The cloud sent something other than an object.")
-        return CloudMetadata(
-            found = (answer["titles"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { title -> titleId(title)?.let { it to json.serializeNulls().toJson(title) } }.toMap(),
-            notFound = (answer["notFound"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull(::titleId),
-        )
-    }
-
-    /**
      * What Wikidata knows of [ids] (#476), at most [MAX_FACTS_BATCH] at a time: each found Title's
      * facts, and the Titles Wikidata has no item for. Titles the cloud couldn't answer for right now
      * are in neither part of the answer, so they are asked again.
      */
-    fun titleFacts(ids: List<TitleId.Tmdb>): CloudTitleFacts {
+    fun titleFacts(ids: List<TitleId.Numbered>): CloudTitleFacts {
         require(ids.size <= MAX_FACTS_BATCH)
-        val body = mapOf("titles" to ids.map { mapOf("kind" to kindName(it.kind), "tmdbId" to it.tmdbId) })
+        val body = mapOf("titles" to ids.map { mapOf("kind" to kindName(it.kind), NUMBER_FIELD to it.titleNumber) })
         val answer = authorized { token -> post("v1/title-facts", json.toJson(body), token) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
         return CloudTitleFacts(
@@ -122,11 +104,11 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
      * The subtitles to download for a Movie, or a Show's [episode], in [languages] (ISO 639-1, at
      * most [MAX_SUBTITLE_LANGUAGES]): the best few in each language, best first.
      */
-    fun searchSubtitles(id: TitleId.Tmdb, episode: EpisodeNumber?, languages: List<String>): List<SubtitleOffer> {
+    fun searchSubtitles(id: TitleId.Numbered, episode: EpisodeNumber?, languages: List<String>): List<SubtitleOffer> {
         require(languages.size in 1..MAX_SUBTITLE_LANGUAGES)
         val body = mapOf(
             "kind" to kindName(id.kind),
-            "tmdbId" to id.tmdbId,
+            NUMBER_FIELD to id.titleNumber,
             "season" to episode?.season,
             "episode" to episode?.number,
             "languages" to languages,
@@ -163,16 +145,6 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
             }
             name to views
         }.toMap()
-    }
-
-    /**
-     * The Charts for [region] (ISO 3166, `CA`) in [language] (ISO 639-1), as the cloud's JSON, which
-     * [Charts] reads; kept whole, so parts a later app reads are already there.
-     */
-    fun charts(region: String, language: String): String {
-        val answer = authorized { token -> post("v1/charts", json.toJson(mapOf("region" to region, "language" to language)), token) } as? Map<*, *>
-            ?: throw CloudException("The cloud sent something other than an object.")
-        return json.serializeNulls().toJson(answer)
     }
 
     /**
@@ -356,10 +328,10 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }
     }
 
-    private fun titleId(title: Map<*, *>): TitleId.Tmdb? {
+    private fun titleId(title: Map<*, *>): TitleId.Numbered? {
         val kind = TitleKind.entries.find { kindName(it) == title["kind"] } ?: return null
-        val id = (title["tmdbId"] as? Number)?.toLong() ?: return null
-        return TitleId.Tmdb(kind, id)
+        val id = (title[NUMBER_FIELD] as? Number)?.toLong() ?: return null
+        return TitleId.Numbered(kind, id)
     }
 
     private class Unauthorized : CloudException("The cloud didn't accept this device's token.")
@@ -370,8 +342,11 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
     class NotSignedIn : CloudException("This device isn't signed in to an Account.")
 
     companion object {
-        /** The most Titles one metadata request may ask for. */
+        /** The most Listings one file reads request may ask about or share. */
         const val MAX_BATCH = 50
+
+        /** The field the cloud's API names a Title number by, after the numbering the Provider copies. */
+        private const val NUMBER_FIELD = "tmdbId"
 
         /** The most Title numbers one Title facts request may ask about (cloud/src/title-facts.ts). */
         const val MAX_FACTS_BATCH = 300
@@ -399,9 +374,6 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 /** What a history sync answered: the [cursor] to ask from next, and the Account's [changes] since (all of them when [reset]). */
 /** What a sync answered: the cursor it is at now, whether it is everything ([reset]), and what changed, each change with its Profile's Account id. */
 internal class SyncAnswer(val cursor: Long, val reset: Boolean, val changes: List<Pair<String, HistoryChange>>, val entries: List<SyncEntry>)
-
-/** What the cloud answered: each found Title's metadata as JSON, and the Titles TMDB doesn't have. */
-internal class CloudMetadata(val found: Map<TitleId.Tmdb, String>, val notFound: List<TitleId.Tmdb>)
 
 /**
  * A Sign-in code for the TV to show (ADR 0015): the phone opens [url] (the QR) or types the code on

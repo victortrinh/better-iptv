@@ -17,7 +17,7 @@ import org.junit.Test
 class ListedTracksTest {
     private val device = DeviceProfile(maxHeight = 1080, hdr = emptySet())
     private val version = Version(1, "FR - Coyote vs. Acme (2026)", VersionAttributes())
-    private val plan = PlayPlan(TitleId.Tmdb(TitleKind.Movie, 1), version, listOf("fr"), listOf(version))
+    private val plan = PlayPlan(TitleId.Numbered(TitleKind.Movie, 1), version, listOf("fr"), listOf(version))
     private val frenchSubtitles = RememberedTracks(audio = "fr", subtitles = "fr")
     private val listed = ListedTracks { audio, subtitles -> plan.chooseTracks(audio, subtitles, device, frenchSubtitles) }
 

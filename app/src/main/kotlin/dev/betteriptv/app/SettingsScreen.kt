@@ -480,6 +480,8 @@ internal fun SettingsContent(
                             else -> BuildConfig.VERSION_NAME
                         },
                         onClick = { if (offered != null) onUpdate() },
+                        // Where what the app knows beyond the Provider's catalog comes from (#480): Title facts and Trending.
+                        detail = stringResource(R.string.settings_data_sources),
                     )
                 }
                 }

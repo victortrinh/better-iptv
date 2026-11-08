@@ -38,9 +38,9 @@ class MatchingTest {
         cloud.close()
     }
 
-    private val munnaBhai = TitleId.Tmdb(TitleKind.Movie, 19625)
-    private val ballerina = TitleId.Tmdb(TitleKind.Movie, 541671)
-    private val pose = TitleId.Tmdb(TitleKind.Movie, 1199193)
+    private val munnaBhai = TitleId.Numbered(TitleKind.Movie, 19625)
+    private val ballerina = TitleId.Numbered(TitleKind.Movie, 541671)
+    private val pose = TitleId.Numbered(TitleKind.Movie, 1199193)
 
     private suspend fun cards(kind: TitleKind = TitleKind.Movie) = library.titles(0, 1000, listOf("en"), appLanguage = "en", kind = kind)
 
@@ -89,7 +89,7 @@ class MatchingTest {
 
         library.sync()
 
-        assertEquals(TitleId.Tmdb(TitleKind.Movie, 475557), cards().single().id)
+        assertEquals(TitleId.Numbered(TitleKind.Movie, 475557), cards().single().id)
         assertEquals(0, library.syncStatus.value.last?.mismatches)
     }
 
@@ -98,7 +98,7 @@ class MatchingTest {
 
         library.sync()
 
-        assertEquals(listOf("DE - Heat (1995)", "EN - Heat (1995)", "FR - Heat"), versionNames(TitleId.Tmdb(TitleKind.Movie, 949)).sorted())
+        assertEquals(listOf("DE - Heat (1995)", "EN - Heat (1995)", "FR - Heat"), versionNames(TitleId.Numbered(TitleKind.Movie, 949)).sorted())
         assertEquals(1, cards().size)
     }
 
@@ -121,7 +121,7 @@ class MatchingTest {
 
         library.sync()
 
-        assertEquals(listOf("EN - Pose", "FR - Pose (2018)"), versionNames(TitleId.Tmdb(TitleKind.Show, 70993)).sorted())
+        assertEquals(listOf("EN - Pose", "FR - Pose (2018)"), versionNames(TitleId.Numbered(TitleKind.Show, 70993)).sorted())
         assertEquals(TitleId.Unmatched(TitleKind.Show, 3), cards(TitleKind.Show).single { it.name == "Poza" }.id)
     }
 
@@ -156,7 +156,7 @@ class MatchingTest {
         assertEquals("https://img.example/2.jpg", lost.image)
     }
 
-    @Test fun `a Provider that doesn't copy TMDB's numbering gives one card per Listing`() = runBlocking {
+    @Test fun `a Provider that fills no Title numbers gives one card per Listing`() = runBlocking {
         serveMovies("EN - Heat (1995)" to null, "FR - Heat (1995)" to null, "DE - Heat (1995)" to null)
 
         library.sync()
@@ -207,7 +207,7 @@ class MatchingTest {
 
         assertTrue(library.syncStatus.value is SyncStatus.Synced)
         assertEquals(
-            setOf(TitleId.Tmdb(TitleKind.Movie, 949), TitleId.Unmatched(TitleKind.Movie, 3), TitleId.Unmatched(TitleKind.Movie, 4)),
+            setOf(TitleId.Numbered(TitleKind.Movie, 949), TitleId.Unmatched(TitleKind.Movie, 3), TitleId.Unmatched(TitleKind.Movie, 4)),
             cards().map { it.id }.toSet(),
         )
         assertEquals(listOf("Lost Film"), continueWatching())

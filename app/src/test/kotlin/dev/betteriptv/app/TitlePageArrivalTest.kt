@@ -86,9 +86,9 @@ class TitlePageArrivalTest {
         }
     }
 
-    private val cardBackdrop = "https://image.tmdb.org/t/p/w780/heat-wide.jpg"
-    private val pageBackdrop = "https://image.tmdb.org/t/p/w1280/heat-wide.jpg"
-    private val poster = "https://image.tmdb.org/t/p/w342/heat.jpg"
+    private val cardBackdrop = "https://img.example/w780/heat-wide.jpg"
+    private val pageBackdrop = "https://img.example/w1280/heat-wide.jpg"
+    private val poster = "https://img.example/heat.jpg"
     private val arts = mapOf(cardBackdrop to Art(), pageBackdrop to Art(), poster to Art())
 
     @Before fun serveTheArt() {
@@ -105,8 +105,8 @@ class TitlePageArrivalTest {
 
     private val version = Version(1, "Heat 1080p", VersionAttributes())
     private val english = LanguageGroup("en", listOf(version))
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 949)
-    private val show = TitleId.Tmdb(TitleKind.Show, 1396)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 949)
+    private val show = TitleId.Numbered(TitleKind.Show, 1396)
 
     private fun details(id: TitleId, name: String, backdrop: String?) = TitleDetails(id, name, 1995, poster, listOf(english), emptyList(), backdrop = backdrop)
 
@@ -218,7 +218,7 @@ class TitlePageArrivalTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test fun withoutATextlessBackdropThePageStillOpensWithThePosterBesideTheHeader() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
-        // The card didn't grow, so there is no backdrop to open on, and TMDB has none for the page.
+        // The card didn't grow, so there is no backdrop to open on, and the Provider has none for the page.
         open(movie, null, loaded)
         compose.mainClock.advanceTimeByFrame()
         assertEquals(0f, drawn().values.max())

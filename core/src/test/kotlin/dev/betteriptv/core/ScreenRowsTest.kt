@@ -4,9 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ScreenRowsTest {
-    private fun movie(tmdbId: Long) = StoredTitle(TitleId.Tmdb(TitleKind.Movie, tmdbId), emptyList())
+    private fun movie(titleNumber: Long) = StoredTitle(TitleId.Numbered(TitleKind.Movie, titleNumber), emptyList())
 
-    private fun ids(titles: List<StoredTitle>) = titles.map { (it.id as TitleId.Tmdb).tmdbId }
+    private fun ids(titles: List<StoredTitle>) = titles.map { (it.id as TitleId.Numbered).titleNumber }
 
     // A rail keys its cards by Title: the same Title twice in one row crashed the app (#378).
     @Test

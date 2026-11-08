@@ -35,7 +35,7 @@ import org.robolectric.annotation.Config
 
 /**
  * A row never shows the same card twice (#378): the stick closed on Home with "Key
- * Tmdb(kind=Show, tmdbId=124364) was already used" when a row it read had one Title twice, whatever
+ * Numbered(kind=Show, titleNumber=124364) was already used" when a row it read had one Title twice, whatever
  * list it came from. The rails key their cards by Title, so a repeated one shows once, where it
  * first came, on the rows Home, Movies, Shows and Live share ([RowsLayout]).
  */
@@ -60,7 +60,7 @@ class RowsDuplicateCardsTest {
     private var rows by mutableStateOf<List<HomeRow>>(emptyList())
     private var reading by mutableIntStateOf(0)
 
-    private fun show(name: String, tmdbId: Long) = TitleSummary(TitleId.Tmdb(TitleKind.Show, tmdbId), name, 2016, null, VersionAttributes())
+    private fun show(name: String, titleNumber: Long) = TitleSummary(TitleId.Numbered(TitleKind.Show, titleNumber), name, 2016, null, VersionAttributes())
     private fun resume(title: TitleSummary) = InProgress(title, null, 0.5f)
 
     private val colony = show("Colony", 124364)

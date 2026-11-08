@@ -84,7 +84,7 @@ class ProviderTableSyncTest {
 
     @Test fun `a Multi-audio Prefix's Versions are Untagged, Likely in the Title's original language`() = runBlocking {
         cloud.providerTables[key] = "[learned prefixes]\nEN | multi-audio\n"
-        cloud.titleFacts(TitleId.Tmdb(TitleKind.Movie, 1), originalLanguage = "fr")
+        cloud.titleFacts(TitleId.Numbered(TitleKind.Movie, 1), originalLanguage = "fr")
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"}]"""
         provider.movieListOverride = """[{"stream_id":1,"name":"EN - Amélie (2001)","tmdb":"1","category_id":"1","added":"1700000000"}]"""
         val library = library()
@@ -92,7 +92,7 @@ class ProviderTableSyncTest {
         library.sync()
 
         assertNull(library.language(1))
-        val details = library.title(TitleId.Tmdb(TitleKind.Movie, 1), listOf("en"), "en")!!
+        val details = library.title(TitleId.Numbered(TitleKind.Movie, 1), listOf("en"), "en")!!
         val version = (details.languages + details.otherLanguages).flatMap { it.versions }.single()
         assertEquals(Known("fr", Provenance.Likely), version.attributes.language)
     }

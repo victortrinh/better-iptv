@@ -80,7 +80,7 @@ class ArtworkFadeTest {
     private fun showArtwork(card: Boolean = false) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
-            val artwork = rememberArtwork("https://image.tmdb.org/t/p/w342/poster.jpg", card)
+            val artwork = rememberArtwork("https://img.example/poster.jpg", card)
             Box(Modifier.size(136.dp, 204.dp).then(if (artwork != null) Modifier.paint(artwork) else Modifier))
         }
     }

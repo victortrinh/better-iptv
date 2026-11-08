@@ -43,8 +43,8 @@ class TrendingTest {
 
     private val english = listOf("en")
 
-    private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
-    private fun show(tmdbId: Long) = TitleId.Tmdb(TitleKind.Show, tmdbId)
+    private fun movie(titleNumber: Long) = TitleId.Numbered(TitleKind.Movie, titleNumber)
+    private fun show(titleNumber: Long) = TitleId.Numbered(TitleKind.Show, titleNumber)
 
     /**
      * Syncs these movie Listings, newest first, each a Title of its own number, after scripting each

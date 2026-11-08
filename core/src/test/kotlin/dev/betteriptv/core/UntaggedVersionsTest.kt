@@ -35,7 +35,7 @@ class UntaggedVersionsTest {
         cloud.close()
     }
 
-    private val toyStory5 = TitleId.Tmdb(TitleKind.Movie, 1084244)
+    private val toyStory5 = TitleId.Numbered(TitleKind.Movie, 1084244)
 
     private val listings = listOf(
         "EN - Toy Story 5  (2026)" to "EN - KIDS",

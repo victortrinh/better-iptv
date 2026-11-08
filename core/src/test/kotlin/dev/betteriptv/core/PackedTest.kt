@@ -42,7 +42,7 @@ class PackedTest {
 
     @Test fun `Titles of either kind, Matched or not, are found by their position`() {
         val ids = listOf(
-            TitleId.Tmdb(TitleKind.Movie, 603), TitleId.Tmdb(TitleKind.Show, 603),
+            TitleId.Numbered(TitleKind.Movie, 603), TitleId.Numbered(TitleKind.Show, 603),
             TitleId.Unmatched(TitleKind.Movie, 603), TitleId.Unmatched(TitleKind.Show, 9_000_000_000),
         )
         val builder = SearchIndex.Builder()
@@ -50,7 +50,7 @@ class PackedTest {
         val index = builder.build()
         assertEquals(ids, List(index.titleCount) { index.titleId(it) })
         assertEquals(ids.indices.toList(), ids.map(index::position))
-        assertNull(index.position(TitleId.Tmdb(TitleKind.Movie, 604)))
+        assertNull(index.position(TitleId.Numbered(TitleKind.Movie, 604)))
         assertEquals(ids.indices.toSet(), index.findTitles("matrix").map { it.index }.toSet())
     }
 }

@@ -41,8 +41,8 @@ class ProfilesTest {
     }
 
     private val english = listOf("en")
-    private val first = TitleId.Tmdb(TitleKind.Movie, 1)
-    private val second = TitleId.Tmdb(TitleKind.Movie, 2)
+    private val first = TitleId.Numbered(TitleKind.Movie, 1)
+    private val second = TitleId.Numbered(TitleKind.Movie, 2)
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
     private suspend fun sync() {
@@ -247,7 +247,7 @@ class ProfilesTest {
         upgraded.close()
         CatalogStore(path).use { kept ->
             assertEquals(setOf(GameFeeds.droppedKey("nhl/1", "us espn")), kept.droppedFeeds(1, listOf("nhl/1")))
-            assertEquals(1, kept.episodeProgress(1, TitleId.Tmdb(TitleKind.Show, 7)).size)
+            assertEquals(1, kept.episodeProgress(1, TitleId.Numbered(TitleKind.Show, 7)).size)
         }
     }
 }

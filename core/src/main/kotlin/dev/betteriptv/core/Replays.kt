@@ -5,7 +5,7 @@ import java.time.LocalDate
 
 /**
  * A Sports replay (CONTEXT.md): a Listing of a past game in the Provider's VOD catalog, kept out of
- * the Movies and read from its [name] alone, since its TMDB ID and poster are wrong. [away] and
+ * the Movies and read from its [name] alone, since its Title number and poster are wrong. [away] and
  * [home] are the two teams the name gives (`SOC - Boston Bruins at Toronto Maple Leafs 09.11.25`:
  * the Bruins at the Leafs; with `vs`, `v` or a dash the first team is at home), null for a name with
  * no two teams (a highlights show, a season review). [date] is the date in the name, read as
