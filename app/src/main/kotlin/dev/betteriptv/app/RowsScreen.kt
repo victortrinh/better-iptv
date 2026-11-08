@@ -423,10 +423,11 @@ internal fun RowsLayout(
         if (shown == fresh) state.held = null
     }
     val rows = state.rows
-    // First focus goes to the hero's Play when there is a hero, else to the first card; never once
-    // the Viewer is on the tabs (rows and a hero arriving late, #498).
+    // First focus goes to the hero's Play when there is a hero, else to the first card; never while
+    // the Viewer is on the tabs (rows and a hero arriving late, or another Profile's read as the chip
+    // switches to it, #498).
     val focusOn = pending?.takeUnless { it.row == HERO_ROW && hero == null } ?: when {
-        focused || focusTab || backOnTabs -> null
+        focused || focusTab || backOnTabs || onTabs -> null
         hero != null -> RowCard(HERO_ROW, HERO_PLAY)
         else -> rows?.firstOrNull()?.let { RowCard(it.key, it.keys.first()) }
     }

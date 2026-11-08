@@ -208,4 +208,18 @@ class FocusOnTheTabsTest {
 
         compose.onNodeWithTag("home").assertIsFocused()
     }
+
+    @Test fun anotherProfilesRowsAndHeroArrivingWhileTheViewerIsOnATabLeaveFocusThere() {
+        screen()
+        onMovies()
+
+        // A switch from the chip, which is on the tabs (#501): the new Profile's rows and hero are read as on a first entry.
+        rows = listOf(genre("Comedy"))
+        state = RowsState()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Comedy0").assertExists()
+        compose.onNodeWithText("Play").assertIsNotFocused()
+        compose.onNodeWithTag("movies").assertIsFocused()
+    }
 }
