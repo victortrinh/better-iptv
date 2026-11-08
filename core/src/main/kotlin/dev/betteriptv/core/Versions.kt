@@ -5,8 +5,15 @@ import java.util.Locale
 /**
  * One Listing with what the Prefix table says about it: a Version before it's ranked and grouped.
  * [unknownPrefix] is the name's Prefix when neither the Base table nor the Provider table knows it.
+ * [listedLanguage] is the language its Prefix says it is in (a primary subtag), the language its name
+ * is written in, which stays when a read moves the Version to the language its audio is really in.
  */
-internal class Candidate(val listing: StoredListing, val attributes: VersionAttributes, val unknownPrefix: String? = null)
+internal class Candidate(
+    val listing: StoredListing,
+    val attributes: VersionAttributes,
+    val unknownPrefix: String? = null,
+    val listedLanguage: String? = attributes.language?.value?.let(::primaryLanguage),
+)
 
 /**
  * Better Versions first. CAM Versions always rank last and Audio-description ones after the rest, so
@@ -97,7 +104,7 @@ internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLangu
     return candidates.map { candidate ->
         val attributes = candidate.attributes
         if (attributes.language != null || !attributes.untaggedCopy) candidate
-        else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)), candidate.unknownPrefix)
+        else Candidate(candidate.listing, attributes.copy(language = Known(language, Provenance.Likely)), candidate.unknownPrefix, candidate.listedLanguage)
     }
 }
 
