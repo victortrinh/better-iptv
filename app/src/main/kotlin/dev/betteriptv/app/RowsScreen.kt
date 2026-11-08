@@ -54,7 +54,6 @@ import dev.betteriptv.app.ui.components.PulsingDot
 import dev.betteriptv.app.ui.components.RowHeading
 import dev.betteriptv.app.ui.components.CountryCard
 import dev.betteriptv.app.ui.components.RailInfo
-import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
@@ -64,7 +63,6 @@ import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.betteriptv.core.Channel
-import dev.betteriptv.core.ChartList
 import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.HomeRow
@@ -153,7 +151,7 @@ private fun HomeRow.refreshedFrom(fresh: List<HomeRow>): HomeRow {
             val freshCountries = fresh.filterIsInstance<HomeRow.Channels>().flatMap { it.countries }.associateBy(::countryKey)
             copy(countries = countries.map { freshCountries[countryKey(it)] ?: it })
         }
-        is HomeRow.Chart -> copy(titles = titles.map { freshTitles[it.id] ?: it })
+        is HomeRow.Trending -> copy(titles = titles.map { freshTitles[it.id] ?: it })
         is HomeRow.NewOnYourService -> copy(titles = titles.map { freshTitles[it.id] ?: it })
         is HomeRow.NewForKids -> copy(titles = titles.map { freshTitles[it.id] ?: it })
         is HomeRow.ForKids -> copy(titles = titles.map { freshTitles[it.id] ?: it })
@@ -445,8 +443,7 @@ internal fun RowsLayout(
         Unit
     }
     // Like Netflix's: the focused card sits at the left margin and its row's heading at the top of
-    // the rows, so focus stays in one place and the rows move under it. A Top row's card starts
-    // with its numeral, so the numeral sits there and the poster right of it.
+    // the rows, so focus stays in one place and the rows move under it.
     // How many cards of each width the screen shows at once, on the 960 dp canvas.
     val seen = remember {
         fun seen(width: Dp) = RailLoop.seen(width.value, Cards.gap.value, CANVAS_WIDTH.value, Spacing.screenX.value)
@@ -511,17 +508,15 @@ internal fun RowsLayout(
                             val wide = row is HomeRow.ContinueWatching
                             // Channels, countries, Games and Replays are wide cards alike.
                             val channels = row is HomeRow.Favourites || row is HomeRow.KidsChannels || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
-                            val ranked = row.ranked
                             // Kept with the row: new lists would compose each of its cards again.
                             val keys = remember(row) { row.keys }
                             val titles = remember(row) { row.titles }
-                            val loop = remember(keys.size, wide, channels, ranked) {
-                                RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters, ranked)
+                            val loop = remember(keys.size, wide, channels) {
+                                RailLoop(keys.size, if (wide) seen.stills else if (channels) seen.channels else seen.posters)
                             }
                             val cardWidth = when {
                                 wide -> Cards.continueWidth
                                 channels -> Cards.wideWidth
-                                ranked -> Cards.rankedWidth
                                 else -> Cards.posterWidth
                             }
                             val rail = state.rail(row.key, loop)
@@ -622,8 +617,7 @@ internal fun RowsLayout(
                                             onFocus = onFocus,
                                         )
                                     }
-                                    // A Chart's Titles are ranked 1…n in order.
-                                    if (ranked) RankedCard(index + 1) { poster() } else poster()
+                                    poster()
                                 }
                             }
                             SettledInfo(row, state, info)
@@ -737,7 +731,7 @@ private val HomeRow.titles: List<TitleSummary>
     get() = when (this) {
         is HomeRow.ContinueWatching -> titles.map { it.title }
         is HomeRow.Favourites, is HomeRow.KidsChannels, is HomeRow.Channels, is HomeRow.LiveNow, is HomeRow.Today, is HomeRow.LeagueGames, is HomeRow.MoreLiveEvents, is HomeRow.Replays -> emptyList()
-        is HomeRow.Chart -> titles
+        is HomeRow.Trending -> titles
         is HomeRow.NewOnYourService -> titles
         is HomeRow.NewForKids -> titles
         is HomeRow.ForKids -> titles
@@ -765,17 +759,13 @@ private val HomeRow.games: List<GameFeeds>?
 internal val HomeRow.mixesLeagues: Boolean
     get() = this is HomeRow.LiveNow || this is HomeRow.Today
 
-/** Whether a row is a Top 10, drawn with its ranks and never looping. */
-private val HomeRow.ranked: Boolean
-    get() = this is HomeRow.Chart && (list == ChartList.TopMovies || list == ChartList.TopShows)
-
 /** A row's key, as [RowCard]s hold it: the same row keeps it when rows before it come or go. */
 private val HomeRow.key: String
     get() = when (this) {
         is HomeRow.ContinueWatching -> "continue"
         is HomeRow.Favourites -> "favourites"
         is HomeRow.Channels -> "channels"
-        is HomeRow.Chart -> "chart/$list"
+        is HomeRow.Trending -> "trending"
         is HomeRow.NewOnYourService -> "new"
         is HomeRow.NewForKids -> "new-for-kids"
         is HomeRow.ForKids -> "for-kids/$kind"
@@ -799,7 +789,7 @@ internal fun List<HomeRow>.withUniqueCards(): List<HomeRow> = distinctBy { it.ke
         is HomeRow.Favourites -> row.copy(channels = row.channels.distinctBy(::channelKey))
         is HomeRow.KidsChannels -> row.copy(channels = row.channels.distinctBy(::channelKey))
         is HomeRow.Channels -> row.copy(countries = row.countries.distinctBy(::countryKey))
-        is HomeRow.Chart -> row.copy(titles = row.titles.distinctBy { it.id })
+        is HomeRow.Trending -> row.copy(titles = row.titles.distinctBy { it.id })
         is HomeRow.NewOnYourService -> row.copy(titles = row.titles.distinctBy { it.id })
         is HomeRow.NewForKids -> row.copy(titles = row.titles.distinctBy { it.id })
         is HomeRow.ForKids -> row.copy(titles = row.titles.distinctBy { it.id })
@@ -890,15 +880,13 @@ private fun HomeRow.heading(): String = when (this) {
     is HomeRow.ContinueWatching -> stringResource(R.string.row_continue_watching)
     is HomeRow.Favourites -> stringResource(R.string.row_favourites)
     is HomeRow.Channels -> stringResource(R.string.row_channels)
-    is HomeRow.Chart -> when (list) {
-        ChartList.Trending -> stringResource(R.string.row_trending)
-        ChartList.TrendingMovies -> stringResource(R.string.row_trending_movies)
-        ChartList.TrendingShows -> stringResource(R.string.row_trending_shows)
-        ChartList.TopMovies, ChartList.TopShows -> when (val country = region?.let { countryName(it, LocalConfiguration.current.locales[0].language) }) {
-            null -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies_worldwide else R.string.row_top_shows_worldwide)
-            else -> stringResource(if (list == ChartList.TopMovies) R.string.row_top_movies else R.string.row_top_shows, country)
-        }
-    }
+    is HomeRow.Trending -> stringResource(
+        when (kind) {
+            null -> R.string.row_trending
+            TitleKind.Movie -> R.string.row_trending_movies
+            TitleKind.Show -> R.string.row_trending_shows
+        },
+    )
     is HomeRow.NewOnYourService -> stringResource(
         when (kind) {
             null -> R.string.row_new

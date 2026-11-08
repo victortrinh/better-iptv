@@ -17,7 +17,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.app.ui.theme.NuageTheme
-import dev.betteriptv.core.ChartList
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.InProgress
 import dev.betteriptv.core.TitleId
@@ -88,7 +87,7 @@ class RowsDuplicateCardsTest {
     /** The Titles of the row [at] the screen shows, by name, in order. */
     private fun shown(at: Int): List<String> = when (val row = state.rows.orEmpty()[at]) {
         is HomeRow.ContinueWatching -> row.titles.map { it.title.name }
-        is HomeRow.Chart -> row.titles.map { it.name }
+        is HomeRow.Trending -> row.titles.map { it.name }
         is HomeRow.Genre -> row.titles.map { it.name }
         else -> error("no Titles in $row")
     }
@@ -102,9 +101,9 @@ class RowsDuplicateCardsTest {
     }
 
     @Test
-    fun aTitleTwiceInATopRowShowsOnce() {
-        // Top rows never loop, so their cards are keyed by Title alone, as the stick's crash was.
-        rows = listOf(HomeRow.Chart(ChartList.TopShows, null, listOf(colony, others[0], colony, others[1])))
+    fun aTitleTwiceInTrendingShowsOnce() {
+        // A rail too short to loop keys its cards by Title alone, as the stick's crash was.
+        rows = listOf(HomeRow.Trending(listOf(colony, others[0], colony, others[1])))
         screen()
         compose.waitForIdle()
         assertEquals(listOf("Colony", "Other 1", "Other 2"), shown(0))

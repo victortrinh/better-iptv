@@ -26,10 +26,10 @@ class TitlesState {
 }
 
 /**
- * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Top 10 in the
- * Viewer's [region], its Trending this week, then New movies (or shows). Sync now and how the Sync
+ * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Trending this
+ * week, then New movies (or shows), then its genres. Sync now and how the Sync
  * is going are in Settings; only a first Sync's checklist, or why it failed, shows here, while
- * there are no Titles yet. Above the rows, a featured Title from the top of the kind's Top row, a
+ * there are no Titles yet. Above the rows, a featured Title of the kind from Trending, else New, a
  * different one each time the tab is entered ([Library.featured]): its Play plays it ([onPlay]), its
  * Details opens it ([onOpen]). [restoreFocus] is the card to focus on coming back, the one the
  * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
@@ -40,7 +40,6 @@ fun TitlesScreen(
     kind: TitleKind,
     contentLanguages: List<String>,
     appLanguage: String,
-    region: String,
     state: TitlesState,
     restoreFocus: RowCard?,
     focusTab: Boolean,
@@ -57,14 +56,14 @@ fun TitlesScreen(
     val noTitles = status.last == null
     RowsScreen(
         library, contentLanguages, appLanguage, state.rows, restoreFocus, focusTab,
-        reading = listOf(kind, contentLanguages, appLanguage, region, catalog),
-        read = { library.tabRows(kind, contentLanguages, appLanguage, region) },
+        reading = listOf(kind, contentLanguages, appLanguage, catalog),
+        read = { library.tabRows(kind, contentLanguages, appLanguage) },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
         placeholder = if (noTitles) {
             { SyncChecklist(status, SyncStep.Movies, onRetry) }
         } else null,
-        feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, region, readDetails) },
+        feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, readDetails) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(

@@ -81,7 +81,6 @@ fun SearchScreen(
     onEdit: ((String) -> String) -> Unit,
     contentLanguages: List<String>,
     appLanguage: String,
-    region: String,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
     onOpen: (TitleId) -> Unit,
@@ -96,11 +95,11 @@ fun SearchScreen(
     var answered by remember { mutableStateOf("") }
     // Finishes the index at the Viewer's priority, if its build in the background hasn't, while they reach for the first letters.
     LaunchedEffect(catalog) { library.prepareSearch() }
-    LaunchedEffect(query, catalog, contentLanguages, appLanguage, region) {
+    LaunchedEffect(query, catalog, contentLanguages, appLanguage) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
         // One answer, from the device's index (ADR 0014).
-        results = library.search(query, contentLanguages, appLanguage, region).first()
+        results = library.search(query, contentLanguages, appLanguage).first()
         answered = query
     }
     val keyboard = remember { FocusRequester() }

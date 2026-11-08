@@ -40,8 +40,6 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.app.ui.components.Certainty
-import dev.betteriptv.core.ChartList
-import dev.betteriptv.core.ChartRank
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
 import dev.betteriptv.core.Known
@@ -126,7 +124,6 @@ class TitleTwoLevelsTest {
         genres = listOf("Crime", "Drama", "Action"),
         runtimeMinutes = 170,
         cast = listOf("Al Pacino", "Robert De Niro", "Val Kilmer", "Jon Voight", "Tom Sizemore"),
-        rank = ChartRank(1, ChartList.TopMovies, "US"),
         fromTmdb = true,
     )
 

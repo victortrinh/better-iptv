@@ -61,11 +61,11 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
 /**
  * The home screen's rows ([RowsScreen]): Continue watching (stills with how far the Viewer got),
  * Live now (the Games of the [leagues] on that are in progress with a Feed, as the Live tab's Game
- * cards; no row otherwise), the Top 10 movies and shows in the Viewer's [region], New on your
- * service, Trending this week, the Viewer's Favourites, then a row per genre. The Games are asked
+ * cards; no row otherwise), Trending this week, New on your service, the Viewer's Favourites,
+ * then a row per genre. The Games are asked
  * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live, but
  * never hold the other rows: the kept Games show first, and the rows are read again once fresh ones
- * land ([Library.catalogChanges]). Above the rows, a featured Title from the top of the Charts, a
+ * land ([Library.catalogChanges]). Above the rows, a featured Title from Trending, else New, a
  * different one each time Home is entered ([Library.featured]): its Play plays it ([onPlay]), its
  * Details opens it ([onOpen]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
  * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
@@ -127,7 +127,7 @@ fun HomeScreen(
                 }
             }
         } else null,
-        feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, region, readDetails) },
+        feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, readDetails) },
         onPlayFeatured = onPlay,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
