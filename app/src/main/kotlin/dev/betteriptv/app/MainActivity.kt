@@ -301,7 +301,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     Browse.Search -> {
                         BackHandler { onTab(Browse.Movies) }
                         SearchScreen(
-                            app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage, settings.region,
+                            app.library, query, { edit -> query = edit(query) }, contentLanguages, appLanguage,
                             focusTab = byTab,
                             onTab = onTab,
                             onOpen = { opened = OpenedTitle(it) },
@@ -321,7 +321,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         // Each tab its own screen, so the card to focus on one isn't looked for on the other.
                         key(kind) {
                             TitlesScreen(
-                                app.library, kind, contentLanguages, appLanguage, settings.region, if (kind == TitleKind.Movie) movies else shows,
+                                app.library, kind, contentLanguages, appLanguage, if (kind == TitleKind.Movie) movies else shows,
                                 restoreFocus = returnedTo,
                                 focusTab = byTab,
                                 onTab = onTab,
@@ -345,7 +345,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         }
                     }
                     TitleScreen(
-                        app.library, title.id, contentLanguages, appLanguage, settings.region, settings.qualityCap,
+                        app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
                         preferOriginalAudio = settings.preferOriginalAudio,
                         openedOn = title.backdrop,
                         deviceProfile = { readDeviceProfile(context) },

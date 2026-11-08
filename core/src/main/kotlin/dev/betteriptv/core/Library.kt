@@ -129,10 +129,10 @@ class Library private constructor(
     private val detailsReading = AtomicInteger()
     @Volatile private var cardsOnScreen: List<TitleId> = emptyList()
     /**
-     * Saves the cloud's Charts and metadata answers one at a time, in order, apart from the read
+     * Saves the cloud's Trending feeds and metadata answers one at a time, in order, apart from the read
      * that asked for them: a Sync holds the catalog's writer while it downloads, for minutes on the
      * Fire TV Stick, and Home's rows mustn't wait for it (#213). Until its save lands, an answer is
-     * read from [unsavedCharts] or [unsavedMetadata] as if it were stored.
+     * read from [unsavedTrending] or [unsavedMetadata] as if it were stored.
      */
     private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
     /** The thread asking the cloud for other devices' file reads of a Movie whose details are read ([title]). */
@@ -161,7 +161,9 @@ class Library private constructor(
     val guideChanges: StateFlow<Int> = _guideChanges.asStateFlow()
     /** The guide's clock: today, for the day a refusal stops it, and now, for the programme on. Tests move it. */
     @Volatile internal var guideClock: Clock = Clock.systemDefaultZone()
-    private val unsavedCharts = ConcurrentHashMap<Pair<String, String>, StoredCharts>()
+    /** Trending's feeds asked of the cloud and not saved yet, by App language. */
+    private val unsavedTrending = ConcurrentHashMap<String, StoredTrending>()
+    private val trendingAsks = Any()
     private val unsavedGames = ConcurrentHashMap<String, StoredGames>()
     /** When the cloud last answered a request for each League, listing it or not: one it has no copy of yet waits as a kept copy does (#307). */
     private val gamesAnsweredAt = ConcurrentHashMap<String, Instant>()
@@ -818,7 +820,7 @@ class Library private constructor(
      * [prepareSearchInBackground]; a search before the first one waits for it, and one during or
      * after a Sync answers from the index built before it until the new one is.
      */
-    fun search(query: String, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): Flow<SearchResults> = flow {
+    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
         // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
         val forKids = if (kids) KidsSearch(kidsCatalog().values.flatten().toHashSet(), kidsChannels(Instant.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
@@ -831,8 +833,7 @@ class Library private constructor(
         val people = index.findPeople(query).map { FoundPerson(index.person(it.index), it.distance, index.personTitles(it.index).filterTo(HashSet(), inIndex)) }
         val channels = foundChannels(index, query, forKids?.channels)
         val replays = if (forKids == null) foundReplays(index, query) else emptyList()
-        val ranks = if (forKids == null) topRanks(region, contentLanguages, appLanguage) else emptyMap()
-        emit(searchResults(index, query, titles, people, contentLanguages, appLanguage, ranks, inIndex).copy(channels = channels, replays = replays))
+        emit(searchResults(index, query, titles, people, contentLanguages, appLanguage, inIndex).copy(channels = channels, replays = replays))
     }.flowOn(Dispatchers.IO)
 
     /** What a Kids profile's search keeps: the Kids catalog's [titles] and the Channels of Kids Categories, by key. */
@@ -1029,7 +1030,6 @@ class Library private constructor(
         people: List<FoundPerson>,
         contentLanguages: List<String>,
         appLanguage: String,
-        ranks: Map<TitleId, ChartRank>,
         inCatalog: (Int) -> Boolean,
     ): SearchResults {
         val wanted = contentLanguages.map(::primaryLanguage).toSet()
@@ -1051,7 +1051,7 @@ class Library private constructor(
         val ofKind = { kind: TitleKind -> ranked.filter { index.titleId(it.index).kind == kind }.take(TITLES_FOUND) }
         val shown = (TitleKind.entries.flatMap(ofKind) + shownPeople.flatMap { it.second } + shownGenres.flatMap { it.second })
             .map { index.titleId(it.index) }.distinct()
-        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associate { it.id to it.copy(rank = ranks[it.id]) }
+        val summaries = summaries(shown.mapNotNull(store::title), contentLanguages, appLanguage).associateBy { it.id }
         val found = { hits: List<SearchIndex.Hit> -> hits.mapNotNull { summaries[index.titleId(it.index)] } }
         // The best Titles of either kind are among those shown, so their names are at hand.
         val titleNames = ranked.take(COMPLETIONS * 2).mapNotNull { summaries[index.titleId(it.index)]?.name }
@@ -1179,7 +1179,7 @@ class Library private constructor(
      * for good (read again only once the Provider changes that Listing); a Show's are on its Listing
      * since Sync. With the Provider unreachable the page opens whole from what is kept.
      */
-    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, preferOriginalAudio: Boolean = true): TitleDetails? = withContext(Dispatchers.IO) {
+    suspend fun title(id: TitleId, contentLanguages: List<String>, appLanguage: String, preferOriginalAudio: Boolean = true): TitleDetails? = withContext(Dispatchers.IO) {
         val title = store.title(id) ?: return@withContext null
         // What other Viewers of the Provider read is asked beside TMDB's details, so a Movie's page
         // arrives with its badges and plan Confirmed and they don't change once it shows (#387). A
@@ -1215,7 +1215,6 @@ class Library private constructor(
             runtimeMinutes = details.runtimeMinutes,
             backdrop = titleBackdrop(title, kept, shown.best.listing),
             cast = cleanList(details.cast),
-            rank = topRanks(region, contentLanguages, appLanguage)[id],
             fromTmdb = metadata != null,
             trailer = details.trailer,
             directors = cleanList(details.director),
@@ -1802,14 +1801,14 @@ class Library private constructor(
 
     /**
      * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
-     * are in progress with a Feed, as on the Live tab; no row at all otherwise), then the Charts for the Viewer's [region] (Top
-     * movies, Top shows), then New on your service (the most recently added Titles, newest first by
-     * when the Provider added them, two added the same second by its rating), then TMDB's trending this week, then the Viewer's
-     * Favourites (in the order they were added; finished Event channels left out), then one row per genre ([genreRows]),
-     * the genre the Provider has the most Titles of first. Browse rows and
-     * Charts show only Titles with a Version in the Viewer's [contentLanguages], or an Untagged one
-     * Likely in one; a Chart also only the Titles the Provider has, and none at all under
-     * [MIN_CHART_SIZE]. Continue watching shows whatever the Viewer started, a Show at the Episode to
+     * are in progress with a Feed, as on the Live tab; no row at all otherwise), then Trending
+     * ([trendingTitles]: what Wikipedia's readers looked up most this week, movies and shows mixed),
+     * then New on your service (the most recently added Titles, newest first by when the Provider
+     * added them, two added the same second by its rating), then the Viewer's Favourites (in the
+     * order they were added; finished Event channels left out), then one row per genre
+     * ([genreRows]), the genre the Provider has the most Titles of first. Browse rows show only
+     * Titles with a Version in the Viewer's [contentLanguages], or an Untagged one Likely in one;
+     * Trending none at all under [MIN_TRENDING_SIZE]. Continue watching shows whatever the Viewer started, a Show at the Episode to
      * watch next, until they finish it. Genres come from the Prefix table's mapping of the Provider's
      * Categories and genre fields, so they need no cloud. A Title shows in one browse row only, the highest it fits
      * ([ScreenRows]); a genre row left with too few Titles gives its place to the next genre. Rows
@@ -1827,29 +1826,25 @@ class Library private constructor(
         val favourites = store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
-        val charts = charts(region, appLanguage, now)
-        val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
-        val trends = charts.trendingAll.mapNotNull(store::title)
-        val metadata = metadata((resumes.map { it.first } + movies + shows + tops.flatMap { it.second } + trends).map { it.id }.distinct(), appLanguage)
+        val trends = trendingTitles(appLanguage, now)
+        val metadata = metadata((resumes.map { it.first } + movies + shows + trends).map { it.id }.distinct(), appLanguage)
         // The newest movies and the newest shows, in the Viewer's languages, together newest first.
         val browsable = listOf(movies, shows).map { titles -> watchable(titles, contentLanguages) }
         val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(newestFirst)
         val screen = ScreenRows()
-        val charted = tops.map { (list, titles) -> list to screen.chart(watchable(titles, contentLanguages), MIN_CHART_SIZE) }
+        // Trending sits above New, so New skips what Trending shows.
+        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_TRENDING_SIZE)
         val new = screen.row(newest, ROW_SIZE)
-        // Trending sits below New, so it skips what New shows.
-        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_CHART_SIZE)
         val genres = genreRows(TitleKind.entries, contentLanguages, appLanguage, screen, GENRE_ROWS)
         val inGenres = genres.flatMap { (_, titles) -> titles }
         val all = metadata + metadata(inGenres.map { it.id }.filter { it !in metadata }, appLanguage)
-        val kept = keptMovieDetails((resumes.map { it.first } + movies + tops.flatMap { it.second } + trends + inGenres).distinctBy { it.id })
+        val kept = keptMovieDetails((resumes.map { it.first } + movies + trending + inGenres).distinctBy { it.id })
         fun card(title: StoredTitle) = rowCard(title, contentLanguages, appLanguage, all, kept)
         buildList {
             continueWatchingRow(resumes, kept, ::card)?.let(::add)
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
-            charted.forEach { (list, titles) -> if (titles.isNotEmpty()) add(HomeRow.Chart(list, region.takeUnless { charts.worldwide }, titles.map { card(it) })) }
+            if (trending.isNotEmpty()) add(HomeRow.Trending(trending.map { card(it) }))
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(new.map { card(it) }))
-            if (trending.isNotEmpty()) add(HomeRow.Chart(ChartList.Trending, null, trending.map { card(it) }))
             if (favourites.isNotEmpty()) add(HomeRow.Favourites(favourites))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, titles.map { card(it) })) }
             wantGuide(favourites = favourites)
@@ -1893,8 +1888,9 @@ class Library private constructor(
     }
 
     /**
-     * The Title [screen]'s hero features, chosen each time the screen is entered: one of the newest
-     * [FEATURED_FROM] of each kind it shows, as New on your service has them (movies and shows in
+     * The Title [screen]'s hero features, chosen each time the screen is entered: one of the first
+     * [FEATURED_FROM] of each kind it shows in Trending ([trendingTitles]), else, when Trending has
+     * none that qualifies, of the newest as New on your service has them (movies and shows in
      * turn on Home, a movie first; the kind's on Movies and Shows), with a Version in the Viewer's
      * [contentLanguages], not in Continue watching, and with a backdrop ([titleBackdrop]), which the
      * hero is drawn on. A Show's is on its Listing since Sync; a Movie whose details were never read
@@ -1904,13 +1900,16 @@ class Library private constructor(
      * same Title doesn't come back on the next entry, and from the first again past the last. Null
      * when no Title qualifies: the screen opens on its rows.
      */
-    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, readDetails: Boolean = true): FeaturedTitle? =
-        featured(screen, contentLanguages, appLanguage, region, Instant.now(), readDetails)
+    suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean = true): FeaturedTitle? =
+        featured(screen, contentLanguages, appLanguage, Instant.now(), readDetails)
 
-    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant, readDetails: Boolean = true): FeaturedTitle? = withContext(Dispatchers.IO) {
+    internal suspend fun featured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, now: Instant, readDetails: Boolean = true): FeaturedTitle? = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsFeatured(screen, contentLanguages, appLanguage, readDetails)
-        val lists = featuredKinds(screen).map { kind -> store.titles(kind, 0, if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
-        nextFeatured(screen.name.lowercase(), lists, contentLanguages, appLanguage, readDetails)
+        val kinds = featuredKinds(screen)
+        val trends = trendingTitles(appLanguage, now)
+        val trending = kinds.map { kind -> trends.filter { it.id.kind == kind } }
+        val newest = kinds.map { kind -> store.titles(kind, 0, if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
+        nextFeatured(screen.name.lowercase(), listOf(trending, newest), contentLanguages, appLanguage, readDetails)
     }
 
     /** The kinds of Title [screen]'s hero features, in the order it takes them in turn. */
@@ -1921,44 +1920,48 @@ class Library private constructor(
     }
 
     /**
-     * The hero's Title from [lists] (the newest Titles of each kind, newest first): of each, the first
-     * [FEATURED_FROM] that are watchable in [contentLanguages], not in Continue watching, and that
-     * have a backdrop or may get one from details not yet read, taken in turn. The one after the
-     * Title featured last on the screen kept as [key] is featured, from the first again past the
-     * last; one with no backdrop is passed over. A Movie's unread details are read for the first such
-     * Movie reached, when [readDetails], and for no other: one Provider call at most. Null when none
-     * has a backdrop.
+     * The hero's Title from [sources], in order of preference (Trending's Titles of each kind, then the
+     * newest of each kind, newest first): of each kind's list, the first [FEATURED_FROM] that are
+     * watchable in [contentLanguages], not in Continue watching, and that have a backdrop or may get
+     * one from details not yet read, taken in turn. The first source with such a Title is featured
+     * from; the next stands in only when it has none, or none of its Titles turns out to have a
+     * backdrop. The one after the Title featured last on the screen kept as [key] is featured, from
+     * the first again past the last; one with no backdrop is passed over. A Movie's unread details
+     * are read for the first such Movie reached, when [readDetails], and for no other: one Provider
+     * call at most. Null when none has a backdrop.
      */
-    private fun nextFeatured(key: String, lists: List<List<StoredTitle>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
+    private fun nextFeatured(key: String, sources: List<List<List<StoredTitle>>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
-        val kept = keptMovieDetails(lists.flatten()).toMutableMap()
+        val kept = keptMovieDetails(sources.flatten().flatten().distinctBy { it.id }).toMutableMap()
         fun unread(title: StoredTitle, best: StoredListing) = title.id.kind == TitleKind.Movie && kept[best.id]?.added != best.added
-        val tops = lists.map { titles ->
-            watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.filter { (title, shown) ->
-                titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.best.listing)
-            }.take(FEATURED_FROM).toList()
-        }
-        val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
-        if (candidates.isEmpty()) return null
         val last = lastFeatured[key] ?: store.lastFeatured(key)
-        val from = candidates.indexOfFirst { it.first.id == last } + 1
         var mayRead = readDetails
-        for (i in candidates.indices) {
-            val (title, shown) = candidates[(from + i) % candidates.size]
-            val best = shown.best.listing
-            if (unread(title, best)) {
-                if (!mayRead) continue
-                mayRead = false
-                kept += movieDetailsForPage(title, best)
+        for (lists in sources) {
+            val tops = lists.map { titles ->
+                watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.filter { (title, shown) ->
+                    titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.best.listing)
+                }.take(FEATURED_FROM).toList()
             }
-            val backdrop = titleBackdrop(title, kept, best) ?: continue
-            lastFeatured[key] = title.id
-            saveLater { store.saveLastFeatured(key, title.id) }
-            val details = providerDetails(title, best, kept)
-            return FeaturedTitle(
-                title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
-                titleGenres(title, kept).map { Genres.named(it, appLanguage) }, details.plot, backdrop, shown.best.attributes,
-            )
+            val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
+            if (candidates.isEmpty()) continue
+            val from = candidates.indexOfFirst { it.first.id == last } + 1
+            for (i in candidates.indices) {
+                val (title, shown) = candidates[(from + i) % candidates.size]
+                val best = shown.best.listing
+                if (unread(title, best)) {
+                    if (!mayRead) continue
+                    mayRead = false
+                    kept += movieDetailsForPage(title, best)
+                }
+                val backdrop = titleBackdrop(title, kept, best) ?: continue
+                lastFeatured[key] = title.id
+                saveLater { store.saveLastFeatured(key, title.id) }
+                val details = providerDetails(title, best, kept)
+                return FeaturedTitle(
+                    title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
+                    titleGenres(title, kept).map { Genres.named(it, appLanguage) }, details.plot, backdrop, shown.best.attributes,
+                )
+            }
         }
         return null
     }
@@ -2136,42 +2139,34 @@ class Library private constructor(
     }
 
     /**
-     * The Movies or Shows tab's rows, for [kind]: the Top 10 of that kind in the Viewer's [region]
-     * (or the world's), TMDB's trending of that kind this week, then New movies (or shows): the
-     * newest Titles of that kind, newest first, two added the same second by the Provider's rating,
-     * then a row per genre of that kind ([genreRows]), the genres with the most of the Provider's
-     * Titles first. Each row shows only the Provider's Titles with a
-     * Version in the Viewer's [contentLanguages], or an Untagged one Likely in one, a Chart none at
-     * all under [MIN_CHART_SIZE] and a genre none under [MIN_GENRE_SIZE]. The tab shows a Title once,
-     * in the highest row it fits ([ScreenRows]), on its own: a Title on Home's Top row is on the
-     * tab's too. Rows with no Titles are left out. Like Home, the Charts kept on the device stand
-     * while the cloud can't answer; the genre rows need no cloud.
+     * The Movies or Shows tab's rows, for [kind]: Trending of that kind ([trendingTitles]), then New
+     * movies (or shows): the newest Titles of that kind, newest first, two added the same second by
+     * the Provider's rating, then a row per genre of that kind ([genreRows]), the genres with the
+     * most of the Provider's Titles first. Each row shows only the Provider's Titles with a Version in
+     * the Viewer's [contentLanguages], or an Untagged one Likely in one, Trending none at all under
+     * [MIN_TRENDING_SIZE] and a genre none under [MIN_GENRE_SIZE]. The tab shows a Title once, in the
+     * highest row it fits ([ScreenRows]), on its own: a Title in Home's Trending is in the tab's too.
+     * Rows with no Titles are left out. Like Home, the Trending feed kept on the device stands while
+     * the cloud can't answer; the genre rows need no cloud.
      */
-    suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION): List<HomeRow> =
-        tabRows(kind, contentLanguages, appLanguage, region, Instant.now())
+    suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
+        tabRows(kind, contentLanguages, appLanguage, Instant.now())
 
-    internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, region: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsTabRows(kind, contentLanguages, appLanguage)
-        val charts = charts(region, appLanguage, now)
-        val movies = kind == TitleKind.Movie
-        val topList = if (movies) ChartList.TopMovies else ChartList.TopShows
-        val trendingList = if (movies) ChartList.TrendingMovies else ChartList.TrendingShows
-        val tops = (if (movies) charts.topMovies else charts.topShows).mapNotNull(store::title)
-        val trends = (if (movies) charts.trendingMovies else charts.trendingShows).mapNotNull(store::title)
+        val trends = trendingTitles(appLanguage, now).filter { it.id.kind == kind }
         val newest = store.titles(kind, 0, TAB_NEW)
-        val metadata = metadata((tops + trends + newest).map { it.id }.distinct(), appLanguage)
+        val metadata = metadata((trends + newest).map { it.id }.distinct(), appLanguage)
         val screen = ScreenRows()
-        val top = screen.chart(watchable(tops, contentLanguages), MIN_CHART_SIZE)
-        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_CHART_SIZE)
+        val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_TRENDING_SIZE)
         val new = screen.row(watchable(newest, contentLanguages).sortedWith(newestFirst), ROW_SIZE)
         // The genre rows go after New, through the same [screen], so they skip what's shown above.
         val genres = genreRows(listOf(kind), contentLanguages, appLanguage, screen, TAB_GENRE_ROWS)
         val all = metadata + metadata(genres.flatMap { (_, titles) -> titles.map { it.id } }, appLanguage)
-        val kept = keptMovieDetails(top + trending + new + genres.flatMap { it.second })
+        val kept = keptMovieDetails(trending + new + genres.flatMap { it.second })
         fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, all, kept) }
         buildList {
-            if (top.isNotEmpty()) add(HomeRow.Chart(topList, region.takeUnless { charts.worldwide }, cards(top)))
-            if (trending.isNotEmpty()) add(HomeRow.Chart(trendingList, null, cards(trending)))
+            if (trending.isNotEmpty()) add(HomeRow.Trending(cards(trending), kind))
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(cards(new), kind))
             genres.forEach { (name, titles) -> add(HomeRow.Genre(name, cards(titles))) }
         }
@@ -2209,7 +2204,7 @@ class Library private constructor(
      * Home's rows on a Kids profile: Continue watching, then New for kids (the newest Kids movies
      * and shows, newest first, two added the same second by the Provider's rating), Movies for kids
      * and Shows for kids (the newest of each kind left), then one row per genre over the Kids catalog
-     * ([kidsGenres]). No Charts, no Games, no Favourites. Each row shows only Titles the Viewer can
+     * ([kidsGenres]). No Trending, no Games, no Favourites. Each row shows only Titles the Viewer can
      * watch in their [contentLanguages], and a Title once, in the highest row it fits.
      */
     private fun kidsHomeRows(contentLanguages: List<String>, appLanguage: String): List<HomeRow> {
@@ -2243,7 +2238,7 @@ class Library private constructor(
     /**
      * The Movies or Shows tab on a Kids profile, for [kind]: New for kids (the newest Kids Titles of
      * the kind, newest first, two added the same second by the Provider's rating), Movies (or Shows)
-     * for kids (the newest left), then one row per genre over the Kids catalog. No Charts.
+     * for kids (the newest left), then one row per genre over the Kids catalog. No Trending.
      */
     private fun kidsTabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> {
         val catalog = kidsCatalog()
@@ -2269,7 +2264,7 @@ class Library private constructor(
     private fun kidsFeatured(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
         val catalog = kidsCatalog()
         val lists = featuredKinds(screen).map { newestKids(catalog.getValue(it), if (it == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
-        return nextFeatured("kids/${screen.name.lowercase()}", lists, contentLanguages, appLanguage, readDetails)
+        return nextFeatured("kids/${screen.name.lowercase()}", listOf(lists), contentLanguages, appLanguage, readDetails)
     }
 
     /**
@@ -2858,43 +2853,49 @@ class Library private constructor(
     }
 
     /**
-     * Each Top 10 Title's rank in [region], as its Top row on Home numbers it: counted among the
-     * Provider's Titles the Viewer can watch ([watchable]). Trending carries none.
+     * Trending's Titles (CONTEXT.md, #477): the Provider's Titles Wikipedia's readers looked up most
+     * over the week, most viewed first, movies and shows mixed. Each wiki's article names in the feed
+     * ([trendingViews]: English's, and the App language's) are matched to the Titles' article names
+     * in their Wikidata facts; a Title's views are its article's summed over the week, and a Title in
+     * both wikis counts once, with its larger sum. Not kept to the Content languages: the rows do that.
      */
-    private fun topRanks(region: String, contentLanguages: List<String>, appLanguage: String): Map<TitleId, ChartRank> {
-        val charts = charts(region, appLanguage, Instant.now())
-        val tops = listOf(ChartList.TopMovies to charts.topMovies, ChartList.TopShows to charts.topShows).map { (list, ids) -> list to ids.mapNotNull(store::title) }
-        val metadata = metadata(tops.flatMap { it.second }.map { it.id }, appLanguage)
-        return buildMap {
-            tops.forEach { (list, titles) ->
-                watchable(titles, contentLanguages).forEachIndexed { i, title -> put(title.id, ChartRank(i + 1, list, region.takeUnless { charts.worldwide })) }
+    private fun trendingTitles(appLanguage: String, now: Instant): List<StoredTitle> {
+        val sums = HashMap<TitleId, Long>()
+        trendingViews(appLanguage, now).forEach { (wiki, articles) ->
+            store.titlesByArticle(wiki, articles.keys).forEach { (article, ids) ->
+                val views = articles.getValue(article)
+                ids.forEach { sums.merge(it, views, ::maxOf) }
             }
         }
+        val ranked = sums.entries.sortedWith(compareByDescending<Map.Entry<TitleId, Long>> { it.value }.thenBy { it.key.toString() }).map { it.key }
+        val titles = store.titles(ranked)
+        return ranked.mapNotNull(titles::get)
     }
 
     /**
-     * The Charts for [region] in [appLanguage]'s language: the copy kept on the device while it is
-     * under [CHARTS_FRESH_FOR] old, else the cloud's, kept for next time. When the cloud can't answer,
-     * the kept copy stands however old; with none, there are no Charts.
+     * Trending's feed for [appLanguage], each wiki's article names with their views summed over the
+     * week: the copy kept on the device while it is under [TRENDING_FRESH_FOR] old, across runs, else
+     * the cloud's, kept for next time. When the cloud can't answer, the kept copy stands however old;
+     * with none, there is no Trending. One ask at a time, so Home's rows and its hero, read together,
+     * ask once.
      */
-    private fun charts(region: String, appLanguage: String, now: Instant): Charts {
+    private fun trendingViews(appLanguage: String, now: Instant): Map<String, Map<String, Long>> = synchronized(trendingAsks) {
         val language = primaryLanguage(appLanguage)
-        val key = region to language
-        val kept = unsavedCharts[key] ?: store.charts(region, language)
-        if (kept != null && kept.fetchedAt.isAfter(now - CHARTS_FRESH_FOR)) return Charts(kept.body)
+        val kept = unsavedTrending[language] ?: store.trending(language)
+        if (kept != null && kept.fetchedAt.isAfter(now - TRENDING_FRESH_FOR)) return kept.views
         if (cloud != null && now.isAfter(cloudRetryAt)) {
             try {
-                val body = cloud.charts(region, language)
-                val asked = StoredCharts(body, now)
-                unsavedCharts[key] = asked
+                val views = cloud.trending(language)
+                val asked = StoredTrending(views, now)
+                unsavedTrending[language] = asked
                 // Saved without waiting on a Sync.
-                saveLater(after = { unsavedCharts.remove(key, asked) }) { store.saveCharts(region, language, body, now) }
-                return Charts(body)
+                saveLater(after = { unsavedTrending.remove(language, asked) }) { store.saveTrending(language, views, now) }
+                return views
             } catch (e: CloudException) {
                 cloudRetryAt = now + CLOUD_RETRY_AFTER
             }
         }
-        return kept?.let { Charts(it.body) } ?: Charts.NONE
+        kept?.views.orEmpty()
     }
 
     /**
@@ -3050,8 +3051,8 @@ class Library private constructor(
         /** Listings read per query: SQLite takes at most 999 bound parameters in older builds. */
         private const val LISTINGS_PER_QUERY = 900
 
-        /** A Chart with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
-        private const val MIN_CHART_SIZE = 3
+        /** A Trending row with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
+        private const val MIN_TRENDING_SIZE = 3
 
         /** How many of the newest Titles of each kind the hero picks its Title from ([featured]). */
         private const val FEATURED_FROM = 5
@@ -3079,8 +3080,8 @@ class Library private constructor(
         private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
         /** A "Not this game" mark is forgotten this long after it was made: its Game is long over, and the rows ask for a week ahead at most. */
         private val DROPPED_KEPT_FOR: Duration = Duration.ofDays(14)
-        /** The cloud refreshes Netflix's Top 10 daily; the device asks it again after this. */
-        private val CHARTS_FRESH_FOR: Duration = Duration.ofHours(1)
+        /** The cloud reads Wikipedia's lists once a day; the device asks Trending's feed again after this, at most once an hour. */
+        private val TRENDING_FRESH_FOR: Duration = Duration.ofHours(1)
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
         /** How long a Movie's details wait for the cloud's file reads of its Versions: the page-arrival time (DESIGN.md, Motion). */

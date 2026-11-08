@@ -347,10 +347,6 @@
     <string name="row_continue_watching">Reprendre</string>
     <string name="row_new">Nouveau sur votre service</string>
     <string name="row_favourites">Favoris</string>
-    <string name="row_top_movies">Top films de la semaine · %1$s</string>
-    <string name="row_top_shows">Top séries de la semaine · %1$s</string>
-    <string name="row_top_movies_worldwide">Top films de la semaine dans le monde</string>
-    <string name="row_top_shows_worldwide">Top séries de la semaine dans le monde</string>
     <string name="row_trending">Tendances de la semaine</string>
     <string name="row_trending_movies">Films tendance de la semaine</string>
     <string name="row_trending_shows">Séries tendance de la semaine</string>
@@ -361,10 +357,6 @@
     <string name="row_new_shows_for_kids">Nouvelles séries pour les enfants</string>
     <string name="row_movies_for_kids">Films pour les enfants</string>
     <string name="row_shows_for_kids">Séries pour les enfants</string>
-    <string name="rank_movies">N° %1$d des films · %2$s</string>
-    <string name="rank_shows">N° %1$d des séries · %2$s</string>
-    <string name="rank_movies_worldwide">N° %1$d des films dans le monde</string>
-    <string name="rank_shows_worldwide">N° %1$d des séries dans le monde</string>
     <string name="player_live">En direct · %1$s</string>
     <string name="channel_add_favourite">≡ Ajouter aux favoris</string>
     <string name="channel_remove_favourite">≡ Retirer des favoris</string>

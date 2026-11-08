@@ -113,7 +113,6 @@ fun TitleScreen(
     id: TitleId,
     contentLanguages: List<String>,
     appLanguage: String,
-    region: String,
     qualityCap: QualityCap,
     deviceProfile: () -> DeviceProfile,
     onPlay: (PlayPlan, String, StartingArt) -> Unit,
@@ -131,8 +130,8 @@ fun TitleScreen(
     // Whether the Header reads still have Versions to read, so the page can say so (#457).
     var checking by remember(id) { mutableStateOf(false) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, region, qualityCap, reads, removals) {
-        val details = library.title(id, contentLanguages, appLanguage, region, preferOriginalAudio) ?: return@produceState
+    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, qualityCap, reads, removals) {
+        val details = library.title(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap, preferOriginalAudio)
     }
     // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
@@ -350,8 +349,7 @@ private fun TitleContent(
         Column(Modifier.width(470.dp)) {
             TitleName(title.name)
             Spacer(Modifier.height(Spacing.s))
-            // The badges go under the line when both don't fit, so a long rank badge ("#1 in movies in
-            // United States") doesn't cut the genres off (#208).
+            // The badges go under the line when both don't fit, so they don't cut the genres off (#208).
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.m),
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs),
@@ -367,7 +365,7 @@ private fun TitleContent(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                BadgeRow(listOfNotNull(title.rank?.badge()) + best?.attributes?.cardBadges().orEmpty())
+                BadgeRow(best?.attributes?.cardBadges().orEmpty())
             }
             // A Show's header names the Episode its Play starts; its line is kept while the Episodes are read.
             if (isShow && (plan?.episode != null || episodes == null)) {

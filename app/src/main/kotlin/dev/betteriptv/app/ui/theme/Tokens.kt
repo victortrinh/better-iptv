@@ -188,18 +188,6 @@ object Cards {
     val continueWidth = 363.dp
     /** Wide enough that a focused card's growth doesn't touch its neighbours. */
     val gap = 20.dp
-    /** A Top row's numeral shows this wide to the left of its poster (`RankedCard`)... */
-    val numeralWidth = 72.dp
-    /** ...and runs on this far under the poster, which overlaps its right edge. */
-    val numeralOverlap = 12.dp
-    /** A Top row's numeral is drawn this tall, about three quarters of the poster's height, its top level with the poster's. */
-    val numeralHeight = 152.dp
-    /** A Top row's numeral fades out over this much of its width, ending where the poster starts... */
-    val numeralFade = 36.dp
-    /** ...down to this opacity, so its edge under the poster still just shows. */
-    const val numeralFadeAlpha = 0.15f
-    /** A Top row's card: the numeral, then the poster. */
-    val rankedWidth = numeralWidth + posterWidth
 }
 
 /** How much things grow on focus. */

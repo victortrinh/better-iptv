@@ -33,6 +33,12 @@ class KidsCatalogTest {
 
     private fun show(tmdbId: Long) = TitleId.Tmdb(TitleKind.Show, tmdbId)
 
+    /** Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title facts, and the article in the cloud's feed. Before the Sync. */
+    private fun trending(vararg ids: TitleId.Tmdb) {
+        ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = "Article $it") }
+        cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> "Article $id" to 1_000L - i }.toTypedArray())
+    }
+
     /** A movie Listing to serve: its [name], its Title's [tmdbId] and the Category it is filed under. */
     private class Filed(val name: String, val tmdbId: Long, val category: String)
 
@@ -112,9 +118,6 @@ class KidsCatalogTest {
         serveMovies(*(1L..6L).map { Filed("EN - Film $it (2025)", it, "EN - MOVIES") }.toTypedArray(), Filed("EN - Kid (2025)", 7, "EN - KIDS"))
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
-        cloud.genre(TitleKind.Movie, "Animation", 1, 2, 999)
-        cloud.genre(TitleKind.Movie, "Family", 3)
-        cloud.genre(TitleKind.Movie, "Drama", 4, 5)
         (1L..7L).forEach { tmdb(it, "Film $it", genres = listOf("Animation")) }
         val library = library()
         library.sync()
@@ -133,12 +136,12 @@ class KidsCatalogTest {
         assertEquals(setOf(movie(7)), shown)
     }
 
-    @Test fun `Home on a Kids profile shows Continue watching, New for kids, Movies for kids, Shows for kids, then genre rows, and no Charts`() = runBlocking {
+    @Test fun `Home on a Kids profile shows Continue watching, New for kids, Movies for kids, Shows for kids, then genre rows, and no Trending`() = runBlocking {
         // The Kids movies are all Animation by their Category; Family, which every Kids Category is, makes no row.
         val kidsMovies = (1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS ANIMATION") }
         serveMovies(*kidsMovies.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - ANIMATION"))
         serveShows(*(1L..20L).map { Filed("EN - Kid show $it", 200 + it, "EN - KIDS") }.toTypedArray(), Filed("EN - Drama", 300, "EN - SERIES"))
-        cloud.charts("CA", movies = listOf(100, 1, 2, 3), shows = listOf(300, 201, 202, 203))
+        trending(movie(100), movie(1), movie(2), movie(3), show(300), show(201), show(202), show(203))
         val library = library()
         library.sync()
         val normal = library.homeRows(english, "en", "CA")
@@ -166,23 +169,23 @@ class KidsCatalogTest {
         // The newest Kids Title leads New for kids, a movie and a show added the same second in turn.
         assertEquals(listOf("Kid movie 1", "Kid show 1", "Kid movie 2"), rows.filterIsInstance<HomeRow.NewForKids>().single().titles.take(3).map { it.name })
         assertEquals(listOf("Animation"), rows.filterIsInstance<HomeRow.Genre>().map { it.name })
-        // A normal profile's rows are unchanged: its Charts are there, and nothing for kids.
-        assertTrue(normal.any { it is HomeRow.Chart })
+        // A normal profile's rows are unchanged: its Trending is there, and nothing for kids.
+        assertTrue(normal.any { it is HomeRow.Trending })
         assertTrue(normal.none { it is HomeRow.NewForKids || it is HomeRow.ForKids })
         library.switchProfile(Profile.FIRST_ID)
         assertEquals(normal, library.homeRows(english, "en", "CA"))
     }
 
-    @Test fun `the Movies and Shows tabs on a Kids profile show New for kids, the kind for kids, then genre rows, and no Charts`() = runBlocking {
+    @Test fun `the Movies and Shows tabs on a Kids profile show New for kids, the kind for kids, then genre rows, and no Trending`() = runBlocking {
         serveMovies(*(1L..45L).map { Filed("EN - Kid movie $it (2025)", it, "EN - KIDS ANIMATION") }.toTypedArray(), Filed("EN - Grown-up (2025)", 100, "EN - MOVIES"))
         serveShows(*(1L..45L).map { Filed("EN - Kid show $it", 200 + it, "EN - KIDS ANIMATION") }.toTypedArray())
-        cloud.charts("CA", movies = listOf(100, 1, 2, 3))
+        trending(movie(100), movie(1), movie(2), movie(3))
         val library = library()
         library.sync()
         onKidsProfile(library)
 
         for (kind in TitleKind.entries) {
-            val rows = library.tabRows(kind, english, "en", "CA")
+            val rows = library.tabRows(kind, english, "en")
             assertEquals(listOf(HomeRow.NewForKids::class, HomeRow.ForKids::class, HomeRow.Genre::class), rows.map { it::class })
             assertEquals(kind, rows.filterIsInstance<HomeRow.NewForKids>().single().kind)
             assertEquals(kind, rows.filterIsInstance<HomeRow.ForKids>().single().kind)
@@ -201,9 +204,9 @@ class KidsCatalogTest {
         library.sync()
         onKidsProfile(library)
 
-        repeat(3) { assertEquals(movie(1), library.featured(FeaturedScreen.Home, english, "en", "CA")?.id) }
-        assertEquals(movie(1), library.featured(FeaturedScreen.Movies, english, "en", "CA")?.id)
-        assertEquals(null, library.featured(FeaturedScreen.Shows, english, "en", "CA"))
+        repeat(3) { assertEquals(movie(1), library.featured(FeaturedScreen.Home, english, "en")?.id) }
+        assertEquals(movie(1), library.featured(FeaturedScreen.Movies, english, "en")?.id)
+        assertEquals(null, library.featured(FeaturedScreen.Shows, english, "en"))
     }
 
     @Test fun `Live on a Kids profile shows the Favourites, then the Channels of Kids Categories as one row per country`() = runBlocking {

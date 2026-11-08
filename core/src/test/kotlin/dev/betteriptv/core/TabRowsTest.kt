@@ -15,7 +15,7 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** The Movies and Shows tabs' rows, seen through the Library after a Sync, with metadata and Charts from the fake Cloud. */
+/** The Movies and Shows tabs' rows, seen through the Library after a Sync, with metadata and Trending from the fake Cloud. */
 class TabRowsTest {
     @get:Rule val folder = TemporaryFolder()
     private val provider = FakeProvider()
@@ -71,12 +71,23 @@ class TabRowsTest {
     /** Serves TMDB's metadata of a movie [tmdbId] named [name]. */
     private fun tmdb(tmdbId: Long, name: String) = cloud.title("en", tmdbTitle(tmdbId, name))
 
-    private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english, region: String = "CA") =
-        library.tabRows(kind, contentLanguages, appLanguage = "en", region = region, now = Instant.now())
+    private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english) =
+        library.tabRows(kind, contentLanguages, appLanguage = "en", now = Instant.now())
 
-    private fun List<HomeRow>.chart(list: ChartList) = filterIsInstance<HomeRow.Chart>().singleOrNull { it.list == list }
+    /**
+     * Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title
+     * facts, and the article in the cloud's feed. Called before the Sync, which asks for the facts.
+     */
+    private fun trending(vararg ids: TitleId.Tmdb) {
+        ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = article(it)) }
+        cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> article(id) to 1_000L - i }.toTypedArray())
+    }
 
-    private fun List<HomeRow>.chartNames(list: ChartList) = chart(list)?.titles?.map { it.name }
+    private fun article(id: TitleId.Tmdb) = "Article ${id.kind} ${id.tmdbId}"
+
+    private fun List<HomeRow>.trending() = filterIsInstance<HomeRow.Trending>().singleOrNull()
+
+    private fun List<HomeRow>.trendingNames() = trending()?.titles?.map { it.name }
 
     private fun List<HomeRow>.new() = filterIsInstance<HomeRow.NewOnYourService>().single()
 
@@ -84,7 +95,7 @@ class TabRowsTest {
 
     private fun List<HomeRow>.names() = map {
         when (it) {
-            is HomeRow.Chart -> it.list.toString()
+            is HomeRow.Trending -> "Trending ${it.kind}"
             is HomeRow.NewOnYourService -> "New ${it.kind}"
             is HomeRow.Genre -> it.name
             else -> it.toString()
@@ -115,17 +126,16 @@ class TabRowsTest {
     }
 
     @Test fun `genre rows skip the Titles shown above them, and a genre left with fewer than 5 is left out`() = runBlocking {
+        trending(movie(1), movie(2), movie(3), movie(4))
         syncOlderMovies(
             *numbered("Laugh", 1L..10L), *numbered("Fright", 11L..14L), *numbered("Other", 21L..22L),
             // Filler 1 is on New movies; Laugh 5 to 7 are Comedy and Horror, Comedy the bigger genre, so Horror is left with 4.
             filed = under("EN - COMEDY", (1L..4L) + (8L..10L) + 9001L) + under("EN - COMEDY HORROR", 5L..7L) + under("EN - HORROR", 11L..14L),
         )
-        cloud.charts("CA", movies = listOf(1, 2, 3))
-        cloud.trending(movie(4), movie(21), movie(22))
 
         val rows = rows()
         assertTrue("Filler 1" in rows.newNames())
-        assertEquals(listOf("TopMovies", "TrendingMovies", "New Movie", "Comedy"), rows.names())
+        assertEquals(listOf("Trending Movie", "New Movie", "Comedy"), rows.names())
         assertEquals((5..10).map { "Laugh $it" }, rows.genre("Comedy"))
     }
 
@@ -154,31 +164,27 @@ class TabRowsTest {
         assertEquals((1..5).map { "Laugh $it" }, rows().genre("Comedy"))
     }
 
-    @Test fun `the Movies tab shows Top movies, Trending movies, then New movies`() = runBlocking {
+    @Test fun `the Movies tab shows Trending movies, then New movies, then genres`() = runBlocking {
         serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
-        syncMovies(*(1L..9L).map { "EN - Film $it (2025)" to it }.toTypedArray())
-        cloud.charts("CA", movies = listOf(1, 2, 3), shows = listOf(501, 502, 503))
-        cloud.trending(show(501), movie(4), show(502), movie(5), movie(6), show(503))
+        trending(show(501), movie(4), show(502), movie(5), movie(6), show(503))
+        syncOlderMovies(*(1L..9L).map { "EN - Film $it (2025)" to it }.toTypedArray(), filed = under("EN - COMEDY", 1L..9L))
 
         val rows = rows(TitleKind.Movie)
-        assertEquals(listOf("TopMovies", "TrendingMovies", "New Movie"), rows.names())
-        assertEquals(listOf("Film 1", "Film 2", "Film 3"), rows.chartNames(ChartList.TopMovies))
+        assertEquals(listOf("Trending Movie", "New Movie", "Comedy"), rows.names())
         // Trending movies only: the shows trending with them go to the Shows tab.
-        assertEquals(listOf("Film 4", "Film 5", "Film 6"), rows.chartNames(ChartList.TrendingMovies))
-        assertEquals(setOf("Film 7", "Film 8", "Film 9"), rows.newNames().toSet())
+        assertEquals(listOf("Film 4", "Film 5", "Film 6"), rows.trendingNames())
+        assertEquals(TitleKind.Movie, rows.trending()!!.kind)
     }
 
     @Test fun `the Shows tab mirrors it with shows`() = runBlocking {
         serveShows(*(1L..9L).map { "EN - Show $it (2025)" to 500 + it }.toTypedArray())
+        trending(movie(1), show(504), movie(2), show(505), show(506), movie(3))
         syncMovies("EN - Film 1 (2025)" to 1, "EN - Film 2 (2025)" to 2, "EN - Film 3 (2025)" to 3)
-        cloud.charts("CA", movies = listOf(1, 2, 3), shows = listOf(501, 502, 503))
-        cloud.trending(movie(1), show(504), movie(2), show(505), show(506))
 
         val rows = rows(TitleKind.Show)
-        assertEquals(listOf("TopShows", "TrendingShows", "New Show"), rows.names())
-        assertEquals(listOf("Show 1", "Show 2", "Show 3"), rows.chartNames(ChartList.TopShows))
-        assertEquals(listOf("Show 4", "Show 5", "Show 6"), rows.chartNames(ChartList.TrendingShows))
-        assertEquals(setOf("Show 7", "Show 8", "Show 9"), rows.newNames().toSet())
+        assertEquals(listOf("Trending Show", "New Show"), rows.names())
+        assertEquals(listOf("Show 4", "Show 5", "Show 6"), rows.trendingNames())
+        assertEquals((1..9).filter { it !in 4..6 }.map { "Show $it" }.toSet(), rows.newNames().toSet())
     }
 
     @Test fun `New movies lists the newest movies in a Content language first, two added the same second by the Provider's rating`() = runBlocking {
@@ -195,67 +201,47 @@ class TabRowsTest {
         assertEquals(listOf("Newest", "Tie high", "Tie low", "Old"), rows().newNames())
     }
 
-    @Test fun `a tab's Top row keeps the Provider's Titles in a Content language, ranked in order, in the Region`() = runBlocking {
-        syncMovies("EN - Fourth (2025)" to 4, "EN - First (2025)" to 1, "FR - Second (2025)" to 2, "EN - Fifth (2025)" to 5)
-        tmdb(1, "First")
-        tmdb(2, "Second")
-        tmdb(4, "Fourth")
-        tmdb(5, "Fifth")
-        cloud.charts("CA", movies = listOf(1, 99, 2, 4, 5))
-        cloud.charts("FR", movies = listOf(5, 4, 1), worldwide = true)
-
-        val top = rows(region = "CA").chart(ChartList.TopMovies)!!
-        assertEquals(listOf("First", "Fourth", "Fifth"), top.titles.map { it.name })
-        assertEquals("CA", top.region)
-        // The world's list says so.
-        assertEquals(null, rows(region = "FR").chart(ChartList.TopMovies)!!.region)
-    }
-
-    @Test fun `Charts with fewer than 3 cards are left out, and their Titles go to New`() = runBlocking {
+    @Test fun `a tab's Trending of fewer than 3 cards is left out, and its Titles go to New`() = runBlocking {
+        trending(movie(1), movie(2))
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2)
-        cloud.charts("CA", movies = listOf(1, 2))
-        cloud.trending(movie(1), movie(2))
 
         val rows = rows()
         assertEquals(listOf("New Movie"), rows.names())
         assertEquals(setOf("First", "Second"), rows.newNames().toSet())
     }
 
-    @Test fun `a tab shows each Title once, the Top row keeping all of its own`() = runBlocking {
+    @Test fun `a tab shows each Title once, New skipping what Trending shows`() = runBlocking {
+        trending(movie(4), movie(5), movie(6))
         syncMovies(*(1L..6L).map { "EN - Film $it (2025)" to it }.toTypedArray())
-        cloud.charts("CA", movies = listOf(1, 2, 3))
-        // Film 1 is in Top movies, so Trending skips it; Trending's then go missing from New.
-        cloud.trending(movie(1), movie(4), movie(5), movie(6))
 
         val rows = rows()
-        assertEquals(listOf("Film 1", "Film 2", "Film 3"), rows.chartNames(ChartList.TopMovies))
-        assertEquals(listOf("Film 4", "Film 5", "Film 6"), rows.chartNames(ChartList.TrendingMovies))
-        assertTrue(rows.none { it is HomeRow.NewOnYourService })
+        assertEquals(listOf("Film 4", "Film 5", "Film 6"), rows.trendingNames())
+        assertEquals(setOf("Film 1", "Film 2", "Film 3"), rows.newNames().toSet())
     }
 
-    @Test fun `a Title on Home's Top row also shows on the Movies tab's, each screen showing a Title once on its own`() = runBlocking {
+    @Test fun `a Title in Home's Trending also shows in the Movies tab's, each screen showing a Title once on its own`() = runBlocking {
+        trending(movie(1), movie(2), movie(3))
         syncMovies(*(1L..4L).map { "EN - Film $it (2025)" to it }.toTypedArray())
-        cloud.charts("CA", movies = listOf(1, 2, 3))
 
         val home = library.homeRows(english, "en", "CA")
         val movies = rows()
-        assertEquals(listOf("Film 1", "Film 2", "Film 3"), home.chartNames(ChartList.TopMovies))
-        assertEquals(listOf("Film 1", "Film 2", "Film 3"), movies.chartNames(ChartList.TopMovies))
+        assertEquals(listOf("Film 1", "Film 2", "Film 3"), home.filterIsInstance<HomeRow.Trending>().single().titles.map { it.name })
+        assertEquals(listOf("Film 1", "Film 2", "Film 3"), movies.trendingNames())
         assertEquals(listOf("Film 4"), movies.newNames())
     }
 
-    @Test fun `without the cloud and no Charts kept, a tab still has New`() = runBlocking {
+    @Test fun `without the cloud and no feed kept, a tab still has New`() = runBlocking {
+        trending(movie(1), movie(2), movie(3))
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3)
-        cloud.charts("CA", movies = listOf(1, 2, 3))
         cloud.down = true
 
         val rows = rows()
         assertEquals(listOf("New Movie"), rows.names())
     }
 
-    @Test fun `a tab reads what's stored while a Sync downloads, though its Charts and metadata are asked again`() = runBlocking {
+    @Test fun `a tab reads what's stored while a Sync downloads, though its Trending feed and metadata are asked again`() = runBlocking {
+        trending(movie(1), movie(2), movie(3))
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
-        cloud.charts("CA", movies = listOf(1, 2, 3))
         // An answer from before textless backdrops is asked again on every read, so this one saves metadata each time.
         cloud.title("en", tmdbTitle(4, "Fourth") - "textlessBackdropPath")
         rows()
@@ -271,9 +257,10 @@ class TabRowsTest {
         val sync = launch(Dispatchers.IO) { library.sync() }
         try {
             assertTrue(downloading.await(10, TimeUnit.SECONDS))
-            // Over an hour later, so the kept Charts are asked again.
-            val rows = withTimeout(5_000) { library.tabRows(TitleKind.Movie, english, "en", "CA", Instant.now().plusSeconds(2 * 3600)) }
-            assertEquals(listOf("First", "Second", "Third"), rows.chartNames(ChartList.TopMovies))
+            // Over an hour later, so the kept feed is asked again.
+            val rows = withTimeout(5_000) { library.tabRows(TitleKind.Movie, english, "en", Instant.now().plusSeconds(2 * 3600)) }
+            assertEquals(listOf("en", "en"), cloud.trendingAsked)
+            assertEquals(listOf("First", "Second", "Third"), rows.trendingNames())
             assertEquals(listOf("Fourth"), rows.newNames())
         } finally {
             release.countDown()

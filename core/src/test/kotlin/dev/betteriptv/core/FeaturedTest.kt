@@ -12,7 +12,7 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * The Title each screen's hero features (#348, #475), seen through the Library over the fake
- * Provider: from New on your service, with the Provider's backdrop, skipping what the Viewer is in,
+ * Provider: from Trending (#477), else New on your service, with the Provider's backdrop, skipping what the Viewer is in,
  * a different one at each entry, and at most one Provider details call per entry.
  */
 class FeaturedTest {
@@ -70,7 +70,7 @@ class FeaturedTest {
         library.sync()
     }
 
-    private suspend fun featured(screen: FeaturedScreen = FeaturedScreen.Home) = library.featured(screen, english, "en", "CA")?.name
+    private suspend fun featured(screen: FeaturedScreen = FeaturedScreen.Home) = library.featured(screen, english, "en")?.name
 
     /** The names [screen] features at its next [entries] entries, each costing the Provider at most one details call. */
     private suspend fun entries(entries: Int, screen: FeaturedScreen = FeaturedScreen.Home) = List(entries) {
@@ -82,6 +82,31 @@ class FeaturedTest {
         sync(movies = (1L..7L).toList())
 
         assertEquals(listOf("Film 1", "Film 2", "Film 3", "Film 4", "Film 5", "Film 1"), entries(6))
+    }
+
+    /** Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title facts, and the article in the cloud's feed. Before the Sync. */
+    private fun trending(vararg ids: TitleId.Tmdb) {
+        ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = "Article $it") }
+        cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> "Article $id" to 1_000L - i }.toTypedArray())
+    }
+
+    @Test fun `the hero features Trending's Titles first, in turn, by views`() = runBlocking {
+        trending(movie(6), movie(4), show(2))
+        sync(movies = (1L..7L).toList(), shows = listOf(1, 2))
+
+        assertEquals(listOf("Film 6", "Show 2", "Film 4", "Film 6"), entries(4))
+        assertEquals(listOf("Film 6", "Film 4"), entries(2, FeaturedScreen.Movies))
+        assertEquals("Show 2", featured(FeaturedScreen.Shows))
+    }
+
+    @Test fun `with no Trending Title that qualifies, the hero falls back to New on your service`() = runBlocking {
+        // Film 6 is in Continue watching, Film 7 has no backdrop, Film 5 isn't in a Content language.
+        trending(movie(6), movie(7), movie(5))
+        sync(movies = (1L..7L).toList(), bare = setOf(7), french = setOf(5))
+        library.saveProgress(movie(6), position = 30 * 60_000L, duration = 120 * 60_000L)
+        library.title(movie(7), english, "en")
+
+        assertEquals(listOf("Film 1", "Film 2"), entries(2))
     }
 
     @Test fun `once a featured Movie's details are kept, entering again costs the Provider no call`() = runBlocking {
@@ -102,7 +127,7 @@ class FeaturedTest {
     @Test fun `a Show's backdrop is the first on its Listing, and featuring it costs no details call`() = runBlocking {
         sync(movies = emptyList(), shows = listOf(1, 2))
 
-        val featured = library.featured(FeaturedScreen.Shows, english, "en", "CA")!!
+        val featured = library.featured(FeaturedScreen.Shows, english, "en")!!
         assertEquals(showBackdrop(1), featured.backdrop)
         assertEquals("About Show 1.", featured.description)
         assertTrue(provider.requests.none { it.startsWith("get_vod_info") || it.startsWith("get_series_info") })
@@ -111,7 +136,7 @@ class FeaturedTest {
     @Test fun `the featured Title carries what the hero shows, from the Provider's details`() = runBlocking {
         sync(movies = listOf(1, 2, 3))
 
-        val featured = library.featured(FeaturedScreen.Home, english, "en", "CA")!!
+        val featured = library.featured(FeaturedScreen.Home, english, "en")!!
         assertEquals(movie(1), featured.id)
         assertEquals("Film 1", featured.name)
         assertEquals(2025, featured.year)
@@ -144,7 +169,7 @@ class FeaturedTest {
     @Test fun `without reading details, only Titles whose backdrop is kept are featured`() = runBlocking {
         sync(movies = listOf(1, 2), shows = listOf(1))
 
-        assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", "CA", readDetails = false)?.name)
+        assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", readDetails = false)?.name)
         assertTrue(provider.movieDetailsRequests.isEmpty())
     }
 

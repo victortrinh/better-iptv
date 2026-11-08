@@ -37,9 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
-import dev.betteriptv.app.ui.components.NumeralStyle
-import dev.betteriptv.app.ui.components.Numerals
-import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.components.TitleName
 import dev.betteriptv.app.ui.components.TopTab
@@ -65,7 +62,7 @@ fun Backdrop(image: Int) = dev.betteriptv.app.ui.components.Backdrop(painterReso
 private const val FIRST_ROW = 2
 
 @Composable
-fun HomePrototype(focusCard: Boolean, numerals: NumeralStyle = Numerals.style) {
+fun HomePrototype(focusCard: Boolean) {
     val featured = SampleCatalog.featured
     val play = remember { FocusRequester() }
     val firstCard = remember { FocusRequester() }
@@ -121,28 +118,15 @@ fun HomePrototype(focusCard: Boolean, numerals: NumeralStyle = Numerals.style) {
                     ) {
                         itemsIndexed(row.titles) { index, title ->
                             val first = if (rowIndex == 0 && index == 0) Modifier.focusRequester(firstCard) else Modifier
-                            if (row.ranked) {
-                                // A Top row's card, as Home draws it: unnamed under the card (#379).
-                                RankedCard(index + 1, first, style = numerals) {
-                                    TitleCard(
-                                        painterResource(title.poster),
-                                        title.name,
-                                        title.badges,
-                                        onClick = {},
-                                        named = false,
-                                    )
-                                }
-                            } else {
-                                TitleCard(
-                                    painterResource(if (wide) title.still else title.poster),
-                                    title.name,
-                                    title.badges,
-                                    onClick = {},
-                                    wide = wide,
-                                    progress = row.progress?.getOrNull(index),
-                                    modifier = first,
-                                )
-                            }
+                            TitleCard(
+                                painterResource(if (wide) title.still else title.poster),
+                                title.name,
+                                title.badges,
+                                onClick = {},
+                                wide = wide,
+                                progress = row.progress?.getOrNull(index),
+                                modifier = first,
+                            )
                         }
                     }
                 }

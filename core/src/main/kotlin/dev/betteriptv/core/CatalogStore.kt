@@ -159,6 +159,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         // between screens (ADR 0011), so nothing moves under focus.
         execSQL(TITLE_FACTS_TABLE.format("title_facts"))
         execSQL(TITLE_FACTS_TABLE.format("title_facts_pending"))
+        // Trending finds its Titles by their Wikipedia article names (#477).
+        execSQL("CREATE INDEX IF NOT EXISTS title_facts_by_enwiki ON title_facts (enwiki)")
+        execSQL("CREATE INDEX IF NOT EXISTS title_facts_by_frwiki ON title_facts (frwiki)")
+        // Trending's feed as the cloud last gave it in an App language, summed over its week, so Home builds without the cloud (#477).
+        execSQL("CREATE TABLE IF NOT EXISTS trending (language TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at INTEGER NOT NULL)")
         // Episodes kept before their file extension was are asked again, so they can play; so are those kept before their still and length were (ADR 0014).
         if (prepare("SELECT count(*) FROM pragma_table_info('episode') WHERE name = 'audio_language'").use { it.step(); it.getLong(0) } > 0 &&
             (!hasColumn("episode", "container") || !hasColumn("episode", "still"))
@@ -1257,6 +1262,62 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             trailer = text(7),
             backdrops = backdrops,
         )
+    }
+
+    /**
+     * Trending's feed (#477) the cloud last gave in App [language] (ISO 639-1), summed over its week:
+     * each wiki's article names with their views, and when; null before it ever did.
+     */
+    fun trending(language: String): StoredTrending? = synchronized(reader) {
+        reader.prepare("SELECT body, fetched_at FROM trending WHERE language = ?").use {
+            it.bindText(1, language)
+            if (!it.step()) return@use null
+            val body = JsonReader.of(Buffer().writeUtf8(it.getText(0))).use { json -> json.readJsonValue() } as? Map<*, *>
+            val views = body.orEmpty().mapNotNull { (wiki, articles) ->
+                (wiki as? String)?.let { name -> name to (articles as? Map<*, *>).orEmpty().mapNotNull { (k, v) -> (k as? String)?.let { a -> (v as? Number)?.let { a to it.toLong() } } }.toMap() }
+            }.toMap()
+            StoredTrending(views, Instant.ofEpochMilli(it.getLong(1)))
+        }
+    }
+
+    fun saveTrending(language: String, views: Map<String, Map<String, Long>>, at: Instant) = synchronized(writer) {
+        val body = Buffer()
+        JsonWriter.of(body).use { json ->
+            json.beginObject()
+            views.forEach { (wiki, articles) ->
+                json.name(wiki).beginObject()
+                articles.forEach { (article, count) -> json.name(article).value(count) }
+                json.endObject()
+            }
+            json.endObject()
+        }
+        writer.prepare("INSERT OR REPLACE INTO trending VALUES (?, ?, ?)").use {
+            it.bindText(1, language)
+            it.bindText(2, body.readUtf8())
+            it.bindLong(3, at.toEpochMilli())
+            it.step()
+        }
+        Unit
+    }
+
+    /**
+     * The Titles whose [wiki] (`en`, `fr`) Wikipedia article is one of [names], as Wikidata names it
+     * (the landed Title facts), by article name. A wiki the facts don't name articles in has none.
+     */
+    fun titlesByArticle(wiki: String, names: Collection<String>): Map<String, List<TitleId>> = synchronized(reader) {
+        val column = when (wiki) {
+            "en" -> "enwiki"
+            "fr" -> "frwiki"
+            else -> return@synchronized emptyMap()
+        }
+        buildMap<String, MutableList<TitleId>> {
+            names.distinct().chunked(MAX_BOUND).forEach { chunk ->
+                reader.prepare("SELECT title_key, $column FROM title_facts WHERE $column IN (${chunk.joinToString(",") { "?" }})").use {
+                    chunk.forEachIndexed { i, name -> it.bindText(i + 1, name) }
+                    while (it.step()) getOrPut(it.getText(1)) { mutableListOf() } += titleId(it.getText(0))
+                }
+            }
+        }
     }
 
     /** The Charts the cloud last gave for [region] in [language] (ISO 639-1), as JSON, and when; null before it ever did. */
@@ -2583,6 +2644,9 @@ internal class StoredMetadata(val body: String?, val fetchedAt: Instant)
 
 /** The cloud's Charts answer as JSON ([Charts]) and when it sent it. */
 internal class StoredCharts(val body: String, val fetchedAt: Instant)
+
+/** Trending's feed summed over its week ([CatalogStore.trending]): each wiki's article names with their views, and when the cloud sent it. */
+internal class StoredTrending(val views: Map<String, Map<String, Long>>, val fetchedAt: Instant)
 
 /** One League's Games in the cloud's answer, as JSON ([Games]), and when the cloud sent it. */
 internal class StoredGames(val body: String, val fetchedAt: Instant)

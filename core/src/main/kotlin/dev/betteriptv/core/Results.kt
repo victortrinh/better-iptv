@@ -27,15 +27,9 @@ sealed interface TitleId {
  * A Title's card. [name] and [year] come from its Listing in the App language, else the English
  * one, else the [best] Version's; the [image] is the poster URL most of its Listings share (ADR
  * 0014), null when none has one, and the card then shows the name on glass. Home's cards also carry
- * [about], what the info area under a focused card shows; Search's, the Title's Top 10 [rank].
+ * [about], what the info area under a focused card shows. No card carries a rank (#477).
  */
-data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null, val rank: ChartRank? = null)
-
-/**
- * A Title's place in a Top 10 [list], as its Top row numbers it: [rank] among the Provider's Titles
- * in the Viewer's Content languages, in the Viewer's [region] (ISO 3166), or worldwide (null).
- */
-data class ChartRank(val rank: Int, val list: ChartList, val region: String?)
+data class TitleSummary(val id: TitleId, val name: String, val year: Int?, val image: String?, val best: VersionAttributes, val about: TitleAbout? = null)
 
 /**
  * What the info under a focused Home row tells of a Title, from what the device already holds, so
@@ -80,12 +74,11 @@ sealed interface HomeRow {
     data class Channels(val countries: List<LiveCountry>) : HomeRow
 
     /**
-     * A Chart (CONTEXT.md), kept to the Titles the Viewer can watch: Netflix's Top 10 [list] for the
-     * Viewer's [region] (ISO 3166), or the world's when Netflix doesn't list it (null), its [titles]
-     * ranked 1…n in order, counted among the Titles kept; or TMDB's trending this week, unranked and
-     * the same everywhere (no [region]): movies and shows mixed on Home, one kind on its tab.
+     * Trending (CONTEXT.md): the Provider's Titles Wikipedia's readers looked up most over the last
+     * seven days, most viewed first but unranked, kept to the Titles the Viewer can watch: movies and
+     * shows mixed on Home ([kind] null), one kind on its tab.
      */
-    data class Chart(val list: ChartList, val region: String?, val titles: List<TitleSummary>) : HomeRow
+    data class Trending(val titles: List<TitleSummary>, val kind: TitleKind? = null) : HomeRow
 
     /**
      * Titles with recently added Listings, most popular on TMDB first: movies and shows on Home
@@ -135,12 +128,6 @@ sealed interface HomeRow {
 data class UnmatchedEventChannel(val channel: Channel, val start: Instant)
 
 /**
- * Which Chart a [HomeRow.Chart] is: a Top 10, or TMDB's trending this week, mixed on Home and one
- * kind on the Movies and Shows tabs.
- */
-enum class ChartList { TopMovies, TopShows, Trending, TrendingMovies, TrendingShows }
-
-/**
  * A Title the Viewer stopped in: its card, a [still] URL (its backdrop, else its poster), how far they got
  * (0 to 1) and how much is [left], both null when the player didn't know the file's length. For a
  * Show, those are about its [episode], the one to watch next.
@@ -174,8 +161,6 @@ data class TitleDetails(
     val backdrop: String? = null,
     /** The main cast's names, as the Provider lists them. */
     val cast: List<String> = emptyList(),
-    /** Its place in the Region's Top 10, if it has one. */
-    val rank: ChartRank? = null,
     /** Whether TMDB's art (the backdrop, the logo) is on the page: its terms ask for attribution where its data is shown. */
     val fromTmdb: Boolean = false,
     /** The YouTube video ID of its trailer, as the Provider gives it (ADR 0012); null when it gives none, and the Trailer action stays out. */

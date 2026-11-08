@@ -16,6 +16,7 @@ import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
 import { MAX_FACTS_BATCH, titleFacts } from "./title-facts";
+import { fillTrending, trending } from "./trending";
 import { TmdbUnavailable, type TitleKey } from "./tmdb";
 import { upcoming } from "./upcoming";
 import { season } from "./season";
@@ -62,6 +63,13 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  *   primary subtag, the IMDb ID and the English and French Wikipedia article names (each null when the
  *   item lacks it), the Titles Wikidata has no item for, and those it couldn't answer for right now,
  *   which the device asks again. Cached for good, "no item" included.
+ * - `POST /v1/trending`, with `{"language": "fr"}` (the App language): Trending's feed (#477),
+ *   `{"wikis": [{"wiki": "en", "days": [{"day": "2026-11-06", "articles": [{"name": "Jailer 3", "views":
+ *   812345}]}]}, {"wiki": "fr", "days": […]}]}`: English Wikipedia's and the language's most viewed
+ *   articles of each of the last seven days the cloud keeps, newest first, named as Wikipedia shows
+ *   them, which the device sums and matches to its Titles' article names. Only what the cloud keeps is
+ *   answered: the Cron Trigger reads Wikipedia's pageviews once a day per wiki, for English and each
+ *   language a device asked in. A day not read yet is absent.
  * - `POST /v1/upcoming`, with `{"tmdbId": 1399, "language": "fr"}`: the Show's Episodes TMDB lists
  *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
  *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
@@ -141,10 +149,11 @@ export default {
     return response;
   },
 
-  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then the Charts' sources, a few parts a run, out of one budget of requests. */
+  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then Wikipedia's most viewed articles, then the Charts' sources, a few parts a run, out of one budget of requests. */
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    const sent = await fillGames(env);
-    await fill(env, SUBREQUESTS - sent);
+    const games = await fillGames(env);
+    const read = await fillTrending(env, SUBREQUESTS - games);
+    await fill(env, SUBREQUESTS - games - read);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -222,6 +231,11 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const asked = await titleFactsRequest(request);
     if (typeof asked === "string") return problem(400, asked);
     return json(await titleFacts(env, asked));
+  }
+  if (request.method === "POST" && pathname === "/v1/trending") {
+    const { language } = ((await request.json().catch(() => null)) ?? {}) as { language?: unknown };
+    if (typeof language !== "string" || !/^[a-z]{2}$/.test(language)) return problem(400, "language must be the App language's ISO 639-1 code, such as \"fr\".");
+    return json(await trending(env, language));
   }
   if (request.method === "POST" && pathname === "/v1/subtitles") {
     const asked = await subtitlesRequest(request);

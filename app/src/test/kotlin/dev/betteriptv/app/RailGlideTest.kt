@@ -25,7 +25,6 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import dev.betteriptv.app.ui.components.RankedCard
 import dev.betteriptv.app.ui.components.TitleCard
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Spacing
@@ -72,12 +71,12 @@ class RailGlideTest {
 
     /**
      * A rail of [cards] posters that lift on focus, as RowsScreen draws it, with the card at [first]
-     * focused at the margin. A [ranked] rail is a Top row, its posters beside their numerals.
+     * focused at the margin.
      */
-    private fun rail(cards: Int, ranked: Boolean = false, first: Int = 0) {
-        val loop = RailLoop(cards, seen = 7, ranked = ranked)
+    private fun rail(cards: Int, first: Int = 0) {
+        val loop = RailLoop(cards, seen = 7)
         val opening = FocusRequester()
-        val cardWidth = if (ranked) Cards.rankedWidth else Cards.posterWidth
+        val cardWidth = Cards.posterWidth
         compose.mainClock.autoAdvance = false
         compose.setContent {
             val rail = remember { LazyListState(loop.start + first) }
@@ -106,7 +105,7 @@ class RailGlideTest {
                             onFocus = { scope.launch { rail.glideTo(place, resting) } },
                         )
                     }
-                    if (ranked) RankedCard(index + 1, tag) { poster(Modifier) } else poster(tag)
+                    poster(tag)
                 }
             }
         }
@@ -174,14 +173,5 @@ class RailGlideTest {
         pressAndWatch(Key.DirectionLeft, place = 0)
         // Past its start, onto the last card's copy peeking in the margin.
         pressAndWatch(Key.DirectionLeft, place = -1)
-    }
-
-    @Test
-    fun aTopRowLandsOnTheMarginOnce() {
-        rail(cards = 10, ranked = true)
-
-        pressAndWatch(Key.DirectionRight, place = 1)
-        pressAndWatch(Key.DirectionRight, place = 2)
-        pressAndWatch(Key.DirectionLeft, place = 1)
     }
 }
