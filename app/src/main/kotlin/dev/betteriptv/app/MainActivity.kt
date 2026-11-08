@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as BetterIptvApp
+        // Opened after an update it installed itself had landed: UpdateReopenReceiver needn't reopen it.
+        ReopenAfterUpdate.forgetLanded(this)
         lifecycleScope.launch {
             app.settings.settings.collect { if (it.appLanguage != appLanguage) recreate() }
         }

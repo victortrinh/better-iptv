@@ -92,17 +92,14 @@ class AndroidApkInstaller(private val context: Context) : ApkInstaller {
      * may have left open: Android 9 holds a committed session at 0.8 until then, and moves it to 0.9
      * as the install starts (measured on the emulator, 2026-11-07).
      *
-     * A mark without a session is from an install that has landed (the Viewer opened the new build
-     * before [UpdateReopenReceiver] heard of it), so it is cleared: the app is open already.
+     * A mark without a session is from an install that has landed, and is left alone here: this
+     * runs at every process start, including the new build's start for `MY_PACKAGE_REPLACED`, before
+     * [UpdateReopenReceiver] takes the mark (#513). [ReopenAfterUpdate.forgetLanded] clears it once
+     * the app is open.
      */
     override fun installing(): Boolean {
         if (!ReopenAfterUpdate.marked(context)) return false
-        val sessions = context.packageManager.packageInstaller.mySessions
-        if (sessions.isEmpty()) {
-            ReopenAfterUpdate.clear(context)
-            return false
-        }
-        return sessions.any { it.progress > INSTALLER_WAITING }
+        return context.packageManager.packageInstaller.mySessions.any { it.progress > INSTALLER_WAITING }
     }
 
     private fun PackageInstaller.Session.add(name: String, file: File) {
@@ -177,7 +174,8 @@ class UpdateReopenReceiver : BroadcastReceiver() {
 /**
  * A mark that the app committed an install of its own update, kept in a file so it outlives the
  * process (Android force-stops the app while installing). Set as the install session is committed,
- * cleared when the installer refuses it or the Viewer backs out, and taken by [UpdateReopenReceiver].
+ * cleared when the installer refuses it, the Viewer backs out or opens the app after the install
+ * landed ([forgetLanded]), and taken by [UpdateReopenReceiver].
  */
 internal object ReopenAfterUpdate {
     private fun file(context: Context) = File(context.noBackupFilesDir, "reopen-after-update")
@@ -194,6 +192,16 @@ internal object ReopenAfterUpdate {
 
     /** Whether the mark was set, clearing it. */
     fun take(context: Context): Boolean = file(context).delete()
+
+    /**
+     * The app opened: a mark with no install session left is from an install that has landed, the
+     * Viewer having opened the new build before [UpdateReopenReceiver] heard of it, so it is cleared
+     * and no second window opens on top (#452). Only an opening clears it, not the process starting:
+     * Android starts the new build's process for `MY_PACKAGE_REPLACED` too (#513).
+     */
+    fun forgetLanded(context: Context) {
+        if (marked(context) && context.packageManager.packageInstaller.mySessions.isEmpty()) clear(context)
+    }
 }
 
 private const val UPDATE_TAG = "Updates"
