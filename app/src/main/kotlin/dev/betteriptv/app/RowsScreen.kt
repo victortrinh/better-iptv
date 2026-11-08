@@ -338,7 +338,7 @@ internal fun RowsLayout(
     // even when the first of them comes late, as on the stick's cold start (#398). Rows kept from last
     // time, and the hero read for this entry with them, show at once.
     val arrived = placeholder == null && state.rows != null
-    val arrival = remember { Fade(if (arrived) 1f else 0f) }
+    val arrival = remember(state) { Fade(if (arrived) 1f else 0f) }
     LaunchedEffect(arrived) { if (arrived) arrival.fadeIn(Motion.screenFadeMillis) }
     val arriving by remember(arrival) { derivedStateOf { arrival.value < 1f } }
     // Rows still to come after the page arrival time are waited for with the dot, centred under the
@@ -347,8 +347,8 @@ internal fun RowsLayout(
     // isn't drawn under a [placeholder] (a first Sync's checklist). Not a shape of the rows to come:
     // Home opens on a hero and wide stills, Live on Game cards, and a row of posters promised them wrongly.
     val waitingForRows = placeholder == null && state.rows == null
-    var waiting by remember { mutableStateOf(false) }
-    val waitingFade = remember { Fade(0f) }
+    var waiting by remember(state) { mutableStateOf(false) }
+    val waitingFade = remember(state) { Fade(0f) }
     LaunchedEffect(waitingForRows) {
         if (!waitingForRows) return@LaunchedEffect
         delay(Motion.pageArrivalMillis.toLong())
@@ -358,10 +358,11 @@ internal fun RowsLayout(
     // The card to focus, until it takes focus: asked for once, so a row composed again as the
     // Viewer scrolls back to it doesn't take focus back. The rows kept from last time show first,
     // so the card is checked again once they are read: the Title opened may have left Continue
-    // watching meanwhile.
-    var pending by remember(restoreFocus) { mutableStateOf(restoreFocus) }
-    var focused by remember(restoreFocus) { mutableStateOf(false) }
-    var checked by remember(restoreFocus) { mutableStateOf(false) }
+    // watching meanwhile. Another Profile's [state] (a switch from the chip while the screen shows,
+    // #501) starts it all over, its rows and hero read as on a first entry.
+    var pending by remember(restoreFocus, state) { mutableStateOf(restoreFocus) }
+    var focused by remember(restoreFocus, state) { mutableStateOf(false) }
+    var checked by remember(restoreFocus, state) { mutableStateOf(false) }
     val tab = remember { FocusRequester() }
     // Whether the Viewer was last on the tabs (rather than the rows), saved so the screen made again
     // (the Activity recreated as a keyboard or remote attaches) puts focus back on the tab, not on
@@ -372,7 +373,7 @@ internal fun RowsLayout(
     // The row focus is in, while it is in the rows (not up on the tabs): the one row a reading mustn't change.
     var inRows by remember { mutableStateOf(false) }
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
-    LaunchedEffect(reading) {
+    LaunchedEffect(state, reading) {
         val before = state.rows
         // The first entry's hero is read beside the rows, its backdrop as soon as it is, and they show
         // together (#386): the rows wait up to the page arrival time for the Title and its backdrop,
