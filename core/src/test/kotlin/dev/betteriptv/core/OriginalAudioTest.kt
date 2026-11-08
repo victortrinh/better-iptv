@@ -41,7 +41,7 @@ class OriginalAudioTest {
         cloud.close()
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
     private val sdr4kTv = DeviceProfile(maxHeight = 2160, hdr = emptySet())

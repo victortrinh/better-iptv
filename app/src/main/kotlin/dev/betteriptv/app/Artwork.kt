@@ -25,6 +25,7 @@ import dev.betteriptv.core.Library.Companion.MIN_BACKDROP_RATIO
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.launch
 import coil3.Extras
+import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.asPainter
@@ -40,11 +41,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 /**
- * The artwork at [url] (TMDB's, or the Provider's), loaded in the background; null when there is
+ * The artwork at [url] (the Provider's link, loaded as given), loaded in the background; null when there is
  * none or it couldn't be loaded, so the caller can show the Title's name instead. Only a failure
  * recomposes the caller: the painter redraws itself when the image arrives.
  *
- * It is decoded at the size it's drawn, not TMDB's. A [card]'s artwork waits until the card has
+ * It is decoded at the size it's drawn, not the file's. A [card]'s artwork waits until the card has
  * been on screen a moment ([SettleFirst]): holding Down through a grid brings a row of cards in at
  * every press, and decoding all their posters kept the stick's garbage collector running (#33).
  *
@@ -78,6 +79,17 @@ private fun rememberArtwork(url: String?, card: Boolean, onArrived: ((width: Int
 /** The request for the artwork at [url]; a [card]'s waits to settle first ([SettleFirst]). Its memory cache key is the url alone. */
 private fun artworkRequest(context: PlatformContext, url: String, card: Boolean): ImageRequest =
     ImageRequest.Builder(context).data(url).precision(Precision.EXACT).apply { if (card) extras[SettleFirst.Key] = true }.build()
+
+/**
+ * Empties [loader]'s caches, on disk and in memory, so every artwork is loaded again from the link
+ * it's given. Run once, on the first launch after the release that stopped holding the cloud's
+ * metadata ([dev.betteriptv.core.Library.clearImagesOnce], #480): the curated art an older app
+ * cached goes, and the Provider's links load again as they are. Blocking: call it off the main thread.
+ */
+fun clearCachedArtwork(loader: ImageLoader) {
+    loader.diskCache?.clear()
+    loader.memoryCache?.clear()
+}
 
 /**
  * Loads the artwork at [url] into the memory cache, as [rememberArtwork] asks for it (at the

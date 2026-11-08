@@ -73,7 +73,7 @@ class EpisodePickerTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private val show = TitleId.Tmdb(TitleKind.Show, 123250)
+    private val show = TitleId.Numbered(TitleKind.Show, 123250)
     private fun likely(value: String) = Known(value, Provenance.Likely)
     private fun version(id: Long, language: String) = Version(id, "${language.uppercase()} - Love Is Blind", VersionAttributes(language = likely(language)))
     private fun both(id: Long) = listOf(LanguageGroup("en", listOf(version(id, "en"))), LanguageGroup("fr", listOf(version(id + 1000, "fr"))))

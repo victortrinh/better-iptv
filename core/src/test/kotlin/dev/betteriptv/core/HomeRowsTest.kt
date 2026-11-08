@@ -44,11 +44,11 @@ class HomeRowsTest {
 
     private val english = listOf("en")
 
-    private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
+    private fun movie(titleNumber: Long) = TitleId.Numbered(TitleKind.Movie, titleNumber)
 
     /**
-     * Syncs these movie Listings, newest first, numbered from 1, each a Title of its own TMDB ID,
-     * filed under `MOVIES` unless [filed] names another Category for that TMDB ID.
+     * Syncs these movie Listings, newest first, numbered from 1, each a Title of its own Title number,
+     * filed under `MOVIES` unless [filed] names another Category for that Title number.
      */
     private suspend fun syncMovies(vararg listings: Pair<String, Long>, filed: Map<Long, String> = emptyMap()) {
         val categories = (listOf("MOVIES") + filed.values).distinct()
@@ -63,14 +63,10 @@ class HomeRowsTest {
     /** Files each of [ids] under the Category [name], for [syncMovies]. */
     private fun under(name: String, ids: Iterable<Long>) = ids.associateWith { name }
 
-    /** Serves TMDB's metadata of a Title [tmdbId] named [name]. */
-    private fun tmdb(tmdbId: Long, name: String, popularity: Double = 10.0, genres: List<String> = emptyList()) =
-        cloud.title("en", tmdbTitle(tmdbId, name, genres = genres, popularity = popularity, backdropPath = "/still-$tmdbId.jpg"))
-
     private suspend fun rows(contentLanguages: List<String> = english, region: String = "CA", now: Instant = Instant.now(), leagues: List<League> = emptyList()) =
         library.homeRows(contentLanguages, appLanguage = "en", region = region, leagues = leagues, now = now)
 
-    /** Serves these show Listings at the next Sync, numbered from 1, each a Title of its own TMDB ID, the first changed at [newest] and each after it a second earlier. */
+    /** Serves these show Listings at the next Sync, numbered from 1, each a Title of its own Title number, the first changed at [newest] and each after it a second earlier. */
     private fun serveShows(vararg listings: Pair<String, Long>, newest: Long = 1_700_000_000) {
         provider.showCategoriesOverride = """[{"category_id":"2","category_name":"SERIES"}]"""
         provider.showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
@@ -82,12 +78,12 @@ class HomeRowsTest {
      * Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title
      * facts, and the article in the cloud's feed. Called before the Sync, which asks for the facts.
      */
-    private fun trending(vararg ids: TitleId.Tmdb) {
+    private fun trending(vararg ids: TitleId.Numbered) {
         ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = article(it)) }
         cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> article(id) to 1_000L - i }.toTypedArray())
     }
 
-    private fun article(id: TitleId.Tmdb) = "Article ${id.kind} ${id.tmdbId}"
+    private fun article(id: TitleId.Numbered) = "Article ${id.kind} ${id.titleNumber}"
 
     private fun List<HomeRow>.trending() = filterIsInstance<HomeRow.Trending>().singleOrNull()?.titles?.map { it.name }
 
@@ -122,11 +118,6 @@ class HomeRowsTest {
             "FR - Both (2025)" to 5,
             "EN - Both (2025)" to 5,
         )
-        tmdb(1, "English")
-        tmdb(2, "Français")
-        tmdb(3, "Untagged English")
-        tmdb(4, "Untagged French")
-        tmdb(5, "Both")
 
         assertEquals(setOf("English", "Untagged English", "Both"), rows(english).new().toSet())
         assertEquals(setOf("Français", "Untagged French", "Both"), rows(listOf("fr-CA")).new().toSet())
@@ -185,9 +176,6 @@ class HomeRowsTest {
 
     @Test fun `Continue watching shows what the Viewer stopped in, last played first, until they finish it`() = runBlocking {
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "FR - Foreign (2025)" to 3)
-        tmdb(1, "First")
-        tmdb(2, "Second")
-        tmdb(3, "Foreign")
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
         Thread.sleep(5)
         library.saveProgress(movie(3), position = 10 * 60_000L, duration = null)
@@ -215,8 +203,6 @@ class HomeRowsTest {
             {"stream_id":2,"name":"EN - Unknown (2025)","tmdb":"2","category_id":"2","added":"1699999999","rating":"0"}
         ]"""
         library.sync()
-        // TMDB's description, genres and runtime no longer feed the info (#473).
-        cloud.title("en", tmdbTitle(1, "Described", descriptions = listOf(Triple("en", "", "A film.")), genres = listOf("Comedy"), runtimeMinutes = 95))
         provider.onRequest = { action -> check(action != "get_vod_info") { "a row made a details call" } }
 
         val cards = rows().filterIsInstance<HomeRow.NewOnYourService>().single().titles.associateBy { it.name }
@@ -227,7 +213,6 @@ class HomeRowsTest {
 
     @Test fun `without anything started there's no Continue watching row`() = runBlocking {
         syncMovies("EN - First (2025)" to 1)
-        tmdb(1, "First")
 
         assertTrue(rows().none { it is HomeRow.ContinueWatching })
     }
@@ -283,7 +268,7 @@ class HomeRowsTest {
     @Test fun `Home's rows go Continue watching, Trending, New, Favourites, then genres, with no Game on`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
         serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
-        trending(movie(6), TitleId.Tmdb(TitleKind.Show, 501), movie(7), movie(8))
+        trending(movie(6), TitleId.Numbered(TitleKind.Show, 501), movie(7), movie(8))
         syncMovies(*(newest() + (1L..8L).map { "EN - Film $it (2025)" to it }).toTypedArray(), filed = under("EN - DRAMA", 1L..8L))
         library.setFavourite(library.search("ESPN", english, "en").last().channels.single().key, true)
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
@@ -429,11 +414,9 @@ class HomeRowsTest {
         assertEquals(withLiveNow, rows(now = Instant.now() + Duration.ofMinutes(3), leagues = listOf(League.Nhl)).names())
     }
 
-    @Test fun `Home reads what's stored while a Sync downloads, though its Trending feed and metadata are asked again`() = runBlocking {
+    @Test fun `Home reads what's stored while a Sync downloads, though its Trending feed is asked again`() = runBlocking {
         trending(movie(1), movie(2), movie(3))
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
-        // An answer from before textless backdrops is asked again on every read, so this one saves metadata each time.
-        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessBackdropPath")
         rows()
         // The Sync stops in the middle of the show list, holding the catalog's writer, until released.
         val downloading = CountDownLatch(1)

@@ -130,13 +130,13 @@ class FakeProvider : Closeable {
 
     /**
      * A show Listing to serve ([serveShows]), shaped like the surveyed Provider's `get_series` entry:
-     * its [name], its [category], its [tmdbId] and what the Listing says of the Show. A field left
+     * its [name], its [category], its [titleNumber] and what the Listing says of the Show. A field left
      * null is sent as the Provider sends one it doesn't have.
      */
     class ShowListing(
         val name: String,
         val category: String,
-        val tmdbId: Long?,
+        val titleNumber: Long?,
         val plot: String? = null,
         val genre: String? = null,
         val cast: String? = null,
@@ -158,7 +158,7 @@ class FakeProvider : Closeable {
                 """"director":${json(show.director.orEmpty())},"genre":${json(show.genre.orEmpty())},"releaseDate":${json(show.releaseDate.orEmpty())},""" +
                 """"release_date":${json(show.releaseDate.orEmpty())},"last_modified":"${show.modified ?: (1_700_000_000 - i)}","rating":${json(show.rating?.toString().orEmpty())},""" +
                 """"rating_5based":"0","backdrop_path":${show.backdrops.joinToString(",", "[", "]") { json(it) }},"youtube_trailer":${json(show.trailer.orEmpty())},""" +
-                """"tmdb":${json(show.tmdbId?.toString().orEmpty())},"episode_run_time":"0","category_id":"${categories.indexOf(show.category) + 1}",""" +
+                """"tmdb":${json(show.titleNumber?.toString().orEmpty())},"episode_run_time":"0","category_id":"${categories.indexOf(show.category) + 1}",""" +
                 """"category_ids":[${categories.indexOf(show.category) + 1}]}"""
         }
     }
@@ -259,7 +259,7 @@ class FakeProvider : Closeable {
     }
 
     /**
-     * Serves these Listings of one Movie (TMDB ID 1) as the whole movie list: names with their
+     * Serves these Listings of one Movie (Title number 1) as the whole movie list: names with their
      * Categories, newest first, numbered from 1.
      */
     fun serveMovies(vararg listings: Pair<String, String>) {

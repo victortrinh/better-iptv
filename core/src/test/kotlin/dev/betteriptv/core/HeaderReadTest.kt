@@ -35,7 +35,7 @@ class HeaderReadTest {
         cloud.close()
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
     /** Syncs these Listings of one Movie, as (name, Category, file extension), newest first, numbered from 1. */

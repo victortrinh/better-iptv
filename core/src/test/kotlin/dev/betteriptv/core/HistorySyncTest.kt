@@ -28,10 +28,10 @@ class HistorySyncTest {
 
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
-    private val first = TitleId.Tmdb(TitleKind.Movie, 1)
-    private val second = TitleId.Tmdb(TitleKind.Movie, 2)
+    private val first = TitleId.Numbered(TitleKind.Movie, 1)
+    private val second = TitleId.Numbered(TitleKind.Movie, 2)
     private val homeVideo = TitleId.Unmatched(TitleKind.Movie, 3)
-    private val bureau = TitleId.Tmdb(TitleKind.Show, 62104)
+    private val bureau = TitleId.Numbered(TitleKind.Show, 62104)
     private val hour = 60 * 60_000L
 
     /** A TV of the household, logged in to the Provider (at [address], the same host by default) and Synced. */
@@ -274,7 +274,7 @@ class HistorySyncTest {
         assertTrue(bedroom.isLoggedIn && living.isLoggedIn)
     }
 
-    @Test fun `a Listing's progress stays with its Provider, and a TMDB ID's follows the Account to another`() = runBlocking {
+    @Test fun `a Listing's progress stays with its Provider, and a Title number's follows the Account to another`() = runBlocking {
         val living = tv("living")
         // The same panel by another name: another Provider host, whose Listing 3 may be anything.
         val elsewhere = tv("elsewhere", provider.url.replace("127.0.0.1", "localhost"))

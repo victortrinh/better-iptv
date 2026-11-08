@@ -30,8 +30,8 @@ class TitlesTest {
     }
 
     private val english = listOf("en")
-    private val ballerina = TitleId.Tmdb(TitleKind.Movie, 541671)
-    private val godfather = TitleId.Tmdb(TitleKind.Movie, 238)
+    private val ballerina = TitleId.Numbered(TitleKind.Movie, 541671)
+    private val godfather = TitleId.Numbered(TitleKind.Movie, 238)
 
     private suspend fun cards(contentLanguages: List<String> = english) = library.titles(0, 1000, contentLanguages, appLanguage = "en")
 
@@ -66,7 +66,7 @@ class TitlesTest {
         // The fixture holds 32 of the 34 Ballerina (2025) Listings the surveyed Provider has.
         assertEquals(32, title(ballerina).allVersions().size)
         // Ballerina Assassin is another film.
-        assertEquals(4, title(TitleId.Tmdb(TitleKind.Movie, 1478052)).allVersions().size)
+        assertEquals(4, title(TitleId.Numbered(TitleKind.Movie, 1478052)).allVersions().size)
     }
 
     @Test fun `Listings in different languages are one Title`() = runBlocking {
@@ -90,14 +90,14 @@ class TitlesTest {
         assertEquals(10, cards.count { it.id is TitleId.Unmatched })
     }
 
-    @Test fun `Titles are keyed by kind and TMDB ID, so a Show with the same number is another Title`() = runBlocking {
+    @Test fun `Titles are keyed by kind and Title number, so a Show with the same number is another Title`() = runBlocking {
         library.sync()
 
         assertNotNull(library.title(ballerina, english, "en"))
-        assertNull(library.title(TitleId.Tmdb(TitleKind.Show, 541671), english, "en"))
+        assertNull(library.title(TitleId.Numbered(TitleKind.Show, 541671), english, "en"))
     }
 
-    @Test fun `a Listing without a usable TMDB ID stands alone`() = runBlocking {
+    @Test fun `a Listing without a usable Title number stands alone`() = runBlocking {
         library.sync()
 
         val unmatched = cards().filter { it.id is TitleId.Unmatched }.map { it.name }
@@ -233,7 +233,7 @@ class TitlesTest {
             Listing("NL - Film (2020)", "7", category = "NL - NEW"),
         )
 
-        val version = title(TitleId.Tmdb(TitleKind.Movie, 7), listOf("nl")).languages.single().versions.single()
+        val version = title(TitleId.Numbered(TitleKind.Movie, 7), listOf("nl")).languages.single().versions.single()
         assertEquals(2L, version.listingId)
         assertEquals(listOf(1L, 3L), version.backups.map { it.listingId })
     }
@@ -246,7 +246,7 @@ class TitlesTest {
             Listing("4K-EN - Film (2025)", "8"),
         )
 
-        val versions = title(TitleId.Tmdb(TitleKind.Movie, 8)).languages.single().versions
+        val versions = title(TitleId.Numbered(TitleKind.Movie, 8)).languages.single().versions
         assertEquals(listOf(4L, 3L, 2L, 1L), versions.map { it.listingId })
         assertEquals(listOf(false, false, true, false), versions.map { it.attributes.audioDescription })
         assertEquals(listOf(false, false, false, true), versions.map { it.attributes.cam })
@@ -260,14 +260,14 @@ class TitlesTest {
             Listing("EN - The Barbarian Invasions (2003)", "11042"),
         )
 
-        val details = title(TitleId.Tmdb(TitleKind.Movie, 11042), listOf("fr"))
+        val details = title(TitleId.Numbered(TitleKind.Movie, 11042), listOf("fr"))
         val french = details.languages.single()
         assertEquals("fr", french.language)
         assertEquals(setOf("fr-CA", "fr"), french.versions.map { it.attributes.language?.value }.toSet())
         assertTrue(french.versions.all { it.backups.isEmpty() })
         assertEquals(listOf("en"), details.otherLanguages.map { it.language })
         // A Québec Viewer's French is French too.
-        assertEquals(listOf("fr"), title(TitleId.Tmdb(TitleKind.Movie, 11042), listOf("fr-CA")).languages.map { it.language })
+        assertEquals(listOf("fr"), title(TitleId.Numbered(TitleKind.Movie, 11042), listOf("fr-CA")).languages.map { it.language })
     }
 
     @Test fun `a later Sync replaces the Titles`() = runBlocking {

@@ -77,14 +77,13 @@ internal data class VersionsList(
  * action, over the same backdrop under a `ground` veil at 85% ([Colors.veilDeep]). It holds the
  * Confirmed/Likely legend, the Version table ([versionTable]: empty cells left blank, an Audio cell
  * only where it says more than its language heading, columns with nothing in them hidden, Backups
- * under their Version in muted type), Other languages, the [cast] and [directors] the Provider names
- * and, with TMDB's art on the page, its notice.
+ * under their Version in muted type), Other languages, and the [cast] and [directors] the Provider names.
  * Focus opens on the first Version; choosing a row plays that one ([onChoose]). Back is the
  * caller's, and returns to the Versions action. While Header reads are [checking] Versions, the
  * legend says so ([CheckingVersions]).
  */
 @Composable
-internal fun VersionsContent(versions: VersionsList, cast: List<String>, directors: List<String>, fromTmdb: Boolean, onChoose: (Version) -> Unit, checking: Boolean = false) {
+internal fun VersionsContent(versions: VersionsList, cast: List<String>, directors: List<String>, onChoose: (Version) -> Unit, checking: Boolean = false) {
     val context = LocalContext.current
     var showOthers by rememberSaveable(versions.heading) { mutableStateOf(false) }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -94,7 +93,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
     val table = remember(versions) { versionTable(shown + hidden, versions.contentLanguages, versions.originalLanguage) }
     val firstVersion = remember { FocusRequester() }
     LaunchedEffect(versions.heading) { runCatching { firstVersion.requestFocus() } }
-    // The cast and TMDB's notice take no focus, so the last row brings them into view when it's focused.
+    // The cast and directors take no focus, so the last row brings them into view when it's focused.
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val lastKey: Any? = when {
@@ -154,12 +153,6 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
                         Text(pluralStringResource(R.plurals.director_title, directors.size), style = Type.title, color = Colors.ink)
                         Text(directors.joinToString(", "), style = Type.body, color = Colors.inkMuted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Spacing.xs))
                     }
-                }
-            }
-            if (fromTmdb) {
-                // TMDB's terms ask for this notice wherever its data is shown.
-                item(key = "attribution") {
-                    Text(stringResource(R.string.tmdb_attribution), style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.xl))
                 }
             }
         }

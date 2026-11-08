@@ -242,7 +242,7 @@ class StartingCoverTest {
 
     @Test fun theHerosPlayStartsOnTheFeaturedTitlesArt() {
         val featured = FeaturedTitle(
-            TitleId.Tmdb(TitleKind.Show, 1), "The Fall", 2025, null, emptyList(), null,
+            TitleId.Numbered(TitleKind.Show, 1), "The Fall", 2025, null, emptyList(), null,
             backdrop = "https://provider.example/fall-backdrop.jpg",
             best = VersionAttributes(),
         )

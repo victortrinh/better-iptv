@@ -31,7 +31,7 @@ class SubtitleDownloadsTest {
         cloud.close()
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
     private fun tracks(vararg languages: String?) = languages.map { Track(it) }
@@ -127,7 +127,7 @@ class SubtitleDownloadsTest {
         assertEquals(listOf("en"), plan.downloadLanguages(listOf(Track("und"))))
     }
 
-    @Test fun `without the cloud, or a TMDB ID, the Viewer plays on without downloads`() = runBlocking {
+    @Test fun `without the cloud, or a Title number, the Viewer plays on without downloads`() = runBlocking {
         cloud.subtitle(1, "fr", "Movie.2025.WEB")
         cloud.down = true
         assertEquals(emptyList<SubtitleOffer>(), library.subtitleOffers(plan(listOf("en")), listOf("fr")))

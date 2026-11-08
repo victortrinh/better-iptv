@@ -14,8 +14,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
 /**
- * A local stand-in for the app's cloud (cloud/src/index.ts), serving canned Title metadata, Match
- * answers, Title facts from Wikidata ([titleFacts]), Trending's feed ([trending]) and Games, and signing devices in to Accounts ([phoneSignsIn]).
+ * A local stand-in for the app's cloud (cloud/src/index.ts), serving Title facts from Wikidata ([titleFacts]), Trending's feed ([trending]) and Games, and signing devices in to Accounts ([phoneSignsIn]).
  * It hands out device tokens like the real one and refuses requests without one. Every request it
  * gets is recorded, so tests can check what the device sends.
  */
@@ -47,10 +46,10 @@ class FakeCloud : Closeable {
     private val titleFacts = HashMap<String, Map<String, Any?>?>()
 
     /** The Titles the device asked `/v1/title-facts` about, one list per request, in order. */
-    val titleFactsAsked: List<List<TitleId.Tmdb>>
+    val titleFactsAsked: List<List<TitleId.Numbered>>
         get() = received.filter { it.path == "/v1/title-facts" }.map { request ->
             ((read(request.body) as Map<*, *>)["titles"] as List<*>).map { title ->
-                (title as Map<*, *>).let { TitleId.Tmdb(if (it["kind"] == "show") TitleKind.Show else TitleKind.Movie, (it["tmdbId"] as Number).toLong()) }
+                (title as Map<*, *>).let { TitleId.Numbered(if (it["kind"] == "show") TitleKind.Show else TitleKind.Movie, (it["tmdbId"] as Number).toLong()) }
             }
         }
 
@@ -60,32 +59,31 @@ class FakeCloud : Closeable {
      * names, each null when the item lacks it. A Title never scripted comes back unavailable, as one
      * the cloud couldn't answer for right now; [noTitleFacts] scripts one Wikidata has no item for.
      */
-    fun titleFacts(id: TitleId.Tmdb, originalLanguage: String? = null, imdbId: String? = null, enwiki: String? = null, frwiki: String? = null) {
+    fun titleFacts(id: TitleId.Numbered, originalLanguage: String? = null, imdbId: String? = null, enwiki: String? = null, frwiki: String? = null) {
         synchronized(titleFacts) {
             titleFacts[factsKey(id)] = mapOf(
-                "kind" to kindName(id.kind), "tmdbId" to id.tmdbId, "originalLanguage" to originalLanguage, "imdbId" to imdbId, "enwiki" to enwiki, "frwiki" to frwiki,
+                "kind" to kindName(id.kind), "tmdbId" to id.titleNumber, "originalLanguage" to originalLanguage, "imdbId" to imdbId, "enwiki" to enwiki, "frwiki" to frwiki,
             )
         }
     }
 
     /** Answers `/v1/title-facts` for [id] with "no item": Wikidata doesn't know the Title. */
-    fun noTitleFacts(id: TitleId.Tmdb) {
+    fun noTitleFacts(id: TitleId.Numbered) {
         synchronized(titleFacts) { titleFacts[factsKey(id)] = null }
     }
 
     /** Forgets what was scripted for [id], so it comes back unavailable again. */
-    fun forgetTitleFacts(id: TitleId.Tmdb) {
+    fun forgetTitleFacts(id: TitleId.Numbered) {
         synchronized(titleFacts) { titleFacts.remove(factsKey(id)) }
     }
 
-    private fun factsKey(id: TitleId.Tmdb) = "${kindName(id.kind)}/${id.tmdbId}"
+    private fun factsKey(id: TitleId.Numbered) = "${kindName(id.kind)}/${id.titleNumber}"
 
     private fun kindName(kind: TitleKind) = if (kind == TitleKind.Movie) "movie" else "show"
 
     /** The Provider tables `/v1/provider-table` serves, by Provider key; a Provider not here gets an empty table, as from the real cloud. */
     val providerTables = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    private val metadata = HashMap<String, Map<String, Any?>>()
     private val games = HashMap<String, List<Map<String, Any?>>>()
     /** Trending's feed, by `<wiki>/<day>`: the day's most viewed articles with their views. */
     private val trendingDays = HashMap<String, List<Pair<String, Long>>>()
@@ -106,34 +104,22 @@ class FakeCloud : Closeable {
 
     val url: String get() = "http://127.0.0.1:${server.address.port}"
 
-    /** The Titles the device asked metadata for, as `movie/238/fr`, one per Title per request. */
-    val metadataAsked: List<String>
-        get() = received.filter { it.path == "/v1/metadata" }.flatMap { request ->
-            val body = read(request.body) as Map<*, *>
-            (body["titles"] as List<*>).map { title -> (title as Map<*, *>).let { "${it["kind"]}/${(it["tmdbId"] as Number).toLong()}/${body["language"]}" } }
-        }
-
     init {
         server.executor = Executors.newCachedThreadPool()
         server.createContext("/") { exchange -> try { handle(exchange) } finally { exchange.close() } }
         server.start()
     }
 
-    /** Serves [title] (built with [tmdbTitle]) for requests in [language]. */
-    fun title(language: String, title: Map<String, Any?>) {
-        synchronized(metadata) { metadata["${title["kind"]}/${title["tmdbId"]}/$language"] = title }
-    }
-
     /** A downloadable subtitle file, as the cloud's subtitle search finds it. */
-    class Subtitle(val kind: String, val tmdbId: Long, val season: Int?, val episode: Int?, val language: String, val release: String, val text: String) {
-        val id = "opensubtitles:$language:${Math.abs((kind + tmdbId + season + episode + release).hashCode())}"
+    class Subtitle(val kind: String, val titleNumber: Long, val season: Int?, val episode: Int?, val language: String, val release: String, val text: String) {
+        val id = "opensubtitles:$language:${Math.abs((kind + titleNumber + season + episode + release).hashCode())}"
     }
 
     val subtitles = CopyOnWriteArrayList<Subtitle>()
 
-    /** Offers [text] as a downloadable subtitle for the Movie [tmdbId] (or its [season]'s [episode]) in [language]. */
-    fun subtitle(tmdbId: Long, language: String, release: String, text: String = "1\n00:00:01,000 --> 00:00:02,000\n$release\n", kind: String = "movie", season: Int? = null, episode: Int? = null) =
-        Subtitle(kind, tmdbId, season, episode, language, release, text).also { subtitles += it }
+    /** Offers [text] as a downloadable subtitle for the Movie [titleNumber] (or its [season]'s [episode]) in [language]. */
+    fun subtitle(titleNumber: Long, language: String, release: String, text: String = "1\n00:00:01,000 --> 00:00:02,000\n$release\n", kind: String = "movie", season: Int? = null, episode: Int? = null) =
+        Subtitle(kind, titleNumber, season, episode, language, release, text).also { subtitles += it }
 
     /**
      * Answers `/v1/games` for [league] with [games], each built with [game]. A League not given is
@@ -285,18 +271,6 @@ class FakeCloud : Closeable {
                 }
                 respond(exchange, 200, mapOf("files" to files))
             }
-            "/v1/metadata" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                val asked = read(body) as Map<*, *>
-                val language = asked["language"] as String
-                val keys = (asked["titles"] as List<*>).map { (it as Map<*, *>).let { t -> "${t["kind"]}/${(t["tmdbId"] as Number).toLong()}" } }
-                val found = synchronized(metadata) { keys.mapNotNull { metadata["$it/$language"] } }
-                val notFound = keys.filter { key -> found.none { "${it["kind"]}/${it["tmdbId"]}" == key } }.map {
-                    mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong())
-                }
-                respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to emptyList<Any>()))
-            }
             "/v1/trending" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
                 if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
@@ -442,7 +416,7 @@ class FakeCloud : Closeable {
                 val languages = asked["languages"] as List<*>
                 val found = languages.flatMap { language ->
                     subtitles.filter {
-                        it.kind == asked["kind"] && it.tmdbId == (asked["tmdbId"] as Number).toLong() && it.language == language &&
+                        it.kind == asked["kind"] && it.titleNumber == (asked["tmdbId"] as Number).toLong() && it.language == language &&
                             it.season == (asked["season"] as Number?)?.toInt() && it.episode == (asked["episode"] as Number?)?.toInt()
                     }
                 }
@@ -468,53 +442,6 @@ class FakeCloud : Closeable {
         val json = Moshi.Builder().build().adapter(Any::class.java).serializeNulls()
     }
 }
-
-/** A Title's metadata shaped like the cloud's answer, with only what a test cares about filled in. */
-fun tmdbTitle(
-    tmdbId: Long,
-    originalTitle: String,
-    kind: String = "movie",
-    originalLanguage: String = "en",
-    titles: List<Triple<String, String, String>> = emptyList(),
-    descriptions: List<Triple<String, String, String>> = emptyList(),
-    genres: List<String> = emptyList(),
-    releaseDate: String? = null,
-    runtimeMinutes: Int? = null,
-    posterPath: String? = null,
-    backdropPath: String? = null,
-    logoPath: String? = null,
-    textlessPosterPath: String? = null,
-    textlessBackdropPath: String? = null,
-    cast: List<String> = emptyList(),
-    popularity: Double = 10.0,
-    alternativeTitles: List<String> = emptyList(),
-    /** YouTube trailers as the cloud lists them, official first: [trailer]s, or bare video IDs as cached before #355. */
-    trailers: List<Any> = emptyList(),
-): Map<String, Any?> = mapOf(
-    "kind" to kind,
-    "tmdbId" to tmdbId,
-    "originalLanguage" to originalLanguage,
-    "originalTitle" to originalTitle,
-    "titles" to titles.map { (language, region, title) -> mapOf("language" to language, "region" to region, "title" to title) },
-    "alternativeTitles" to alternativeTitles,
-    "descriptions" to descriptions.map { (language, region, text) -> mapOf("language" to language, "region" to region, "text" to text) },
-    "genres" to genres,
-    "popularity" to popularity,
-    "releaseDate" to releaseDate,
-    "runtimeMinutes" to runtimeMinutes,
-    "posterPath" to posterPath,
-    "backdropPath" to backdropPath,
-    "logoPath" to logoPath,
-    "textlessPosterPath" to textlessPosterPath,
-    "textlessBackdropPath" to textlessBackdropPath,
-    "cast" to cast.map { mapOf("name" to it, "character" to "", "profilePath" to null) },
-    "imdbId" to null,
-    "trailers" to trailers,
-)
-
-/** One YouTube trailer in [tmdbTitle]'s list, in [language] (null when TMDB doesn't say). */
-fun trailer(key: String, language: String?, official: Boolean = true): Map<String, Any?> =
-    mapOf("key" to key, "language" to language, "official" to official)
 
 /**
  * An event League's Game as the cloud's `/v1/games` lists one (cloud/src/espn.ts): a Grand Prix's

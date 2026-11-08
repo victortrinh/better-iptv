@@ -1,12 +1,12 @@
 package dev.betteriptv.core
 
 /**
- * The genres of Movies and Shows by their English names (TMDB's, which the Provider copies into its
- * genre fields), with their names in the other App languages (#242). The Prefix table's
+ * The genres of Movies and Shows by their English names (as the Provider's genre fields give them),
+ * with their names in the other App languages (#242). The Prefix table's
  * `[genre categories]` section maps the Provider's genre words in every surveyed language to these
  * names ([PrefixTable.genres]), so a genre is kept by its English name, found by any of its names,
  * and shown in the App language. A genre named the same in a language, or one not listed, keeps the
- * name it has. The French names are TMDB's own (its `genre/movie/list` and `genre/tv/list` in `fr`).
+ * name it has.
  */
 internal object Genres {
     private val names: Map<String, Map<String, String>> = mapOf(
@@ -34,7 +34,7 @@ internal object Genres {
     /**
      * The Prefix table's genres that describe Channels and Categories, not Titles (`EN - DRAMA
      * MOVIES` is filed under Movies; a Title isn't a Movie by genre), and the table genres whose
-     * Titles go by TMDB's name for them: the Kids words file Family Titles, the Documentaries words
+     * Titles go by another name: the Kids words file Family Titles, the Documentaries words
      * Documentary ones.
      */
     private val liveOnly = setOf("News", "Sports", "Entertainment", "General", "Movies", "Series", "Lifestyle", "Local", "Religion")

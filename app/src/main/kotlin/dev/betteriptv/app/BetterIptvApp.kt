@@ -52,6 +52,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         )
         // On the Profile the device was last on: nobody is asked on launch. Its settings follow it.
         settings = ViewerSettingsStore(this, library, scope)
+        // The first launch after the release that dropped the cloud's metadata clears the image cache, once (#480).
+        scope.launch(Dispatchers.IO) { library.clearImagesOnce { clearCachedArtwork(SingletonImageLoader.get(this@BetterIptvApp)) } }
         // The first search mustn't wait for the index (over a minute on the stick, #106), nor Home's first rows for its build.
         scope.launch {
             delay(SEARCH_INDEX_AFTER)

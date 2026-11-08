@@ -41,20 +41,20 @@ class ProviderDetailsTest {
     }
 
     private val english = listOf("en")
-    private val heat = TitleId.Tmdb(TitleKind.Movie, 949)
-    private val theWire = TitleId.Tmdb(TitleKind.Show, 1438)
+    private val heat = TitleId.Numbered(TitleKind.Movie, 949)
+    private val theWire = TitleId.Numbered(TitleKind.Show, 1438)
 
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-    /** A movie Listing as the Provider lists it: [name] in [category], of Title [tmdbId], [added] then, with the Provider's [rating]. */
-    private class Movie(val name: String, val category: String, val tmdbId: Long?, val rating: String = "", val added: Long = 1_700_000_000)
+    /** A movie Listing as the Provider lists it: [name] in [category], of Title [titleNumber], [added] then, with the Provider's [rating]. */
+    private class Movie(val name: String, val category: String, val titleNumber: Long?, val rating: String = "", val added: Long = 1_700_000_000)
 
     /** Serves these movie Listings, numbered from 1, under their Categories (numbered from 1 in order of first appearance), and Syncs. */
     private suspend fun syncMovies(vararg movies: Movie) {
         val categories = movies.map { it.category }.distinct()
         provider.movieCategoriesOverride = categories.withIndex().joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
         provider.movieListOverride = movies.withIndex().joinToString(",", "[", "]") { (i, movie) ->
-            """{"stream_id":${i + 1},"name":${json(movie.name)},"tmdb":${json(movie.tmdbId?.toString().orEmpty())},"category_id":"${categories.indexOf(movie.category) + 1}",""" +
+            """{"stream_id":${i + 1},"name":${json(movie.name)},"tmdb":${json(movie.titleNumber?.toString().orEmpty())},"category_id":"${categories.indexOf(movie.category) + 1}",""" +
                 """"added":"${movie.added}","rating":${json(movie.rating)},"container_extension":"mkv"}"""
         }
         library.sync()
@@ -149,7 +149,7 @@ class ProviderDetailsTest {
         assertEquals(listOf("Al Pacino", "Robert De Niro", "Val Kilmer"), kept.cast)
         assertEquals("2GfZl4kuVNI", kept.trailer)
 
-        val unread = page(TitleId.Tmdb(TitleKind.Movie, 1538))
+        val unread = page(TitleId.Numbered(TitleKind.Movie, 1538))
         assertEquals("Collateral", unread.name)
         assertNull(unread.description)
         assertEquals(listOf("Thriller"), unread.genres)
@@ -195,9 +195,9 @@ class ProviderDetailsTest {
         library.sync()
 
         assertEquals("2GfZl4kuVNI", page(heat).trailer)
-        assertNull(page(TitleId.Tmdb(TitleKind.Movie, 1538)).trailer)
+        assertNull(page(TitleId.Numbered(TitleKind.Movie, 1538)).trailer)
         assertEquals("lYq0q8Zb3Dk", page(theWire).trailer)
-        assertNull(page(TitleId.Tmdb(TitleKind.Show, 1406)).trailer)
+        assertNull(page(TitleId.Numbered(TitleKind.Show, 1406)).trailer)
     }
 
     @Test fun `a Show's page shows its Listing's plot, genres, cast, director and rating with no call beyond its Episodes`() = runBlocking {

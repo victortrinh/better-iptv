@@ -103,8 +103,8 @@ class TitleTwoLevelsTest {
 
     @After fun forgetTheArt() = SingletonImageLoader.reset()
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 949)
-    private val show = TitleId.Tmdb(TitleKind.Show, 1396)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 949)
+    private val show = TitleId.Numbered(TitleKind.Show, 1396)
 
     private fun likely(value: String) = Known(value, Provenance.Likely)
     private fun fullHd(confirmed: Boolean = false) = Known(Quality.FullHD, if (confirmed) Provenance.Confirmed else Provenance.Likely)
@@ -124,7 +124,6 @@ class TitleTwoLevelsTest {
         genres = listOf("Crime", "Drama", "Action"),
         runtimeMinutes = 170,
         cast = listOf("Al Pacino", "Robert De Niro", "Val Kilmer", "Jon Voight", "Tom Sizemore"),
-        fromTmdb = true,
     )
 
     // Stopped partway: every action a Movie has (Play, Restart, Remove from Continue watching, Versions).
@@ -243,7 +242,6 @@ class TitleTwoLevelsTest {
         assertFalse("no Version row", shows("Netflix"))
         assertFalse("no legend", shows("read from the file"))
         assertFalse("no cast", shows("Al Pacino"))
-        assertFalse("no notice", shows("TMDB API"))
         // Every action sits inside the bottom margin of the 960 × 540 dp screen, so nothing needs a scroll.
         val bottom = compose.onNodeWithTag("versions action").fetchSemanticsNode().boundsInRoot.bottom
         val density = compose.activity.resources.displayMetrics.density
@@ -269,11 +267,11 @@ class TitleTwoLevelsTest {
         assertTrue(shows("Netflix"))
         press(Key.DirectionCenter)
         assertEquals(1L, chosen?.listingId)
-        // Further down, Other languages, then the cast and TMDB's notice, which the last row brings into view.
+        // Further down, Other languages, then the cast, which the last row brings into view, and no notice of a data source.
         repeat(10) { press(Key.DirectionDown) }
         focusedOn("Other languages")
         assertTrue(shows("Al Pacino"))
-        assertTrue(shows("TMDB API"))
+        assertFalse(shows("not endorsed"))
 
         back()
         compose.onNodeWithTag("versions action").assertIsFocused()

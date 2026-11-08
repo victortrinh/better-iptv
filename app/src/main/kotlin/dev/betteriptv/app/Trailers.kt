@@ -330,7 +330,7 @@ internal class TrailerEvents(private val onState: (Int) -> Unit, private val onE
  * Paused that way, YouTube's player shows nothing, so the page shows a pause sign in the middle.
  * Once it plays, it says it's pictured when the trailer's time has moved on [PICTURED_SECONDS]: then
  * its frames are being drawn, where "playing" can come before the first (#407).
- * Only a YouTube id's characters are kept, so nothing TMDB sends can break out of the script.
+ * Only a YouTube id's characters are kept, so nothing the Provider sends can break out of the script.
  */
 internal fun trailerPage(videoId: String, language: String, origin: String): String {
     fun plain(text: String) = text.filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '_' }

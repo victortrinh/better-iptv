@@ -130,7 +130,7 @@ class FeaturedHeroTest {
     @After fun forgetTheArt() = SingletonImageLoader.reset()
 
     private fun featured(name: String, backdrop: String = "https://provider.example/backdrop-$name.jpg") = FeaturedTitle(
-        TitleId.Tmdb(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"),
+        TitleId.Numbered(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"),
         "About $name. ".repeat(40).trim(),
         backdrop = backdrop, best = VersionAttributes(),
     )

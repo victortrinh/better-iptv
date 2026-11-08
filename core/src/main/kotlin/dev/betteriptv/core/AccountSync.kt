@@ -159,7 +159,7 @@ internal class AccountSync(
                     val room = CloudClient.MAX_HISTORY_BATCH - progress.size
                     if (room == 0) break
                     // A Listing's progress names its Provider: it waits for a login.
-                    store.queuedHistory(profile.id, room).filter { it.id is TitleId.Tmdb || provider != null }.forEach { progress += profile to it }
+                    store.queuedHistory(profile.id, room).filter { it.id is TitleId.Numbered || provider != null }.forEach { progress += profile to it }
                 }
                 val entries = store.queuedEntries(provider, CloudClient.MAX_HISTORY_BATCH)
                 val answer = cloud.sync(state.cursor, provider, uidOf(currentProfile()), progress.map { (profile, change) -> profile.uid to change }, entries)

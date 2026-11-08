@@ -54,7 +54,7 @@ class BackgroundReadingTest {
     private val english = listOf("en")
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
 
-    private fun movie(n: Long) = TitleId.Tmdb(TitleKind.Movie, n)
+    private fun movie(n: Long) = TitleId.Numbered(TitleKind.Movie, n)
 
     /** Syncs [count] English MKV Movies, newest first: Listing n is Movie n, with a readable file. */
     private suspend fun syncMovies(count: Int) {

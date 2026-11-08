@@ -44,7 +44,7 @@ internal fun inContentLanguages(candidates: List<Candidate>, contentLanguages: L
     }
 }
 
-/** The language a Title was released in, as a primary subtag; null when Wikidata names none (#476), or for TMDB's old "xx" ("No Language"). */
+/** The language a Title was released in, as a primary subtag; null when Wikidata names none (#476), or for "xx" ("No Language"). */
 internal fun namedOriginalLanguage(originalLanguage: String?): String? =
     originalLanguage?.takeIf { it.isNotBlank() && it != "xx" }?.let(::primaryLanguage)
 
@@ -92,7 +92,7 @@ internal fun VersionAttributes.onlyAudioLanguage(contentLanguages: List<String>,
  * Nordic copies, which may be dubs) is left as it is, as is every one when Wikidata names no language.
  */
 internal fun likelyInOriginalLanguage(candidates: List<Candidate>, originalLanguage: String?): List<Candidate> {
-    // TMDB's "xx" was "No Language"; Wikidata's codes are ISO 639-1, but the guard costs nothing.
+    // "xx" once meant "No Language"; Wikidata's codes are ISO 639-1, but the guard costs nothing.
     val language = originalLanguage?.takeIf { it.isNotBlank() && it != "xx" } ?: return candidates
     return candidates.map { candidate ->
         val attributes = candidate.attributes

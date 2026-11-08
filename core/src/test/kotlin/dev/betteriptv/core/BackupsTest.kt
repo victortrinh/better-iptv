@@ -43,7 +43,7 @@ class BackupsTest {
         assertFalse("a stream opened before the last one was closed", player.playedOverAnother)
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
     private val tv = DeviceProfile(maxHeight = 2160, hdr = emptySet())
 
     /** A 4K English Version with two Backups (2 and 3), and a lower English Version (4). */

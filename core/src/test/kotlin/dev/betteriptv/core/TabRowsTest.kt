@@ -38,13 +38,13 @@ class TabRowsTest {
 
     private val english = listOf("en")
 
-    private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
+    private fun movie(titleNumber: Long) = TitleId.Numbered(TitleKind.Movie, titleNumber)
 
-    private fun show(tmdbId: Long) = TitleId.Tmdb(TitleKind.Show, tmdbId)
+    private fun show(titleNumber: Long) = TitleId.Numbered(TitleKind.Show, titleNumber)
 
     /**
-     * Syncs these movie Listings, newest first, numbered from 1, each a Title of its own TMDB ID,
-     * filed under `MOVIES` unless [filed] names another Category for that TMDB ID.
+     * Syncs these movie Listings, newest first, numbered from 1, each a Title of its own Title number,
+     * filed under `MOVIES` unless [filed] names another Category for that Title number.
      */
     private suspend fun syncMovies(vararg listings: Pair<String, Long>, filed: Map<Long, String> = emptyMap()) {
         val categories = (listOf("MOVIES") + filed.values).distinct()
@@ -56,7 +56,7 @@ class TabRowsTest {
         library.sync()
     }
 
-    /** Serves these show Listings at the next Sync, newest first, numbered from 1, each a Title of its own TMDB ID, with the genre field [genres] gives its TMDB ID. */
+    /** Serves these show Listings at the next Sync, newest first, numbered from 1, each a Title of its own Title number, with the genre field [genres] gives its Title number. */
     private fun serveShows(vararg listings: Pair<String, Long>, genres: Map<Long, String> = emptyMap()) {
         provider.showCategoriesOverride = """[{"category_id":"2","category_name":"SERIES"}]"""
         provider.showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
@@ -68,9 +68,6 @@ class TabRowsTest {
     /** Files each of [ids] under the Category [name], for [syncMovies]. */
     private fun under(name: String, ids: Iterable<Long>) = ids.associateWith { name }
 
-    /** Serves TMDB's metadata of a movie [tmdbId] named [name]. */
-    private fun tmdb(tmdbId: Long, name: String) = cloud.title("en", tmdbTitle(tmdbId, name))
-
     private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english) =
         library.tabRows(kind, contentLanguages, appLanguage = "en", now = Instant.now())
 
@@ -78,12 +75,12 @@ class TabRowsTest {
      * Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title
      * facts, and the article in the cloud's feed. Called before the Sync, which asks for the facts.
      */
-    private fun trending(vararg ids: TitleId.Tmdb) {
+    private fun trending(vararg ids: TitleId.Numbered) {
         ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = article(it)) }
         cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> article(id) to 1_000L - i }.toTypedArray())
     }
 
-    private fun article(id: TitleId.Tmdb) = "Article ${id.kind} ${id.tmdbId}"
+    private fun article(id: TitleId.Numbered) = "Article ${id.kind} ${id.titleNumber}"
 
     private fun List<HomeRow>.trending() = filterIsInstance<HomeRow.Trending>().singleOrNull()
 
@@ -239,11 +236,9 @@ class TabRowsTest {
         assertEquals(listOf("New Movie"), rows.names())
     }
 
-    @Test fun `a tab reads what's stored while a Sync downloads, though its Trending feed and metadata are asked again`() = runBlocking {
+    @Test fun `a tab reads what's stored while a Sync downloads, though its Trending feed is asked again`() = runBlocking {
         trending(movie(1), movie(2), movie(3))
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3, "EN - Fourth (2025)" to 4)
-        // An answer from before textless backdrops is asked again on every read, so this one saves metadata each time.
-        cloud.title("en", tmdbTitle(4, "Fourth") - "textlessBackdropPath")
         rows()
         // The Sync stops in the middle of the show list, holding the catalog's writer, until released.
         val downloading = CountDownLatch(1)

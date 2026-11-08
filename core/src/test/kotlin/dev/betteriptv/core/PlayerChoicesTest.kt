@@ -37,8 +37,8 @@ class PlayerChoicesTest {
         provider.close()
     }
 
-    private val movie = TitleId.Tmdb(TitleKind.Movie, 1)
-    private val chelseaDetective = TitleId.Tmdb(TitleKind.Show, 156240)
+    private val movie = TitleId.Numbered(TitleKind.Movie, 1)
+    private val chelseaDetective = TitleId.Numbered(TitleKind.Show, 156240)
     private val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
     private val english = listOf("en")
 

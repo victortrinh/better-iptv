@@ -12,7 +12,7 @@ import org.junit.Test
 class TitleGenresTest {
     private val table = PrefixTable.base()
 
-    @Test fun `the Provider's genre field in any surveyed language folds into TMDB's English names`() {
+    @Test fun `the Provider's genre field in any surveyed language folds into the English names`() {
         assertEquals(listOf("Drama"), table.genres("Drame"))
         assertEquals(listOf("Comedy", "Drama"), table.genres("Komödie / Drama"))
         assertEquals(listOf("Comedy", "Drama"), table.genres("Comedia, Drama"))

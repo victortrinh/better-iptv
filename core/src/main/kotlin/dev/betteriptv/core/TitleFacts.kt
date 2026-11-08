@@ -17,4 +17,4 @@ internal data class TitleFacts(
 )
 
 /** What the cloud answered for a batch: each found Title's facts, and the Titles Wikidata has no item for. The rest are unavailable. */
-internal class CloudTitleFacts(val found: Map<TitleId.Tmdb, TitleFacts>, val notFound: List<TitleId.Tmdb>)
+internal class CloudTitleFacts(val found: Map<TitleId.Numbered, TitleFacts>, val notFound: List<TitleId.Numbered>)

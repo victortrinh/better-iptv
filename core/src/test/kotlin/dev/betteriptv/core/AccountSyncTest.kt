@@ -30,7 +30,7 @@ class AccountSyncTest {
     }
 
     private val english = listOf("en")
-    private val first = TitleId.Tmdb(TitleKind.Movie, 1)
+    private val first = TitleId.Numbered(TitleKind.Movie, 1)
     private val homeVideo = TitleId.Unmatched(TitleKind.Movie, 2)
     private val hour = 60 * 60_000L
     private val email = "home@example.com"
@@ -202,7 +202,7 @@ class AccountSyncTest {
         assertTrue(cloud.entriesOf(email).none { it["kind"] == "setting" })
     }
 
-    @Test fun `Favourites and the progress of what has no TMDB ID stay with their Provider, and history by TMDB ID follows the Account`() = runBlocking {
+    @Test fun `Favourites and the progress of what has no Title number stay with their Provider, and history by Title number follows the Account`() = runBlocking {
         val living = tv("living")
         // The same panel by another name: another Provider host, whose Channels and Listings may be anything.
         val elsewhere = tv("elsewhere", provider.url.replace("127.0.0.1", "localhost"))

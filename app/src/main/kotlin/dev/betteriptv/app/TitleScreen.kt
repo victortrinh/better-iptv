@@ -244,7 +244,7 @@ internal fun TitlePage(
             val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
-                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, title.fromTmdb, onChoose = { onChoose(it, title.name) }, checking = checking)
+                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, onChoose = { onChoose(it, title.name) }, checking = checking)
                     TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.backdrop), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
                     null -> TitleContent(

@@ -29,25 +29,25 @@ class KidsCatalogTest {
         return library
     }
 
-    private fun movie(tmdbId: Long) = TitleId.Tmdb(TitleKind.Movie, tmdbId)
+    private fun movie(titleNumber: Long) = TitleId.Numbered(TitleKind.Movie, titleNumber)
 
-    private fun show(tmdbId: Long) = TitleId.Tmdb(TitleKind.Show, tmdbId)
+    private fun show(titleNumber: Long) = TitleId.Numbered(TitleKind.Show, titleNumber)
 
     /** Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title facts, and the article in the cloud's feed. Before the Sync. */
-    private fun trending(vararg ids: TitleId.Tmdb) {
+    private fun trending(vararg ids: TitleId.Numbered) {
         ids.forEach { cloud.titleFacts(it, originalLanguage = "en", enwiki = "Article $it") }
         cloud.trending("en", "2026-11-06", *ids.mapIndexed { i, id -> "Article $id" to 1_000L - i }.toTypedArray())
     }
 
-    /** A movie Listing to serve: its [name], its Title's [tmdbId] and the Category it is filed under. */
-    private class Filed(val name: String, val tmdbId: Long, val category: String)
+    /** A movie Listing to serve: its [name], its Title's [titleNumber] and the Category it is filed under. */
+    private class Filed(val name: String, val titleNumber: Long, val category: String)
 
     /** Serves these movie Listings, newest first, numbered from 1, each filed under its Category. */
     private fun serveMovies(vararg listings: Filed) {
         val categories = listings.map { it.category }.distinct()
         provider.movieCategoriesOverride = categories.withIndex().joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":"$name"}""" }
         provider.movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            """{"stream_id":${i + 1},"name":"${listing.name}","tmdb":"${listing.tmdbId}","category_id":"${categories.indexOf(listing.category) + 1}","added":"${1_700_000_000 - i}"}"""
+            """{"stream_id":${i + 1},"name":"${listing.name}","tmdb":"${listing.titleNumber}","category_id":"${categories.indexOf(listing.category) + 1}","added":"${1_700_000_000 - i}"}"""
         }
     }
 
@@ -56,17 +56,9 @@ class KidsCatalogTest {
         val categories = listings.map { it.category }.distinct()
         provider.showCategoriesOverride = categories.withIndex().joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 101}","category_name":"$name"}""" }
         provider.showListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
-            """{"series_id":${i + 1},"name":"${listing.name}","tmdb":"${listing.tmdbId}","category_id":"${categories.indexOf(listing.category) + 101}","last_modified":"${1_700_000_000 - i}"}"""
+            """{"series_id":${i + 1},"name":"${listing.name}","tmdb":"${listing.titleNumber}","category_id":"${categories.indexOf(listing.category) + 101}","last_modified":"${1_700_000_000 - i}"}"""
         }
     }
-
-    private fun tmdb(tmdbId: Long, name: String, kind: String = "movie", genres: List<String> = emptyList()) =
-        cloud.title(
-            "en",
-            tmdbTitle(
-                tmdbId, name, kind = kind, genres = genres, backdropPath = "/still-$tmdbId.jpg",
-            ),
-        )
 
     /** Puts [library] on a new Kids profile. */
     private suspend fun onKidsProfile(library: Library) {
@@ -114,11 +106,10 @@ class KidsCatalogTest {
         assertEquals(listOf(movie(2)), library.kidsCatalog().getValue(TitleKind.Movie))
     }
 
-    @Test fun `TMDB's Animation and Family genres neither add to the Kids catalog nor make its genre rows`() = runBlocking {
+    @Test fun `only a Kids Category's Titles are in the Kids catalog, and Titles outside it make no genre rows there`() = runBlocking {
         serveMovies(*(1L..6L).map { Filed("EN - Film $it (2025)", it, "EN - MOVIES") }.toTypedArray(), Filed("EN - Kid (2025)", 7, "EN - KIDS"))
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
-        (1L..7L).forEach { tmdb(it, "Film $it", genres = listOf("Animation")) }
         val library = library()
         library.sync()
         onKidsProfile(library)

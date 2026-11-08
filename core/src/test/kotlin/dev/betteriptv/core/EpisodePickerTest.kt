@@ -22,7 +22,7 @@ class EpisodePickerTest {
     private val credentials = InMemoryCredentials()
     private lateinit var library: Library
 
-    private val loveIsBlind = TitleId.Tmdb(TitleKind.Show, 123250)
+    private val loveIsBlind = TitleId.Numbered(TitleKind.Show, 123250)
 
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
@@ -85,7 +85,7 @@ class EpisodePickerTest {
         cloud.received.clear()
 
         // The fixture's Der Scheich: eight Episodes, each with a still and a length (#473).
-        val show = library.episodes(TitleId.Tmdb(TitleKind.Show, 216963), listOf("de")) ?: throw AssertionError("no Show")
+        val show = library.episodes(TitleId.Numbered(TitleKind.Show, 216963), listOf("de")) ?: throw AssertionError("no Show")
 
         val first = show.episode(1, 1)
         assertEquals("Die Natur lügt nicht", first.name)

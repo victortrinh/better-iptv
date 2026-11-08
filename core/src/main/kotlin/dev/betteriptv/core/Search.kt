@@ -307,14 +307,14 @@ internal class SearchIndex private constructor(
 
         /** [id] as one long: whether it is Unmatched, its kind, and its Title number or Listing ID. */
         private fun key(id: TitleId): Long = (id.kind.ordinal.toLong() shl KIND_SHIFT) or when (id) {
-            is TitleId.Tmdb -> id.tmdbId
+            is TitleId.Numbered -> id.titleNumber
             is TitleId.Unmatched -> UNMATCHED or id.listingId
         }
 
         private fun id(key: Long): TitleId {
             val kind = TitleKind.entries[(key ushr KIND_SHIFT and 1).toInt()]
             val value = key and ((1L shl KIND_SHIFT) - 1)
-            return if (key and UNMATCHED != 0L) TitleId.Unmatched(kind, value) else TitleId.Tmdb(kind, value)
+            return if (key and UNMATCHED != 0L) TitleId.Unmatched(kind, value) else TitleId.Numbered(kind, value)
         }
 
         /** A name's words, hashed: two names of the same words have the same key. */
