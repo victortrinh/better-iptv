@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
-import { MAX_FACTS_BATCH, USER_AGENT } from "../src/title-facts";
+import { FACTS_CACHED_A_DAY, MAX_FACTS_BATCH, USER_AGENT } from "../src/title-facts";
 import { FakeTmdb } from "./fake-tmdb";
 import { FakeWikidata } from "./fake-wikidata";
 
@@ -10,7 +10,7 @@ let tmdb: FakeTmdb;
 let wikidata: FakeWikidata;
 let token: string;
 beforeEach(async () => {
-  await env.DB.batch(["device", "title_facts"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
+  await env.DB.batch(["device", "title_facts", "facts_cached"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
   tmdb = new FakeTmdb();
   wikidata = new FakeWikidata(tmdb);
   wikidata.movie(238, { language: "en", imdbId: "tt0068646", enwiki: "The Godfather", frwiki: "Le Parrain" });
@@ -139,6 +139,31 @@ describe("Title facts", () => {
     const kept = await env.DB.prepare("SELECT found, fetched_at FROM title_facts WHERE kind = 'movie' AND tmdb_id = ?1").bind(filler.tmdbId).first<{ found: number; fetched_at: number }>();
     expect(kept?.found).toBe(0);
     expect(kept?.fetched_at).toBeGreaterThan(0);
+  });
+
+  it("caches at most FACTS_CACHED_A_DAY Titles a day, answering the rest without keeping them", async () => {
+    // Today's budget is all but one Title spent.
+    await env.DB.prepare("INSERT INTO facts_cached (day, titles) VALUES (?1, ?2)").bind(new Date().toISOString().slice(0, 10), FACTS_CACHED_A_DAY - 1).run();
+
+    const answer = await facts([godfather, breakingBad, filler]);
+
+    // Every Title is answered as before.
+    expect(answer.titles.map((t) => t.tmdbId)).toEqual([238, 1396]);
+    expect(answer.notFound).toEqual([filler]);
+    expect(answer.unavailable).toEqual([]);
+    // Only the first was kept, and the day's count says so.
+    const cached = await env.DB.prepare("SELECT kind, tmdb_id FROM title_facts ORDER BY tmdb_id").all<{ kind: string; tmdb_id: number }>();
+    expect(cached.results).toEqual([{ kind: "movie", tmdb_id: 238 }]);
+    expect((await env.DB.prepare("SELECT titles FROM facts_cached").first<{ titles: number }>())?.titles).toBe(FACTS_CACHED_A_DAY);
+    // The rest are asked of Wikidata again, and still not kept today.
+    await facts([breakingBad, filler]);
+    expect(wikidata.asked).toEqual([["movie/238", "show/1396", "movie/777001"], ["show/1396", "movie/777001"]]);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM title_facts").first<{ n: number }>())?.n).toBe(1);
+    // Tomorrow they are.
+    await env.DB.prepare("UPDATE facts_cached SET day = '2000-01-01'").run();
+    await facts([breakingBad, filler]);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM title_facts").first<{ n: number }>())?.n).toBe(3);
+    expect((await env.DB.prepare("SELECT titles FROM facts_cached WHERE day = ?1").bind(new Date().toISOString().slice(0, 10)).first<{ titles: number }>())?.titles).toBe(2);
   });
 
   it("asks only about the Titles it hasn't cached, in one query", async () => {

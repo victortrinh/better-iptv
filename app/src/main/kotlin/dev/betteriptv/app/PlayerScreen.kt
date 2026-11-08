@@ -30,9 +30,11 @@ import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.EpisodeNumber
 import dev.betteriptv.core.SubtitleOffer
+import dev.betteriptv.core.SubtitleShowing
+import dev.betteriptv.core.offeredSubtitles
+import dev.betteriptv.core.suggestedSubtitles
 import dev.betteriptv.core.Track
 import kotlinx.coroutines.flow.MutableStateFlow
-import dev.betteriptv.core.iso639
 import dev.betteriptv.core.refreshRateFor
 import dev.betteriptv.core.UpNext
 import kotlinx.coroutines.Dispatchers
@@ -236,29 +238,30 @@ fun PlayerScreen(
     // session, when a file needs them, and shown automatically when the Track choice says so.
     val chosen by (player?.chosen ?: remember { MutableStateFlow(null) }).collectAsState()
     var offers by remember(session) { mutableStateOf<List<SubtitleOffer>?>(null) }
-    var shownSubtitle by remember(session) { mutableStateOf<ShownSubtitle?>(null) }
-    val downloads = remember(session) { HashMap<String, ShownSubtitle>() }
+    // The Viewer's latest pick wins over a file still downloading, and a file that won't download or read is noted.
+    val showing = remember(session) {
+        SubtitleShowing { offer: SubtitleOffer ->
+            library.downloadSubtitle(offer)?.let { file -> withContext(Dispatchers.Default) { ShownSubtitle.parse(offer, file) } }
+        }
+    }
+    val shown by showing.state.collectAsState()
+    val shownSubtitle = shown.file
     val downloadLanguages = remember(player, chosen) {
         if (chosen == null) emptyList() else player?.tracks?.let { plan.downloadLanguages(it.subtitles, library.rememberedTracks(), choices) }.orEmpty()
-    }
-    val showDownloaded: (SubtitleOffer) -> Unit = { offer ->
-        scope.launch {
-            val subtitle = downloads[offer.id] ?: library.downloadSubtitle(offer)?.let { file ->
-                withContext(Dispatchers.Default) { ShownSubtitle.parse(offer, file) }.also { downloads[offer.id] = it }
-            }
-            if (subtitle != null) shownSubtitle = subtitle
-        }
     }
     LaunchedEffect(session, downloadLanguages.isNotEmpty()) {
         if (downloadLanguages.isNotEmpty() && offers == null) offers = library.subtitleOffers(plan, plan.subtitleLanguages(library.rememberedTracks(), choices))
     }
+    val suggestedDownloads = remember(offers) { suggestedSubtitles(plan, offers.orEmpty()) }
     LaunchedEffect(chosen, offers) {
         val choice = chosen ?: return@LaunchedEffect
         val language = choice.downloaded
-        if (language == null) shownSubtitle = null
-        else if (shownSubtitle?.offer?.language != language) {
-            // The file the Viewer chose for this Title, when it is still offered; else the best in its language.
-            (offers?.firstOrNull { it.id == choice.downloadedOffer } ?: offers?.firstOrNull { it.language == language })?.let(showDownloaded)
+        val state = showing.state.value
+        if (language == null) showing.hide()
+        else if ((state.loading ?: state.shown)?.language != language) {
+            // The file the Viewer chose for this Title, when it is still offered; else the best in its language that downloads.
+            val inLanguage = offers.orEmpty().filter { it.language == language }
+            showing.showFirst(inLanguage.filter { it.id == choice.downloadedOffer } + inLanguage)
         }
     }
     LaunchedEffect(player, settings.subtitleStyle) { player?.style(settings.subtitleStyle) }
@@ -451,11 +454,12 @@ fun PlayerScreen(
                 settings.subtitleStyle,
                 audioDelay,
                 subtitleDelay,
-                downloads = offers.orEmpty().filter { it.language in downloadLanguages }.groupBy { it.language }.values.flatMap { it.take(DOWNLOADS_PER_LANGUAGE) },
-                shownDownload = shownSubtitle?.offer,
+                downloads = offeredSubtitles(offers.orEmpty(), downloadLanguages, suggestedDownloads),
+                shown = shown,
+                suggested = suggestedDownloads,
                 onDownloaded = { offer ->
                     player?.chooseSubtitles(null)
-                    showDownloaded(offer)
+                    scope.launch { showing.show(offer) }
                     choose(choices.copy(subtitles = ChosenSubtitles.Downloaded(offer.id, offer.language)))
                     scope.launch { library.rememberSubtitles(offer.language) }
                 },
@@ -465,7 +469,7 @@ fun PlayerScreen(
                     track.language?.let { scope.launch { library.rememberAudio(it) } }
                 },
                 onSubtitles = { index, track ->
-                    shownSubtitle = null
+                    showing.hide()
                     player?.chooseSubtitles(index)
                     when {
                         track == null || index == null -> choose(choices.copy(subtitles = ChosenSubtitles.Off))
@@ -497,8 +501,6 @@ private const val SEEK_STEP = 10_000L
 /** The keys that scrub a Movie or Episode. */
 private val SCRUB_KEYS = setOf(Key.DirectionLeft, Key.DirectionRight, Key.MediaRewind, Key.MediaFastForward)
 
-/** How many downloaded subtitles are offered per language: another file is often the fix for one badly off. */
-private const val DOWNLOADS_PER_LANGUAGE = 3
 
 /** How long a Version stays named once it starts. */
 private val NAMED_FOR = 5.seconds
@@ -1047,7 +1049,8 @@ private fun TracksPanel(
     audioDelay: Long,
     subtitleDelay: Long,
     downloads: List<SubtitleOffer>,
-    shownDownload: SubtitleOffer?,
+    shown: SubtitleShowing.State<*>,
+    suggested: Set<String>,
     onDownloaded: (SubtitleOffer) -> Unit,
     onAudio: (Int, Track) -> Unit,
     onSubtitles: (Int?, Track?) -> Unit,
@@ -1057,6 +1060,7 @@ private fun TracksPanel(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
+    val shownDownload = shown.shown
     // Read again after each pick, and twice a second: the engine says which Track is on, and
     // Media3 says so only once it has switched, after the pick (#160).
     var picks by remember { mutableIntStateOf(0) }
@@ -1083,7 +1087,7 @@ private fun TracksPanel(
         })
     }
     val downloaded = downloads.map { offer ->
-        val detail = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
+        val release = if (offer.hearingImpaired) stringResource(R.string.subtitle_hearing_impaired, offer.release) else offer.release
         TrackOption(
             stringResource(R.string.subtitle_downloaded, context.trackName(Track(offer.language))),
             offer.id == shownDownload?.id,
@@ -1091,7 +1095,13 @@ private fun TracksPanel(
                 onDownloaded(offer)
                 picks++
             },
-            detail = detail.takeIf { it.isNotBlank() },
+            detail = release.takeIf { it.isNotBlank() },
+            value = when {
+                offer.id == shown.loading?.id -> stringResource(R.string.subtitle_loading)
+                offer.id in shown.failed -> stringResource(R.string.subtitle_failed)
+                offer.id in suggested -> stringResource(R.string.subtitle_suggested)
+                else -> null
+            },
         )
     }
     TrackCards(
@@ -1118,10 +1128,11 @@ internal fun Context.audioName(track: Track, original: Boolean, withFormat: Bool
  * its format. A Channel's closed captions are named as such, with their language when they have one.
  */
 internal fun Context.trackName(track: Track, withFormat: Boolean = true): String {
-    // A Track tagged `und` (undetermined) has no name in any language.
-    val named = track.language?.let { iso639(it) ?: it }?.let(::languageName)?.takeIf { it.isNotEmpty() }
+    // A tag with a region keeps it ("Français (Québec)"); a Track tagged with none (`und`) is named by its label's language,
+    // "English SDH" as English, else by its label as the file gives it.
+    val named = (track.language?.takeIf { '-' in it && track.spokenLanguage != null } ?: track.spokenLanguage)?.let(::languageName)?.takeIf { it.isNotEmpty() }
     if (track.isClosedCaptions) return listOfNotNull(getString(R.string.track_closed_captions), named).joinToString(" · ")
-    val language = named ?: getString(R.string.track_unknown_language)
+    val language = named ?: track.label?.trim()?.takeIf { it.isNotEmpty() } ?: getString(R.string.track_unknown_language)
     val channels = when (val count = track.channels) {
         null -> null
         1 -> getString(R.string.track_mono)

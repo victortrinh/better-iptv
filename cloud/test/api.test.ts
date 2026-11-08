@@ -11,7 +11,7 @@ import { breakingBad, FakeTmdb, godfather } from "./fake-tmdb";
 let tmdb: FakeTmdb;
 beforeEach(async () => {
   // Each test starts with no devices and an empty cache.
-  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM title_facts"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM tier_tag_candidate"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted"), env.DB.prepare("DELETE FROM game_try")]);
+  await env.DB.batch([env.DB.prepare("DELETE FROM device"), env.DB.prepare("DELETE FROM title_metadata"), env.DB.prepare("DELETE FROM title_facts"), env.DB.prepare("DELETE FROM file_read"), env.DB.prepare("DELETE FROM upcoming_episodes"), env.DB.prepare("DELETE FROM season_episodes"), env.DB.prepare("DELETE FROM unknown_prefix"), env.DB.prepare("DELETE FROM tier_tag_candidate"), env.DB.prepare("DELETE FROM chart"), env.DB.prepare("DELETE FROM chart_wanted"), env.DB.prepare("DELETE FROM chart_try"), env.DB.prepare("DELETE FROM game"), env.DB.prepare("DELETE FROM team"), env.DB.prepare("DELETE FROM game_wanted")]);
   tmdb = new FakeTmdb();
   tmdb.movie(238, godfather);
   tmdb.show(1396, breakingBad);
@@ -970,7 +970,7 @@ describe("Games", () => {
     expect(sentOut()).toBe(after);
   });
 
-  it("reads the current days again every 5 minutes, so Live flips, and the coming days hourly", async () => {
+  it("reads a day with a Game on again every 5 minutes, so Live flips, and the other days hourly", async () => {
     const token = await registerDevice();
     await filled(token, ["nhl"]);
     forget();
@@ -982,15 +982,65 @@ describe("Games", () => {
     espn.scoreboard(nhl, "2026-11-01", event("1", "2026-11-01T19:00:00Z", "post", leafs, habs, [{ name: "ESPN+" }]), event("2", "2026-11-02T00:00:00Z", "in", bruins, sens));
     vi.setSystemTime(new Date("2026-11-01T20:05:30Z"));
     await fill();
-    expect(espn.asked.sort()).toEqual(["hockey/nhl/2026-10-31", "hockey/nhl/2026-11-01"]);
+    // Only today, where the Leafs are playing: yesterday's game is over, and nothing is due on the coming days.
+    expect(espn.asked).toEqual(["hockey/nhl/2026-11-01"]);
     const { leagues } = await gamesOf(token, ["nhl"]);
     expect(leagues[0].games.map((g) => [g.id, g.state])).toEqual([["0", "over"], ["1", "over"], ["2", "live"], ["3", "upcoming"]]);
 
     forget();
     vi.setSystemTime(new Date("2026-11-01T21:01:00Z"));
     await fill();
-    // The current days (stale again) and the seven coming days; the teams keep for a week.
+    // Today again (the Bruins are on), yesterday and the seven coming days an hour after they were read; the teams keep for a week.
     expect(espn.asked.sort()).toEqual(Array.from({ length: 9 }, (_, i) => `hockey/nhl/${i === 0 ? "2026-10-31" : `2026-11-0${i}`}`).sort());
+  });
+
+  it("reads a day often only around its Games: hourly until 15 minutes before one starts, then every 5 minutes until it is over", async () => {
+    // The Broncos play at 21:25; the NFL's other days are empty.
+    const token = await registerDevice();
+    await filled(token, ["nfl"]);
+    const readsOf = (day: string) => espn.asked.filter((a) => a === `football/nfl/${day}`).length;
+
+    // Not at 5 past: the game is over an hour away.
+    forget();
+    for (const at of ["20:05:30", "20:30:00", "20:59:00"]) {
+      vi.setSystemTime(new Date(`2026-11-01T${at}Z`));
+      await fill();
+    }
+    expect(espn.asked).toEqual([]);
+    // Hourly: read at 21:00, due again 15 minutes before kickoff, then every 5 minutes.
+    vi.setSystemTime(new Date("2026-11-01T21:00:30Z"));
+    await fill();
+    expect(readsOf("2026-11-01")).toBe(1);
+    vi.setSystemTime(new Date("2026-11-01T21:06:00Z"));
+    await fill();
+    expect(readsOf("2026-11-01")).toBe(1);
+    vi.setSystemTime(new Date("2026-11-01T21:10:30Z"));
+    await fill();
+    expect(readsOf("2026-11-01")).toBe(2);
+    vi.setSystemTime(new Date("2026-11-01T21:16:00Z"));
+    await fill();
+    expect(readsOf("2026-11-01")).toBe(3);
+    // Kickoff: Live within 5 minutes.
+    espn.scoreboard("football/nfl", "2026-11-01", event("100", "2026-11-01T21:25:00Z", "in", broncos, texans, [{ name: "CBS" }]));
+    vi.setSystemTime(new Date("2026-11-01T21:26:30Z"));
+    await fill(2);
+    expect((await gamesOf(token, ["nfl"])).leagues[0].games[0]).toMatchObject({ id: "100", state: "live" });
+    // Over: back to hourly.
+    espn.scoreboard("football/nfl", "2026-11-01", event("100", "2026-11-01T21:25:00Z", "post", broncos, texans, [{ name: "CBS" }]));
+    vi.setSystemTime(new Date("2026-11-02T00:35:00Z"));
+    await fill();
+    forget();
+    vi.setSystemTime(new Date("2026-11-02T00:41:00Z"));
+    await fill();
+    expect(espn.asked).toEqual([]);
+    vi.setSystemTime(new Date("2026-11-02T01:36:00Z"));
+    await fill();
+    expect(espn.asked).toContain("football/nfl/2026-11-01");
+    // The empty days around it were only ever read hourly.
+    expect(readsOf("2026-11-03")).toBeLessThanOrEqual(6);
+    // Each read cost D1 two row writes, the row before and after it: no try table.
+    const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'game%'").all<{ name: string }>();
+    expect(tables.results.map((t) => t.name).sort()).toEqual(["game", "game_wanted"]);
   });
 
   it("serves the kept copy while ESPN can't answer, and leaves out a League it never had", async () => {
@@ -1030,18 +1080,22 @@ describe("Games", () => {
     expect(leagues).toEqual([{ league: "cfl", games: [] }]);
   });
 
-  it("stops reading a League nobody asked for in 30 days, and drops its copy and its tries", async () => {
+  it("stops reading a League nobody asked for in 2 days, and drops its copy", async () => {
     const token = await registerDevice();
     await filled(token, ["nhl"]);
-    expect((await env.DB.prepare("SELECT count(*) AS n FROM game_try").first<{ n: number }>())?.n).toBe(10);
-    vi.setSystemTime(new Date("2026-12-02T20:00:00Z"));
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM game").first<{ n: number }>())?.n).toBe(9);
+    // Still wanted a day later, though nobody asked again.
+    vi.setSystemTime(new Date("2026-11-02T20:00:00Z"));
+    forget();
+    await fill();
+    expect(espn.asked).not.toEqual([]);
+    vi.setSystemTime(new Date("2026-11-04T20:00:00Z"));
     forget();
     await fill();
 
     expect(espn.asked).toEqual([]);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM game").first<{ n: number }>())?.n).toBe(0);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM team").first<{ n: number }>())?.n).toBe(0);
-    expect((await env.DB.prepare("SELECT count(*) AS n FROM game_try").first<{ n: number }>())?.n).toBe(0);
     // Asked again, it is read again.
     expect((await gamesOf(token, ["nhl"])).leagues).toEqual([]);
     await fill();
