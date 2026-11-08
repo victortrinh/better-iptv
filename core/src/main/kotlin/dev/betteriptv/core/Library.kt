@@ -2401,40 +2401,90 @@ class Library private constructor(
      * shows added the same second): a Title is of the genres its Listings' Categories name
      * ([PrefixTable.titleGenres]) and those of the Provider's genre fields ([PrefixTable.genres]; a
      * Show's from its Listing, a Movie's from its details once read). Worked out once per catalog,
-     * Prefix table and set of movie details kept.
+     * Prefix table, then kept up to date as movie details are kept: only their Titles are worked out
+     * again (#497).
      */
-    private fun genreIndex(): GenreIndex {
+    private fun genreIndex(): GenreIndex = synchronized(genreIndexLock) {
+        // One build at a time: a second landing waits for the first's index instead of building its own (#497).
         val table = prefixTable
         val generation = catalogGeneration.get()
         val mark = store.movieGenresMark()
-        genreIndex?.takeIf { it.generation == generation && it.table === table && it.mark == mark }?.let { return it }
-        val known = table.titleGenreNames
-        val isKnown = known.toHashSet()
-        val ofCategory = HashMap<String, List<String>>()
-        val ofField = HashMap<String, List<String>>()
-        class Seen(val position: Int) {
-            var added = Long.MIN_VALUE
-            var rating = 0.0
-            var genres: MutableSet<String>? = null
-        }
-        val seen = HashMap<TitleId, Seen>()
-        store.forEachGenreSource { id, position, category, field, added, rating ->
-            val title = seen.getOrPut(id) { Seen(position) }
-            if (added != null && added > title.added) title.added = added
-            if (rating != null && rating > title.rating) title.rating = rating
-            val genres = ofCategory.getOrPut(category) { table.titleGenres(category).filter(isKnown::contains) } +
-                field?.let { ofField.getOrPut(it) { table.genres(it).filter(isKnown::contains) } }.orEmpty()
-            if (genres.isNotEmpty()) (title.genres ?: HashSet<String>(4).also { title.genres = it }) += genres
+        val kept = genreIndex?.takeIf { it.generation == generation && it.table === table }
+        if (kept != null && kept.mark == mark) return kept
+        // What the table made of each Category and genre field stands across a Sync too.
+        val parses = genreIndex?.parses?.takeIf { it.table === table } ?: GenreParses(table)
+        val titles: HashMap<TitleId, GenreTitle>
+        val order: List<TitleId>
+        if (kept != null && mark.count >= kept.mark.count) {
+            // Only movie details were kept since (Background reading confirms one about every 30 s): work out
+            // again the Titles they're of, not the whole catalog (#497).
+            titles = HashMap(kept.titles)
+            val changed = HashMap<TitleId, GenreTitle>()
+            store.forEachGenreSourceDetailedSince(kept.mark.latest) { id, position, category, field, added, rating ->
+                changed.getOrPut(id) { GenreTitle(position) }.add(parses, category, field, added, rating)
+            }
+            titles += changed
+            // Details change a Title's genres, not when its Listings were added or their rating: the order stands.
+            order = kept.order
+        } else {
+            titles = HashMap()
+            store.forEachGenreSource { id, position, category, field, added, rating ->
+                titles.getOrPut(id) { GenreTitle(position) }.add(parses, category, field, added, rating)
+            }
+            order = titles.entries
+                .sortedWith(compareByDescending<Map.Entry<TitleId, GenreTitle>> { it.value.added }.thenByDescending { it.value.rating }.thenBy { it.key.kind }.thenBy { it.value.position })
+                .map { it.key }
         }
         val byGenre = LinkedHashMap<String, MutableList<TitleId>>()
-        known.forEach { byGenre[it] = mutableListOf() }
-        seen.entries.filter { it.value.genres != null }
-            .sortedWith(compareByDescending<Map.Entry<TitleId, Seen>> { it.value.added }.thenByDescending { it.value.rating }.thenBy { it.key.kind }.thenBy { it.value.position })
-            .forEach { (id, title) -> title.genres!!.forEach { byGenre.getValue(it) += id } }
-        return GenreIndex(generation, table, mark, byGenre).also { genreIndex = it }
+        parses.known.forEach { byGenre[it] = mutableListOf() }
+        for (id in order) titles.getValue(id).genres?.forEach { byGenre.getValue(it) += id }
+        GenreIndex(generation, table, mark, parses, titles, order, byGenre).also { genreIndex = it }
     }
 
-    private class GenreIndex(val generation: Int, val table: PrefixTable, val mark: Long, val byGenre: Map<String, List<TitleId>>)
+    /**
+     * What [table] makes of each Category and genre field met so far ([PrefixTable.titleGenres],
+     * [PrefixTable.genres]), only the genres it names a row for ([known]): kept from one genre index
+     * to the next, so a later one parses only what's new.
+     */
+    private class GenreParses(val table: PrefixTable) {
+        val known: List<String> = table.titleGenreNames
+        private val isKnown = known.toHashSet()
+        private val ofCategory = HashMap<String, List<String>>()
+        private val ofField = HashMap<String, List<String>>()
+
+        fun of(category: String, field: String?): List<String> {
+            val named = ofCategory.getOrPut(category) { table.titleGenres(category).filter(isKnown::contains) }
+            val fielded = field?.let { ofField.getOrPut(it) { table.genres(it).filter(isKnown::contains) } }.orEmpty()
+            return if (fielded.isEmpty()) named else named + fielded
+        }
+    }
+
+    /** One Title of the genre index: its [position] in its kind's list, its newest Listing's [added] and best [rating], and its [genres] (null for none). */
+    private class GenreTitle(val position: Int) {
+        var added = Long.MIN_VALUE
+        var rating = 0.0
+        var genres: MutableSet<String>? = null
+
+        fun add(parses: GenreParses, category: String, field: String?, added: Long?, rating: Double?) {
+            if (added != null && added > this.added) this.added = added
+            if (rating != null && rating > this.rating) this.rating = rating
+            val named = parses.of(category, field)
+            if (named.isNotEmpty()) (genres ?: HashSet<String>(4).also { genres = it }) += named
+        }
+    }
+
+    private class GenreIndex(
+        val generation: Int,
+        val table: PrefixTable,
+        val mark: CatalogStore.MovieGenresMark,
+        val parses: GenreParses,
+        val titles: Map<TitleId, GenreTitle>,
+        /** Every Title of the catalog, newest first as [newestFirst] orders them. */
+        val order: List<TitleId>,
+        val byGenre: Map<String, List<TitleId>>,
+    )
+
+    private val genreIndexLock = Any()
 
     @Volatile private var genreIndex: GenreIndex? = null
 

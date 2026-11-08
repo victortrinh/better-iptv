@@ -1006,34 +1006,68 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
      * What names every Title's genres, one Listing at a time: the Title, its place in its kind's list
      * (1 the newest), the Listing's Category, and the Provider's genre field (a Show's from its
      * Listing at Sync, a Movie's from its details once read; null otherwise), when the Provider added the
-     * Listing and its rating. What genre rows are made of (#478).
+     * Listing and its rating. What genre rows are made of (#478). Read a page of Titles at a time, so
+     * other reads go on while [each] works through one (#497).
      */
-    fun forEachGenreSource(each: (id: TitleId, position: Int, category: String, genre: String?, added: Long?, rating: Double?) -> Unit) = synchronized(reader) {
+    fun forEachGenreSource(each: GenreSource) {
+        for (kind in TitleKind.entries) {
+            val count = titleCount(kind)
+            for (offset in 0 until count step SCAN_PAGE) genreSources("t.kind = ? AND t.position > ? AND t.position <= ?", each) {
+                bindText(1, kindKey(kind))
+                bindLong(2, offset.toLong())
+                bindLong(3, offset.toLong() + SCAN_PAGE)
+            }
+        }
+    }
+
+    /**
+     * [forEachGenreSource] for the Movies with details kept at or after [since] (epoch milliseconds),
+     * every Listing of each: what changes a Title's genres once Background reading or a details page
+     * reads its details (#497).
+     */
+    fun forEachGenreSourceDetailedSince(since: Long, each: GenreSource) =
+        genreSources(
+            "t.kind = 'movie' AND t.position IN (SELECT ml.title FROM movie_details md JOIN listing ml ON ml.kind = 'movie' AND ml.id = md.listing_id WHERE md.fetched_at >= ?)",
+            each,
+        ) { bindLong(1, since) }
+
+    private fun genreSources(where: String, each: GenreSource, bind: SQLiteStatement.() -> Unit) = synchronized(reader) {
         reader.prepare(
             """
             SELECT t.key, t.position, l.category, CASE WHEN l.kind = 'movie' THEN d.genre ELSE l.genre END, l.added, l.rating
-            FROM listing l JOIN title t ON t.kind = l.kind AND t.position = l.title
+            FROM title t JOIN listing l ON l.kind = t.kind AND l.title = t.position
             LEFT JOIN movie_details d ON l.kind = 'movie' AND d.listing_id = l.id
+            WHERE $where
             """.trimIndent(),
         ).use {
-            val ids = HashMap<String, TitleId>()
+            it.bind()
             while (it.step()) {
-                val key = it.getText(0)
-                each(
-                    ids.getOrPut(key) { titleId(key) }, it.getLong(1).toInt(), it.getText(2), if (it.isNull(3)) null else it.getText(3),
+                each.of(
+                    titleId(it.getText(0)), it.getLong(1).toInt(), it.getText(2), if (it.isNull(3)) null else it.getText(3),
                     if (it.isNull(4)) null else it.getLong(4), if (it.isNull(5)) null else it.getDouble(5),
                 )
             }
         }
     }
 
-    /** A mark that changes whenever movie details with a genre field are kept, so what's worked out from them is worked out again. */
-    fun movieGenresMark(): Long = synchronized(reader) {
-        reader.prepare("SELECT count(*) * 31 + coalesce(max(fetched_at), 0) FROM movie_details WHERE genre IS NOT NULL").use {
+    /** One Listing of [forEachGenreSource]. */
+    fun interface GenreSource {
+        fun of(id: TitleId, position: Int, category: String, genre: String?, added: Long?, rating: Double?)
+    }
+
+    /**
+     * How many movie details with a genre field are kept, and when the latest was (epoch
+     * milliseconds): what changes whenever one is kept, so what's worked out from them is worked out
+     * again.
+     */
+    fun movieGenresMark(): MovieGenresMark = synchronized(reader) {
+        reader.prepare("SELECT count(*), coalesce(max(fetched_at), 0) FROM movie_details WHERE genre IS NOT NULL").use {
             it.step()
-            it.getLong(0)
+            MovieGenresMark(it.getLong(0), it.getLong(1))
         }
     }
+
+    data class MovieGenresMark(val count: Long, val latest: Long)
 
     /** The Title [id] with its Listings, or null when the catalog doesn't have it. */
     fun title(id: TitleId): StoredTitle? = synchronized(reader) {
