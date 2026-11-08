@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -51,6 +53,7 @@ import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionColumn
 import dev.betteriptv.core.VersionTableGroup
 import dev.betteriptv.core.versionTable
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -101,7 +104,13 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
         else -> table.groups.take(if (showOthers) table.groups.size else shown.size).lastOrNull()?.rows?.lastOrNull()?.version?.listingId
     }
     val toEnd = Modifier.onFocusChanged { focus ->
-        if (focus.isFocused) scope.launch { listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1) }
+        if (!focus.isFocused) return@onFocusChanged
+        scope.launch {
+            // After the scroll that brings the focused row into view, which would otherwise cut this one short and leave the last lines below the screen.
+            withFrameNanos {}
+            snapshotFlow { listState.isScrollInProgress }.first { !it }
+            listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+        }
     }
 
     Box(Modifier.fillMaxSize().background(Colors.veilDeep)) {
