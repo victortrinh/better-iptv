@@ -196,14 +196,21 @@ class PlaybackSession internal constructor(
         signals.trySend(Dismiss)
     }
 
-    /** Plays until the file ends; cancel it to stop. A failure waits for the Viewer to try again. */
+    // Kept between plays, so playing again after a stop goes on where it was (#503): the same
+    // Version on the same engine, at [resumeAt]; after a failure, still waiting for the Viewer.
+    /** The Version the Viewer asked for; trying again after a failure starts from it. */
+    private var asked = plan.version
+    private var queue = asked.withBackups
+    private var engine = Engine.Media3
+
+    /** The engine last tried: trying the other player after a failure means the other one from it. */
+    private var tried = engine
+
+    /**
+     * Plays until the file ends; cancel it to stop, which lets go of the Viewer's connection. Playing
+     * again goes on from where it stopped. A failure waits for the Viewer to try again.
+     */
     suspend fun play() {
-        // The Version the Viewer asked for; trying again after a failure starts from it.
-        var asked = plan.version
-        var queue = asked.withBackups
-        var engine = Engine.Media3
-        // The engine last tried: trying the other player after a failure means the other one from it.
-        var tried = engine
         while (true) {
             while (queue.isNotEmpty()) {
                 tried = engine
