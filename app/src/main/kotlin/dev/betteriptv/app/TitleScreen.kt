@@ -344,8 +344,11 @@ private fun TitleContent(
         episodesAction.requestFocus()
     }
     val episode = next?.let { number -> episodes.seasons.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } }
-    // With no Version in the Viewer's languages, the other languages are all there is to show.
-    val best = title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
+    // The badges name the Version Play starts, as the Versions value does, so the two agree (#515):
+    // a better one the TV can't display or the Quality cap leaves out, or a Show's Listing, would
+    // name a picture Play never gives. Only with nothing to play do they name the best Version, and
+    // with no Version in the Viewer's languages, the other languages are all there is to show.
+    val best = plan?.version ?: title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
     // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
     val showVersions = !kids && (versions != null || (isShow && episodes == null))
 
