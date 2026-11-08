@@ -1916,9 +1916,9 @@ class Library private constructor(
      * none that qualifies, of the newest as New on your service has them (movies and shows in
      * turn on Home, a movie first; the kind's on Movies and Shows), with a Version in the Viewer's
      * [contentLanguages], not in Continue watching, and with a backdrop ([titleBackdrop]), which the
-     * hero is drawn on. A Show's is on its Listing since Sync; a Movie whose details were never read
-     * has them read here, as its page would, at most once per call and only when [readDetails], so
-     * an entry costs the Provider one call at most and none once they are kept. It rotates: each
+     * hero is drawn on. A Show's is on its Listing since Sync; a Movie whose details (those of the
+     * Listing that names it, whose plot the hero shows) were never read has them read here, as its
+     * page would, at most once per call and only when [readDetails], so an entry costs the Provider one call at most and none once they are kept. It rotates: each
      * call features the one after the Title featured last on that screen, kept on the device, so the
      * same Title doesn't come back on the next entry, and from the first again past the last. Its
      * badge is the Title page's ([featuredBadge]), for the [device], [qualityCap] and
@@ -2001,20 +2001,21 @@ class Library private constructor(
      * one from details not yet read, taken in turn. The first source with such a Title is featured
      * from; the next stands in only when it has none, or none of its Titles turns out to have a
      * backdrop. The one after the Title featured last on the screen kept as [key] is featured, from
-     * the first again past the last; one with no backdrop is passed over. A Movie's unread details
-     * are read for the first such Movie reached, when [readDetails], and for no other: one Provider
-     * call at most. Null when none has a backdrop.
+     * the first again past the last; one with no backdrop is passed over. What the hero tells of a
+     * Title is in the language of the Listing that names it, as on its page (#504); a Movie's details
+     * of that Listing, unread, are read for the first such Movie reached, when [readDetails], and for
+     * no other: one Provider call at most. Null when none has a backdrop.
      */
     private fun nextFeatured(key: String, sources: List<List<List<StoredTitle>>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
         val kept = keptMovieDetails(sources.flatten().flatten().distinctBy { it.id }).toMutableMap()
-        fun unread(title: StoredTitle, best: StoredListing) = title.id.kind == TitleKind.Movie && kept[best.id]?.added != best.added
+        fun unread(title: StoredTitle, listing: StoredListing) = title.id.kind == TitleKind.Movie && kept[listing.id]?.added != listing.added
         val last = lastFeatured[key] ?: store.lastFeatured(key)
         var mayRead = readDetails
         for (lists in sources) {
             val tops = lists.map { titles ->
                 watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.filter { (title, shown) ->
-                    titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.best.listing)
+                    titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.naming.listing)
                 }.take(FEATURED_FROM).toList()
             }
             val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
@@ -2022,16 +2023,18 @@ class Library private constructor(
             val from = candidates.indexOfFirst { it.first.id == last } + 1
             for (i in candidates.indices) {
                 val (title, shown) = candidates[(from + i) % candidates.size]
-                val best = shown.best.listing
-                if (unread(title, best)) {
+                val naming = shown.naming.listing
+                if (unread(title, naming)) {
                     if (!mayRead) continue
                     mayRead = false
-                    kept += movieDetailsForPage(title, best)
+                    kept += movieDetailsForPage(title, naming)
                 }
-                val backdrop = titleBackdrop(title, kept, best) ?: continue
+                val backdrop = titleBackdrop(title, kept, shown.best.listing) ?: continue
                 lastFeatured[key] = title.id
                 saveLater { store.saveLastFeatured(key, title.id) }
-                val details = providerDetails(title, best, kept)
+                // Told of in the language of the Listing that names it, as on its page (#504): a subtitled
+                // `GR` copy with English audio may be the best Version while the `EN` Listing names the Title.
+                val details = providerDetails(title, naming, kept)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
                     titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, badge = null,
