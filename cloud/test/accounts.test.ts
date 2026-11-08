@@ -2,18 +2,18 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import { FakeEmail } from "./fake-email";
-import { FakeTmdb } from "./fake-tmdb";
+import { FakeWeb } from "./fake-web";
 
-/** Seam 2: signing a TV in to an Account (ADR 0015), with the email sender faked like TMDB is. */
-let tmdb: FakeTmdb;
+/** Seam 2: signing a TV in to an Account (ADR 0015), with the email sender faked. */
+let web: FakeWeb;
 let email: FakeEmail;
 beforeEach(async () => {
   await env.DB.batch(["device", "account", "sign_in_code", "sign_in_miss", "magic_link", "delete_link", "delete_request", "unknown_prefix", "synced"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
-  tmdb = new FakeTmdb();
-  email = new FakeEmail(tmdb);
+  web = new FakeWeb();
+  email = new FakeEmail(web);
 });
 afterEach(() => {
-  tmdb.restore();
+  web.restore();
   vi.useRealTimers();
 });
 

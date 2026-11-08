@@ -1,10 +1,10 @@
-import type { FakeTmdb } from "./fake-tmdb";
+import type { FakeWeb } from "./fake-web";
 
 /** ESPN's site API root, as the Worker's `ESPN_API` says. */
 const API = "https://site.api.espn.com/apis/site/v2/sports/";
 
 /**
- * Stands in for ESPN's scoreboard API, served through [tmdb]'s fetch stand-in. Days are added with
+ * Stands in for ESPN's scoreboard API, served through [web]'s fetch stand-in. Days are added with
  * [scoreboard] and a League's teams with [teams]; [requests] records what reached ESPN. Like ESPN,
  * it takes one day (`dates=YYYYMMDD`) and refuses a date range (400) and a browser-like User-Agent (403).
  */
@@ -18,8 +18,8 @@ export class FakeEspn {
   private readonly teamLists = new Map<string, object[]>();
   private readonly leaderboards = new Map<string, object>();
 
-  constructor(tmdb: FakeTmdb) {
-    tmdb.alsoServe(API, (url, init) => {
+  constructor(web: FakeWeb) {
+    web.alsoServe(API, (url, init) => {
       const userAgent = new Headers(init?.headers).get("User-Agent");
       this.requests.push({ url, userAgent });
       if (userAgent !== null && /Mozilla|Chrome|Safari/.test(userAgent)) return new Response("Access Denied", { status: 403 });

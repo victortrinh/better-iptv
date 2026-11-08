@@ -11,7 +11,6 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
         bindings: {
-          TMDB_TOKEN: "test-tmdb-token",
           OPENSUBTITLES_API_KEY: "test-os-key",
           OPENSUBTITLES_USERNAME: "test-os-user",
           OPENSUBTITLES_PASSWORD: "test-os-password",

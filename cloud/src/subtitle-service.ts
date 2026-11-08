@@ -1,7 +1,7 @@
 /** What the subtitle services are asked about: a Movie, or an Episode of a Show (season and episode null for a Movie). */
 export interface Searched {
   tmdbId: number;
-  /** The Title's IMDb ID (`tt0068646`), when the cloud has TMDB's metadata for it: some subtitles are filed only under it. */
+  /** The Title's IMDb ID (`tt0068646`), when the Title facts hold one (Wikidata, #476): some subtitles are filed only under it. */
   imdbId: string | null;
   season: number | null;
   episode: number | null;

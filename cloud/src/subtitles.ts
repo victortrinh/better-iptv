@@ -3,7 +3,7 @@ import * as opensubtitles from "./opensubtitles";
 import * as subdl from "./subdl";
 import { type Found, NOT_FOUND, type Searched, type ServiceFile, ServiceUnavailable, SUBTITLE_FORMATS } from "./subtitle-service";
 import { cachedImdbId } from "./title-facts";
-import type { Kind } from "./tmdb";
+import type { Kind } from "./title";
 
 /**
  * Subtitles downloaded from OpenSubtitles and Subdl, for a Version without embedded ones in the

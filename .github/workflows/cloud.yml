@@ -22,7 +22,7 @@ jobs:
           cache-dependency-path: cloud/package-lock.json
       - run: npm ci
       - run: npm run typecheck
-      # Seam 2: the HTTP API in the Workers runtime, with TMDB faked.
+      # Seam 2: the HTTP API in the Workers runtime, with the web it reaches faked.
       - run: npm test
 
   deploy:

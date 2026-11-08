@@ -1,4 +1,3 @@
-import { charts, fill, SUBREQUESTS } from "./charts";
 import {
   accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink, useResetPinLink,
   type DeleteOutcome, type LinkOutcome, type ResetPinOutcome, type SendOutcome,
@@ -6,20 +5,15 @@ import {
 import { deviceOf, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
-import { fillGames, games } from "./games";
-import { match, MAX_MATCH_BATCH, type MatchQuestion } from "./match";
-import { MAX_BATCH, metadata } from "./metadata";
+import { fillGames, games, SUBREQUESTS } from "./games";
 import { providerTable } from "./provider-tables";
 import { isCandidateTierTag, isUnknownPrefix, MAX_PREFIX_BATCH, MAX_TIER_TAG_BATCH, saveCandidateTierTags, saveUnknownPrefixes, type CandidateTierTag, type UnknownPrefix } from "./prefixes";
 import { isLeague, type League, LEAGUES } from "./schedule";
-import { MAX_QUERY, search } from "./search";
 import { ServiceUnavailable } from "./subtitle-service";
 import { downloadSubtitle, isOfferId, MAX_LANGUAGES, searchSubtitles, type SubtitleQuestion } from "./subtitles";
 import { MAX_FACTS_BATCH, titleFacts } from "./title-facts";
 import { fillTrending, trending } from "./trending";
-import { TmdbUnavailable, type TitleKey } from "./tmdb";
-import { upcoming } from "./upcoming";
-import { season } from "./season";
+import type { TitleKey } from "./title";
 import { confirmDeletePage, confirmPage, confirmResetPinPage, deletePage, htmlResponse, messagePage, resetPinPage, signInPage } from "./page";
 import { accountIdOf, readSyncRequest, sync } from "./sync";
 
@@ -28,17 +22,6 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * Provider logins, stream URLs and Provider requests never come here (ADR 0001).
  *
  * - `POST /v1/devices`: registers a device, `201 {"token": "…"}`.
- * - `POST /v1/metadata`, with `Authorization: Bearer <token>` and
- *   `{"language": "fr", "titles": [{"kind": "movie", "tmdbId": 238}]}`: Title metadata in that
- *   language, as a {@link MetadataBatch}.
- * - `POST /v1/match`, with `{"listings": [{"kind": "movie", "name": "Titanic", "year": 1997,
- *   "language": "en", "tmdbId": 597}]}` (cleaned names; year, language and tmdbId may be null):
- *   `{"matches": [{"kind": "movie", "tmdbId": 597}]}` in the order asked. tmdbId is null when TMDB
- *   has no Title by that name, and a match is null when TMDB couldn't answer right now.
- * - `POST /v1/search`, with `{"query": "der pate"}`: what TMDB's search finds (ADR 0009),
- *   `{"titles": [{"kind": "movie", "tmdbId": 238, "popularity": 128.4}], "people": [{"name": "Al Pacino",
- *   "titles": [{"kind": "movie", "tmdbId": 238}]}]}`, a person's Titles being every one they acted in
- *   or directed. `503` when TMDB can't search right now and the query was never searched.
  * - `POST /v1/file-reads/lookup`, with `{"provider": "<SHA-256 of the Provider's host>", "listings":
  *   [123]}`: `{"files": [{"listingId": 123, "file": {…}}]}`, what Viewers of that Provider read of
  *   those movie Listings' files. Listings nobody read are left out.
@@ -70,23 +53,6 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  *   them, which the device sums and matches to its Titles' article names. Only what the cloud keeps is
  *   answered: the Cron Trigger reads Wikipedia's pageviews once a day per wiki, for English and each
  *   language a device asked in. A day not read yet is absent.
- * - `POST /v1/upcoming`, with `{"tmdbId": 1399, "language": "fr"}`: the Show's Episodes TMDB lists
- *   as not aired yet, from the next one to the end of its season, `{"episodes": [{"season": 3,
- *   "episode": 5, "airDate": "2026-10-31", "name": "…"}]}` (name null when TMDB has none). `503`
- *   when TMDB can't answer right now and the Show was never asked about.
- * - `POST /v1/season`, with `{"tmdbId": 1399, "season": 2, "language": "fr"}`: that season's
- *   Episodes as TMDB lists them, for the Episode picker, `{"episodes": [{"episode": 1, "name": "…",
- *   "stillPath": "/abc.jpg", "runtimeMinutes": 52}]}` (each null when TMDB has none). `503` when
- *   TMDB can't answer right now and the season was never asked about.
- * - `POST /v1/charts`, with `{"region": "CA", "language": "fr"}`: the Charts for that Region,
- *   `{"top": {"worldwide": false, "movies": [{"kind": "movie", "tmdbId": 238}], "shows": […]},
- *   "trending": {"all": […], "movies": […], "shows": […]}, "genres": [{"kind": "movie", "name":
- *   "Comédie", "tmdbIds": [550, …]}]}`: Netflix's Top 10 in rank order as TMDB Titles, the
- *   Region's or (worldwide) the world's when Netflix doesn't list it, TMDB's trending this week,
- *   and each TMDB genre's most popular Titles (Discover), named in the language. Only what the
- *   cloud keeps is answered: the Cron Trigger reads the sources (#214). A list not read yet is
- *   empty; a Region not read yet gets the worldwide Top 10, and a language the genres named in
- *   English, till the Cron Trigger's next runs.
  * - `POST /v1/games`, with `{"leagues": ["nhl", "premier-league"]}` (the Leagues a device has on,
  *   by the ids in schedule.ts): each League's Games for today and the next seven days,
  *   `{"leagues": [{"league": "nhl", "games": [{"id": "401892633", "league": "nhl", "start":
@@ -117,6 +83,9 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  *   (`"current"`), and `"entries"` carry the Profiles, Favourites, "Not this game" marks, per-Profile settings and
  *   player choices, Region and the Household PIN's hash (`{"kind": "favourite", "profile": "…", "key": "…", "value":
  *   "1", "at": …}`, see src/sync.ts). `403` when the device isn't signed in.
+ *
+ * The metadata, match, search, upcoming, season and charts endpoints that TMDB answered are gone, as is every
+ * table that kept its data (#481, ADR 0014): they answer 404 like any path the cloud doesn't serve.
  *
  * Every `/v1/` answer to a registered device carries `Zugig-Account: signed-in` or `none`, so a
  * device signed out elsewhere goes anonymous at its next request (#434).
@@ -149,11 +118,10 @@ export default {
     return response;
   },
 
-  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then Wikipedia's most viewed articles, then the Charts' sources, a few parts a run, out of one budget of requests. */
+  /** The Cron Trigger (`triggers.crons` in wrangler.jsonc), each minute: reads the wanted Leagues' schedules, then Wikipedia's most viewed articles, a few parts a run, out of one budget of requests. */
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const games = await fillGames(env);
-    const read = await fillTrending(env, SUBREQUESTS - games);
-    await fill(env, SUBREQUESTS - games - read);
+    await fillTrending(env, SUBREQUESTS - games);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -183,26 +151,6 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const asked = readSyncRequest(await request.json().catch(() => null));
     if (typeof asked === "string") return problem(400, asked);
     return json(await sync(env.DB, accountId, asked, device));
-  }
-  if (request.method === "POST" && pathname === "/v1/metadata") {
-    const asked = await metadataRequest(request);
-    if (typeof asked === "string") return problem(400, asked);
-    return json(await metadata(env, asked.titles, asked.language));
-  }
-  if (request.method === "POST" && pathname === "/v1/match") {
-    const asked = await matchRequest(request);
-    if (typeof asked === "string") return problem(400, asked);
-    return json({ matches: await match(env, asked) });
-  }
-  if (request.method === "POST" && pathname === "/v1/search") {
-    const query = await searchRequest(request);
-    if (query === null) return problem(400, `query must be a name of 1 to ${MAX_QUERY} characters.`);
-    try {
-      return json(await search(env, query));
-    } catch (e) {
-      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't search right now.");
-      throw e;
-    }
   }
   if (request.method === "POST" && pathname === "/v1/file-reads/lookup") {
     const asked = await fileReadsRequest(request, "listings");
@@ -241,41 +189,6 @@ async function api(request: Request, env: Env, pathname: string, device: string)
     const asked = await subtitlesRequest(request);
     if (typeof asked === "string") return problem(400, asked);
     return json(await searchSubtitles(env, asked));
-  }
-  if (request.method === "POST" && pathname === "/v1/upcoming") {
-    const { tmdbId, language } = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; language?: unknown };
-    if (!Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
-      return problem(400, "tmdbId must be a Show's positive TMDB ID, and language an ISO 639-1 code, such as \"fr\".");
-    }
-    try {
-      return json({ episodes: await upcoming(env, tmdbId as number, language) });
-    } catch (e) {
-      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
-      throw e;
-    }
-  }
-  if (request.method === "POST" && pathname === "/v1/season") {
-    const asked = ((await request.json().catch(() => null)) ?? {}) as { tmdbId?: unknown; season?: unknown; language?: unknown };
-    const { tmdbId, language } = asked;
-    if (
-      !Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0 || !Number.isSafeInteger(asked.season) || (asked.season as number) < 0 ||
-      typeof language !== "string" || !/^[a-z]{2}$/.test(language)
-    ) {
-      return problem(400, "tmdbId must be a Show's positive TMDB ID, season a season number (0 for specials), and language an ISO 639-1 code, such as \"fr\".");
-    }
-    try {
-      return json({ episodes: await season(env, tmdbId as number, asked.season as number, language) });
-    } catch (e) {
-      if (e instanceof TmdbUnavailable) return problem(503, "TMDB can't answer right now.");
-      throw e;
-    }
-  }
-  if (request.method === "POST" && pathname === "/v1/charts") {
-    const { region, language } = ((await request.json().catch(() => null)) ?? {}) as { region?: unknown; language?: unknown };
-    if (typeof region !== "string" || !/^[A-Z]{2}$/.test(region) || typeof language !== "string" || !/^[a-z]{2}$/.test(language)) {
-      return problem(400, "region must be an ISO 3166 country code, such as \"CA\", and language an ISO 639-1 code, such as \"fr\".");
-    }
-    return json(await charts(env, region, language));
   }
   if (request.method === "POST" && pathname === "/v1/games") {
     const { leagues } = ((await request.json().catch(() => null)) ?? {}) as { leagues?: unknown };
@@ -428,27 +341,6 @@ function linkPage(outcome: LinkOutcome): string {
   }
 }
 
-/** Reads a metadata request, or says what's wrong with it. */
-async function metadataRequest(request: Request): Promise<{ language: string; titles: TitleKey[] } | string> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return "The body must be JSON.";
-  }
-  const { language, titles } = (body ?? {}) as { language?: unknown; titles?: unknown };
-  if (typeof language !== "string" || !/^[a-z]{2}$/.test(language)) return "language must be an ISO 639-1 code, such as \"fr\".";
-  if (!Array.isArray(titles) || titles.length > MAX_BATCH) return `titles must be a list of at most ${MAX_BATCH} Titles.`;
-  const keys = new Map<string, TitleKey>();
-  for (const title of titles as { kind?: unknown; tmdbId?: unknown }[]) {
-    if ((title?.kind !== "movie" && title?.kind !== "show") || !Number.isSafeInteger(title.tmdbId) || (title.tmdbId as number) <= 0) {
-      return "Each Title must be {\"kind\": \"movie\" or \"show\", \"tmdbId\": a positive integer}.";
-    }
-    keys.set(`${title.kind}/${title.tmdbId}`, { kind: title.kind, tmdbId: title.tmdbId as number });
-  }
-  return { language, titles: [...keys.values()] };
-}
-
 /** Reads a Title facts request, or says what's wrong with it. */
 async function titleFactsRequest(request: Request): Promise<TitleKey[] | string> {
   let body: unknown;
@@ -467,46 +359,6 @@ async function titleFactsRequest(request: Request): Promise<TitleKey[] | string>
     keys.set(`${title.kind}/${title.tmdbId}`, { kind: title.kind, tmdbId: title.tmdbId as number });
   }
   return [...keys.values()];
-}
-
-/** Reads a match request, or says what's wrong with it. */
-async function matchRequest(request: Request): Promise<MatchQuestion[] | string> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return "The body must be JSON.";
-  }
-  const { listings } = (body ?? {}) as { listings?: unknown };
-  if (!Array.isArray(listings) || listings.length > MAX_MATCH_BATCH) return `listings must be a list of at most ${MAX_MATCH_BATCH} Listings.`;
-  const questions: MatchQuestion[] = [];
-  for (const listing of listings as { kind?: unknown; name?: unknown; year?: unknown; language?: unknown; tmdbId?: unknown }[]) {
-    const { kind, name, year = null, language = null, tmdbId = null } = listing ?? {};
-    if (
-      (kind !== "movie" && kind !== "show") ||
-      typeof name !== "string" || name.trim() === "" || name.length > 200 ||
-      (year !== null && (!Number.isSafeInteger(year) || (year as number) < 1870 || (year as number) > 2100)) ||
-      (language !== null && (typeof language !== "string" || !/^[a-z]{2,3}$/.test(language))) ||
-      (tmdbId !== null && (!Number.isSafeInteger(tmdbId) || (tmdbId as number) <= 0))
-    ) {
-      return "Each Listing must be {\"kind\": \"movie\" or \"show\", \"name\": its cleaned name, and optionally \"year\", \"language\" (ISO 639) and \"tmdbId\"}.";
-    }
-    questions.push({ kind, name: name.trim(), year: year as number | null, language: language as string | null, tmdbId: tmdbId as number | null });
-  }
-  return questions;
-}
-
-/** Reads a search request's query, or null when it has none. */
-async function searchRequest(request: Request): Promise<string | null> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
-  const { query } = (body ?? {}) as { query?: unknown };
-  if (typeof query !== "string" || query.trim() === "" || query.length > MAX_QUERY) return null;
-  return query.trim();
 }
 
 /** Reads a file-read lookup ([part] `listings`) or save ([part] `files`) request, or says what's wrong with it. */
