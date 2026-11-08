@@ -1216,7 +1216,7 @@ class Library private constructor(
         TitleDetails(
             id, shown.name, shown.year ?: details.year, shown.image, languages, otherLanguages,
             description = details.plot,
-            genres = titleGenres(title, kept).map { Genres.named(it, appLanguage) },
+            genres = titleGenres(title, candidates, kept, appLanguage),
             runtimeMinutes = details.runtimeMinutes,
             backdrop = titleBackdrop(title, kept, shown.best.listing),
             cast = cleanList(details.cast),
@@ -1261,15 +1261,20 @@ class Library private constructor(
      * [title]'s genres as [Genres] names them in English (ADR 0014): a Movie's from the Prefix table's
      * genre for each of its Listings' Categories, then from its kept details' genre field; a Show's
      * from its Listings' genre field, then their Categories. A Title's Listings in several languages
-     * fold into one set.
+     * fold into one set, named in the [appLanguage]. A genre word the Prefix table can't map is kept as
+     * written only from a Listing listed in the [appLanguage] ([candidates]' [Candidate.listedLanguage]):
+     * an `IL -` Listing's `קומדיה` never shows in an English UI (#514).
      */
-    private fun titleGenres(title: StoredTitle, kept: Map<Long, StoredMovieDetails>): List<String> {
+    private fun titleGenres(title: StoredTitle, candidates: List<Candidate>, kept: Map<Long, StoredMovieDetails>, appLanguage: String): List<String> {
+        val language = primaryLanguage(appLanguage)
+        val inAppLanguage = candidates.filter { it.listedLanguage == language }.mapTo(HashSet()) { it.listing.id }
+        fun field(listing: StoredListing, genre: String?) = prefixTable.genres(genre, unknown = listing.id in inAppLanguage)
         val fromCategories = title.listings.flatMap { prefixTable.titleGenres(it.category) }
         val fromFields = when (title.id.kind) {
-            TitleKind.Movie -> title.listings.flatMap { prefixTable.genres(kept[it.id]?.details?.genre) }
-            TitleKind.Show -> title.listings.flatMap { prefixTable.genres(it.details?.genre) }
+            TitleKind.Movie -> title.listings.flatMap { field(it, kept[it.id]?.details?.genre) }
+            TitleKind.Show -> title.listings.flatMap { field(it, it.details?.genre) }
         }
-        return (if (title.id.kind == TitleKind.Movie) fromCategories + fromFields else fromFields + fromCategories).distinct()
+        return (if (title.id.kind == TitleKind.Movie) fromCategories + fromFields else fromFields + fromCategories).distinct().map { Genres.named(it, appLanguage) }
     }
 
     /**
@@ -1977,7 +1982,7 @@ class Library private constructor(
                 val details = providerDetails(title, best, kept)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
-                    titleGenres(title, kept).map { Genres.named(it, appLanguage) }, details.plot, backdrop, shown.best.attributes,
+                    titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, shown.best.attributes,
                 )
             }
         }
@@ -2350,9 +2355,10 @@ class Library private constructor(
         title: StoredTitle, contentLanguages: List<String>, appLanguage: String,
         kept: Map<Long, StoredMovieDetails> = keptMovieDetails(listOf(title)),
     ): TitleSummary {
-        val shown = shown(candidates(title), contentLanguages, appLanguage)
+        val candidates = candidates(title)
+        val shown = shown(candidates, contentLanguages, appLanguage)
         val about = TitleAbout(
-            titleGenres(title, kept).map { Genres.named(it, appLanguage) },
+            titleGenres(title, candidates, kept, appLanguage),
             titleRating(title, shown.best.listing, kept),
         )
         return TitleSummary(title.id, shown.name, shown.year, shown.image, shown.best.attributes, about)

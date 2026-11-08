@@ -249,6 +249,23 @@ class ProviderDetailsTest {
         assertEquals(8.6, page(theWire).rating!!, 0.001)
     }
 
+    @Test fun `a genre the Prefix table can't map shows only from a Listing in the App language (#514)`() = runBlocking {
+        provider.serveShows(
+            // Queenie as the Provider lists it: the Hebrew and Greek genres map to Drama and Comedy.
+            FakeProvider.ShowListing("EN - Queenie (GB)", "SERIES", 1438, genre = "Drama", rating = 0.0),
+            FakeProvider.ShowListing("GR - Queenie (2024) (GB)", "SERIES", 1438, genre = "Δράμα / Κωμωδία / Σαπουνόπερα", rating = 4.0),
+            FakeProvider.ShowListing("IL - Queenie קוויני (2024) (GB)", "SERIES", 1438, genre = "דרמה / קומדיה / סדרת רשת", rating = 4.0),
+            FakeProvider.ShowListing("FR - Queenie (2024) (GB)", "SERIES", 1438, genre = "Feuilleton"),
+        )
+        syncMovies(Movie("EN - Heat (1995)", "EN - ACTION", 949))
+
+        // Words no table line names stay out unless their Listing is in the App language: no Greek or Hebrew in English.
+        assertEquals(listOf("Drama", "Comedy"), page(theWire).genres)
+        assertEquals(listOf("Drama", "Comedy"), library.homeRows(english, "en").filterIsInstance<HomeRow.NewOnYourService>().single().titles.single { it.id == theWire }.about!!.genres)
+        // The French Listing's own word shows in French.
+        assertEquals(listOf("Drame", "Comédie", "Feuilleton"), page(theWire, appLanguage = "fr-CA").genres)
+    }
+
     @Test fun `a rating of zero or none is no rating, and a year comes from the details when the name has none`() = runBlocking {
         syncMovies(Movie("EN - Heat", "EN - ACTION", 949, "0"))
         provider.serveMovieDetails(1, releaseDate = "1995-12-15", rating = 0.0)

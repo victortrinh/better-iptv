@@ -71,16 +71,17 @@ internal class PrefixTable private constructor(
      * split on its separators and each piece mapped through the genre words to one genre as [Genres]
      * names it in English, so `Drame`, `Komödie` and `Comedia` fold into `Drama` and `Comedy`. A
      * piece that is a genre word as a whole is that genre; one holding genre words is each of them
-     * in order (`Action & Adventure`); one the table doesn't know is kept as written.
+     * in order (`Action & Adventure`); one the table doesn't know is kept as written, unless
+     * [unknown] is false: a field in a language other than the App language's keeps only what maps (#514).
      */
-    fun genres(field: String?): List<String> {
+    fun genres(field: String?, unknown: Boolean = true): List<String> {
         if (field.isNullOrBlank()) return emptyList()
         return field.split(GENRE_SEPARATORS).mapNotNull { cleanText(it) }.flatMap { piece ->
             val folded = fold(piece)
             val whole = genreWords.firstOrNull { it.folded == folded }
             if (whole != null) return@flatMap listOfNotNull(Genres.titleGenre(whole.genre) ?: whole.genre)
             val named = namedGenres(folded).map { Genres.titleGenre(it) ?: it }
-            named.ifEmpty { listOf(piece) }
+            named.ifEmpty { if (unknown) listOf(piece) else emptyList() }
         }.distinct()
     }
 
