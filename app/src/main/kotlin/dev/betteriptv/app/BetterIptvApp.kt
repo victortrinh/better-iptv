@@ -99,11 +99,14 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         scope.launch { updates.update() }
     }
 
-    /** Coil's defaults, with card artwork held back while cards scroll past (see [rememberArtwork]). */
+    /** Coil's defaults, with card artwork held back while cards scroll past (see [rememberArtwork]) and narrow posters refused ([PosterFloor]). */
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         lateinit var loader: ImageLoader
         loader = ImageLoader.Builder(context)
-            .components { add(SettleFirst(inMemory = { data -> loader.memoryCache?.keys?.any { it.key == data } == true })) }
+            .components {
+                add(SettleFirst(inMemory = { data -> loader.memoryCache?.keys?.any { it.key == data } == true }))
+                add(PosterFloor())
+            }
             .build()
         return loader
     }

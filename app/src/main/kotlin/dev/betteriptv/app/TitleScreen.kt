@@ -308,7 +308,7 @@ private fun TitleContent(
     checking: Boolean = false,
 ) {
     val context = LocalContext.current
-    val image = rememberArtwork(title.image.takeIf { !hasBackdrop })
+    val image = rememberPoster(title.posters.takeIf { !hasBackdrop }.orEmpty())
     val play = remember { FocusRequester() }
     val versionsAction = remember { FocusRequester() }
     val episodesAction = remember { FocusRequester() }
