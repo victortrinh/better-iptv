@@ -2,7 +2,9 @@ package dev.betteriptv.core
 
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -12,6 +14,8 @@ import okio.Buffer
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * What a Version's file holds, as a Header read or Playback found it: its audio and subtitle
@@ -57,6 +61,13 @@ internal fun VersionAttributes.confirmedBy(file: FileContents, expect: (String) 
 
 private val DOLBY_AUDIO = setOf("audio/ac3", "audio/eac3", "audio/eac3-joc", "audio/true-hd")
 
+/**
+ * The longest a Header read takes before it counts as the Provider not answering: reads took 0.5 to
+ * 1.6 s on a Mac and about 1.1 s an MKV on the stick (#414), an MP4 with its index at its end two
+ * requests. Past it, the page stops saying it checks Versions (#505).
+ */
+internal val HEADER_READ_BOUND = 15.seconds
+
 /** The file extensions a Header read understands. */
 internal val HEADER_READABLE = setOf("mkv", "webm", "mp4", "m4v", "mov")
 
@@ -66,12 +77,21 @@ internal val HEADER_READABLE = setOf("mkv", "webm", "mp4", "m4v", "mov")
  * which frees the Viewer's connection.
  */
 internal class HeaderReader(private val http: OkHttpClient) {
+    /** How long a read may take in all ([HEADER_READ_BOUND]); tests shorten it. */
+    @Volatile var bound: Duration = HEADER_READ_BOUND
+
     /**
      * What the file at [location] holds; null when its header can't be read, or when the file is dead.
      * Throws [HeaderReadRefused] when the Provider answers with another error, and another [IOException]
-     * when it doesn't answer.
+     * when it doesn't answer, or stops sending the file, within [bound].
      */
-    suspend fun read(location: String, container: String): FileContents? {
+    suspend fun read(location: String, container: String): FileContents? = try {
+        withTimeout(bound) { readWhole(location, container) }
+    } catch (e: TimeoutCancellationException) {
+        throw HeaderReadUnanswered()
+    }
+
+    private suspend fun readWhole(location: String, container: String): FileContents? {
         val start = fetch(location, 0, START_BYTES) ?: return null
         if (container !in MP4_CONTAINERS) return readMatroska(start.bytes, start.size)
         var part = start
@@ -133,6 +153,9 @@ internal class HeaderReader(private val http: OkHttpClient) {
  * 408 is a timeout.
  */
 private fun Int.isDead() = this in 400..499 && this !in setOf(401, 403, 408, 429)
+
+/** The Provider didn't send a Header read's bytes within [HeaderReader.bound]. */
+internal class HeaderReadUnanswered : IOException("The Provider didn't send a Header read's bytes in time.")
 
 /** The Provider answered a Header read with HTTP [status] instead of the file. */
 internal class HeaderReadRefused(val status: Int) : IOException("The Provider answered a Header read with HTTP $status.")

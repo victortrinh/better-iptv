@@ -96,6 +96,10 @@ class FakeProvider : Closeable {
     /** Closes movie file requests without answering, as an unreachable Provider does. */
     @Volatile var unansweredFiles = false
 
+    /** Answers movie file requests with their headers and then sends nothing, until closed: a stalled Provider (#505). */
+    @Volatile var stalledFiles = false
+    private val stalls = java.util.concurrent.CountDownLatch(1)
+
     /** Movie details by Provider stream id (`get_vod_info`), as JSON, served instead of an empty answer; [serveMovieDetails] writes one. */
     val movieDetails = ConcurrentHashMap<Long, String>()
 
@@ -323,7 +327,10 @@ class FakeProvider : Closeable {
 
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-    override fun close() = server.stop(0)
+    override fun close() {
+        stalls.countDown()
+        server.stop(0)
+    }
 
     private fun api(exchange: HttpExchange) {
         if (down) return exchange.sendResponseHeaders(503, -1)
@@ -438,6 +445,11 @@ class FakeProvider : Closeable {
             return exchange.sendResponseHeaders(403, -1)
         }
         try {
+            if (stalledFiles) {
+                exchange.sendResponseHeaders(206, 256L * 1024)
+                stalls.await()
+                return
+            }
             val files = if (parts.getOrNull(1) == "series") episodeFiles else movieFiles
             val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { files[it] }
             if (file != null) return sendFile(exchange, parts[4].substringBefore('.').toLong(), file)
