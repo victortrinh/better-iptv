@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-24T22:30:52+00:00",
+  "generatedAt": "2026-11-07T00:00:00+00:00",
   "title": "Design System: Zugig",
   "extensions": {
     "colorMeta": {
@@ -283,8 +283,8 @@
       "name": "Title Card",
       "kind": "card",
       "refersTo": "title-card-poster",
-      "description": "TitleCard: artwork only at rest; focus lifts 1.12x with shadow, sheen and rim, and reveals the name and compact badges below.",
-      "html": "<div class=\"ds-cards\"><div class=\"ds-card ds-card--focus\"><div class=\"ds-art\" tabindex=\"0\"></div><div class=\"ds-slot\"><div class=\"ds-name\">Metropolis</div><div class=\"ds-badges\"><span class=\"ds-b ds-b--c\">1080p</span><span class=\"ds-b ds-b--l\">FR</span><span class=\"ds-b ds-b--c\">EN</span></div></div></div><div class=\"ds-card\"><div class=\"ds-art\" tabindex=\"0\"></div><div class=\"ds-slot\"></div></div></div>",
+      "description": "TitleCard: the Provider's poster, named by its own printed title; focus lifts it 1.12x with shadow, sheen and rim, and it stays a poster (no grown state, no logo). What it is shows in the info under the rail, not under the card.",
+      "html": "<div class=\"ds-cards\"><div class=\"ds-card ds-card--focus\"><div class=\"ds-art\" tabindex=\"0\"></div></div><div class=\"ds-card\"><div class=\"ds-art\" tabindex=\"0\"></div></div></div>",
       "css": ".ds-cards{font-family: Inter, system-ui, sans-serif;display:flex;gap:20px;padding:24px 48px;background:#07080A} .ds-card{width:104px} .ds-art{position:relative;aspect-ratio:2/3;border-radius:12px;background:linear-gradient(160deg,#6b6f78,#24262b);transition:transform 160ms cubic-bezier(0.4,0,0.2,1),box-shadow 160ms} .ds-card--focus .ds-art,.ds-art:focus-visible{outline:none;transform:scale(1.12);box-shadow:0 14px 28px rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.6);background:linear-gradient(135deg,rgba(255,255,255,0.3) 0%,rgba(255,255,255,0) 45%),linear-gradient(160deg,#6b6f78,#24262b)} .ds-slot{height:44px;margin-top:12px} .ds-name{color:#FFFFFF;font-weight:600;font-size:16px;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-badges{display:flex;gap:3px;margin-top:3px} .ds-b{font-weight:600;font-size:12px;line-height:16px;padding:2px 4px;border-radius:4px} .ds-b--c{background:#E8E8ED;color:#000000} .ds-b--l{border:1.5px solid #C7C7CC;color:#C7C7CC}"
     },
     {
@@ -330,14 +330,15 @@
   ],
   "narrative": {
     "northStar": "The Artwork Is the Interface",
-    "overview": "Verre is the Apple TV app (tvOS Liquid Glass) on a Fire TV. A Title's artwork fills the screen, edge to edge, and the interface floats on it as white type and translucent white glass. The interface brings no colour of its own. The ground is near-black, controls are glass capsules, posters have softly rounded corners, and the one solid white thing on screen is what the remote will act on.\n\nThe world refuses the category default: no grey streaming grid with a coloured accent, no Netflix black-and-red. Density is low on the browsing screens (one featured Title big, rows below) and tabular on details, where every Version of a Title lines up by language so the household can compare copies at a glance. Honesty about each Version is visual: a Confirmed attribute is a solid badge, a Likely one is an outlined badge, everywhere.\n\nThe Fire TV Stick is weak, so the glass is a flat translucent tint, never a live blur, and every effect is cheap: a scale, a shadow, a gradient, a border.",
+    "overview": "Verre is the Apple TV app (tvOS Liquid Glass) on a Fire TV. The artwork is the interface: the Provider's own posters and backdrops, nothing curated elsewhere (ADR 0014), and a Title is named in type. A Title's artwork fills the screen, edge to edge, and the interface floats on it as white type and translucent white glass. The interface brings no colour of its own. The ground is near-black, controls are glass capsules, posters have softly rounded corners, and the one solid white thing on screen is what the remote will act on.\n\nThe world refuses the category default: no grey streaming grid with a coloured accent, no Netflix black-and-red. Density is low on the browsing screens (one featured Title big, rows below) and tabular on details, where every Version of a Title lines up by language so the household can compare copies at a glance. Honesty about each Version is visual: a Confirmed attribute is a solid badge, a Likely one is an outlined badge, everywhere.\n\nThe Fire TV Stick is weak, so the glass is a flat translucent tint, never a live blur, and every effect is cheap: a scale, a shadow, a gradient, a border.",
     "keyCharacteristics": [
       "Near-black ground; white and translucent white glass (12% and 20%) for everything that isn't artwork.",
       "Full-bleed backdrop behind the hero and details, held readable by scrims.",
       "Inter throughout; bold, tightly tracked display.",
       "Capsule controls, 12 dp poster corners, 4 dp badges.",
       "White fill means focus. Focused artwork lifts 1.12x with a deep shadow, a light sheen and a bright rim.",
-      "A card's name and badges appear only under the focused card.",
+      "The art is the Provider's: its posters, its backdrops. A Title is named in type, never by a logo: in Display type on the hero, the Title page and the starting cover, and by the poster's own printed title on a card.",
+      "A focused poster stays a poster and lifts; what it is shows in one line under its row, never on or under the card.",
       "Lists scroll only when focus nears an edge (EdgeScroll)."
     ],
     "rules": [
@@ -386,7 +387,9 @@
       "**Do** read every colour, size, corner and gap from `Colors`, `Type`, `Corners`, `Spacing`, `Cards` and `FocusScale`. Screens never hold raw values.",
       "**Do** make every focusable thing a `FocusSurface`, or a component built on it, and pick its weight: Card for artwork, Control for buttons/tabs/keys/choices, Row for anything spanning a list.",
       "**Do** show Confirmed as a solid badge and Likely as an outlined badge everywhere a Version attribute appears: hero, card, details, player.",
-      "**Do** put a full-bleed backdrop with `ground` scrims behind any screen that has a Title's artwork, and keep text on the scrimmed side.",
+      "**Do** put a full-bleed backdrop with `ground` scrims behind any screen that has a Title's backdrop, and keep text on the scrimmed side. Load it through `rememberBackdrop`, so a poster handed over as a backdrop is refused, and give the screen its no-backdrop layout then: the bare ground, with the poster at the right of the header on a Title page.",
+      "**Do** name a Title in type: `TitleName` in Display on the hero, the Title page and the starting cover; the poster's printed title on a card; title type on a still.",
+      "**Do** build what shows under a focused card from what the device already holds. Details are read when a page opens, never on focus.",
       "**Do** keep content inside the 48 x 27 dp overscan margins, applied as list `contentPadding`.",
       "**Do** check every text colour for 4.5:1 against what is behind it, including glass over artwork.",
       "**Do** size fixed widths for French strings about 20% longer, and cap single lines with an ellipsis.",
@@ -398,8 +401,10 @@
       "**Don't** use runtime blur (`Modifier.blur`, RenderEffect) for glass. On the Fire TV Stick glass is a translucent tint.",
       "**Don't** use Compose Material 3 phone components (`androidx.compose.material3`: Card, Button, TextField, NavigationBar and the like). They bring touch ripples, phone sizes and their own focus.",
       "**Don't** scale list rows on focus. They get a white fill or a white ring.",
-      "**Don't** show a card's name or badges unless it has focus, and don't let the slot under a card collapse.",
-      "**Don't** override EdgeScroll or scroll lists to a fixed pivot.",
+      "**Don't** lay a name or a logo over a poster, or grow a focused card into other art. A poster names itself and stays a poster; there are no logos.",
+      "**Don't** rank anything. Trending is unranked: no numerals, no rank badge.",
+      "**Don't** show a card's name or badges unless it has focus, and don't let a reserved slot under a card collapse.",
+      "**Don't** override EdgeScroll or scroll lists to a fixed pivot, outside Home's rows.",
       "**Don't** give buttons, tabs or rows a shadow. The lift belongs to focused artwork."
     ]
   }
