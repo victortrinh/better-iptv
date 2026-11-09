@@ -451,4 +451,6 @@
     <string name="settings_data_sources">Data from Wikidata and Wikipedia</string>
     <string name="settings_up_to_date">%1$s · Up to date</string>
     <string name="settings_update_to">Update to %1$s</string>
+    <string name="settings_checking_updates">Checking for updates…</string>
+    <string name="settings_check_failed">%1$s · Couldn\'t check</string>
 </resources>

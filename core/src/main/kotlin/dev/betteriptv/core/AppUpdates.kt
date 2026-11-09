@@ -114,6 +114,11 @@ class AppUpdates(
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Unknown)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 
+    private val _checking = MutableStateFlow(false)
+
+    /** Whether the manifest is being read: Settings says the app is checking meanwhile. */
+    val checking: StateFlow<Boolean> = _checking.asStateFlow()
+
     /** One check or update at a time, so a second press doesn't download twice. */
     private val busy = Mutex()
 
@@ -142,6 +147,15 @@ class AppUpdates(
 
     private suspend fun checkLocked() {
         lastChecked = clock.instant()
+        _checking.value = true
+        try {
+            readManifestLocked()
+        } finally {
+            _checking.value = false
+        }
+    }
+
+    private suspend fun readManifestLocked() {
         withContext(Dispatchers.IO) {
             // Opened while Android installs the update this app committed: it is about to close the
             // app and reopen the new build, so nothing is offered and the download stays (#452).

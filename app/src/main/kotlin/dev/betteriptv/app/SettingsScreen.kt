@@ -76,7 +76,7 @@ import java.time.Duration
  * Languages, the Text size under Display, the Quality cap and whether the next Episode plays by itself under Playback,
  * Sign in (or who the device is signed in as) under Account, Sync now
  * ([onSyncNow]) with how the Sync is going and the Title counts under Catalog, the App version under
- * App, which offers the [update] when there is one ([onUpdate]). Content languages and Region
+ * App, which offers the [update] when there is one ([onUpdate]) and otherwise checks for one ([onCheckUpdates], [checkingUpdates] meanwhile). Content languages and Region
  * each open a list, Leagues its logo grid ([LeaguePicker]) and Sign in its code and QR ([SignInScreen]), in place of the
  * column; Back returns to the row that opened it, as signing in does.
  * Above them, the household's [profiles] ([profilesSection]): a Profile's row opens its page, to watch as it, rename it or
@@ -102,8 +102,12 @@ fun SettingsScreen(
     onProfile: (ProfileChange) -> Unit,
     addProfile: Boolean = false,
     onAddProfileShown: () -> Unit = {},
+    checkingUpdates: Boolean = false,
+    onCheckUpdates: (() -> Unit)? = null,
 ) = SettingsContent(
     settings, update, onChange, onUpdate, focusTab, onTab, profiles, onProfile,
+    checkingUpdates = checkingUpdates,
+    onCheckUpdates = onCheckUpdates,
     pin = library.householdPin,
     addProfile = addProfile,
     onAddProfileShown = onAddProfileShown,
@@ -137,6 +141,8 @@ internal fun SettingsContent(
     accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
     addProfile: Boolean = false,
     onAddProfileShown: () -> Unit = {},
+    checkingUpdates: Boolean = false,
+    onCheckUpdates: (() -> Unit)? = null,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
@@ -472,14 +478,27 @@ internal fun SettingsContent(
                 item { Heading(stringResource(R.string.settings_app)) }
                 item {
                     val offered = update.offered
+                    // Pressed with nothing on offer, the row checks for a newer build; a check that
+                    // couldn't read the manifest says so, rather than going back to the bare version.
+                    var asked by remember { mutableStateOf(false) }
                     SettingRow(
                         stringResource(R.string.settings_version),
                         when {
                             offered != null -> stringResource(R.string.settings_update_to, offered.versionName)
+                            checkingUpdates -> stringResource(R.string.settings_checking_updates)
                             update == UpdateState.UpToDate -> stringResource(R.string.settings_up_to_date, BuildConfig.VERSION_NAME)
+                            asked && update == UpdateState.Unknown -> stringResource(R.string.settings_check_failed, BuildConfig.VERSION_NAME)
                             else -> BuildConfig.VERSION_NAME
                         },
-                        onClick = { if (offered != null) onUpdate() },
+                        onClick = {
+                            when {
+                                offered != null -> onUpdate()
+                                onCheckUpdates != null && !checkingUpdates && update != UpdateState.Finishing -> {
+                                    asked = true
+                                    onCheckUpdates()
+                                }
+                            }
+                        },
                         // Where what the app knows beyond the Provider's catalog comes from (#480): Title facts and Trending.
                         detail = stringResource(R.string.settings_data_sources),
                     )

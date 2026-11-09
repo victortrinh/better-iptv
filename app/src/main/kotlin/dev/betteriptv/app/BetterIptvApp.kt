@@ -99,6 +99,12 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         scope.launch { updates.update() }
     }
 
+    /** The Viewer asked in Settings whether there's a newer build: reads the manifest now, however recently it was read. */
+    fun checkForUpdates() {
+        val updates = updates ?: return
+        scope.launch { updates.check() }
+    }
+
     /** Coil's defaults, with card artwork held back while cards scroll past (see [rememberArtwork]) and narrow posters refused ([PosterFloor]). */
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         lateinit var loader: ImageLoader
