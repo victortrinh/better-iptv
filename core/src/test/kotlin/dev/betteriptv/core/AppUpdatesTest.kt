@@ -58,7 +58,12 @@ class AppUpdatesTest {
         var watched: AppUpdates? = null
         var stateWhileHandedOver: UpdateState? = null
         override fun canInstall() = allowed
-        override fun installing() = installing
+        /** Runs as the updater asks whether an install is running, the first thing a check does. */
+        var onInstalling: () -> Unit = {}
+        override fun installing(): Boolean {
+            onInstalling()
+            return installing
+        }
         override fun install(apk: File, dexMetadata: File?) {
             stateWhileHandedOver = watched?.state?.value
             installed += apk.readBytes()
@@ -110,6 +115,17 @@ class AppUpdatesTest {
         assertEquals("$host/build-95/better-iptv-0.1.95.apk", state.update.apkUrl)
         // Checking downloads nothing.
         assertEquals(listOf("/latest/update.json", "/build-95/update.json"), requested)
+    }
+
+    @Test fun `checking shows while the manifest is read, and not after`() = runBlocking {
+        publish()
+        val updates = updates()
+        assertEquals(false, updates.checking.value)
+        var seen: Boolean? = null
+        installer.onInstalling = { seen = updates.checking.value }
+        updates.check()
+        assertEquals(true, seen)
+        assertEquals(false, updates.checking.value)
     }
 
     @Test fun `an absolute APK address is used as it is`() = runBlocking {

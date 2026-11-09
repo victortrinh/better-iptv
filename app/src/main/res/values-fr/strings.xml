@@ -444,4 +444,6 @@
     <string name="settings_data_sources">Données de Wikidata et Wikipédia</string>
     <string name="settings_up_to_date">%1$s · À jour</string>
     <string name="settings_update_to">Mettre à jour vers %1$s</string>
+    <string name="settings_checking_updates">Recherche de mises à jour…</string>
+    <string name="settings_check_failed">%1$s · Vérification impossible</string>
 </resources>

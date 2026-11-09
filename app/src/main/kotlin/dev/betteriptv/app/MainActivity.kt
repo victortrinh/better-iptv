@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
 private fun BoxScope.Root(app: BetterIptvApp) {
     var loggedIn by remember { mutableStateOf(app.library.isLoggedIn) }
     val update by (app.updates?.state ?: NO_UPDATES).collectAsStateWithLifecycle()
+    val checkingUpdates by (app.updates?.checking ?: NOT_CHECKING).collectAsStateWithLifecycle()
     // "Later" puts the offered build away until the next launch, a newer build, or until it's asked for in Settings.
     var laterFor by rememberSaveable { mutableStateOf<Long?>(null) }
     val offered = update.offered
@@ -320,6 +321,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     }
                     Browse.Settings -> SettingsScreen(
                         app.library, settings, update, onChange = app.settings::update, onUpdate = onUpdate, onSyncNow = app::sync, focusTab = byTab, onTab = onTab,
+                        checkingUpdates = checkingUpdates,
+                        onCheckUpdates = if (app.updates != null) app::checkForUpdates else null,
                         profiles = profile,
                         onProfile = app::changeProfiles,
                         addProfile = addingProfile,
@@ -403,6 +406,7 @@ private data class GameShown(val key: String)
 
 /** What builds without the in-app updater show: nothing to offer. */
 private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
+private val NOT_CHECKING = MutableStateFlow(false)
 
 /**
  * What the player plays: a [plan] of the Title or Channel named [name], the [inARow]th Episode in a
