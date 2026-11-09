@@ -12,12 +12,12 @@ import org.junit.rules.TemporaryFolder
 /**
  * A Title's card names and pictures it from the Provider's Listings (#474, ADR 0014), seen through
  * the Library over the fake Provider: the App language's Listing names it, else the English one,
- * else the first. Its poster, the same for every Viewer first, is the Listing's in the Title's
- * original language (Wikidata's), else the English one's, else a streaming service Listing's, and
- * only then the App language Listing's, a Content language Listing's (in the Viewer's order), the
- * French one's, else the file most Listings share, ties to the Best playable Version's; a poster
- * under 300 px wide is refused for the next one (#526). Its page tells of it from the same Listing:
- * the original language's, else the English one.
+ * else the first. Its poster is the App language Listing's, else the English one's, else a
+ * streaming service Listing's, and only then the one in the Title's original language (Wikidata's),
+ * a Content language Listing's (in the Viewer's order), the French one's, else the file most
+ * Listings share, ties to the Best playable Version's; a poster under 300 px wide is refused for the
+ * next one (#526). Its page tells of it in the same order: the App language's Listing, else the
+ * English one, else the original language's, so a plot is one the Viewer reads.
  */
 class ListingNamesTest {
     @get:Rule val folder = TemporaryFolder()
@@ -93,7 +93,7 @@ class ListingNamesTest {
         library.confirm(spanishCopy, FileContents(listOf(Track("eng", "audio/eac3", 6)), emptyList(), width = 3840, height = 2160))
     }
 
-    @Test fun theTitlePageTellsOfATitleInEnglishWhateverTheViewersLanguagesWhenItsOriginalLanguageIsUnknown() = runBlocking {
+    @Test fun theTitlePageTellsOfATitleInTheAppLanguageElseEnglish() = runBlocking {
         // #504: the page read the best Version's details only, the `ES` copy's, and told of the Title in Spanish.
         syncForgottenIsland()
 
@@ -102,21 +102,43 @@ class ListingNamesTest {
         assertEquals("Two friends are stranded.", page.description)
         assertEquals(listOf("Ana"), page.cast)
         assertEquals(listOf("Joe"), page.directors)
-        // A Spanish Viewer's page is named in Spanish and told of in English, there being no original language to go by.
+        // A Spanish Viewer's page is named and told of in Spanish; a German one, with no `DE` Listing, reads English.
         val spanish = library.title(film, listOf("en", "es"), "es")!!
         assertEquals("La isla olvidada", spanish.name)
-        assertEquals("Two friends are stranded.", spanish.description)
+        assertEquals("Dos amigas se quedan varadas.", spanish.description)
+        assertEquals("Two friends are stranded.", library.title(film, listOf("en", "de"), "de")!!.description)
     }
 
-    @Test fun theTitlePageTellsOfATitleInItsOriginalLanguageForEveryViewer() = runBlocking {
-        // Wikidata says the film is Spanish: its own plot, under its English name, for an English Viewer.
+    @Test fun anEnglishViewerReadsTheEnglishPlotOfAFilmReleasedInSpanish() = runBlocking {
+        // Before: Wikidata saying the film is Spanish gave an English Viewer its Spanish plot under its English name.
         syncForgottenIsland(originalLanguage = "es")
 
         val page = library.title(film, listOf("en"), "en")!!
         assertEquals("Forgotten Island", page.name)
-        assertEquals("Dos amigas se quedan varadas.", page.description)
-        assertEquals(listOf("Ana (voz)"), page.cast)
+        assertEquals("Two friends are stranded.", page.description)
+        assertEquals(listOf("Ana"), page.cast)
         assertEquals("Dos amigas se quedan varadas.", library.title(film, listOf("en", "es"), "es")!!.description)
+    }
+
+    @Test fun withNoListingInTheAppLanguageOrEnglishThePageTellsOfATitleInItsOriginalLanguage() = runBlocking {
+        cloud.titleFacts(film, originalLanguage = "es")
+        syncFilm("DE - Der Film (2024)" to null, "ES - La Película (2024)" to null)
+        provider.serveMovieDetails(1, plot = "Zwei Freundinnen stranden.", name = "Der Film")
+        provider.serveMovieDetails(2, plot = "Dos amigas se quedan varadas.", name = "La Película")
+
+        assertEquals("Dos amigas se quedan varadas.", library.title(film, every, "tr")!!.description)
+    }
+
+    @Test fun aPlotTheTellingListingLacksComesFromTheNextInTheSameOrderNotAnyListing() = runBlocking {
+        // A Greek plot under an English name: the English Listing said nothing, and the first Listing that did was Greek.
+        syncFilm("GR - Η Ταινία (2024)" to null, "FR - Le Film (2024)" to null, "EN - Film (2024)" to null)
+        provider.serveMovieDetails(1, plot = "Δύο φίλες ναυαγούν.", name = "Η Ταινία")
+        provider.serveMovieDetails(2, plot = "Deux amies échouent.", name = "Le Film")
+        provider.serveMovieDetails(3, plot = "", name = "Film")
+        library.title(film, every, "el")
+        library.title(film, every, "fr")
+
+        assertEquals("Deux amies échouent.", library.title(film, listOf("en", "fr", "el"), "en")!!.description)
     }
 
     @Test fun aTitleWithOnlyAGreekListingIsNamedByIt() = runBlocking {
@@ -133,30 +155,31 @@ class ListingNamesTest {
         "EN - Film (2024)" to "https://art/en.jpg",
     )
 
-    @Test fun everyViewerSeesThePosterInTheTitlesOriginalLanguage() = runBlocking {
-        // Wikidata says the film is French: its own one-sheet, whatever the Viewer reads.
+    @Test fun theAppLanguagesPosterComesBeforeTheOriginalLanguages() = runBlocking {
+        // Wikidata says the film is French: an English Viewer still gets the English one-sheet.
         cloud.titleFacts(film, originalLanguage = "fr")
         syncSurveyB()
 
         assertEquals("https://art/fr.jpg", card("fr").image)
-        assertEquals("https://art/fr.jpg", card("en").image)
-        assertEquals("https://art/fr.jpg", card("tr", listOf("en")).image)
+        assertEquals("https://art/en.jpg", card("en").image)
+        assertEquals("https://art/en.jpg", card("tr", listOf("en")).image)
+        assertEquals("https://art/fr.jpg", card("tr", listOf("tr")).posters[1])
     }
 
-    @Test fun everyViewerSeesTheEnglishPosterWhenNoListingIsInTheOriginalLanguageOrItIsUnknown() = runBlocking {
+    @Test fun aViewerWithNoListingInTheAppLanguageSeesTheEnglishPoster() = runBlocking {
         syncSurveyB()
 
-        assertEquals("https://art/en.jpg", card("fr").image)
+        assertEquals("https://art/en.jpg", card("de").image)
         assertEquals("https://art/en.jpg", card("en").image)
         assertEquals("https://art/en.jpg", card("tr", listOf("fr", "en")).image)
-        assertEquals(listOf("https://art/en.jpg", "https://art/fr.jpg", "https://art/es.jpg"), card("fr", listOf("fr")).posters)
+        assertEquals(listOf("https://art/fr.jpg", "https://art/en.jpg", "https://art/es.jpg"), card("fr", listOf("fr")).posters)
     }
 
     @Test fun anOriginalLanguageNoListingIsInGivesWayToTheEnglishPoster() = runBlocking {
         cloud.titleFacts(film, originalLanguage = "ko")
         syncSurveyB()
 
-        assertEquals("https://art/en.jpg", card("fr").image)
+        assertEquals("https://art/en.jpg", card("de").image)
     }
 
     @Test fun anEnglishViewerSeesTheFrenchPosterWhereNoEnglishListingHasOne() = runBlocking {
@@ -188,15 +211,15 @@ class ListingNamesTest {
         )
 
         assertEquals("https://art/nf.jpg", card("en", listOf("en", "fr")).image)
-        assertEquals("https://art/nf.jpg", card("de").image)
-        assertEquals(listOf("https://art/nf.jpg", "https://art/de.jpg", "https://art/sc.jpg"), card("de", listOf("de")).posters)
+        assertEquals("https://art/de.jpg", card("de").image)
+        assertEquals(listOf("https://art/nf.jpg", "https://art/de.jpg", "https://art/sc.jpg"), card("tr", listOf("de")).posters)
     }
 
-    @Test fun theOriginalLanguagesPosterComesBeforeAStreamingServiceListings() = runBlocking {
+    @Test fun aStreamingServiceListingsPosterComesBeforeTheOriginalLanguages() = runBlocking {
         cloud.titleFacts(film, originalLanguage = "de")
-        syncFilm("DE - Der Film (2024)" to "https://art/de.jpg", "4K-NF - Film (2024)" to "https://art/nf.jpg", "EN - Film (2024)" to "https://art/en.jpg")
+        syncFilm("DE - Der Film (2024)" to "https://art/de.jpg", "4K-NF - Film (2024)" to "https://art/nf.jpg")
 
-        assertEquals(listOf("https://art/de.jpg", "https://art/en.jpg", "https://art/nf.jpg"), card("en", listOf("en")).posters)
+        assertEquals(listOf("https://art/nf.jpg", "https://art/de.jpg"), card("en", listOf("en")).posters)
     }
 
     @Test fun theCardKeepsTheRestOfThePostersInOrderForWhenOneIsRefusedAsItDecodes() = runBlocking {
@@ -207,9 +230,9 @@ class ListingNamesTest {
             "EN - Film (2024)" to "https://art/en.jpg",
         )
 
-        // The German one (the original), the English one, then the Viewer's: French, then the shared file.
+        // The App language's (French), the English one, the German one (the original), then the shared file.
         assertEquals(
-            listOf("https://art/de.jpg", "https://art/en.jpg", "https://art/fr.jpg", "https://art/es.jpg"),
+            listOf("https://art/fr.jpg", "https://art/en.jpg", "https://art/de.jpg", "https://art/es.jpg"),
             card("fr", listOf("fr", "de", "en")).posters,
         )
     }
@@ -234,11 +257,11 @@ class ListingNamesTest {
 
         assertEquals("https://image.tmdb.org/t/p/w300/en.jpg", card("en").image)
         assertEquals(
-            listOf("https://image.tmdb.org/t/p/w300/en.jpg", "https://image.tmdb.org/t/p/original/fr.jpg", "https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg"),
+            listOf("https://image.tmdb.org/t/p/original/fr.jpg", "https://image.tmdb.org/t/p/w300/en.jpg", "https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg"),
             card("fr").posters,
         )
         assertEquals(
-            listOf("https://image.tmdb.org/t/p/w300/en.jpg", "https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg", "https://image.tmdb.org/t/p/original/fr.jpg"),
+            listOf("https://image.tmdb.org/t/p/w600_and_h900_bestv2/de.jpg", "https://image.tmdb.org/t/p/w300/en.jpg", "https://image.tmdb.org/t/p/original/fr.jpg"),
             card("de").posters,
         )
     }
@@ -263,13 +286,13 @@ class ListingNamesTest {
         assertEquals("https://art/de.jpg", card("de", listOf("de")).image)
     }
 
-    @Test fun withOnePosterEachTheEnglishListingWinsForEveryViewerThenTheAppLanguages() = runBlocking {
+    @Test fun withOnePosterEachTheAppLanguagesListingWinsThenTheEnglishOne() = runBlocking {
         syncFilm("EN - Film (2024)" to "https://art/en.jpg", "FR - Le Film (2024)" to "https://art/fr.jpg", "DE - Der Film (2024)" to "https://art/de.jpg")
 
-        assertEquals("https://art/en.jpg", card("fr").image)
-        assertEquals("https://art/en.jpg", card("de").image)
+        assertEquals("https://art/fr.jpg", card("fr").image)
+        assertEquals("https://art/de.jpg", card("de").image)
         assertEquals("https://art/en.jpg", card("es").image)
-        assertEquals(listOf("https://art/en.jpg", "https://art/de.jpg", "https://art/fr.jpg"), card("de", listOf("de")).posters)
+        assertEquals(listOf("https://art/de.jpg", "https://art/en.jpg", "https://art/fr.jpg"), card("de", listOf("de")).posters)
     }
 
     @Test fun withoutTheAppLanguageTheContentLanguagesPostersGoInTheViewersOrder() = runBlocking {
@@ -295,7 +318,7 @@ class ListingNamesTest {
         )
 
         assertEquals(before, card("fr").image)
-        assertEquals("https://art/en.jpg", card("fr").image)
+        assertEquals("https://art/fr.jpg", card("fr").image)
     }
 
     @Test fun aTitleWhoseListingsHaveNoPosterHasNone() = runBlocking {
