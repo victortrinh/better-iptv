@@ -5,8 +5,11 @@ import java.util.Locale
 /**
  * One Listing with what the Prefix table says about it: a Version before it's ranked and grouped.
  * [unknownPrefix] is the name's Prefix when neither the Base table nor the Provider table knows it.
- * [listedLanguage] is the language its Prefix says it is in (a primary subtag), the language its name
- * is written in, which stays when a read moves the Version to the language its audio is really in.
+ * [listedLanguage] is the language the Listing is written in (a primary subtag): its name, its plot
+ * and its poster. It is the one the Prefix table's own lines name for its Prefix, which stays when a
+ * read moves the Version to the language its audio is really in, and when the Provider's reads teach
+ * the Prefix another audio language (a `GR` copy of an English film is listed in Greek); letters of
+ * another script in its name or plot overrule it ([Scripts.written]).
  */
 internal class Candidate(
     val listing: StoredListing,

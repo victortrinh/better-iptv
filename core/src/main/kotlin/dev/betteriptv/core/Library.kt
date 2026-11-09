@@ -1211,8 +1211,17 @@ class Library private constructor(
         // What the page tells of the Title is in the App language, else English, else its original
         // language: the Listing telling of it, not the best Version's, as an `ES` copy with English
         // audio may be the best Version of an English film.
-        if (id.kind == TitleKind.Movie && shown.telling.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, shown.telling.listing)
-        val details = providerDetails(title, shown.tellers, kept)
+        if (id.kind == TitleKind.Movie) {
+            // The next Listings in that order are read while what is kept has no plot the Viewer reads:
+            // the English Listing may say nothing, or tell of the Title in Greek.
+            for (teller in shown.tellers.take(TELLERS_READ)) {
+                if (teller.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, teller.listing)
+                // Unread still: the Provider isn't answering, and the next call would wait as long.
+                val told = kept[teller.listing.id] ?: break
+                if (Scripts.reads(appLanguage, told.details.plot)) break
+            }
+        }
+        val details = providerDetails(title, shown.tellers, kept, appLanguage)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
         val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, originalLanguage), contentLanguages, original)
         TitleDetails(
@@ -1253,12 +1262,15 @@ class Library private constructor(
     /**
      * What the Provider says of [title]: the details (a Movie's from [kept], a Show's from its
      * Listing) of the first of [tellers] that says something ([Shown.tellers]: the App language's
-     * Listings, then English's, then the original language's, then the rest), else any of its
-     * Listings', else nothing. A Greek plot under an English name only when no other Listing has one.
+     * Listings, then English's, then the original language's, then the rest) whose plot a Viewer of
+     * the [appLanguage] reads ([Scripts.reads]: a Provider files Greek plots under `EN` Listings too),
+     * else of the first that says something, else any of its Listings', else nothing. A Greek plot
+     * under an English name only when no other Listing has one.
      */
-    private fun providerDetails(title: StoredTitle, tellers: List<Candidate>, kept: Map<Long, StoredMovieDetails>): ProviderDetails {
+    private fun providerDetails(title: StoredTitle, tellers: List<Candidate>, kept: Map<Long, StoredMovieDetails>, appLanguage: String): ProviderDetails {
         fun of(listing: StoredListing) = (if (title.id.kind == TitleKind.Movie) kept[listing.id]?.details else listing.details)?.takeUnless { it.isEmpty }
-        return tellers.firstNotNullOfOrNull { of(it.listing) } ?: title.listings.firstNotNullOfOrNull(::of) ?: ProviderDetails.NONE
+        val said = tellers.mapNotNull { of(it.listing) }
+        return said.firstOrNull { Scripts.reads(appLanguage, it.plot) } ?: said.firstOrNull() ?: title.listings.firstNotNullOfOrNull(::of) ?: ProviderDetails.NONE
     }
 
     /**
@@ -2012,7 +2024,7 @@ class Library private constructor(
                 saveLater { store.saveLastFeatured(key, title.id) }
                 // Told of in the App language, else English, else its original language, as on its page:
                 // a subtitled `GR` copy with English audio may be the best Version of an English film.
-                val details = providerDetails(title, shown.tellers, kept)
+                val details = providerDetails(title, shown.tellers, kept, appLanguage)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
                     titleGenres(title, candidates(title), kept, appLanguage), details.plot, badge = null,
@@ -2893,8 +2905,9 @@ class Library private constructor(
     /**
      * What a Title's card and header show, from its Listings (ADR 0014): the cleaned name of its
      * Listing in the [appLanguage], else of the English one, else of the best Version's, a Listing's
-     * language being its Prefix's ([Candidate.listedLanguage]: an `ES` copy whose audio a read found
-     * English is still named in Spanish, #504); the year in that name, else a Show's release date;
+     * language being the one it is written in, not its audio's ([Candidate.listedLanguage]: an `ES`
+     * copy whose audio a read found English is still named in Spanish, #504, and so is every `GR`
+     * copy once the Provider's reads teach that `GR` files carry English audio); the year in that name, else a Show's release date;
      * the Listing telling of it: the one in the App language, else the English one, else the one in
      * the Title's [originalLanguage] (Wikidata's, from its Title facts), else a Content language's (in
      * the Viewer's order), else French's, else the naming one, so the plot is one the Viewer reads;
@@ -3084,8 +3097,21 @@ class Library private constructor(
         return { language -> language in wanted || prefixTable.knowsLanguage(language) || namedOriginalLanguage(originalLanguage(title.id)) == language }
     }
 
-    private fun candidates(listing: StoredListing) =
-        prefixTable.describe(listing.name, listing.category).let { Candidate(listing, it.attributes, it.unknownPrefix) }
+    /**
+     * [listing] as the Prefix table describes it, listed in the language the table's own lines name
+     * for it ([PrefixTable.Description.listedLanguage]) unless its name or its plot is written in
+     * another script ([Scripts.written]): an `EN` Listing named or told of in Greek is a Greek one.
+     */
+    private fun candidates(listing: StoredListing): Candidate {
+        val described = prefixTable.describe(listing.name, listing.category)
+        val listed = Scripts.written(
+            described.listedLanguage,
+            // The name again in another script after the year is not the name (`cleanName` drops it).
+            { listing.name.takeIf { name -> name.any { it >= Scripts.FIRST_OTHER } }?.let { prefixTable.cleanName(it).name } },
+            { listing.details?.plot },
+        )
+        return Candidate(listing, described.attributes, described.unknownPrefix, listed)
+    }
 
     override fun close() {
         accountSync.close()
@@ -3144,6 +3170,9 @@ class Library private constructor(
 
         /** A Trending row with fewer Titles than this, once kept to the Viewer's, looks broken and isn't shown. */
         private const val MIN_TRENDING_SIZE = 3
+
+        /** The most Listings a Movie's page reads the details of, in the order they tell of it, looking for a plot the Viewer reads. */
+        private const val TELLERS_READ = 3
 
         /** How many of the newest Titles of each kind the hero picks its Title from ([featured]). */
         private const val FEATURED_FROM = 5

@@ -134,9 +134,13 @@ internal class PrefixTable private constructor(
 
     /**
      * What the table makes of one Listing. [unknownPrefix] is the name's Prefix when the table
-     * doesn't know it; what that Prefix would say is then left unknown.
+     * doesn't know it; what that Prefix would say is then left unknown. [listedLanguage] is the
+     * language the Listing is written in (its name, plot and poster), a primary subtag: the one the
+     * table's own lines name for its Prefix and Category, whatever its files' audio was learned to be
+     * (a `GR` Prefix whose files are English films with Greek subtitles is still listed in Greek) and
+     * whether or not that language is the subtitles' (`VOSTFR`).
      */
-    class Description(val unknownPrefix: String?, val attributes: VersionAttributes, val hidden: Hidden?)
+    class Description(val unknownPrefix: String?, val attributes: VersionAttributes, val hidden: Hidden?, val listedLanguage: String? = null)
 
     /** What the table makes of one live Listing: a Channel, an empty Event slot (Clutter), or other Clutter. */
     enum class LiveListing { Channel, EmptyEventSlot, Clutter }
@@ -176,7 +180,7 @@ internal class PrefixTable private constructor(
             draft.sportsReplay -> Hidden.SportsReplay
             else -> null
         }
-        return Description(prefix?.takeIf { prefixRule == null }, draft.attributes(), hidden)
+        return Description(prefix?.takeIf { prefixRule == null }, draft.attributes(), hidden, draft.listed?.let(::primaryLanguage)?.takeIf { it.isNotEmpty() })
     }
 
     /**
@@ -301,6 +305,11 @@ internal class PrefixTable private constructor(
     /** One line of the table: what a Prefix or Category hint says. */
     private data class Rule(
         val language: String? = null,
+        /**
+         * The language the line's Listings are written in: the one the line names, which a learned
+         * line's audio language doesn't replace ([learned]). Null when the line names none.
+         */
+        val listed: String? = null,
         val subtitles: Set<String> = emptySet(),
         val subtitled: Boolean = false,
         val quality: Quality? = null,
@@ -321,8 +330,12 @@ internal class PrefixTable private constructor(
          * This line with a learned line's [learned] attributes over it: each attribute the learned line
          * names replaces this one's, and Multi-audio drops the language. A learned language that is
          * this line's primary language keeps the regional one (`fr` learned over `QC`'s `fr-CA`).
+         * The language its Listings are [listed] in stays this line's: reads tell what a file's audio
+         * is, not what the Provider wrote its name, plot and poster in. Only a Prefix no line names
+         * takes the learned language for it, the one guess there is.
          */
         fun learned(learned: Rule): Rule = copy(
+            listed = listed ?: learned.language,
             language = when {
                 learned.multiAudio -> null
                 learned.language == null -> language
@@ -339,6 +352,8 @@ internal class PrefixTable private constructor(
 
     private data class Draft(
         val language: String? = null,
+        /** The language the Listing is written in ([Rule.listed]); a `subtitled` line leaves it be. */
+        val listed: String? = null,
         val subtitles: Set<String> = emptySet(),
         val quality: Quality? = null,
         val hdr: Hdr? = null,
@@ -354,6 +369,7 @@ internal class PrefixTable private constructor(
             val moved = if (rule.subtitled) copy(language = null, subtitles = subtitles + listOfNotNull(language)) else this
             return moved.copy(
                 language = rule.language ?: moved.language,
+                listed = rule.listed ?: moved.listed,
                 subtitles = moved.subtitles + rule.subtitles,
                 quality = listOfNotNull(moved.quality, rule.quality).maxOrNull(),
                 hdr = listOfNotNull(moved.hdr, rule.hdr).maxOrNull(),
@@ -559,7 +575,7 @@ internal class PrefixTable private constructor(
                 val name = attribute.substringBefore('=').trim()
                 val value = attribute.substringAfter('=', "").trim()
                 when (name) {
-                    "language" -> rule.copy(language = value)
+                    "language" -> rule.copy(language = value, listed = value)
                     "subtitles" -> rule.copy(subtitles = rule.subtitles + value.split(',').map { it.trim() })
                     "subtitled" -> rule.copy(subtitled = true)
                     "quality" -> rule.copy(quality = when (value) { "4K" -> Quality.UHD; "HD" -> Quality.HD; "SD" -> Quality.SD; else -> fail("unknown quality $value") })
