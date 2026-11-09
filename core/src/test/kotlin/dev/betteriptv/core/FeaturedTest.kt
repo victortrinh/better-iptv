@@ -179,16 +179,17 @@ class FeaturedTest {
         assertEquals(ENGLISH_PLOT, library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.description)
     }
 
-    @Test fun `the hero tells of a Title in its original language first, as its page does`() = runBlocking {
-        // Were Wikidata to say the film is Greek: its own plot, under its English name, for an English Viewer.
+    @Test fun `the hero tells of a Title in the App language before its original language, as its page does`() = runBlocking {
+        // Were Wikidata to say the film is Greek: an English Viewer still reads the English plot, a Greek Viewer the Greek one.
         syncPrimetime(originalLanguage = "el")
         val page = library.title(movie(1), english, "en")!!
         assertEquals("Primetime", page.name)
-        assertEquals(GREEK_PLOT, page.description)
+        assertEquals(ENGLISH_PLOT, page.description)
+        assertEquals(ENGLISH_PLOT, library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.description)
 
-        val hero = library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!
-        assertEquals("Primetime", hero.name)
-        assertEquals(GREEK_PLOT, hero.description)
+        val greek = listOf("el", "en")
+        assertEquals(GREEK_PLOT, library.title(movie(1), greek, "el")!!.description)
+        assertEquals(GREEK_PLOT, library.featured(FeaturedScreen.Movies, greek, "el", fullHdTv)!!.description)
     }
 
     @Test fun `a hero whose naming Listing's details aren't kept reads them, and no other`() = runBlocking {
