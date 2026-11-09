@@ -52,8 +52,7 @@ import dev.betteriptv.core.ShowEpisodes
 
 /**
  * The Episode picker (DESIGN.md, Details): a Show's Title page's second level, opened by its
- * Episodes action, over the same backdrop under a `ground` veil at 85% ([Colors.veilDeep]), laid
- * out like the Channel browser. The seasons are in the left column, the picked season's Episodes on
+ * Episodes action, on the bare ground as the page is, laid out like the Channel browser. The seasons are in the left column, the picked season's Episodes on
  * the right, each with the still the Provider's show details give it (loaded for the rows on screen
  * once they settle, fading in), its name, its runtime, how far the Viewer got in it, and its
  * languages only when they differ from the Show's usual set ([ShowEpisodes.languagesNamed]). The
@@ -105,7 +104,7 @@ internal fun EpisodesContent(
         arrived = true
     }
 
-    Box(Modifier.fillMaxSize().background(Colors.veilDeep).testTag("episodes")) {
+    Box(Modifier.fillMaxSize().testTag("episodes")) {
         Column(Modifier.fillMaxSize().padding(top = Spacing.screenY)) {
             Column(Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.xl)) {
                 Text(showName, style = Type.title, color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)

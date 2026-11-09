@@ -76,7 +76,7 @@ class RowsProfileSwitchTest {
                 onScreen = { },
                 info = { _, _, _ -> },
                 appLanguage = "en",
-                onOpen = { _, _, _ -> },
+                onOpen = { _, _ -> },
                 feature = feature,
             ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
         }

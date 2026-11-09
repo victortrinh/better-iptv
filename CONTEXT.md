@@ -84,10 +84,6 @@ _Avoid_: TMDB ID, external ID
 What Wikidata (CC0) knows of a Title by its Title number, through the cloud: its original language, its IMDb ID and its English and French Wikipedia article names, or that Wikidata has no item for it. The device asks after a Sync, in batches, for every Title it has no answer for, keeps the answers with its catalog and lands them between screens like a Pending catalog; a Title the cloud couldn't answer for is asked again. Without a cloud nothing is known.
 _Avoid_: Wikidata metadata, TMDB metadata (which is being retired)
 
-**Title treatment**:
-The Title's name as its poster prints it, cut out of the poster on the device (ADR 0016): the tallest block of text that reads as the name, colour-keyed to a transparent image. The hero and the Title page show it where it passes the checks (it holds the name's words, it isn't dark, the key kept a sensible share of the crop); otherwise the Title is named in type. It is in the chosen poster's language.
-_Avoid_: Logo, clearlogo, title logo
-
 **Movie**:
 A Title that is a single film.
 _Avoid_: Film, VOD

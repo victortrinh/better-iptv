@@ -130,7 +130,7 @@ import kotlin.time.Duration.Companion.seconds
  * Feeds instead, the one playing noted, where picking another plays it ([onFeed], a new plan the
  * way the next Episode is) and "Not this game" drops the playing one ([onNotThisGame]). The TV
  * switches to the film's refresh rate where it can.
- * Until the first file's first frame, the [art] covers the picture: the Title's backdrop and logo,
+ * Until the first file's first frame, the [art] covers the picture: the Title's poster on the ground,
  * or a Channel's logo on glass, under the starting label; it then fades to the picture ([StartingCover]).
  * While a [channel] plays, the top scrim names the programme on now, from the Library's guide cache
  * (#261), which is asked for the Channel as it plays.

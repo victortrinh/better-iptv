@@ -125,7 +125,7 @@ class TrailerRowTest {
             }
             BackHandler(enabled = section != null, onBack = close)
             TitlePage(
-                movie, null, (details to stopped).takeIf { read }, null, onPlay = { _, _ -> },
+                movie, (details to stopped).takeIf { read }, null, onPlay = { _, _ -> },
                 section = section,
                 returnedFrom = returnedFrom,
                 onSection = {
@@ -212,7 +212,7 @@ class TrailerRowTest {
         compose.mainClock.autoAdvance = false
         openTrailer()
 
-        // The first frame after OK is the Title's backdrop and name, as when a Version starts.
+        // The first frame after OK is the Title's poster, as when a Version starts.
         compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag(STARTING_COVER).assertExists()
         // The WebView, which can hold the main thread for seconds the first time, comes once the cover is on screen.

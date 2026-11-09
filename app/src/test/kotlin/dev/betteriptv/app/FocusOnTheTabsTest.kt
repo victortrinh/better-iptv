@@ -82,7 +82,7 @@ class FocusOnTheTabsTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    /** Every image is served as from disk, at once: the hero's backdrop arrives with the rows. */
+    /** Every image is served as from disk, at once: the hero's poster arrives with the rows. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain -> SuccessResult(SizedArt().asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult }
@@ -93,7 +93,7 @@ class FocusOnTheTabsTest {
 
     private val hero = FeaturedTitle(
         TitleId.Numbered(TitleKind.Movie, 1), "War", 2025, 112, listOf("Drama"), "About War.",
-        backdrop = "https://provider.example/backdrop-war.jpg", badge = VersionAttributes(),
+        badge = VersionAttributes(), posters = listOf("https://provider.example/poster-war.jpg"),
     )
 
     private fun title(name: String) = TitleSummary(TitleId.Unmatched(TitleKind.Movie, name.hashCode().toLong()), name, 2024, null, VersionAttributes())
@@ -127,7 +127,7 @@ class FocusOnTheTabsTest {
                     onScreen = {},
                     info = { _, _, _ -> },
                     appLanguage = "en",
-                    onOpen = { _, _, _ -> },
+                    onOpen = { _, _ -> },
                     feature = { hero },
                     onPlayFeatured = { card, _ -> played += card },
                 ) { tab ->

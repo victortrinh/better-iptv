@@ -67,8 +67,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * The Title page in two levels (#346): the page holds the Title, named in Display type over the
- * Provider's backdrop or, without one, on the ground with its poster at the right (#475), and its actions, a Versions action
+ * The Title page in two levels (#346): the page holds the Title, named in Display type on the ground
+ * with its poster at the right (#475, ADR 0018), and its actions, a Versions action
  * naming what Play starts, and OK on it opens the Versions screen; Back returns to the action. The
  * Library is stood in for by the states [TitlePage] is given, and the navigation by a host that
  * does what the main activity does.
@@ -91,7 +91,7 @@ class TitleTwoLevelsTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    /** Every image comes from memory: a backdrop's size, or a poster's when its url says so (a poster handed over as a backdrop among them). */
+    /** Every image comes from memory: a poster's size when its url says so, else a picture's. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain ->
@@ -117,9 +117,8 @@ class TitleTwoLevelsTest {
     private val english = LanguageGroup("en", listOf(best) + (3L..9L).map { Version(it, "EN - Heat $it", VersionAttributes(language = likely("en"))) })
     private val german = LanguageGroup("de", listOf(Version(10, "DE - Heat", VersionAttributes(language = likely("de")))))
 
-    private fun details(id: TitleId = movie, name: String = "Heat", backdrop: String? = null) = TitleDetails(
+    private fun details(id: TitleId = movie, name: String = "Heat") = TitleDetails(
         id, name, 1995, "https://provider.example/heat-poster.jpg", listOf(english), listOf(german),
-        backdrop = backdrop,
         description = "A group of professional bank robbers start to feel the heat from police when they unknowingly leave a clue at their latest heist. ".repeat(3),
         genres = listOf("Crime", "Drama", "Action"),
         runtimeMinutes = 170,
@@ -146,7 +145,7 @@ class TitleTwoLevelsTest {
                 section = null
             }
             TitlePage(
-                id, null, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> },
+                id, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> },
                 section = section,
                 returnedFrom = returnedFrom,
                 onSection = {
@@ -357,41 +356,15 @@ class TitleTwoLevelsTest {
         assertTrue(label.config[SemanticsProperties.Text].isNotEmpty())
     }
 
-    @Test fun aTitleWithABackdropSitsOnItWithItsNameInDisplayTypeAndNoPoster() {
-        open(loaded = details(backdrop = "https://provider.example/heat-backdrop.jpg") to stopped)
+    @Test fun theTitleIsNamedInDisplayTypeOnTheGroundWithItsPosterAtTheRightOfTheHeader() {
+        open(loaded = details() to stopped)
 
-        compose.onNodeWithTag(PAGE_BACKDROP).assertExists()
-        compose.onNodeWithTag(HEADER_POSTER).assertDoesNotExist()
         assertEquals(displaySize, compose.onNodeWithText("Heat").fontSize())
         // Named in type: no logo.
         compose.onNodeWithContentDescription("Heat").assertDoesNotExist()
-    }
-
-    @Test fun aTitleWithNoBackdropKeepsTheGroundWithItsPosterAtTheRightOfTheHeader() {
-        open(loaded = details(backdrop = null) to stopped)
-
-        compose.onNodeWithTag(PAGE_BACKDROP).assertDoesNotExist()
         val poster = compose.onNodeWithTag(HEADER_POSTER).fetchSemanticsNode().boundsInRoot
         val name = compose.onNodeWithText("Heat").fetchSemanticsNode().boundsInRoot
         assertTrue("the poster ($poster) is right of the header ($name)", poster.left > name.right)
         assertTrue(poster.right / compose.activity.resources.displayMetrics.density > 960 / 2)
-    }
-
-    @Test fun aPosterHandedOverAsTheBackdropTakesTheSameLayoutOnceDecoded() {
-        val refused = mutableListOf<String>()
-        val backdrops = Backdrops(onRefused = { refused += it })
-        var read by mutableStateOf(false)
-        compose.setContent {
-            CompositionLocalProvider(LocalBackdrops provides backdrops) {
-                TitlePage(movie, null, (details(backdrop = "https://provider.example/heat-poster-as-backdrop.jpg") to stopped).takeIf { read }, null, onPlay = { _, _ -> })
-            }
-        }
-        read = true
-        compose.mainClock.advanceTimeBy(1_000)
-        compose.waitForIdle()
-
-        compose.onNodeWithTag(PAGE_BACKDROP).assertDoesNotExist()
-        compose.onNodeWithTag(HEADER_POSTER).assertExists()
-        assertEquals(listOf("https://provider.example/heat-poster-as-backdrop.jpg"), refused)
     }
 }

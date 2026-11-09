@@ -13,8 +13,8 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * The Title each screen's hero features (#348, #475), seen through the Library over the fake
- * Provider: from Trending (#477), else New on your service, with the Provider's backdrop, skipping what the Viewer is in,
- * a different one at each entry, and at most one Provider details call per entry.
+ * Provider: from Trending (#477), else New on your service, skipping what the Viewer is in, a
+ * different one at each entry, and at most one Provider details call per entry.
  */
 class FeaturedTest {
     @get:Rule val folder = TemporaryFolder()
@@ -49,9 +49,9 @@ class FeaturedTest {
     /**
      * Syncs movies "Film [n]" (Title number [n], stream id = its place from 1, newest first) and
      * shows "Show [n]" (Title number 500 + [n]), each in English unless [french]. A movie's details
-     * give a backdrop unless it is in [bare]; a show's Listing carries two unless it is in [bare].
+     * give a backdrop; a show's Listing carries two: the Provider's data, which nothing shows (ADR 0018).
      */
-    private suspend fun sync(movies: List<Long>, shows: List<Long> = emptyList(), bare: Set<Long> = emptySet(), french: Set<Long> = emptySet()) {
+    private suspend fun sync(movies: List<Long>, shows: List<Long> = emptyList(), french: Set<Long> = emptySet()) {
         provider.movieCategoriesOverride = if (movies.isEmpty()) "[]" else """[{"category_id":"1","category_name":"MOVIES"}]"""
         provider.movieListOverride = movies.withIndex().joinToString(",", "[", "]") { (i, n) ->
             val prefix = if (n in french) "FR" else "EN"
@@ -60,12 +60,12 @@ class FeaturedTest {
         movies.withIndex().forEach { (i, n) ->
             provider.serveMovieDetails(
                 (i + 1).toLong(), name = "Film $n", plot = "About Film $n.", genre = "Drama", durationMinutes = 100,
-                backdrop = movieBackdrop(n).takeUnless { n in bare },
+                backdrop = movieBackdrop(n),
             )
         }
         provider.showCategoriesOverride = if (shows.isEmpty()) "[]" else """[{"category_id":"2","category_name":"SERIES"}]"""
         provider.showListOverride = shows.withIndex().joinToString(",", "[", "]") { (i, n) ->
-            val backdrops = if (n + 100 in bare) "[]" else """["${showBackdrop(n)}","https://art.example/show-$n-second.jpg"]"""
+            val backdrops = """["${showBackdrop(n)}","https://art.example/show-$n-second.jpg"]"""
             """{"series_id":${i + 1},"name":"EN - Show $n (2025)","tmdb":"${500 + n}","category_id":"2","last_modified":"${1_700_000_000 - i}","plot":"About Show $n.","backdrop_path":$backdrops}"""
         }
         library.sync()
@@ -101,11 +101,10 @@ class FeaturedTest {
     }
 
     @Test fun `with no Trending Title that qualifies, the hero falls back to New on your service`() = runBlocking {
-        // Film 6 is in Continue watching, Film 7 has no backdrop, Film 5 isn't in a Content language.
+        // Film 6 is in Continue watching, Films 5 and 7 aren't in a Content language.
         trending(movie(6), movie(7), movie(5))
-        sync(movies = (1L..7L).toList(), bare = setOf(7), french = setOf(5))
+        sync(movies = (1L..7L).toList(), french = setOf(5, 7))
         library.saveProgress(movie(6), position = 30 * 60_000L, duration = 120 * 60_000L)
-        library.title(movie(7), english, "en")
 
         assertEquals(listOf("Film 1", "Film 2"), entries(2))
     }
@@ -125,11 +124,10 @@ class FeaturedTest {
         assertEquals(listOf("Film 1", "Show 1", "Film 2", "Show 2", "Film 1"), entries(5))
     }
 
-    @Test fun `a Show's backdrop is the first on its Listing, and featuring it costs no details call`() = runBlocking {
+    @Test fun `featuring a Show costs no details call, what the hero tells being on its Listing`() = runBlocking {
         sync(movies = emptyList(), shows = listOf(1, 2))
 
         val featured = library.featured(FeaturedScreen.Shows, english, "en", fullHdTv)!!
-        assertEquals(showBackdrop(1), featured.backdrop)
         assertEquals("About Show 1.", featured.description)
         assertTrue(provider.requests.none { it.startsWith("get_vod_info") || it.startsWith("get_series_info") })
     }
@@ -144,7 +142,6 @@ class FeaturedTest {
         assertEquals(100, featured.runtimeMinutes)
         assertEquals(listOf("Drama"), featured.genres)
         assertEquals("About Film 1.", featured.description)
-        assertEquals(movieBackdrop(1), featured.backdrop)
         // The poster its card shows, which its Title treatment is cut from (ADR 0016).
         assertEquals(listOf("https://art.example/poster-1.jpg"), featured.posters)
         assertEquals("en", featured.badge!!.language?.value)
@@ -191,44 +188,18 @@ class FeaturedTest {
         assertEquals(listOf(1L), provider.movieDetailsRequests.drop(before))
     }
 
-    @Test fun `it skips Titles in Continue watching, in no Content language, and those without a backdrop`() = runBlocking {
-        sync(movies = (1L..5L).toList(), bare = setOf(2), french = setOf(4))
+    @Test fun `it skips Titles in Continue watching and in no Content language`() = runBlocking {
+        sync(movies = (1L..5L).toList(), french = setOf(4))
         library.saveProgress(movie(3), position = 30 * 60_000L, duration = 120 * 60_000L)
-        // Film 2's page was opened: its details are kept, with no backdrop.
-        library.title(movie(2), english, "en")
 
-        assertEquals(listOf("Film 1", "Film 5", "Film 1"), entries(3))
+        assertEquals(listOf("Film 1", "Film 2", "Film 5", "Film 1"), entries(4))
     }
 
-    @Test fun `a Movie read with no backdrop is passed over, and the entry reads no other`() = runBlocking {
-        sync(movies = listOf(1, 2), bare = setOf(1))
-
-        // Film 1's details give no backdrop, and Film 2's aren't read on the same entry.
-        assertNull(featured())
-        assertEquals(listOf(1L), provider.movieDetailsRequests)
-        assertEquals(listOf("Film 2", "Film 2"), entries(2))
-        assertEquals(listOf(1L, 2L), provider.movieDetailsRequests)
-    }
-
-    @Test fun `without reading details, only Titles whose backdrop is kept are featured`() = runBlocking {
+    @Test fun `without reading details, only Titles whose details are kept are featured`() = runBlocking {
         sync(movies = listOf(1, 2), shows = listOf(1))
 
         assertEquals("Show 1", library.featured(FeaturedScreen.Home, english, "en", fullHdTv, readDetails = false)?.name)
         assertTrue(provider.movieDetailsRequests.isEmpty())
-    }
-
-    @Test fun `a backdrop the app refused is none`() = runBlocking {
-        sync(movies = listOf(1, 2))
-        library.title(movie(1), english, "en")
-        library.refuseBackdrop(movieBackdrop(1))
-
-        assertEquals(listOf("Film 2", "Film 2"), entries(2))
-        assertNull(library.title(movie(1), english, "en")!!.backdrop)
-
-        // Remembered on the device.
-        library.close()
-        library = open()
-        assertNull(library.title(movie(1), english, "en")!!.backdrop)
     }
 
     @Test fun `Movies and Shows feature their own kind, each rotating on its own`() = runBlocking {
@@ -251,7 +222,7 @@ class FeaturedTest {
     }
 
     @Test fun `with no Title that qualifies, there is no featured Title`() = runBlocking {
-        sync(movies = listOf(1), shows = listOf(1), bare = setOf(1, 101))
+        sync(movies = listOf(1), french = setOf(1))
         assertNull(featured())
         assertNull(featured())
     }

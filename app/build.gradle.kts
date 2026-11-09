@@ -14,10 +14,6 @@ val commitCount: Int = providers.exec { commandLine("git", "rev-list", "--count"
 android {
     namespace = "dev.betteriptv.app"
     compileSdk = 36
-    // The recognizer's /proc/cpuinfo redirect (ADR 0017) is the app's only native code, a C file built
-    // by the NDK's own ndk-build: no CMake to install. CI downloads this NDK when it lacks it.
-    ndkVersion = "26.3.11579264"
-
     defaultConfig {
         applicationId = "dev.betteriptv"
         // Fire OS 6 (Android 7.1) and later.
@@ -86,8 +82,6 @@ android {
         compose = true
         buildConfig = true
     }
-
-    externalNativeBuild { ndkBuild { path = file("src/main/cpp/Android.mk") } }
 
     compileOptions {
         // java.time (used by the core) needs API 26; desugaring brings it to Fire OS 6.
@@ -159,8 +153,6 @@ dependencies {
     implementation(libs.libvlc)
     // The Sign-in screen's QR (#429).
     implementation(libs.zxing.core)
-    // The Title treatment's text recognizer (ADR 0016), its model in the APK: Fire OS has no Google Play services.
-    implementation(libs.mlkit.text.recognition)
     // Installs the Baseline Profile (the libraries' and the app's own, #63) on first launch when the
     // install didn't carry it as dex metadata.
     implementation(libs.profileinstaller)

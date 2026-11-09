@@ -61,7 +61,7 @@ class RowsDuplicateCardsTest {
     private var reading by mutableIntStateOf(0)
 
     private fun show(name: String, titleNumber: Long) = TitleSummary(TitleId.Numbered(TitleKind.Show, titleNumber), name, 2016, null, VersionAttributes())
-    private fun resume(title: TitleSummary) = InProgress(title, null, 0.5f)
+    private fun resume(title: TitleSummary) = InProgress(title, 0.5f)
 
     private val colony = show("Colony", 124364)
     private val others = (1L..3L).map { show("Other $it", it) }
@@ -79,7 +79,7 @@ class RowsDuplicateCardsTest {
                 onScreen = { },
                 info = { _, _, _ -> },
                 appLanguage = "en",
-                onOpen = { _, _, _ -> },
+                onOpen = { _, _ -> },
             ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
         }
     }

@@ -438,9 +438,6 @@
         <item quantity="many">%1$s séries</item>
         <item quantity="other">%1$s séries</item>
     </plurals>
-    <string name="settings_debug">Débogage</string>
-    <string name="settings_title_treatments">Titres en lettrage</string>
-    <string name="settings_title_treatments_detail">Le lettrage découpé de chaque affiche, sur la vedette et la page du titre. Désactivé, chaque titre est nommé en texte, pour comparer.</string>
     <string name="settings_app">Appli</string>
     <string name="settings_version">Version de l\'appli</string>
     <!-- Under App version: where the Title facts and Trending come from (#480). -->

@@ -187,8 +187,6 @@ class HomeRowsTest {
         assertEquals(listOf("Second", "Foreign", "First"), resumes.map { it.title.name })
         assertEquals(listOf(0.5f, null, 0.25f), resumes.map { it.progress })
         assertEquals(listOf(Duration.ofMinutes(60), null, Duration.ofMinutes(90)), resumes.map { it.left })
-        // No backdrop and no poster from the Provider here: no still (BackdropsTest has them).
-        assertNull(resumes.first().still)
         assertTrue(rows().first() is HomeRow.ContinueWatching)
 
         library.finished(movie(2))

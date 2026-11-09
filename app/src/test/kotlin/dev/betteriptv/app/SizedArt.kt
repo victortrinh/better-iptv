@@ -10,7 +10,7 @@ import dev.betteriptv.app.ui.theme.TypeScale
 
 /**
  * Artwork of one [color] that says it is [width] × [height], as a decoded picture does: a 1280 × 720
- * backdrop by default, or a 600 × 900 poster handed over as one.
+ * picture by default, or a 600 × 900 poster.
  */
 open class SizedArt(color: Int = 0xFFFF0000.toInt(), private val width: Int = 1280, private val height: Int = 720) : ColorDrawable(color) {
     override fun getIntrinsicWidth() = width

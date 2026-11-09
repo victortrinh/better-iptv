@@ -8,9 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.paint
 import androidx.compose.ui.geometry.Size
@@ -21,11 +19,11 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
+import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Motion
-import dev.betteriptv.core.Library.Companion.MIN_BACKDROP_RATIO
 import dev.betteriptv.core.Library.Companion.MIN_POSTER_WIDTH
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.launch
 import coil3.Extras
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -40,6 +38,7 @@ import coil3.fetch.SourceFetchResult
 import coil3.request.Options
 import android.graphics.BitmapFactory
 import coil3.intercept.Interceptor
+import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.ImageResult
 import coil3.size.Precision
@@ -60,7 +59,7 @@ import kotlinx.coroutines.flow.first
  * back to a screen stays instant ([FadeIn]).
  */
 @Composable
-fun rememberArtwork(url: String?, card: Boolean = false): Painter? = rememberArtwork(url, card, onArrived = null)
+fun rememberArtwork(url: String?, card: Boolean = false): Painter? = rememberArtwork(url, card, poster = false)
 
 /**
  * A Title's poster: the first of its [posters] (the order [dev.betteriptv.core.TitleSummary.posters]
@@ -73,22 +72,18 @@ fun rememberArtwork(url: String?, card: Boolean = false): Painter? = rememberArt
 fun rememberPoster(posters: List<String>, card: Boolean = false): Painter? {
     var refusedHere by remember(posters) { mutableIntStateOf(0) }
     val url = remember(posters, refusedHere) { posters.firstOrNull { it !in PosterFloor.refused } }
-    return rememberArtwork(url, card, onArrived = null, poster = true, onRefused = {
+    return rememberArtwork(url, card, poster = true, onRefused = {
         PosterFloor.refused.add(it)
         refusedHere++
     })
 }
 
-/**
- * [rememberArtwork], calling [onArrived] with the image's decoded width and height once it arrives.
- * A [poster] whose file is too narrow ([PosterFloor]) fails to load, and [onRefused] is called with it.
- */
+/** [rememberArtwork]; a [poster] whose file is too narrow ([PosterFloor]) fails to load, and [onRefused] is called with it. */
 @Composable
 private fun rememberArtwork(
     url: String?,
     card: Boolean,
-    onArrived: ((width: Int, height: Int) -> Unit)?,
-    poster: Boolean = false,
+    poster: Boolean,
     onRefused: (String) -> Unit = {},
 ): Painter? {
     if (url == null) return null
@@ -103,7 +98,6 @@ private fun rememberArtwork(
     LaunchedEffect(image, fade) {
         // This url's image, not the one the painter showed before it.
         val arrived = image.state.first { it is AsyncImagePainter.State.Success && it.result.request.data == url } as AsyncImagePainter.State.Success
-        onArrived?.invoke(arrived.result.image.width, arrived.result.image.height)
         // Over frames, however late they come, so art arriving as the main thread is held up doesn't pop ([Fade], #398).
         if (arrived.result.dataSource == DataSource.MEMORY_CACHE) fade.show() else fade.fadeIn(Motion.imageFadeMillis)
     }
@@ -133,81 +127,28 @@ fun clearCachedArtwork(loader: ImageLoader) {
 }
 
 /**
- * Loads the artwork at [url] into the memory cache, as [rememberArtwork] asks for it (at the
- * original size its painter loads it at), so it shows on the first frame it's drawn, with no fade.
- * It goes on when the caller leaves: the featured hero's art, read for the next entry (#386).
+ * Loads the first of [posters] the floor doesn't refuse ([PosterFloor]) into the memory cache, at
+ * [size] (the pixels the hero and the Title page draw a poster at, [rememberPosterSize]), so it shows
+ * on the first frame it's drawn there, with no fade: the featured hero's poster, read beside the rows
+ * and for the next entry (#386). Says whether one loaded. A poster refused on the way is remembered,
+ * as a card remembers it; one that couldn't be loaded ends the try, and the next visit tries again.
  */
-fun preloadArtwork(context: PlatformContext, url: String) {
-    SingletonImageLoader.get(context).enqueue(preloadRequest(context, url))
-}
-
-/** [preloadArtwork], returning once the artwork is in the memory cache, or couldn't be loaded. */
-suspend fun loadArtwork(context: PlatformContext, url: String) {
-    SingletonImageLoader.get(context).execute(preloadRequest(context, url))
-}
-
-/**
- * The backdrops refused as they were decoded ([check]), and [onRefused], which remembers each on the
- * device ([dev.betteriptv.core.Library.refuseBackdrop]) so it counts as none on every screen from
- * then on, after the app starts again too. MainActivity provides the app's ([LocalBackdrops]).
- */
-class Backdrops(private val onRefused: suspend (String) -> Unit = {}) {
-    private val refused = ConcurrentHashMap.newKeySet<String>()
-
-    /** Whether the backdrop at [url] was refused while the app ran. */
-    fun refused(url: String) = url in refused
-
-    /**
-     * Whether an image decoded at [width] × [height] is a backdrop ([isBackdrop]). One that isn't (a
-     * poster handed over as a backdrop) is refused, once.
-     */
-    suspend fun check(url: String, width: Int, height: Int): Boolean {
-        if (isBackdrop(width, height)) return true
-        if (refused.add(url)) onRefused(url)
-        return false
+suspend fun loadPoster(context: PlatformContext, posters: List<String>, size: coil3.size.Size): Boolean {
+    for (url in posters) {
+        if (url in PosterFloor.refused) continue
+        val result = SingletonImageLoader.get(context).execute(artworkRequest(context, url, card = false, poster = true).newBuilder().size(size).build())
+        if (result.image != null) return true
+        if ((result as? ErrorResult)?.throwable is PosterFloor.TooNarrow) PosterFloor.refused.add(url) else return false
     }
+    return false
 }
 
-/**
- * Whether an image decoded at [width] × [height] is a backdrop: at least [MIN_BACKDROP_RATIO] times
- * as wide as tall. One with no size of its own (a drawable, not a picture) can't be judged and passes.
- */
-internal fun isBackdrop(width: Int, height: Int) = width <= 0 || height <= 0 || width >= MIN_BACKDROP_RATIO * height
-
-/** The app's [Backdrops]; one that remembers nothing past the screen by default (in tests). */
-val LocalBackdrops = staticCompositionLocalOf { Backdrops() }
-
-/**
- * The backdrop at [url], as [rememberArtwork] gives it (a [card]'s once settled), checked once decoded ([Backdrops.check]):
- * null when there is none, it couldn't be loaded, or it is a poster handed over as a backdrop, so
- * the screen takes the layout it has without one.
- */
+/** The size the hero and the Title page draw a poster at ([Cards.posterWidth], 2:3), in pixels, for [loadPoster]. */
 @Composable
-fun rememberBackdrop(url: String?, card: Boolean = false): Painter? {
-    val backdrops = LocalBackdrops.current
-    var refused by remember(url) { mutableStateOf(url != null && backdrops.refused(url)) }
-    val scope = rememberCoroutineScope()
-    val painter = rememberArtwork(url.takeUnless { refused }, card, onArrived = { width, height ->
-        if (url != null && !isBackdrop(width, height)) {
-            refused = true
-            scope.launch { backdrops.check(url, width, height) }
-        }
-    })
-    return painter.takeUnless { refused }
+fun rememberPosterSize(): coil3.size.Size {
+    val density = LocalDensity.current
+    return remember(density) { with(density) { coil3.size.Size(Cards.posterWidth.roundToPx(), Cards.posterHeight.roundToPx()) } }
 }
-
-/**
- * Loads the backdrop at [url] into the memory cache, as [loadArtwork] does, and says whether it is
- * one ([Backdrops.check]); false too when it couldn't be loaded.
- */
-suspend fun loadBackdrop(context: PlatformContext, url: String, backdrops: Backdrops): Boolean {
-    if (backdrops.refused(url)) return false
-    val image = SingletonImageLoader.get(context).execute(preloadRequest(context, url)).image ?: return false
-    return backdrops.check(url, image.width, image.height)
-}
-
-private fun preloadRequest(context: PlatformContext, url: String) =
-    artworkRequest(context, url, card = false).newBuilder().size(coil3.size.Size.ORIGINAL).build()
 
 /** How long a card is on screen, or focus rests on one, before artwork loads for it ([SettleFirst], the rows' preloading). */
 const val SETTLE_MILLIS = 250L

@@ -75,7 +75,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
-import coil3.PlatformContext
 import coil3.compose.LocalPlatformContext
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.TitleId
@@ -248,7 +247,7 @@ fun RowsScreen(
     reading: Any,
     read: suspend () -> List<HomeRow>,
     empty: String,
-    onOpen: (RowCard, TitleId, String?) -> Unit,
+    onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
@@ -316,7 +315,7 @@ internal fun RowsLayout(
     onScreen: @Composable (TitleId) -> Unit,
     info: @Composable (HomeRow, RowCard?, Modifier) -> Unit,
     appLanguage: String,
-    onOpen: (RowCard, TitleId, String?) -> Unit,
+    onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit = { _, _ -> },
     onOpenGame: (RowCard, GameFeeds) -> Unit = { _, _ -> },
     onOpenCountry: (RowCard, LiveCountry) -> Unit = { _, _ -> },
@@ -332,8 +331,7 @@ internal fun RowsLayout(
     val featurer by rememberUpdatedState(feature)
     val badger by rememberUpdatedState(featureBadge)
     val context = LocalPlatformContext.current
-    val backdrops = LocalBackdrops.current
-    val treatments = LocalTitleTreatments.current
+    val posterSize = rememberPosterSize()
     // Entered (by its tab, or as the app starts), not come back to from a page it opened.
     val entering = remember { restoreFocus == null }
     // Each entry features the Title read for it during the last one; the hero shows from the top,
@@ -358,7 +356,7 @@ internal fun RowsLayout(
         if (now?.id == shown.id && now.badge != badge) state.featured = now.copy(badge = badge)
     }
     // Rows that arrive after the screen is up (the first entry's, with the hero read beside them) fade
-    // in as one with the hero, its backdrop included, over the bare ground. The fade shows over frames
+    // in as one with the hero, its poster included, over the bare ground. The fade shows over frames
     // even when the first of them comes late, as on the stick's cold start (#398). Rows kept from last
     // time, and the hero read for this entry with them, show at once.
     val arrived = placeholder == null && state.rows != null
@@ -401,28 +399,20 @@ internal fun RowsLayout(
         // The screen reads its rows from here on: they are no longer read ahead for it.
         state.preReadFor = null
         val before = state.rows
-        // The first entry's hero is read beside the rows, its backdrop as soon as it is, and they show
-        // together (#386): the rows wait up to the page arrival time for the Title and its backdrop,
-        // so the hero arrives whole instead of its text first. A Title read later than that is kept
-        // for the next entry; a backdrop that arrives later fades in as it comes, checked then
-        // ([rememberBackdrop]). One refused in time (a poster handed over as a backdrop) gives way to
-        // a Title whose backdrop is kept, read with no Provider call.
+        // The first entry's hero is read beside the rows, its poster as soon as it is, and they show
+        // together (#386): the rows wait up to the page arrival time for the Title and its poster
+        // ([loadPoster], at the size the hero draws it), so the hero arrives whole instead of its text
+        // first. A Title read later than that is kept for the next entry; a poster that arrives later
+        // fades in as it comes.
         val choose = !checked && entering && !state.upNextRead
         val feature = featurer
         val chosen = if (choose && feature != null) async { feature(true) } else null
-        val art = chosen?.let { async { it.await()?.let { title -> loadBackdrop(context, title.backdrop, backdrops) } } }
-        // Its Title treatment is cut beside it (ADR 0016), in the same wait: one not known by then
-        // leaves the name in type for this entry ([rememberTitleTreatment]).
-        val cut = chosen?.let { async { it.await()?.let { title -> treatments?.cutFor(title)?.await() } } }
+        val art = chosen?.let { async { it.await()?.let { title -> loadPoster(context, title.posters, posterSize) } } }
         val fresh = reader().withUniqueCards()
-        if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await(); cut?.await() }
+        if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await() }
         val late = chosen != null && !chosen.isCompleted
         state.held = null
-        if (chosen != null && feature != null) state.featured = when {
-            late -> null
-            art!!.isCompleted && art.await() == false -> feature(false)?.also { preloadArtwork(context, it.backdrop) }
-            else -> chosen.await()
-        }
+        if (chosen != null) state.featured = if (late) null else chosen.await()
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
@@ -438,12 +428,10 @@ internal fun RowsLayout(
         }
         val first = !checked
         checked = true
-        // The next entry's hero, read now with its art so it shows at once then.
+        // The next entry's hero, read now with its poster so it shows at once then.
         if (first && entering) featurer?.let { next ->
-            state.upNext = if (late && art!!.await() != false) chosen!!.await() else featureChecked(context, backdrops, next)
+            state.upNext = if (late) chosen!!.await().also { art!!.await() } else next(true)?.also { loadPoster(context, it.posters, posterSize) }
             state.upNextRead = true
-            // And its Title treatment, cut now so it is known then.
-            state.upNext?.let { treatments?.cutFor(it) }
         }
     }
     // Once focus leaves the row a reading held back, the row takes it.
@@ -509,7 +497,7 @@ internal fun RowsLayout(
     val heroDetails = remember { FocusRequester() }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
-    Column(Modifier.fillMaxSize().background(Colors.ground).featuredBackdrop(hero.takeIf { placeholder == null && rows != null }) { state.list.heroShown() * arrival.value }) {
+    Column(Modifier.fillMaxSize().background(Colors.ground)) {
         // Focus the Viewer put on the tabs stays there: no card or Play waiting for first focus takes it.
         Box(
             Modifier.onFocusChanged {
@@ -541,7 +529,7 @@ internal fun RowsLayout(
                         FeaturedHero(
                             hero, heroPlay, heroDetails,
                             onPlay = { onPlayFeatured(RowCard(HERO_ROW, HERO_PLAY), hero) },
-                            onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id, hero.backdrop) },
+                            onDetails = { onOpen(RowCard(HERO_ROW, HERO_DETAILS), hero.id) },
                             onFocus = { state.focused = RowCard(HERO_ROW, it) },
                             last = (pending ?: state.focused)?.takeIf { it.row == HERO_ROW }?.key ?: HERO_PLAY,
                         )
@@ -653,7 +641,7 @@ internal fun RowsLayout(
                                         image = rememberPoster(title.posters, card = true),
                                         name = title.name,
                                         badges = emptyList(),
-                                        onClick = { onOpen(card, title.id, null) },
+                                        onClick = { onOpen(card, title.id) },
                                         modifier = ends,
                                         progress = resume?.progress,
                                         named = false,
@@ -673,13 +661,6 @@ internal fun RowsLayout(
         }
         }
     }
-}
-
-/** How much of the hero, the list's first item, is on screen: 1 at the top, 0 once scrolled away. */
-private fun LazyListState.heroShown(): Float {
-    if (firstVisibleItemIndex > 0) return 0f
-    val hero = layoutInfo.visibleItemsInfo.firstOrNull()?.takeIf { it.index == 0 && it.size > 0 } ?: return 1f
-    return (1f - firstVisibleItemScrollOffset / hero.size.toFloat()).coerceIn(0f, 1f)
 }
 
 /**
@@ -970,15 +951,3 @@ internal const val WAITING = "waiting"
 /** The checklist step's size: the dot alone, not beside a caption. */
 private val WAITING_DOT_SIZE = 10.dp
 
-/**
- * The Title [feature] picks for the hero, with its backdrop loaded into memory and checked once
- * decoded ([loadBackdrop]). One refused (a poster handed over as a backdrop) is remembered as none,
- * and the next Title is picked from those whose backdrop is already kept, so the entry still reads
- * the Provider's details once at most. Null when none qualifies.
- */
-internal suspend fun featureChecked(context: PlatformContext, backdrops: Backdrops, feature: suspend (readDetails: Boolean) -> FeaturedTitle?): FeaturedTitle? {
-    val first = feature(true) ?: return null
-    if (loadBackdrop(context, first.backdrop, backdrops)) return first
-    val other = feature(false) ?: return null
-    return other.takeIf { loadBackdrop(context, it.backdrop, backdrops) }
-}

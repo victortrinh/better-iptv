@@ -86,7 +86,7 @@ fun HomeScreen(
     restoreFocus: RowCard?,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
-    onOpen: (RowCard, TitleId, String?) -> Unit,
+    onOpen: (RowCard, TitleId) -> Unit,
     onWatch: (RowCard, Channel) -> Unit,
     onOpenGame: (RowCard, GameFeeds) -> Unit,
     onPlay: (RowCard, FeaturedTitle) -> Unit,

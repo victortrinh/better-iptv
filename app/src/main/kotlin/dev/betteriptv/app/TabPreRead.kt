@@ -21,7 +21,7 @@ internal class PreReadTab(
 /**
  * Reads [tabs] ahead, one at a time and in order, so a tab's first visit shows at once as a visit
  * back to it does: its rows, and its hero picked as the next entry's ([RowsState.upNext]) by [hero],
- * which loads its backdrop and cuts its Title treatment. A tab's rows and hero land together, once
+ * which loads its poster. A tab's rows and hero land together, once
  * both are read, so a visit meanwhile reads them as a first entry does. Before each tab it waits for
  * the remote to rest ([idle]), so the reading never competes with focus moving.
  *

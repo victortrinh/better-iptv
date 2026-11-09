@@ -67,7 +67,7 @@ class TabPreReadTest {
 
     private fun movie(name: String, number: Long) = TitleSummary(TitleId.Numbered(TitleKind.Movie, number), name, 2020, null, VersionAttributes())
     private fun genre(name: String, vararg titles: String) = HomeRow.Genre(name, titles.mapIndexed { i, title -> movie(title, i + 1L) })
-    private fun featured(name: String) = FeaturedTitle(TitleId.Numbered(TitleKind.Movie, name.hashCode().toLong()), name, 2020, null, emptyList(), null, "", null)
+    private fun featured(name: String) = FeaturedTitle(TitleId.Numbered(TitleKind.Movie, name.hashCode().toLong()), name, 2020, null, emptyList(), null, null)
 
     private fun names(state: RowsState) = state.rows.orEmpty().map { (it as HomeRow.Genre).titles.map { title -> title.name } }
 
@@ -153,7 +153,7 @@ class TabPreReadTest {
                     onScreen = { },
                     info = { _, _, _ -> },
                     appLanguage = "en",
-                    onOpen = { _, _, _ -> },
+                    onOpen = { _, _ -> },
                     feature = { readDetails -> if (readDetails) asked++; featured("Next") },
                 ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
             }
@@ -186,7 +186,7 @@ class TabPreReadTest {
                     onScreen = { },
                     info = { _, _, _ -> },
                     appLanguage = "en",
-                    onOpen = { _, _, _ -> },
+                    onOpen = { _, _ -> },
                 ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
             }
         }

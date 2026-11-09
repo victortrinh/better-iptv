@@ -48,7 +48,7 @@ fun TitlesScreen(
     restoreFocus: RowCard?,
     focusTab: Boolean,
     onTab: (Browse) -> Unit,
-    onOpen: (RowCard, TitleId, String?) -> Unit,
+    onOpen: (RowCard, TitleId) -> Unit,
     onPlay: (RowCard, FeaturedTitle) -> Unit,
     onRetry: () -> Unit,
     qualityCap: QualityCap,

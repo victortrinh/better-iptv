@@ -69,7 +69,7 @@ class TitleBadgesTest {
 
     private fun open(id: TitleId, loaded: Pair<TitleDetails, PlayPlan?>, episodes: Pair<ShowEpisodes, PlayPlan?>? = null) {
         var read by mutableStateOf(false)
-        compose.setContent { TitlePage(id, null, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> }) }
+        compose.setContent { TitlePage(id, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> }) }
         compose.waitForIdle()
         read = true
         compose.mainClock.advanceTimeBy(1_000)

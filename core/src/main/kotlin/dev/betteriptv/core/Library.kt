@@ -1218,7 +1218,6 @@ class Library private constructor(
             description = details.plot,
             genres = titleGenres(title, candidates, kept, appLanguage),
             runtimeMinutes = details.runtimeMinutes,
-            backdrop = titleBackdrop(title, kept, shown.best.listing),
             cast = cleanList(details.cast),
             trailer = details.trailer,
             directors = cleanList(details.director),
@@ -1279,21 +1278,6 @@ class Library private constructor(
     }
 
     /**
-     * [title]'s backdrop, the Provider's (ADR 0014): a Movie's the one its kept details give, a
-     * Show's the first of its Listing's backdrops, stored at Sync; the [best] Listing's, else any of
-     * its Listings'. One the app refused once decoded ([refuseBackdrop]) counts as none, so a poster
-     * handed over as a backdrop never fills the screen. Null when there is none.
-     */
-    private fun titleBackdrop(title: StoredTitle, kept: Map<Long, StoredMovieDetails>, best: StoredListing? = null): String? {
-        fun of(listing: StoredListing) = (if (title.id.kind == TitleKind.Movie) kept[listing.id]?.details else listing.details)
-            ?.backdrops?.firstOrNull()?.takeUnless { it in refusedBackdrops }
-        return best?.let(::of) ?: title.listings.firstNotNullOfOrNull(::of)
-    }
-
-    /** The backdrops the app refused ([refuseBackdrop]), read from the device once. */
-    private val refusedBackdrops: MutableSet<String> by lazy { ConcurrentHashMap.newKeySet<String>().apply { addAll(store.refusedBackdrops()) } }
-
-    /**
      * Runs [clear], the image loader's disk cache being emptied, once on this catalog: on the first
      * launch after the release that stopped holding the cloud's metadata (#480), so the curated art
      * an older app cached goes while the Provider's links load again as they are. Recorded once it
@@ -1307,15 +1291,6 @@ class Library private constructor(
             return
         }
         store.saveImagesCleared()
-    }
-
-    /**
-     * Remembers that the backdrop at [url] isn't one: decoded, its image is less than
-     * [MIN_BACKDROP_RATIO] times as wide as tall (a poster handed over as a backdrop). From then on
-     * it counts as none, on every screen and after the app starts again.
-     */
-    suspend fun refuseBackdrop(url: String) = withContext(Dispatchers.IO) {
-        if (refusedBackdrops.add(url)) store.refuseBackdrop(url)
     }
 
     /** The Provider's rating of [title] on a 10 scale: its [best] Listing's (its details' for a Movie), else any Listing's; null when it gives none. */
@@ -1875,11 +1850,7 @@ class Library private constructor(
         }
     }
 
-    /**
-     * Continue watching's row of [resumes] ([continueWatching]), each with its [card] and its still:
-     * the Title's backdrop ([titleBackdrop], a Movie's from its [kept] details), else its poster.
-     * Null when there are none.
-     */
+    /** Continue watching's row of [resumes] ([continueWatching]), each with its [card]. Null when there are none. */
     private fun continueWatchingRow(resumes: List<Pair<StoredTitle, Any>>, kept: Map<Long, StoredMovieDetails>, card: (StoredTitle) -> TitleSummary): HomeRow.ContinueWatching? {
         if (resumes.isEmpty()) return null
         return HomeRow.ContinueWatching(
@@ -1893,7 +1864,7 @@ class Library private constructor(
                 val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
                 val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
                 val summary = card(title)
-                InProgress(summary, titleBackdrop(title, kept) ?: summary.image, fraction, left, (at as? ShowInProgress)?.next)
+                InProgress(summary, fraction, left, (at as? ShowInProgress)?.next)
             },
         )
     }
@@ -1916,10 +1887,10 @@ class Library private constructor(
      * [FEATURED_FROM] of each kind it shows in Trending ([trendingTitles]), else, when Trending has
      * none that qualifies, of the newest as New on your service has them (movies and shows in
      * turn on Home, a movie first; the kind's on Movies and Shows), with a Version in the Viewer's
-     * [contentLanguages], not in Continue watching, and with a backdrop ([titleBackdrop]), which the
-     * hero is drawn on. A Show's is on its Listing since Sync; a Movie whose details (those of the
-     * Listing that names it, whose plot the hero shows) were never read has them read here, as its
-     * page would, at most once per call and only when [readDetails], so an entry costs the Provider one call at most and none once they are kept. It rotates: each
+     * [contentLanguages] and not in Continue watching. A Show's details are on its Listing since Sync;
+     * a Movie whose details (those of the Listing that names it, whose plot the hero shows) were never
+     * read has them read here, as its page would, at most once per call and only when [readDetails],
+     * so an entry costs the Provider one call at most and none once they are kept. It rotates: each
      * call features the one after the Title featured last on that screen, kept on the device, so the
      * same Title doesn't come back on the next entry, and from the first again past the last. Its
      * badge is the Title page's ([featuredBadge]), for the [device], [qualityCap] and
@@ -1998,14 +1969,14 @@ class Library private constructor(
     /**
      * The hero's Title from [sources], in order of preference (Trending's Titles of each kind, then the
      * newest of each kind, newest first): of each kind's list, the first [FEATURED_FROM] that are
-     * watchable in [contentLanguages], not in Continue watching, and that have a backdrop or may get
-     * one from details not yet read, taken in turn. The first source with such a Title is featured
-     * from; the next stands in only when it has none, or none of its Titles turns out to have a
-     * backdrop. The one after the Title featured last on the screen kept as [key] is featured, from
-     * the first again past the last; one with no backdrop is passed over. What the hero tells of a
-     * Title is in the language of the Listing that names it, as on its page (#504); a Movie's details
-     * of that Listing, unread, are read for the first such Movie reached, when [readDetails], and for
-     * no other: one Provider call at most. Null when none has a backdrop.
+     * watchable in [contentLanguages] and not in Continue watching, taken in turn. The first source
+     * with such a Title is featured from; the next stands in only when it has none. The one after the
+     * Title featured last on the screen kept as [key] is featured, from the first again past the last.
+     * What the hero tells of a Title is in the language of the Listing that names it, as on its page
+     * (#504); a Movie's details of that Listing, unread, are read for the first such Movie reached,
+     * when [readDetails], and for no other: one Provider call at most. A Movie whose details stay
+     * unread (not read this call, or the Provider didn't answer) is passed over: the hero tells of its
+     * Title. Null when none qualifies.
      */
     private fun nextFeatured(key: String, sources: List<List<List<StoredTitle>>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
@@ -2015,9 +1986,7 @@ class Library private constructor(
         var mayRead = readDetails
         for (lists in sources) {
             val tops = lists.map { titles ->
-                watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.filter { (title, shown) ->
-                    titleBackdrop(title, kept, shown.best.listing) != null || unread(title, shown.naming.listing)
-                }.take(FEATURED_FROM).toList()
+                watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.take(FEATURED_FROM).toList()
             }
             val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
             if (candidates.isEmpty()) continue
@@ -2029,8 +1998,8 @@ class Library private constructor(
                     if (!mayRead) continue
                     mayRead = false
                     kept += movieDetailsForPage(title, naming)
+                    if (unread(title, naming)) continue
                 }
-                val backdrop = titleBackdrop(title, kept, shown.best.listing) ?: continue
                 lastFeatured[key] = title.id
                 saveLater { store.saveLastFeatured(key, title.id) }
                 // Told of in the language of the Listing that names it, as on its page (#504): a subtitled
@@ -2038,7 +2007,7 @@ class Library private constructor(
                 val details = providerDetails(title, naming, kept)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
-                    titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, badge = null,
+                    titleGenres(title, candidates(title), kept, appLanguage), details.plot, badge = null,
                     posters = shown.posters,
                 )
             }
@@ -3158,12 +3127,6 @@ class Library private constructor(
 
         /** How many of the newest Titles of each kind the hero picks its Title from ([featured]). */
         private const val FEATURED_FROM = 5
-
-        /**
-         * How many times as wide as tall a backdrop's image must be, once decoded, to be one
-         * ([refuseBackdrop]): a 16:9 picture is 1.78, a poster handed over as a backdrop 0.67.
-         */
-        const val MIN_BACKDROP_RATIO = 1.5f
 
         /**
          * The narrowest a poster may be, in pixels, before a card refuses it for the Title's next one
