@@ -154,6 +154,8 @@ dependencies {
     implementation(libs.libvlc)
     // The Sign-in screen's QR (#429).
     implementation(libs.zxing.core)
+    // The Title treatment's text recognizer (ADR 0016), its model in the APK: Fire OS has no Google Play services.
+    implementation(libs.mlkit.text.recognition)
     // Installs the Baseline Profile (the libraries' and the app's own, #63) on first launch when the
     // install didn't carry it as dex metadata.
     implementation(libs.profileinstaller)

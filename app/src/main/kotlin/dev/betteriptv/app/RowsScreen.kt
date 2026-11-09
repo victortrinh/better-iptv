@@ -327,6 +327,7 @@ internal fun RowsLayout(
     val badger by rememberUpdatedState(featureBadge)
     val context = LocalPlatformContext.current
     val backdrops = LocalBackdrops.current
+    val treatments = LocalTitleTreatments.current
     // Entered (by its tab, or as the app starts), not come back to from a page it opened.
     val entering = remember { restoreFocus == null }
     // Each entry features the Title read for it during the last one; the hero shows from the top,
@@ -402,8 +403,11 @@ internal fun RowsLayout(
         val feature = featurer
         val chosen = if (choose && feature != null) async { feature(true) } else null
         val art = chosen?.let { async { it.await()?.let { title -> loadBackdrop(context, title.backdrop, backdrops) } } }
+        // Its Title treatment is cut beside it (ADR 0016), in the same wait: one not known by then
+        // leaves the name in type for this entry ([rememberTitleTreatment]).
+        val cut = chosen?.let { async { it.await()?.let { title -> treatments?.cutFor(title)?.await() } } }
         val fresh = reader().withUniqueCards()
-        if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await() }
+        if (art != null) withTimeoutOrNull(Motion.pageArrivalMillis.toLong()) { art.await(); cut?.await() }
         val late = chosen != null && !chosen.isCompleted
         state.held = null
         if (chosen != null && feature != null) state.featured = when {
@@ -430,6 +434,8 @@ internal fun RowsLayout(
         if (first && entering) featurer?.let { next ->
             state.upNext = if (late && art!!.await() != false) chosen!!.await() else featureChecked(context, backdrops, next)
             state.upNextRead = true
+            // And its Title treatment, cut now so it is known then.
+            state.upNext?.let { treatments?.cutFor(it) }
         }
     }
     // Once focus leaves the row a reading held back, the row takes it.

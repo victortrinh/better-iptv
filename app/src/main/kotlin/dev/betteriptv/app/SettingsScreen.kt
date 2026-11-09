@@ -113,12 +113,32 @@ fun SettingsScreen(
     },
     account = { open, accountRow, devicesRow -> AccountRows(library, open, accountRow, devicesRow) },
     accountPage = { page, onDone -> AccountPageContent(library, page, onDone) },
+    debug = if (BuildConfig.DEBUG) ({ debugSection() }) else null,
 )
+
+/**
+ * The debug build's own rows, last: "Title treatments" names every Title in Display type when off,
+ * to compare a hero or page with its treatment and without (ADR 0016).
+ */
+private fun LazyListScope.debugSection() {
+    item { Heading(stringResource(R.string.settings_debug)) }
+    item {
+        val treatments = LocalTitleTreatments.current ?: return@item
+        val typedOnly by treatments.typedOnly.collectAsStateWithLifecycle()
+        Labelled(stringResource(R.string.settings_title_treatments), stringResource(R.string.settings_title_treatments_detail)) {
+            ChoiceRow(
+                listOf(stringResource(R.string.settings_on), stringResource(R.string.settings_off)),
+                selected = if (typedOnly) 1 else 0,
+                onSelect = { index -> treatments.setTypedOnly(index == 1) },
+            )
+        }
+    }
+}
 
 /**
  * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
  * the Catalog section's rows from [catalog], the Account section's rows from [account] and what they
- * open (the Sign-in screen, Sign out, the device list) from [accountPage].
+ * open (the Sign-in screen, Sign out, the device list) from [accountPage], and a debug build's rows from [debug].
  */
 @Composable
 internal fun SettingsContent(
@@ -137,6 +157,7 @@ internal fun SettingsContent(
     accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
     addProfile: Boolean = false,
     onAddProfileShown: () -> Unit = {},
+    debug: (LazyListScope.() -> Unit)? = null,
 ) {
     var picking by rememberSaveable { mutableStateOf<Picker?>(null) }
     // The Profile whose page, name or deletion is open, or whose row Back returns to; null while adding one.
@@ -484,6 +505,7 @@ internal fun SettingsContent(
                         detail = stringResource(R.string.settings_data_sources),
                     )
                 }
+                debug?.invoke(this)
                 }
             }
         }; ScreenFade(picking, firstFades = false) }

@@ -445,6 +445,9 @@
         <item quantity="one">%1$s show</item>
         <item quantity="other">%1$s shows</item>
     </plurals>
+    <string name="settings_debug">Debug</string>
+    <string name="settings_title_treatments">Title treatments</string>
+    <string name="settings_title_treatments_detail">The lettering cut from each poster, on the hero and the Title page. Off names every Title in type, to compare.</string>
     <string name="settings_app">App</string>
     <string name="settings_version">App version</string>
     <!-- Under App version: where the Title facts and Trending come from (#480). -->

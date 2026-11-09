@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
             val backdrops = remember { Backdrops(onRefused = app.library::refuseBackdrop) }
             // A Box, so the screen fade (in [Root], after the screens) is drawn over them.
             NuageTheme(textSize) {
-                CompositionLocalProvider(LocalBackdrops provides backdrops) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
+                CompositionLocalProvider(LocalBackdrops provides backdrops, LocalTitleTreatments provides app.treatments) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
             }
         }
     }

@@ -33,7 +33,7 @@ import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.backdropScrims
 import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageButton
-import dev.betteriptv.app.ui.components.TitleName
+import dev.betteriptv.app.ui.components.TitleNameSlot
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -52,7 +52,7 @@ internal const val HERO_DETAILS = "details"
 
 /**
  * The featured [title]'s text column, at the top of Home, Movies or Shows (DESIGN.md, Home): its
- * name in Display type, a metadata line in muted body followed by its badges (those of the Version its
+ * Title treatment, else its name in Display type ([TitleNameSlot]), a metadata line in muted body followed by its badges (those of the Version its
  * Play starts, [FeaturedTitle.badge]; none when it has none), two lines of description,
  * then Play and Details 12 dp apart. Its backdrop is drawn behind the whole screen
  * ([featuredBackdrop]). [onFocus] says which button took focus ([HERO_PLAY], [HERO_DETAILS]);
@@ -75,7 +75,7 @@ internal fun FeaturedHero(
     var inside by remember { mutableStateOf(false) }
     // It starts 96 dp under the tabs, which keep 16 dp under them.
     Column(Modifier.padding(start = Spacing.screenX, top = 96.dp - 16.dp, bottom = 28.dp).width(440.dp)) {
-        TitleName(title.name)
+        TitleNameSlot(title.name, rememberTitleTreatment(title.id, title.name, title.posters))
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             val metadata = remember(title) {
