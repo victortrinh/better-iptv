@@ -25,6 +25,9 @@ android {
         versionName = "0.1.$commitCount"
         // The cloud (cloud/) the app gets Title metadata from, set in gradle.properties.
         buildConfigField("String", "CLOUD_URL", "\"${providers.gradleProperty("cloudUrl").get()}\"")
+        // Accounts (ADR 0015) wait for the app's own domain (#458): the Magic link needs its email sender,
+        // and a sign-in QR on workers.dev reads as phishing. Moving cloudUrl to the domain shows them.
+        buildConfigField("boolean", "ACCOUNTS", "${!providers.gradleProperty("cloudUrl").get().contains(".workers.dev")}")
         // The update manifest release builds check on launch (#21), set in gradle.properties; empty turns the check off.
         buildConfigField("String", "UPDATE_URL", "\"${providers.gradleProperty("updateUrl").get()}\"")
         // The VLC engine's native code, for ARM only: the Fire TV Stick, and the emulator on an Apple-silicon Mac.

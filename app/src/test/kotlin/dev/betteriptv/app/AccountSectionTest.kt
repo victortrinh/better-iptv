@@ -53,7 +53,7 @@ class AccountSectionTest {
 
     private var email by mutableStateOf<String?>("home@example.com")
 
-    private fun settings() = compose.setContent {
+    private fun settings(accounts: Boolean = true) = compose.setContent {
         SettingsContent(
             ViewerSettings(listOf("en"), appLanguage = "en", region = "CA", qualityCap = QualityCap.UHD),
             UpdateState.Unknown,
@@ -68,6 +68,7 @@ class AccountSectionTest {
             catalog = {},
             account = { open, accountRow, devicesRow -> AccountRows(email, open, accountRow, devicesRow) },
             accountPage = { page, _ -> Text("Page: $page") },
+            accounts = accounts,
         )
     }
 
@@ -113,5 +114,13 @@ class AccountSectionTest {
         scrollTo("Sign in")
         compose.onNodeWithText("Sign in").assertIsDisplayed()
         compose.onNode(hasText("Devices")).assertDoesNotExist()
+    }
+
+    @Test fun `until Accounts can send their Magic link, there is no Account section`() {
+        email = null
+        settings(accounts = false)
+        scrollTo("Catalog")
+        compose.onNode(hasText("Account")).assertDoesNotExist()
+        compose.onNode(hasText("Sign in")).assertDoesNotExist()
     }
 }

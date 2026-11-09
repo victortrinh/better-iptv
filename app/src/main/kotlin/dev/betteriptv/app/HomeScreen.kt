@@ -111,7 +111,8 @@ fun HomeScreen(
     // The first Sync's sign-in card (#438): under the checklist, then under the rows until the Titles land.
     val scope = rememberCoroutineScope()
     val signIn = firstSyncSignIn(
-        offered = library.offersSignInCard.value,
+        // Not offered until Accounts can send their Magic link (#458).
+        offered = BuildConfig.ACCOUNTS && library.offersSignInCard.value,
         firstSync = status.last == null,
         start = library::startSignIn,
         check = library::checkSignIn,

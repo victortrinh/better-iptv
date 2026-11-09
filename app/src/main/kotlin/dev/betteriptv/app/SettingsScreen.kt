@@ -115,6 +115,8 @@ fun SettingsScreen(
     catalog = {
         item { SyncRow(library, onSyncNow) }
     },
+    // Hidden until Accounts can send their Magic link (#458), unless this TV is already signed in.
+    accounts = BuildConfig.ACCOUNTS || library.account.collectAsStateWithLifecycle().value != null,
     account = { open, accountRow, devicesRow -> AccountRows(library, open, accountRow, devicesRow) },
     accountPage = { page, onDone -> AccountPageContent(library, page, onDone) },
 )
@@ -139,6 +141,7 @@ internal fun SettingsContent(
     catalog: LazyListScope.() -> Unit,
     account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
     accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
+    accounts: Boolean = true,
     addProfile: Boolean = false,
     onAddProfileShown: () -> Unit = {},
     checkingUpdates: Boolean = false,
@@ -461,17 +464,19 @@ internal fun SettingsContent(
                         )
                     }
                 }
-                item { Heading(stringResource(R.string.settings_account)) }
-                item {
-                    account({ page ->
-                        val opened = when (page) {
-                            AccountPage.SignIn -> Picker.SignIn
-                            AccountPage.SignOut -> Picker.SignOut
-                            AccountPage.Devices -> Picker.Devices
-                        }
-                        returnTo = opened
-                        picking = opened
-                    }, Modifier.focusRequester(accountRow), Modifier.focusRequester(devicesRow))
+                if (accounts) {
+                    item { Heading(stringResource(R.string.settings_account)) }
+                    item {
+                        account({ page ->
+                            val opened = when (page) {
+                                AccountPage.SignIn -> Picker.SignIn
+                                AccountPage.SignOut -> Picker.SignOut
+                                AccountPage.Devices -> Picker.Devices
+                            }
+                            returnTo = opened
+                            picking = opened
+                        }, Modifier.focusRequester(accountRow), Modifier.focusRequester(devicesRow))
+                    }
                 }
                 item { Heading(stringResource(R.string.settings_catalog)) }
                 catalog()
