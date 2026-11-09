@@ -2922,25 +2922,28 @@ class Library private constructor(
         fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
         val cleaned = prefixTable.cleanName(naming.listing.name)
-        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en").distinct()
+        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en" + "fr").distinct()
         return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, posters(ranked, languages))
     }
 
     /**
      * A Title's posters in the order its card tries them (#526), so the poster's printed title is in
      * the language the Viewer reads: the Listings' in each of the Viewer's [languages] in turn (the
-     * App language, the Content languages in their order, English), the best Version's first within
-     * one; then the file most of [ranked]'s Listings share, a file counting once per language so a
-     * copy the Provider lists twice doesn't outvote the others, ties to the best Version's; then the
-     * rest. A poster whose URL names a width under [MIN_POSTER_WIDTH] ([posterTooSmall]) is left out;
+     * App language, the Content languages in their order, English, then French, the other App
+     * language, so Verity's French one-sheet beats its Greek one), the best Version's first within
+     * one; then a streaming service's Listing's (a Source, no language: `NF`, `D+`, `AMZ`), which
+     * links the English one-sheet where no Listing is in the Viewer's languages; then the file most of
+     * [ranked]'s Listings share, a file counting once per language so a copy the Provider lists twice
+     * doesn't outvote the others, ties to the best Version's; then the rest. A poster whose URL names a width under [MIN_POSTER_WIDTH] ([posterTooSmall]) is left out;
      * one that turns out that narrow as it decodes is the app's to pass over for the next.
      */
     private fun posters(ranked: List<Candidate>, languages: List<String>): List<String> {
         val pictured = ranked.filter { it.listing.image != null && !posterTooSmall(it.listing.image) }
         val inLanguages = languages.flatMap { wanted -> pictured.filter { it.listedLanguage == wanted } }
+        val fromSources = pictured.filter { it.listedLanguage == null && it.attributes.source != null }
         val votes = pictured.groupBy({ it.listing.image!! }, { it.listedLanguage }).mapValues { (_, listed) -> listed.distinct().size }
         val byVotes = pictured.sortedByDescending { votes.getValue(it.listing.image!!) }
-        return (inLanguages + byVotes).map { it.listing.image!! }.distinct()
+        return (inLanguages + fromSources + byVotes).map { it.listing.image!! }.distinct()
     }
 
     /**
