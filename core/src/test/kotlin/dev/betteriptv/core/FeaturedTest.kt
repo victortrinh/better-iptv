@@ -154,13 +154,14 @@ class FeaturedTest {
      * The surveyed Provider's Primetime (2026): an `EN` Listing and a subtitled `GR` copy whose file a
      * read Confirms is in English, in 1080p, so the Greek copy is its best English Version.
      */
-    private suspend fun syncPrimetime() {
+    private suspend fun syncPrimetime(originalLanguage: String? = null) {
+        originalLanguage?.let { cloud.titleFacts(movie(1), originalLanguage = it) }
         provider.movieCategoriesOverride = """[{"category_id":"163","category_name":"EN - NEW RELEASE"},{"category_id":"2067","category_name":"GR - NEW RELEASES"}]"""
         provider.movieListOverride = """[
             {"stream_id":1,"name":"EN - Primetime  (2026)","tmdb":"1","category_id":"163","added":"1793968800","stream_icon":"","container_extension":"mkv"},
             {"stream_id":2,"name":"GR - Primetime (2026)","tmdb":"1","category_id":"2067","added":"1793856210","stream_icon":"","container_extension":"mkv"}]"""
         provider.serveMovieDetails(1, name = "Primetime", plot = ENGLISH_PLOT, backdrop = movieBackdrop(1))
-        provider.serveMovieDetails(2, name = "Primetime", plot = "Το 2006, ένας παρουσιαστής ετοιμάζεται να γράψει ιστορία.", backdrop = "https://art.example/film-1-gr.jpg")
+        provider.serveMovieDetails(2, name = "Primetime", plot = GREEK_PLOT, backdrop = "https://art.example/film-1-gr.jpg")
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         library.sync()
@@ -169,8 +170,9 @@ class FeaturedTest {
     }
 
     private val ENGLISH_PLOT = "In 2006, a host sets out to make television history."
+    private val GREEK_PLOT = "Το 2006, ένας παρουσιαστής ετοιμάζεται να γράψει ιστορία."
 
-    @Test fun `the hero tells of a Title in the language of the Listing that names it, as its page does`() = runBlocking {
+    @Test fun `the hero tells of a Title in English, not its best Version's language, as its page does`() = runBlocking {
         // A Greek plot over an English hero: the hero read the best Version's details, the `GR` copy's.
         syncPrimetime()
         val page = library.title(movie(1), english, "en")!!
@@ -178,6 +180,18 @@ class FeaturedTest {
         assertEquals(ENGLISH_PLOT, page.description)
 
         assertEquals(ENGLISH_PLOT, library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!.description)
+    }
+
+    @Test fun `the hero tells of a Title in its original language first, as its page does`() = runBlocking {
+        // Were Wikidata to say the film is Greek: its own plot, under its English name, for an English Viewer.
+        syncPrimetime(originalLanguage = "el")
+        val page = library.title(movie(1), english, "en")!!
+        assertEquals("Primetime", page.name)
+        assertEquals(GREEK_PLOT, page.description)
+
+        val hero = library.featured(FeaturedScreen.Movies, english, "en", fullHdTv)!!
+        assertEquals("Primetime", hero.name)
+        assertEquals(GREEK_PLOT, hero.description)
     }
 
     @Test fun `a hero whose naming Listing's details aren't kept reads them, and no other`() = runBlocking {
