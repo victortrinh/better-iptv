@@ -30,9 +30,10 @@ sealed interface TitleId {
 /**
  * A Title's card. [name] and [year] come from its Listing in the App language, else the English
  * one, else the [best] Version's. Its [posters] are the Provider's poster URLs in the order the card
- * tries them (ADR 0014, #526): the App language Listing's, else a Content language Listing's in the
- * Viewer's order, else the English one's, else the French one's, else a streaming service Listing's (`NF`, `D+`), else
- * the file most Listings share; one under 300 px wide
+ * tries them (ADR 0014, #526), the same for every Viewer first: the Listing's in the Title's original
+ * language (Wikidata's), else the English one's, else a streaming service Listing's (`NF`, `D+`,
+ * whose poster is the English one-sheet), and only then the App language Listing's, a Content
+ * language Listing's in the Viewer's order, the French one's, else the file most Listings share; one under 300 px wide
  * ([Library.MIN_POSTER_WIDTH]) is left out where its URL names the width, and passed over for the
  * next where it decodes that narrow. The [image] is the first, null when none is left, and the card
  * then shows the name on glass. Home's cards also carry [about], what the info area under a focused

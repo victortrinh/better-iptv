@@ -1167,7 +1167,8 @@ class Library private constructor(
      */
     private fun summaries(titles: List<StoredTitle>, contentLanguages: List<String>, appLanguage: String): List<TitleSummary> {
         val kept = keptMovieDetails(titles)
-        return titles.map { rowCard(it, contentLanguages, appLanguage, kept) }
+        val originals = originalLanguages(titles.map { it.id })
+        return titles.map { rowCard(it, contentLanguages, appLanguage, kept, originals[it.id]) }
     }
 
     /**
@@ -1198,19 +1199,20 @@ class Library private constructor(
         } catch (e: ExecutionException) {
             // The details stand without it, as without a cloud.
         }
+        val originalLanguage = originalLanguage(id)
         var candidates = candidates(title, contentLanguages)
-        var shown = shown(candidates, contentLanguages, appLanguage)
+        var shown = shown(candidates, contentLanguages, appLanguage, originalLanguage)
         var kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing) else emptyMap()
         if (kept[shown.best.listing.id]?.bitrate != null) {
             // The details just read Confirm the bitrate: the page arrives with it, as with the shared reads.
             candidates = candidates(title, contentLanguages)
-            shown = shown(candidates, contentLanguages, appLanguage)
+            shown = shown(candidates, contentLanguages, appLanguage, originalLanguage)
         }
-        // What the page tells of the Title is in the language of the Listing that names it (#504): an `ES`
-        // copy with English audio may be the best Version while the English Listing names the Title.
-        if (id.kind == TitleKind.Movie && shown.naming.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, shown.naming.listing)
-        val details = providerDetails(title, shown.naming.listing, kept)
-        val originalLanguage = originalLanguage(id)
+        // What the page tells of the Title is in its original language, else English, whatever the
+        // Viewer's languages (#504 made it the naming Listing's): the Listing telling of it, not the best
+        // Version's, as an `ES` copy with English audio may be the best Version of an English film.
+        if (id.kind == TitleKind.Movie && shown.telling.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, shown.telling.listing)
+        val details = providerDetails(title, shown.telling.listing, kept)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
         val (languages, otherLanguages) = groupByLanguage(likelyInOriginalLanguage(candidates, originalLanguage), contentLanguages, original)
         TitleDetails(
@@ -1837,8 +1839,10 @@ class Library private constructor(
         val new = screen.row(newest, ROW_SIZE)
         val genres = genreRows(TitleKind.entries, contentLanguages, appLanguage, screen, GENRE_ROWS)
         val inGenres = genres.flatMap { (_, titles) -> titles }
-        val kept = keptMovieDetails((resumes.map { it.first } + movies + trending + inGenres).distinctBy { it.id })
-        fun card(title: StoredTitle) = rowCard(title, contentLanguages, appLanguage, kept)
+        val onScreen = (resumes.map { it.first } + movies + trending + inGenres).distinctBy { it.id }
+        val kept = keptMovieDetails(onScreen)
+        val originals = originalLanguages(onScreen.map { it.id })
+        fun card(title: StoredTitle) = rowCard(title, contentLanguages, appLanguage, kept, originals[title.id])
         buildList {
             continueWatchingRow(resumes, kept, ::card)?.let(::add)
             if (liveNow.isNotEmpty()) add(HomeRow.LiveNow(liveNow))
@@ -1931,7 +1935,7 @@ class Library private constructor(
     suspend fun featuredBadge(id: TitleId, contentLanguages: List<String>, device: DeviceProfile, qualityCap: QualityCap = QualityCap.UHD, preferOriginalAudio: Boolean = true): VersionAttributes? = withContext(Dispatchers.IO) {
         when (id.kind) {
             TitleKind.Movie -> playPlan(id, contentLanguages, device, qualityCap, preferOriginalAudio)?.version?.attributes
-                ?: store.title(id)?.let { shown(candidates(it), contentLanguages, "en").best.attributes }
+                ?: store.title(id)?.let { shown(candidates(it), contentLanguages, "en", originalLanguage(id)).best.attributes }
             TitleKind.Show -> keptNextEpisode(id, contentLanguages, preferOriginalAudio)?.let { episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio)?.version?.attributes }
         }
     }
@@ -1972,39 +1976,41 @@ class Library private constructor(
      * watchable in [contentLanguages] and not in Continue watching, taken in turn. The first source
      * with such a Title is featured from; the next stands in only when it has none. The one after the
      * Title featured last on the screen kept as [key] is featured, from the first again past the last.
-     * What the hero tells of a Title is in the language of the Listing that names it, as on its page
-     * (#504); a Movie's details of that Listing, unread, are read for the first such Movie reached,
-     * when [readDetails], and for no other: one Provider call at most. A Movie whose details stay
-     * unread (not read this call, or the Provider didn't answer) is passed over: the hero tells of its
-     * Title. Null when none qualifies.
+     * What the hero tells of a Title is in its original language, else English, as on its page (the
+     * Listing telling of it, [Shown.telling]); a Movie's details of that Listing, unread, are read for
+     * the first such Movie reached, when [readDetails], and for no other: one Provider call at most. A
+     * Movie whose details stay unread (not read this call, or the Provider didn't answer) is passed
+     * over: the hero tells of its Title. Null when none qualifies.
      */
     private fun nextFeatured(key: String, sources: List<List<List<StoredTitle>>>, contentLanguages: List<String>, appLanguage: String, readDetails: Boolean): FeaturedTitle? {
         val started = continueWatching(contentLanguages).mapTo(HashSet()) { it.first.id }
-        val kept = keptMovieDetails(sources.flatten().flatten().distinctBy { it.id }).toMutableMap()
+        val all = sources.flatten().flatten().distinctBy { it.id }
+        val kept = keptMovieDetails(all).toMutableMap()
+        val originals = originalLanguages(all.map { it.id })
         fun unread(title: StoredTitle, listing: StoredListing) = title.id.kind == TitleKind.Movie && kept[listing.id]?.added != listing.added
         val last = lastFeatured[key] ?: store.lastFeatured(key)
         var mayRead = readDetails
         for (lists in sources) {
             val tops = lists.map { titles ->
-                watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage) }.take(FEATURED_FROM).toList()
+                watchable(titles, contentLanguages).asSequence().filter { it.id !in started }.map { it to shown(candidates(it), contentLanguages, appLanguage, originals[it.id]) }.take(FEATURED_FROM).toList()
             }
             val candidates = (0 until (tops.maxOfOrNull { it.size } ?: 0)).flatMap { i -> tops.mapNotNull { it.getOrNull(i) } }
             if (candidates.isEmpty()) continue
             val from = candidates.indexOfFirst { it.first.id == last } + 1
             for (i in candidates.indices) {
                 val (title, shown) = candidates[(from + i) % candidates.size]
-                val naming = shown.naming.listing
-                if (unread(title, naming)) {
+                val telling = shown.telling.listing
+                if (unread(title, telling)) {
                     if (!mayRead) continue
                     mayRead = false
-                    kept += movieDetailsForPage(title, naming)
-                    if (unread(title, naming)) continue
+                    kept += movieDetailsForPage(title, telling)
+                    if (unread(title, telling)) continue
                 }
                 lastFeatured[key] = title.id
                 saveLater { store.saveLastFeatured(key, title.id) }
-                // Told of in the language of the Listing that names it, as on its page (#504): a subtitled
-                // `GR` copy with English audio may be the best Version while the `EN` Listing names the Title.
-                val details = providerDetails(title, naming, kept)
+                // Told of in its original language, else English, as on its page: a subtitled `GR` copy
+                // with English audio may be the best Version of an English film.
+                val details = providerDetails(title, telling, kept)
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
                     titleGenres(title, candidates(title), kept, appLanguage), details.plot, badge = null,
@@ -2210,8 +2216,10 @@ class Library private constructor(
         val new = screen.row(watchable(newest, contentLanguages).sortedWith(newestFirst), ROW_SIZE)
         // The genre rows go after New, through the same [screen], so they skip what's shown above.
         val genres = genreRows(listOf(kind), contentLanguages, appLanguage, screen, TAB_GENRE_ROWS)
-        val kept = keptMovieDetails(trending + new + genres.flatMap { it.second })
-        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, kept) }
+        val onScreen = trending + new + genres.flatMap { it.second }
+        val kept = keptMovieDetails(onScreen)
+        val originals = originalLanguages(onScreen.map { it.id })
+        fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage, kept, originals[it.id]) }
         buildList {
             if (trending.isNotEmpty()) add(HomeRow.Trending(cards(trending), kind))
             if (new.isNotEmpty()) add(HomeRow.NewOnYourService(cards(new), kind))
@@ -2375,14 +2383,15 @@ class Library private constructor(
      * [title]'s card on a row: its best Version in the Viewer's [contentLanguages], and what the info
      * under the rail tells about it, from what the device holds ([kept]: the Provider's movie details
      * kept for its Listings), so focus costs no Provider call (ADR 0014). The card names and pictures
-     * it from its Listings alone.
+     * it from its Listings alone, its posters' order starting from the Title's [originalLanguage].
      */
     private fun rowCard(
         title: StoredTitle, contentLanguages: List<String>, appLanguage: String,
         kept: Map<Long, StoredMovieDetails> = keptMovieDetails(listOf(title)),
+        originalLanguage: String? = originalLanguage(title.id),
     ): TitleSummary {
         val candidates = candidates(title)
-        val shown = shown(candidates, contentLanguages, appLanguage)
+        val shown = shown(candidates, contentLanguages, appLanguage, originalLanguage)
         val about = TitleAbout(
             titleGenres(title, candidates, kept, appLanguage),
             titleRating(title, shown.best.listing, kept),
@@ -2870,10 +2879,11 @@ class Library private constructor(
     internal fun relay(location: String) = StreamRelay(location, http)
 
     /**
-     * What a Title shows: its [best] Version, the Listing [naming] it, that name and year, and its
-     * [posters] in the order a card tries them, the first being its [image].
+     * What a Title shows: its [best] Version, the Listing [naming] it, that name and year, the Listing
+     * [telling] of it (whose details give its plot), and its [posters] in the order a card tries them,
+     * the first being its [image].
      */
-    private class Shown(val best: Candidate, val naming: Candidate, val name: String, val year: Int?, val posters: List<String>) {
+    private class Shown(val best: Candidate, val naming: Candidate, val telling: Candidate, val name: String, val year: Int?, val posters: List<String>) {
         val image get() = posters.firstOrNull()
     }
 
@@ -2882,37 +2892,44 @@ class Library private constructor(
      * Listing in the [appLanguage], else of the English one, else of the best Version's, a Listing's
      * language being its Prefix's ([Candidate.listedLanguage]: an `ES` copy whose audio a read found
      * English is still named in Spanish, #504); the year in that name, else a Show's release date;
-     * and its [posters]. Worked out from the stored Listings each time, so a Listing added in another
-     * language changes nothing.
+     * the Listing telling of it, whatever the Viewer's languages: the one in the Title's
+     * [originalLanguage] (Wikidata's, from its Title facts), else the English one, else the naming
+     * one, so the plot read is the work's own, or English; and its [posters], in the same spirit.
+     * Worked out from the stored Listings each time, so a Listing added in another language changes
+     * nothing.
      */
-    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, appLanguage: String): Shown {
+    private fun shown(candidates: List<Candidate>, contentLanguages: List<String>, appLanguage: String, originalLanguage: String?): Shown {
         val ranked = preferred(candidates, contentLanguages)
         val language = primaryLanguage(appLanguage)
-        fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
+        fun inLanguage(wanted: String?) = wanted?.let { ranked.firstOrNull { it.listedLanguage == wanted } }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
+        val telling = inLanguage(originalLanguage) ?: inLanguage("en") ?: naming
         val cleaned = prefixTable.cleanName(naming.listing.name)
-        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en" + "fr").distinct()
-        return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, posters(ranked, languages))
+        val always = listOfNotNull(originalLanguage, "en").distinct()
+        val viewers = (listOf(language) + contentLanguages.map(::primaryLanguage) + "fr").distinct() - always
+        return Shown(ranked.first(), naming, telling, cleaned.name, cleaned.year ?: naming.listing.details?.year, posters(ranked, always, viewers))
     }
 
     /**
-     * A Title's posters in the order its card tries them (#526), so the poster's printed title is in
-     * the language the Viewer reads: the Listings' in each of the Viewer's [languages] in turn (the
-     * App language, the Content languages in their order, English, then French, the other App
-     * language, so Verity's French one-sheet beats its Greek one), the best Version's first within
-     * one; then a streaming service's Listing's (a Source, no language: `NF`, `D+`, `AMZ`), which
-     * links the English one-sheet where no Listing is in the Viewer's languages; then the file most of
-     * [ranked]'s Listings share, a file counting once per language so a copy the Provider lists twice
-     * doesn't outvote the others, ties to the best Version's; then the rest. A poster whose URL names a width under [MIN_POSTER_WIDTH] ([posterTooSmall]) is left out;
-     * one that turns out that narrow as it decodes is the app's to pass over for the next.
+     * A Title's posters in the order its card tries them (#526), the same for every Viewer first: the
+     * Listings' in the Title's original language, then English's, both in [always] (the work's own
+     * one-sheet, else the English one, so Verity's English Viewer never gets its Greek one), the best
+     * Version's first within one; then a streaming service's Listing's (a Source, no language: `NF`,
+     * `D+`, `AMZ`), which links the English one-sheet where no Listing is English; only then the
+     * Listings' in each of the [viewers] languages in turn (the App language, the Content languages
+     * in their order, then French, the other App language); then the file most of [ranked]'s Listings
+     * share, a file counting once per language so a copy the Provider lists twice doesn't outvote the
+     * others, ties to the best Version's; then the rest. A poster whose URL names a width under
+     * [MIN_POSTER_WIDTH] ([posterTooSmall]) is left out; one that turns out that narrow as it decodes
+     * is the app's to pass over for the next.
      */
-    private fun posters(ranked: List<Candidate>, languages: List<String>): List<String> {
+    private fun posters(ranked: List<Candidate>, always: List<String>, viewers: List<String>): List<String> {
         val pictured = ranked.filter { it.listing.image != null && !posterTooSmall(it.listing.image) }
-        val inLanguages = languages.flatMap { wanted -> pictured.filter { it.listedLanguage == wanted } }
+        fun inLanguages(languages: List<String>) = languages.flatMap { wanted -> pictured.filter { it.listedLanguage == wanted } }
         val fromSources = pictured.filter { it.listedLanguage == null && it.attributes.source != null }
         val votes = pictured.groupBy({ it.listing.image!! }, { it.listedLanguage }).mapValues { (_, listed) -> listed.distinct().size }
         val byVotes = pictured.sortedByDescending { votes.getValue(it.listing.image!!) }
-        return (inLanguages + fromSources + byVotes).map { it.listing.image!! }.distinct()
+        return (inLanguages(always) + fromSources + inLanguages(viewers) + byVotes).map { it.listing.image!! }.distinct()
     }
 
     /**
