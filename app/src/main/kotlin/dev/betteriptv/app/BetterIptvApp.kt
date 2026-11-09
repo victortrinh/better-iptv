@@ -32,8 +32,11 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     var updates: AppUpdates? = null
         private set
 
-    /** The Title treatments cut from posters (ADR 0016), read from the device the first time a screen asks. */
-    val treatments by lazy { TitleTreatments(this) }
+    /**
+     * The Title treatments cut from posters (ADR 0016), read from the device the first time a screen
+     * asks; none where ML Kit's recognizer would crash the app ([TextRecognizerSupport]), so every Title is named in type.
+     */
+    val treatments by lazy { if (TextRecognizerSupport.runs) TitleTreatments(this) else null }
 
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
