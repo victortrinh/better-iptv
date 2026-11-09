@@ -2039,6 +2039,7 @@ class Library private constructor(
                 return FeaturedTitle(
                     title.id, shown.name, shown.year ?: details.year, details.runtimeMinutes,
                     titleGenres(title, candidates(title), kept, appLanguage), details.plot, backdrop, badge = null,
+                    posters = shown.posters,
                 )
             }
         }

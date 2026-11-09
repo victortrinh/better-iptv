@@ -85,7 +85,7 @@ What Wikidata (CC0) knows of a Title by its Title number, through the cloud: its
 _Avoid_: Wikidata metadata, TMDB metadata (which is being retired)
 
 **Title treatment**:
-The Title's name as its poster prints it, cut out of the poster on the device (ADR 0016): the tallest block of text, colour-keyed to a transparent image. The hero and the Title page show it where it passes the checks (it holds the name's words, it isn't dark, the key kept a sensible share of the crop); otherwise the Title is named in type. It is in the chosen poster's language.
+The Title's name as its poster prints it, cut out of the poster on the device (ADR 0016): the tallest block of text that reads as the name, colour-keyed to a transparent image. The hero and the Title page show it where it passes the checks (it holds the name's words, it isn't dark, the key kept a sensible share of the crop); otherwise the Title is named in type. It is in the chosen poster's language.
 _Avoid_: Logo, clearlogo, title logo
 
 **Movie**:

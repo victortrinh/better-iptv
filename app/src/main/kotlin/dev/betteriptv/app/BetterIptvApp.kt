@@ -32,6 +32,9 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     var updates: AppUpdates? = null
         private set
 
+    /** The Title treatments cut from posters (ADR 0016), read from the device the first time a screen asks. */
+    val treatments by lazy { TitleTreatments(this) }
+
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

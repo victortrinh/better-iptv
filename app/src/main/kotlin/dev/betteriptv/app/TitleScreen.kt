@@ -48,7 +48,7 @@ import dev.betteriptv.app.ui.components.BadgeRow
 import dev.betteriptv.app.ui.components.NuageIcons
 import dev.betteriptv.app.ui.components.ActionRow
 import dev.betteriptv.app.ui.components.PrimaryAction
-import dev.betteriptv.app.ui.components.TitleName
+import dev.betteriptv.app.ui.components.TitleNameSlot
 import dev.betteriptv.app.ui.theme.Cards
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
@@ -78,7 +78,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * A Title's page, in two levels (DESIGN.md, Details). The page itself holds the Title and what to do
- * with it: its name in Display type, the metadata line (year · runtime · genres · rating, as the Provider gives them,
+ * with it: its Title treatment, else its name in Display type ([TitleNameSlot]), the metadata line (year · runtime · genres · rating, as the Provider gives them,
  * ADR 0014) with its badges, two lines of the Provider's plot and the actions,
  * Play first, then Restart, "Remove from Continue watching" and Versions, whose value says what Play
  * starts ("English · 1080p · 9 Versions"). A Movie's fits on one screen. OK on Versions opens the
@@ -355,7 +355,7 @@ private fun TitleContent(
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {
-            TitleName(title.name)
+            TitleNameSlot(title.name, rememberTitleTreatment(title.id, title.name, title.posters))
             Spacer(Modifier.height(Spacing.s))
             // The badges go under the line when both don't fit, so they don't cut the genres off (#208).
             FlowRow(

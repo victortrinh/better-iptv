@@ -145,6 +145,8 @@ class FeaturedTest {
         assertEquals(listOf("Drama"), featured.genres)
         assertEquals("About Film 1.", featured.description)
         assertEquals(movieBackdrop(1), featured.backdrop)
+        // The poster its card shows, which its Title treatment is cut from (ADR 0016).
+        assertEquals(listOf("https://art.example/poster-1.jpg"), featured.posters)
         assertEquals("en", featured.badge!!.language?.value)
     }
 

@@ -66,7 +66,8 @@ enum class FeaturedScreen { Home, Movies, Shows }
  * [genres] and [description] (the plot) as the Provider gives them, its [backdrop] (the Provider's,
  * ADR 0014), and the attributes its badges name ([badge], [Library.featuredBadge]): the Version its
  * Play starts, as on its page; null for a Show whose Episodes were never read.
- * It is named in type: no logo exists.
+ * Its [posters] are its card's, in the order the card tries them ([TitleSummary.posters]): its Title
+ * treatment is cut from the one the card shows (ADR 0016).
  */
 data class FeaturedTitle(
     val id: TitleId,
@@ -77,6 +78,7 @@ data class FeaturedTitle(
     val description: String?,
     val backdrop: String,
     val badge: VersionAttributes?,
+    val posters: List<String> = emptyList(),
 )
 
 /** A row on Home, on the Movies or Shows tab, or on Live (CONTEXT.md: Row). */
