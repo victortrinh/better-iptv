@@ -203,6 +203,12 @@ class RowsState {
     /** The Title the hero features at the next entry, read during this one so it shows at once then, and whether it was. */
     var upNext: FeaturedTitle? = null
     var upNextRead = false
+
+    /**
+     * What the rows and the next entry's hero were read ahead for, before the screen was first entered
+     * ([preReadTabs]); null once the screen has read them itself, as it does on each entry.
+     */
+    var preReadFor: Any? = null
     private val rails = HashMap<String, Pair<Int, LazyListState>>()
 
     /** Row [key]'s scroll, as its [loop] lays it out: from its start again when its count changes. */
@@ -392,6 +398,8 @@ internal fun RowsLayout(
     var inRows by remember { mutableStateOf(false) }
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
     LaunchedEffect(state, reading) {
+        // The screen reads its rows from here on: they are no longer read ahead for it.
+        state.preReadFor = null
         val before = state.rows
         // The first entry's hero is read beside the rows, its backdrop as soon as it is, and they show
         // together (#386): the rows wait up to the page arrival time for the Title and its backdrop,

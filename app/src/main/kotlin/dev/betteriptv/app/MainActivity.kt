@@ -21,15 +21,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import coil3.compose.LocalPlatformContext
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.Channel
+import dev.betteriptv.core.FeaturedScreen
 import dev.betteriptv.core.FeaturedTitle
 import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
@@ -45,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,7 +95,10 @@ class MainActivity : ComponentActivity() {
             val backdrops = remember { Backdrops(onRefused = app.library::refuseBackdrop) }
             // A Box, so the screen fade (in [Root], after the screens) is drawn over them.
             NuageTheme(textSize) {
-                CompositionLocalProvider(LocalBackdrops provides backdrops, LocalTitleTreatments provides app.treatments) { Box(Modifier.fillMaxSize().background(Colors.ground)) { Root(app) } }
+                CompositionLocalProvider(LocalBackdrops provides backdrops, LocalTitleTreatments provides app.treatments) {
+                    // Each key marks the remote busy, so the tabs read ahead wait for it to rest ([RemoteRest]).
+                    Box(Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { RemoteRest.pressed(); false }) { Root(app) }
+                }
             }
         }
     }
@@ -187,6 +195,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         // Sync's catalog, so rows change between screens, never under focus; leaving Settings after Sync now too.
         val topLevel = now == null && opened == null && openedGame == null && country == null
         LaunchedEffect(tab, topLevel) { if (topLevel) app.applyPendingCatalog() }
+        PreReadOtherTabs(app, tab, shown = topLevel, profileId, settings, home, movies, shows, live)
         val chipPulse by app.library.profileChipPulse.collectAsStateWithLifecycle()
         // With two Profiles or more, the tabs' chip opens "Who's watching?" over whichever browsing screen is shown (#432).
         ProfileSwitcher(
@@ -430,3 +439,65 @@ private data class OpenedTitle(
 
 /** The Game whose page is open ([entry], with its Feeds as its card had them), and which card on Live or Home opened it. */
 private data class OpenedGame(val entry: GameFeeds, val card: RowCard)
+
+/**
+ * Reads the browsing tabs not shown ahead of their first visit ([preReadTabs]), so it shows at once
+ * as a visit back does: once the [tab] shown has its rows and the remote rests, Home, Movies, Shows
+ * then Live, one at a time, each hero's backdrop loaded and Title treatment cut, nothing else. Only
+ * while a browsing screen is [shown]: opening the player, a Title, a Game or a country stops it,
+ * as does another Profile (whose states are new) or a change to what the rows are read for, which
+ * reads the tabs read ahead again. Never before a first Sync lands, and never a Provider stream.
+ * The tabs are read as their screens read them (HomeScreen, TitlesScreen, LiveScreen).
+ */
+@Composable
+private fun PreReadOtherTabs(
+    app: BetterIptvApp,
+    tab: Browse,
+    shown: Boolean,
+    profileId: Any?,
+    settings: ViewerSettings,
+    home: RowsState,
+    movies: TitlesState,
+    shows: TitlesState,
+    live: RowsState,
+) {
+    val library = app.library
+    val status by library.syncStatus.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val platform = LocalPlatformContext.current
+    val backdrops = LocalBackdrops.current
+    val treatments = LocalTitleTreatments.current
+    val languages = settings.contentLanguages
+    val appLanguage = settings.appLanguage
+    val leagues = League.entries.filter { it in settings.leaguesOn }
+    // What the rows and heroes are read for. Not the Games landing (catalog changes): a tab read ahead
+    // reads its rows again as it is entered, as one visited before does.
+    val readingFor = listOf(profileId, languages, appLanguage, settings.region, leagues, settings.qualityCap, settings.preferOriginalAudio, status.last)
+    LaunchedEffect(tab, shown, readingFor) {
+        if (!shown || status.last == null) return@LaunchedEffect
+        val shownState = when (tab) {
+            Browse.Home -> home
+            Browse.Movies -> movies.rows
+            Browse.Shows -> shows.rows
+            Browse.Live -> live
+            else -> null
+        }
+        if (shownState != null) snapshotFlow { shownState.rows != null }.first { it }
+        val device = suspend { withContext(Dispatchers.Default) { readDeviceProfile(context) } }
+        fun featured(screen: FeaturedScreen): suspend (Boolean) -> FeaturedTitle? = { readDetails ->
+            library.featured(screen, languages, appLanguage, device(), settings.qualityCap, settings.preferOriginalAudio, readDetails)
+        }
+        val tabs = listOf(
+            Browse.Home to PreReadTab(home, { library.homeRows(languages, appLanguage, settings.region, leagues) }, featured(FeaturedScreen.Home)),
+            Browse.Movies to PreReadTab(movies.rows, { library.tabRows(TitleKind.Movie, languages, appLanguage) }, featured(FeaturedScreen.Movies)),
+            Browse.Shows to PreReadTab(shows.rows, { library.tabRows(TitleKind.Show, languages, appLanguage) }, featured(FeaturedScreen.Shows)),
+            Browse.Live to PreReadTab(live, { library.liveRows(leagues, settings.region, languages) }),
+        ).filter { it.first != tab }.map { it.second }
+        preReadTabs(
+            tabs, readingFor,
+            idle = { RemoteRest.awaitRest(PRE_READ_REST_MILLIS) },
+            // Only the hero's backdrop, as the screen's first entry loads it, and its Title treatment.
+            hero = { feature -> featureChecked(platform, backdrops, feature)?.also { treatments?.cutFor(it)?.await() } },
+        )
+    }
+}
