@@ -232,45 +232,6 @@ class TitleTreatments(context: Context) {
     }
 }
 
-/**
- * Whether ML Kit's bundled text recognizer can run on this device, read once as the app starts. Its
- * 32-bit ARM library picks its dot-product kernels (`vsdot`, ARMv8.2) from the CPU's model, not from
- * what the kernel lets it run: the Fire TV Stick (MT8696, Cortex-A55 under 32-bit Fire OS 9) has the
- * instruction but its kernel doesn't enable it (no `asimddp` in its features), so the first poster
- * read killed the app with SIGILL, which no catch can stop. There, every Title keeps its typed name.
- */
-object TextRecognizerSupport {
-    val runs: Boolean by lazy {
-        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
-        val cpuinfo = runCatching { File("/proc/cpuinfo").readText() }.getOrDefault("")
-        runs(abi, cpuinfo)
-    }
-
-    /**
-     * Whether the recognizer runs in a process of [primaryAbi] on the CPU [cpuinfo] describes: not in a
-     * 32-bit ARM process on an ARMv8.2 core (the recognizer then takes the dot product for granted) whose
-     * kernel doesn't report it (`asimddp`).
-     */
-    fun runs(primaryAbi: String, cpuinfo: String): Boolean {
-        if (!primaryAbi.startsWith("armeabi")) return true
-        val lines = cpuinfo.lines()
-        val features = lines.filter { it.startsWith("Features") }.flatMap { it.substringAfter(':').trim().split(' ') }
-        if ("asimddp" in features) return true
-        val implementers = lines.filter { it.startsWith("CPU implementer") }.map { it.substringAfter(':').trim().lowercase() }
-        val parts = lines.filter { it.startsWith("CPU part") }.map { it.substringAfter(':').trim().lowercase() }
-        return implementers.zip(parts).none { (implementer, part) -> "$implementer:$part" in DOT_PRODUCT_CORES }
-    }
-
-    /** Cores with the ARMv8.2 dot product, as `implementer:part` in /proc/cpuinfo's spelling. */
-    private val DOT_PRODUCT_CORES = setOf(
-        // Arm: Cortex-A55, A65, A75, A76, A76AE, A77, A78, X1, A78C, Neoverse N1, A510, A710, X2, A715, X3.
-        "0x41:0xd05", "0x41:0xd06", "0x41:0xd0a", "0x41:0xd0b", "0x41:0xd0e", "0x41:0xd0d", "0x41:0xd41", "0x41:0xd44",
-        "0x41:0xd4b", "0x41:0xd0c", "0x41:0xd46", "0x41:0xd47", "0x41:0xd48", "0x41:0xd4d", "0x41:0xd4e",
-        // HiSilicon's Cortex-A76, Qualcomm's Kryo 4xx/5xx, Samsung's Exynos M4 and M5.
-        "0x48:0xd40", "0x51:0x804", "0x51:0x805", "0x53:0x003", "0x53:0x004",
-    )
-}
-
 /** The app's [TitleTreatments]; none in tests, where every Title is named in type. */
 val LocalTitleTreatments = staticCompositionLocalOf<TitleTreatments?> { null }
 
