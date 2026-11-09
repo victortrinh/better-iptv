@@ -23,7 +23,9 @@
 # line lays its attributes over this table's line for the Prefix, one by one (a learned `fr` keeps a
 # line's `fr-CA`), and a hand line for the same Prefix wins over it. It names only what a file
 # states: language, quality, hdr, dolby-audio, or `multi-audio`, which says the Prefix's files mostly
-# carry several audio languages, so it names none and its Versions are Untagged.
+# carry several audio languages, so it names none and its Versions are Untagged. A learned language
+# is the audio's only: the Listings are still written (name, plot, poster) in the language this
+# table's line or a hand line names, so `GR` learned English stays a Greek Listing.
 #
 # Maps each Prefix (the code before " - " in a Listing's name) and each Category hint (a phrase in a
 # Category's name) to Version attributes. Everything here is Likely: names can be wrong, and a

@@ -135,10 +135,75 @@ class ListingNamesTest {
         provider.serveMovieDetails(1, plot = "Δύο φίλες ναυαγούν.", name = "Η Ταινία")
         provider.serveMovieDetails(2, plot = "Deux amies échouent.", name = "Le Film")
         provider.serveMovieDetails(3, plot = "", name = "Film")
-        library.title(film, every, "el")
-        library.title(film, every, "fr")
 
         assertEquals("Deux amies échouent.", library.title(film, listOf("en", "fr", "el"), "en")!!.description)
+    }
+
+    @Test fun aPrefixLearnedToCarryEnglishAudioIsStillListedInItsOwnLanguage() = runBlocking {
+        // The surveyed Provider's `GR` files are mostly English films with Greek subtitles, so its reads
+        // taught the cloud `GR | language=en` (ADR 0014). The newest `GR` copy was then the best "English"
+        // Listing: its Greek one-sheet and Greek plot went to every English Viewer.
+        cloud.providerTables[providerKey(provider.login)] = "[learned prefixes]\nGR | language=en\n"
+        syncFilm("GR - Verity (2026)" to "https://art/gr.jpg", "EN - Verity (2026)" to "https://art/en.jpg", "FR - Verity (2026)" to "https://art/fr.jpg")
+        provider.serveMovieDetails(1, plot = "Μια συγγραφέας βρίσκει ένα χειρόγραφο.", name = "Verity")
+        provider.serveMovieDetails(2, plot = "A writer finds a manuscript.", name = "Verity")
+
+        // The copy is still an English Version, and the best one.
+        val page = library.title(film, listOf("en"), "en")!!
+        assertEquals(1L, page.languages.single { it.language == "en" }.versions.first().listingId)
+        assertEquals("A writer finds a manuscript.", page.description)
+        assertEquals("https://art/en.jpg", page.image)
+        assertEquals("https://art/en.jpg", card("en", listOf("en")).image)
+        assertEquals("https://art/gr.jpg", card("el", listOf("el")).image)
+    }
+
+    @Test fun withNoEnglishListingAPrefixLearnedToCarryEnglishAudioDoesNotStandForOne() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = "[learned prefixes]\nGR | language=en\n"
+        syncFilm(
+            "GR - Verity (2026)" to "https://art/gr.jpg", "IR - Verity (2026)" to "https://art/ir.jpg",
+            "FR - Verity (2026)" to "https://art/fr.jpg",
+        )
+
+        assertEquals("https://art/fr.jpg", card("en", listOf("en")).image)
+    }
+
+    @Test fun aPrefixLearnedMultiAudioIsStillListedInItsOwnLanguage() = runBlocking {
+        // `EN` files with several audio Tracks teach Multi-audio: the Versions are Untagged, and the
+        // Listings are English ones all the same.
+        cloud.providerTables[providerKey(provider.login)] = "[learned prefixes]\nEN | multi-audio\n"
+        syncFilm("GR - Η Ταινία (2024)" to "https://art/gr.jpg", "EN - Film (2024)" to "https://art/en.jpg")
+
+        assertEquals("Film", card("en").name)
+        assertEquals("https://art/en.jpg", card("en").image)
+    }
+
+    @Test fun aListingWhoseNameIsInGreekLettersIsAGreekOneWhateverItsPrefix() = runBlocking {
+        syncFilm("EN-4K - Η Ταινία (2024)" to "https://art/gr.jpg", "EN - Film (2024)" to "https://art/en.jpg")
+
+        assertEquals("Film", card("en").name)
+        assertEquals("https://art/en.jpg", card("en").image)
+        assertEquals("Η Ταινία", card("el").name)
+        assertEquals("https://art/gr.jpg", card("el").image)
+    }
+
+    @Test fun aGreekPlotUnderAnEnglishListingGivesWayToTheNextListingsPlot() = runBlocking {
+        // The Provider's details of an `EN` Listing may be in Greek: the page reads on, down the same order.
+        syncFilm("EN - Film (2024)" to null, "FR - Le Film (2024)" to null, "GR - Η Ταινία (2024)" to null)
+        provider.serveMovieDetails(1, plot = "Δύο φίλες ναυαγούν.", name = "Film")
+        provider.serveMovieDetails(2, plot = "Deux amies échouent.", name = "Le Film")
+        provider.serveMovieDetails(3, plot = "Δύο φίλες ναυαγούν.", name = "Η Ταινία")
+
+        assertEquals("Deux amies échouent.", library.title(film, listOf("en"), "en")!!.description)
+        // A Greek Viewer reads it.
+        assertEquals("Δύο φίλες ναυαγούν.", library.title(film, listOf("el"), "el")!!.description)
+    }
+
+    @Test fun aGreekPlotIsToldWhenNoListingHasAnother() = runBlocking {
+        syncFilm("EN - Film (2024)" to null, "GR - Η Ταινία (2024)" to null)
+        provider.serveMovieDetails(1, plot = "Δύο φίλες ναυαγούν.", name = "Film")
+        provider.serveMovieDetails(2, plot = "Δύο φίλες ναυαγούν.", name = "Η Ταινία")
+
+        assertEquals("Δύο φίλες ναυαγούν.", library.title(film, listOf("en"), "en")!!.description)
     }
 
     @Test fun aTitleWithOnlyAGreekListingIsNamedByIt() = runBlocking {
