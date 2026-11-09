@@ -65,11 +65,10 @@ enum class FeaturedScreen { Home, Movies, Shows }
 
 /**
  * The Title a screen's hero features: its [name] and [year] as on its card, its [runtimeMinutes],
- * [genres] and [description] (the plot) as the Provider gives them, its [backdrop] (the Provider's,
- * ADR 0014), and the attributes its badges name ([badge], [Library.featuredBadge]): the Version its
- * Play starts, as on its page; null for a Show whose Episodes were never read.
- * Its [posters] are its card's, in the order the card tries them ([TitleSummary.posters]): its Title
- * treatment is cut from the one the card shows (ADR 0016).
+ * [genres] and [description] (the plot) as the Provider gives them (ADR 0014), and the attributes
+ * its badges name ([badge], [Library.featuredBadge]): the Version its Play starts, as on its page;
+ * null for a Show whose Episodes were never read. Its [posters] are its card's, in the order the
+ * card tries them ([TitleSummary.posters]): the hero shows the one the card shows (ADR 0018).
  */
 data class FeaturedTitle(
     val id: TitleId,
@@ -78,7 +77,6 @@ data class FeaturedTitle(
     val runtimeMinutes: Int?,
     val genres: List<String>,
     val description: String?,
-    val backdrop: String,
     val badge: VersionAttributes?,
     val posters: List<String> = emptyList(),
 )
@@ -149,11 +147,11 @@ sealed interface HomeRow {
 data class UnmatchedEventChannel(val channel: Channel, val start: Instant)
 
 /**
- * A Title the Viewer stopped in: its card, a [still] URL (its backdrop, else its poster), how far they got
- * (0 to 1) and how much is [left], both null when the player didn't know the file's length. For a
- * Show, those are about its [episode], the one to watch next.
+ * A Title the Viewer stopped in: its card, how far they got (0 to 1) and how much is [left], both
+ * null when the player didn't know the file's length. For a Show, those are about its [episode], the
+ * one to watch next.
  */
-data class InProgress(val title: TitleSummary, val still: String?, val progress: Float?, val left: Duration? = null, val episode: NextEpisode? = null)
+data class InProgress(val title: TitleSummary, val progress: Float?, val left: Duration? = null, val episode: NextEpisode? = null)
 
 /** The Episode of a Show the Viewer is at: the one they stopped in ([started]), else the one after the last they Watched. Its [name] is null when the Provider gives none. */
 data class NextEpisode(val number: EpisodeNumber, val name: String?, val started: Boolean)
@@ -165,8 +163,7 @@ data class NextEpisode(val number: EpisodeNumber, val name: String?, val started
  * and genre field named in the App language, its [runtimeMinutes], [cast], [directors], [rating]
  * (on a 10 scale, null when absent or zero) and [trailer] what its movie details or show Listing
  * say; each empty when the Provider doesn't say. A Movie's details are read when its page opens and
- * kept for good, so a page opens whole from kept data when the Provider is unreachable. Its
- * [backdrop] is the Provider's too, null when it has none (the page then shows the poster).
+ * kept for good, so a page opens whole from kept data when the Provider is unreachable.
  */
 data class TitleDetails(
     val id: TitleId,
@@ -178,8 +175,6 @@ data class TitleDetails(
     val description: String? = null,
     val genres: List<String> = emptyList(),
     val runtimeMinutes: Int? = null,
-    /** The Provider's backdrop URL, to fill the screen behind the details: a Movie's from its details, a Show's from its Listing; null when there is none or it was refused. */
-    val backdrop: String? = null,
     /** The main cast's names, as the Provider lists them. */
     val cast: List<String> = emptyList(),
     /** The YouTube video ID of its trailer, as the Provider gives it (ADR 0012); null when it gives none, and the Trailer action stays out. */

@@ -114,7 +114,7 @@ class EpisodePickerTest {
                 section = null
             }
             TitlePage(
-                show, null, (details to null).takeIf { read }, (episodes to plan).takeIf { read }, onPlay = { _, _ -> },
+                show, (details to null).takeIf { read }, (episodes to plan).takeIf { read }, onPlay = { _, _ -> },
                 section = section,
                 returnedFrom = returnedFrom,
                 onSection = {

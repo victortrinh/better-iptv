@@ -77,7 +77,7 @@ internal data class VersionsList(
 
 /**
  * The Versions screen (DESIGN.md, Details): the Title page's second level, opened by its Versions
- * action, over the same backdrop under a `ground` veil at 85% ([Colors.veilDeep]). It holds the
+ * action, on the bare ground as the page is. It holds the
  * Confirmed/Likely legend, the Version table ([versionTable]: empty cells left blank, an Audio cell
  * only where it says more than its language heading, columns with nothing in them hidden, Backups
  * under their Version in muted type), Other languages, and the [cast] and [directors] the Provider names.
@@ -113,7 +113,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Colors.veilDeep)) {
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("versions"),
             state = listState,

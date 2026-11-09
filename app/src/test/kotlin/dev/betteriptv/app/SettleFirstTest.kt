@@ -52,12 +52,12 @@ class SettleFirstTest {
 
     @Test fun aCardsArtworkAlreadyInMemoryAndAnyOtherArtworkLoadAtOnce() = runTest {
         val inMemory = Chain(request(card = true))
-        val backdrop = Chain(request(card = false))
+        val art = Chain(request(card = false))
         launch { SettleFirst(inMemory = { it == url }).intercept(inMemory) }
-        launch { SettleFirst(inMemory = { false }).intercept(backdrop) }
+        launch { SettleFirst(inMemory = { false }).intercept(art) }
 
         runCurrent()
         assertTrue(inMemory.loaded)
-        assertTrue(backdrop.loaded)
+        assertTrue(art.loaded)
     }
 }

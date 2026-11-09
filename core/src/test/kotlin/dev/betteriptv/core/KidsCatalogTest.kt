@@ -188,7 +188,7 @@ class KidsCatalogTest {
         serveMovies(Filed("EN - Kid (2025)", 1, "EN - KIDS"), Filed("EN - Grown-up (2025)", 2, "EN - MOVIES"))
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
-        // Both have the Provider's backdrop; only the Kid is in the Kids catalog.
+        // Both have details; only the Kid is in the Kids catalog.
         provider.serveMovieDetails(1, backdrop = "https://art.example/kid.jpg")
         provider.serveMovieDetails(2, backdrop = "https://art.example/grown-up.jpg")
         val library = library()

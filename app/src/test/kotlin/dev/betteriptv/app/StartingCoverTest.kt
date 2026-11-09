@@ -48,8 +48,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * While a Version starts, the player covers the picture with the Title's backdrop, dimmed, and its
- * name in Display type (#475), or a Channel's logo on glass; on the first frame the cover fades to the picture. The cover
+ * While a Version starts, the player covers the picture with the Title's poster on the ground (its
+ * name in Display type when it has none, #475, ADR 0018), or a Channel's logo on glass; on the first frame the cover fades to the picture. The cover
  * alone, over a white stand-in for the picture: the player needs a Library, which the app's unit
  * tests can't open. Checked frame by frame on the test clock.
  */
@@ -72,7 +72,7 @@ class StartingCoverTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    /** Every image is red, and comes from memory, as the Title page's backdrop does: a backdrop's size, or a poster's when its url says so. */
+    /** Every image is red, and comes from memory, as the Title page's poster does: a poster's size when its url says so, else a picture's. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain ->
@@ -117,32 +117,30 @@ class StartingCoverTest {
         return Color(bitmap.getPixel(4, 4))
     }
 
-    @Test fun aTitleShowsItsNameInDisplayTypeOverItsDimmedBackdrop() {
-        start(StartingArt.Title(backdrop = "https://provider.example/heat-backdrop.jpg"))
+    private val heat = StartingArt.Title(listOf("https://provider.example/heat-poster.jpg"))
 
-        compose.onNodeWithTag(STARTING_BACKDROP).assertExists()
-        assertEquals(displaySize, compose.onNodeWithText("Heat").fontSize())
-        // Named in type: no logo.
+    @Test fun aTitleShowsItsPosterCentredOnTheGround() {
+        start(heat)
+
+        val poster = compose.onNodeWithTag(STARTING_POSTER).fetchSemanticsNode().boundsInRoot
+        val density = compose.activity.resources.displayMetrics.density
+        assertEquals(960f / 2, poster.center.x / density, 2f)
+        assertEquals(540f / 2, poster.center.y / density, 2f)
+        // The poster names it: no name in type, no logo.
+        compose.onNodeWithText("Heat").assertDoesNotExist()
         compose.onNodeWithContentDescription("Heat").assertDoesNotExist()
-        // The backdrop is drawn at once, from memory, and dimmed: red under the ground's veil, the picture hidden.
+        // Around it, the bare ground: the picture is hidden, and nothing fills the screen.
         val corner = corner()
-        assertTrue("red shows, dimmed: $corner", corner.red > 0.1f && corner.red < 0.5f)
+        assertTrue("the ground: $corner", corner.red < 0.1f)
         assertEquals(0f, corner.green, 0.05f)
     }
 
-    @Test fun aPosterHandedOverAsTheBackdropLeavesTheNameOnTheDimmedGround() {
-        start(StartingArt.Title(backdrop = "https://provider.example/heat-poster.jpg"))
-        settle()
+    @Test fun aTitleWithoutAPosterIsNamedInDisplayTypeOnTheGround() {
+        start(StartingArt.Title(emptyList()))
 
-        compose.onNodeWithTag(STARTING_BACKDROP).assertDoesNotExist()
-        compose.onNodeWithText("Heat").assertExists()
-    }
-
-    @Test fun aTitleWithoutABackdropIsNamedOnTheGround() {
-        start(StartingArt.Title(backdrop = null))
-
-        compose.onNodeWithTag(STARTING_BACKDROP).assertDoesNotExist()
-        compose.onNodeWithText("Heat").assertExists()
+        compose.onNodeWithTag(STARTING_POSTER).assertDoesNotExist()
+        assertEquals(displaySize, compose.onNodeWithText("Heat").fontSize())
+        assertEquals(0f, pictureShowing(), 0.05f)
     }
 
     @Test fun aChannelShowsItsLogoOnGlass() {
@@ -150,7 +148,7 @@ class StartingCoverTest {
 
         compose.onNodeWithTag(STARTING_GLASS).assertExists()
         compose.onNodeWithContentDescription("TSN").assertExists()
-        compose.onNodeWithTag(STARTING_BACKDROP).assertDoesNotExist()
+        compose.onNodeWithTag(STARTING_POSTER).assertDoesNotExist()
     }
 
     @Test fun aChannelWithoutALogoIsNamedOnGlass() {
@@ -161,7 +159,7 @@ class StartingCoverTest {
     }
 
     @Test fun theCoverStaysUntilTheFirstFrameThenFadesToThePicture() {
-        start(StartingArt.Title(backdrop = "https://provider.example/heat-backdrop.jpg"))
+        start(heat)
 
         // However long the Version takes to start, the picture stays covered.
         compose.mainClock.advanceTimeBy(5_000)
@@ -203,18 +201,17 @@ class StartingCoverTest {
         assertEquals(0f, pictureShowing(), 0.05f)
     }
 
-    @Test fun aFailureBeforeTheFirstFrameReadsOverTheDimmedBackdrop() {
-        start(StartingArt.Title(backdrop = "https://provider.example/heat-backdrop.jpg"))
+    @Test fun aFailureBeforeTheFirstFrameLeavesTheCentreToItsMessage() {
+        start(heat)
 
         failed = true
         settle()
 
-        // The backdrop stays, dimmed, under the failure's message, which takes the centre from the name.
-        compose.onNodeWithTag(STARTING_BACKDROP).assertExists()
+        // The cover stays, bare: the failure's message takes the centre from the poster.
+        compose.onNodeWithTag(STARTING_COVER).assertExists()
+        compose.onNodeWithTag(STARTING_POSTER).assertDoesNotExist()
         compose.onNodeWithText("Heat").assertDoesNotExist()
-        val corner = corner()
-        assertTrue("red shows, dimmed: $corner", corner.red > 0.1f && corner.red < 0.5f)
-        assertEquals(0f, corner.green, 0.05f)
+        assertEquals(0f, pictureShowing(), 0.05f)
     }
 
     @Test fun aChannelsFailureLeavesTheCentreToItsMessage() {
@@ -227,26 +224,26 @@ class StartingCoverTest {
         compose.onNodeWithTag(STARTING_GLASS).assertDoesNotExist()
     }
 
-    @Test fun aFailureAfterThePictureShowedStillReadsOverTheBackdrop() {
-        start(StartingArt.Title(backdrop = "https://provider.example/heat-backdrop.jpg"))
+    @Test fun aFailureAfterThePictureShowedCoversItAgain() {
+        start(heat)
         pictured = true
         repeat(Motion.screenFadeMillis / 16 + 8) { settle() }
         compose.onNodeWithTag(STARTING_COVER).assertDoesNotExist()
 
-        // VLC can show its picture and still fail: the message isn't left on black.
+        // VLC can show its picture and still fail: the message isn't left over the picture.
         failed = true
         settle()
-        compose.onNodeWithTag(STARTING_BACKDROP).assertExists()
+        compose.onNodeWithTag(STARTING_COVER).assertExists()
         assertEquals(0f, pictureShowing(), 0.05f)
     }
 
     @Test fun theHerosPlayStartsOnTheFeaturedTitlesArt() {
         val featured = FeaturedTitle(
             TitleId.Numbered(TitleKind.Show, 1), "The Fall", 2025, null, emptyList(), null,
-            backdrop = "https://provider.example/fall-backdrop.jpg",
             badge = VersionAttributes(),
+            posters = listOf("https://provider.example/fall-poster.jpg"),
         )
 
-        assertEquals(StartingArt.Title(featured.backdrop), featured.startingArt)
+        assertEquals(StartingArt.Title(featured.posters), featured.startingArt)
     }
 }

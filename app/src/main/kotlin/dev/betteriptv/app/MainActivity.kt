@@ -91,14 +91,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val textSize by remember { app.settings.settings.map { it.textSize }.distinctUntilChanged() }
                 .collectAsStateWithLifecycle(app.settings.settings.value.textSize)
-            // Backdrops refused as they're decoded are remembered by the Library, so they count as none everywhere (#475).
-            val backdrops = remember { Backdrops(onRefused = app.library::refuseBackdrop) }
             // A Box, so the screen fade (in [Root], after the screens) is drawn over them.
             NuageTheme(textSize) {
-                CompositionLocalProvider(LocalBackdrops provides backdrops, LocalTitleTreatments provides app.treatments) {
-                    // Each key marks the remote busy, so the tabs read ahead wait for it to rest ([RemoteRest]).
-                    Box(Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { RemoteRest.pressed(); false }) { Root(app) }
-                }
+                // Each key marks the remote busy, so the tabs read ahead wait for it to rest ([RemoteRest]).
+                Box(Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent { RemoteRest.pressed(); false }) { Root(app) }
             }
         }
     }
@@ -275,7 +271,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                         restoreFocus = returnedTo,
                         focusTab = byTab,
                         onTab = onTab,
-                        onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
+                        onOpen = { card, id -> opened = OpenedTitle(id, card) },
                         onWatch = { card, channel ->
                             // Back from the Channel comes back to its card.
                             returnedTo = card
@@ -338,7 +334,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                                 restoreFocus = returnedTo,
                                 focusTab = byTab,
                                 onTab = onTab,
-                                onOpen = { card, id, backdrop -> opened = OpenedTitle(id, card, backdrop) },
+                                onOpen = { card, id -> opened = OpenedTitle(id, card) },
                                 onPlay = playFeatured,
                                 onRetry = app::sync,
                                 qualityCap = settings.qualityCap,
@@ -362,7 +358,6 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     TitleScreen(
                         app.library, title.id, contentLanguages, appLanguage, settings.qualityCap,
                         preferOriginalAudio = settings.preferOriginalAudio,
-                        openedOn = title.backdrop,
                         deviceProfile = { readDeviceProfile(context) },
                         onPlay = { plan, name, art -> playing = NowPlaying(plan, name, art = art) },
                         section = title.section,
@@ -382,13 +377,7 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     opened != null -> TitleShown(opened!!.id, opened!!.section)
                     else -> tab
                 },
-                // A Title page opened from the hero's Details opens on the hero's backdrop, so no veil hides it; its own
-                // content still fades in (TitlePage). Its Versions screen and Episode picker, and the page again after them, fade in as any screen.
-                asIs = { shown ->
-                    val title = opened
-                    shown == PlayerShown || (shown is TitleShown && title != null && shown == TitleShown(title.id, null) &&
-                        title.section == null && title.returnedFrom == null && title.backdrop != null)
-                },
+                asIs = { shown -> shown == PlayerShown },
             )
             // Signing in would bring the household past five Profiles: which to keep comes first, over any screen (#440).
             val choice by app.library.profileChoice.collectAsStateWithLifecycle()
@@ -425,14 +414,13 @@ private val NO_UPDATES = MutableStateFlow<UpdateState>(UpdateState.Unknown)
 private data class NowPlaying(val plan: PlayPlan, val name: String, val inARow: Int = 0, val game: PlayingFeed? = null, val channel: Channel? = null, val art: StartingArt? = null)
 
 /**
- * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search),
- * with the [backdrop] the featured hero drew when its Details opened it, which the page opens on. A [section] is open over the page (its
- * Versions screen, Episode picker or Trailer screen); [returnedFrom] is the one Back just closed, whose action takes focus.
+ * The Title whose details are open, and which card on a screen of rows opened it, so focus goes back there (none from Search).
+ * A [section] is open over the page (its Versions screen, Episode picker or Trailer screen); [returnedFrom] is the one Back
+ * just closed, whose action takes focus.
  */
 private data class OpenedTitle(
     val id: TitleId,
     val card: RowCard? = null,
-    val backdrop: String? = null,
     val section: TitleSection? = null,
     val returnedFrom: TitleSection? = null,
 )
@@ -443,7 +431,7 @@ private data class OpenedGame(val entry: GameFeeds, val card: RowCard)
 /**
  * Reads the browsing tabs not shown ahead of their first visit ([preReadTabs]), so it shows at once
  * as a visit back does: once the [tab] shown has its rows and the remote rests, Home, Movies, Shows
- * then Live, one at a time, each hero's backdrop loaded and Title treatment cut, nothing else. Only
+ * then Live, one at a time, each hero's poster loaded, nothing else. Only
  * while a browsing screen is [shown]: opening the player, a Title, a Game or a country stops it,
  * as does another Profile (whose states are new) or a change to what the rows are read for, which
  * reads the tabs read ahead again. Never before a first Sync lands, and never a Provider stream.
@@ -465,8 +453,7 @@ private fun PreReadOtherTabs(
     val status by library.syncStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val platform = LocalPlatformContext.current
-    val backdrops = LocalBackdrops.current
-    val treatments = LocalTitleTreatments.current
+    val posterSize = rememberPosterSize()
     val languages = settings.contentLanguages
     val appLanguage = settings.appLanguage
     val leagues = League.entries.filter { it in settings.leaguesOn }
@@ -496,8 +483,8 @@ private fun PreReadOtherTabs(
         preReadTabs(
             tabs, readingFor,
             idle = { RemoteRest.awaitRest(PRE_READ_REST_MILLIS) },
-            // Only the hero's backdrop, as the screen's first entry loads it, and its Title treatment.
-            hero = { feature -> featureChecked(platform, backdrops, feature)?.also { treatments?.cutFor(it)?.await() } },
+            // Only the hero's poster, as the screen's first entry loads it.
+            hero = { feature -> feature(true)?.also { loadPoster(platform, it.posters, posterSize) } },
         )
     }
 }

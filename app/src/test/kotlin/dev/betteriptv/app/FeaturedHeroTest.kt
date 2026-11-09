@@ -74,11 +74,12 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The featured hero on Home, Movies and Shows (#348, #475), on the rows they share ([RowsLayout]), the
- * Library stood in: it names its Title in Display type over the Provider's backdrop, with two lines of
- * plot, and refuses a poster handed over as a backdrop; it takes first focus on Play, the first Down scrolls it away under the tabs and
- * Up brings it back, Back goes to the tab, Play and Details do what they say, each entry features
- * the next Title and none changes while the Viewer is on the screen, and its backdrop fades in.
+ * The featured hero on Home, Movies and Shows (#348, #475, ADR 0018), on the rows they share
+ * ([RowsLayout]), the Library stood in: it names its Title in Display type, with two lines of plot,
+ * and shows its poster at the right on the bare ground; it takes first focus on Play, the first Down
+ * scrolls it away under the tabs and Up brings it back, Back goes to the tab, Play and Details do
+ * what they say, each entry features the next Title and none changes while the Viewer is on the
+ * screen, and its poster fades in.
  */
 @OptIn(ExperimentalTestApi::class, DelicateCoilApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -99,15 +100,15 @@ class FeaturedHeroTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    /** A backdrop that notes the alpha it is drawn at each time. */
-    private class Art : SizedArt() {
+    /** A poster that notes the alpha it is drawn at each time. */
+    private class Art : SizedArt(width = 600, height = 900) {
         val drawnAt = mutableListOf<Float>()
         override fun draw(canvas: Canvas) {
             drawnAt += alpha / 255f
         }
     }
 
-    private val backdrop = Art()
+    private val poster = Art()
 
     /** Every image asked for, in order. */
     private val asked = java.util.Collections.synchronizedList(ArrayList<String>())
@@ -118,24 +119,23 @@ class FeaturedHeroTest {
     /** While set, the rows wait for it, as a slow Library read. */
     @Volatile private var rowsHeld: CompletableDeferred<Unit>? = null
 
-    /** Every image is served as from disk, at once unless [artHeld]: the backdrops as [backdrop], a poster handed over as one at a poster's size. */
+    /** Every image is served as from disk, at once unless [artHeld]: the posters as [poster]. */
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val serve = Interceptor { chain ->
             asked += chain.request.data.toString()
             artHeld?.await()
-            val art = if ("backdrop" in chain.request.data.toString()) backdrop else SizedArt(0xFFFFFFFF.toInt(), width = 600, height = 900)
-            SuccessResult(art.asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult
+            SuccessResult(poster.asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult
         }
         SingletonImageLoader.setUnsafe(ImageLoader.Builder(context).components { add(serve) }.build())
     }
 
     @After fun forgetTheArt() = SingletonImageLoader.reset()
 
-    private fun featured(name: String, backdrop: String = "https://provider.example/backdrop-$name.jpg") = FeaturedTitle(
+    private fun featured(name: String, posters: List<String> = listOf("https://provider.example/poster-$name.jpg")) = FeaturedTitle(
         TitleId.Numbered(TitleKind.Movie, name.hashCode().toLong()), name, 2025, 112, listOf("Drama"),
         "About $name. ".repeat(40).trim(),
-        backdrop = backdrop, badge = VersionAttributes(),
+        badge = VersionAttributes(), posters = posters,
     )
 
     /** The Titles [feature] hands out, one per ask, in turn, as the Library's rotation does. */
@@ -173,7 +173,7 @@ class FeaturedHeroTest {
                     onScreen = {},
                     info = { _, _, _ -> },
                     appLanguage = "en",
-                    onOpen = { card, id, _ -> opened += card to id },
+                    onOpen = { card, id -> opened += card to id },
                     feature = feature,
                     featureBadge = featureBadge,
                     onPlayFeatured = { card, title -> played += card to title },
@@ -209,6 +209,26 @@ class FeaturedHeroTest {
         compose.onNodeWithText("Details").assertIsDisplayed()
         // The first row's heading peeks under it.
         compose.onNodeWithText("Action").assertIsDisplayed()
+    }
+
+    @Test fun theHeroShowsItsPosterAtTheRightOfItsText() {
+        screen()
+
+        val poster = compose.onNodeWithTag(HERO_POSTER).fetchSemanticsNode().boundsInRoot
+        val name = compose.onNodeWithText("Dune").fetchSemanticsNode().boundsInRoot
+        val density = compose.activity.resources.displayMetrics.density
+        assertTrue("the poster ($poster) is right of the text ($name)", poster.left > name.right)
+        // At the right margin, top-aligned with the name, a card's size.
+        assertEquals(960f - 48f, poster.right / density, 1f)
+        assertEquals(name.top / density, poster.top / density, 1f)
+        assertEquals(136f, poster.width / density, 1f)
+    }
+
+    @Test fun aTitleWithoutAPosterShowsNone() {
+        screen(feature = { featured("Dune", posters = emptyList()) })
+
+        heroShows("Dune")
+        compose.onNodeWithTag(HERO_POSTER).assertDoesNotExist()
     }
 
     // Text is measured, so it is laid out in lines.
@@ -311,36 +331,6 @@ class FeaturedHeroTest {
         heroShows("Dune")
     }
 
-    @Test fun aPosterHandedOverAsTheBackdropIsRefusedAndTheNextTitleWhoseBackdropIsKeptIsFeatured() {
-        val refused = mutableListOf<String>()
-        val poster = featured("Tall", backdrop = "https://provider.example/poster-Tall.jpg")
-        var asks = 0
-        compose.setContent {
-            NuageTheme {
-                CompositionLocalProvider(LocalBackdrops provides remember { Backdrops(onRefused = { refused += it }) }) {
-                    RowsLayout(
-                        remember { RowsState() }, null, focusTab = false,
-                        reading = 0,
-                        read = { rows },
-                        empty = "",
-                        setFavourite = { _, _ -> },
-                        onScreen = {},
-                        info = { _, _, _ -> },
-                        appLanguage = "en",
-                        onOpen = { _, _, _ -> },
-                        feature = { read -> readDetails += read; if (asks++ == 0) poster else titles[0] },
-                    ) { tab -> Box(Modifier.size(80.dp, 30.dp).testTag("tab").focusRequester(tab).focusable()) }
-                }
-            }
-        }
-        compose.waitForIdle()
-
-        heroShows("Dune")
-        assertEquals(listOf(poster.backdrop), refused)
-        // The second ask, for the same entry, reads no details: the entry costs the Provider one call at most.
-        assertEquals(listOf(true, false), readDetails.take(2))
-    }
-
     @Test fun withNoFeaturedTitleTheScreenOpensOnItsFirstCard() {
         screen(feature = { null })
 
@@ -372,8 +362,8 @@ class FeaturedHeroTest {
         compose.mainClock.autoAdvance = false
         screen()
 
-        // The Title and the rows are read, but not the backdrop and the logo: nothing of the hero shows,
-        // and the placeholder rows stay, rather than its text alone on the ground.
+        // The Title and the rows are read, but not the poster: nothing of the hero shows, and the
+        // placeholder rows stay, rather than its text alone on the ground.
         repeat(Motion.pageArrivalMillis / 16 / 2) {
             frame()
             assertTrue("frame $it", !exists("About Dune.") && !exists("Action"))
@@ -385,12 +375,12 @@ class FeaturedHeroTest {
             assertTrue(!exists("Action"))
             frame()
         }
-        // The text, the rows and the backdrop arrive together, and the hero fades in as one.
+        // The text, the rows and the poster arrive together, and the hero fades in as one.
         assertTrue(exists("Action"))
-        val first = backdropAlpha()
-        assertTrue("on the hero's first frame its backdrop is at $first", first < 0.5f)
+        val first = posterAlpha()
+        assertTrue("on the hero's first frame its poster is at $first", first < 0.5f)
         compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + Motion.imageFadeMillis + 100L)
-        assertEquals(1f, backdropAlpha())
+        assertEquals(1f, posterAlpha())
         focusedOn("Play")
     }
 
@@ -421,13 +411,13 @@ class FeaturedHeroTest {
         // the screen is still the dot over the ground, rather than the rows over an empty hero (#398).
         assertTrue(exists("Action"))
         focusedOn("Play")
-        val first = backdropAlpha()
-        assertTrue("on the rows' first frame the backdrop is at $first", first < 0.5f)
+        val first = posterAlpha()
+        assertTrue("on the rows' first frame the poster is at $first", first < 0.5f)
         // Then they fade in as one, the dot crossfading out under them, and it goes once they have.
         compose.onNodeWithTag(WAITING).assertExists()
         compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + 100L)
         compose.onNodeWithTag(WAITING).assertDoesNotExist()
-        assertEquals(1f, backdropAlpha())
+        assertEquals(1f, posterAlpha())
     }
 
     @Test fun rowsKeptFromTheLastEntryShowAtOnce() {
@@ -458,19 +448,19 @@ class FeaturedHeroTest {
         }
         assertTrue("it waited for the art", waitedMillis >= Motion.pageArrivalMillis - 32)
         assertTrue(exists("Action"))
-        assertEquals(0f, backdropAlpha())
+        assertEquals(0f, posterAlpha())
 
         // The art fades in once it comes.
         held.complete(Unit)
         repeat(4) { frame() }
         compose.mainClock.advanceTimeBy(Motion.imageFadeMillis + 100L)
-        assertEquals(1f, backdropAlpha())
+        assertEquals(1f, posterAlpha())
     }
 
     @Test fun theNextEntrysArtIsLoadedDuringThisOne() {
         screen()
         heroShows("Dune")
-        compose.waitUntil(2_000) { asked.any { "backdrop-Arrival" in it } }
+        compose.waitUntil(2_000) { asked.any { "poster-Arrival" in it } }
     }
 
     @Test fun aTitleReadAfterTheRowsIsLeftForTheNextEntry() {
@@ -491,31 +481,13 @@ class FeaturedHeroTest {
         focusedOn("Play")
     }
 
-    @Test fun theBackdropFadesInAsItArrives() {
-        compose.mainClock.autoAdvance = false
-        // The hero's backdrop alone: the screen's vector icons can't be drawn on a bare canvas here.
-        compose.setContent { Box(Modifier.size(960.dp, 540.dp).featuredBackdrop(titles[0]) { 1f }) }
-        compose.mainClock.advanceTimeByFrame()
-        compose.mainClock.advanceTimeByFrame()
-        // It starts transparent: barely into its fade, not popped in.
-        val first = backdropAlpha()
-        assertTrue("on its first frame it is at $first", first < 0.1f)
-
-        compose.mainClock.advanceTimeBy(Motion.imageFadeMillis / 2L)
-        val half = backdropAlpha()
-        assertTrue("half way through the fade it is at $half", half > 0f && half < 1f)
-
-        compose.mainClock.advanceTimeBy(Motion.imageFadeMillis.toLong())
-        assertEquals(1f, backdropAlpha())
-    }
-
-    /** Draws the screen as it is at this frame: the alpha the backdrop is drawn at, 0 when it isn't drawn. */
-    private fun backdropAlpha(): Float {
+    /** Draws the screen as it is at this frame: the alpha the poster is drawn at, 0 when it isn't drawn. */
+    private fun posterAlpha(): Float {
         compose.waitForIdle()
-        backdrop.drawnAt.clear()
+        poster.drawnAt.clear()
         val screen = compose.activity.window.decorView
         screen.draw(Canvas(Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888)))
-        return backdrop.drawnAt.lastOrNull() ?: 0f
+        return poster.drawnAt.lastOrNull() ?: 0f
     }
 
     // #521: the hero badges the Version its Play starts, as the Title page does.

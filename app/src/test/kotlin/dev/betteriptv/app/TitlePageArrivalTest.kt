@@ -23,7 +23,6 @@ import coil3.annotation.DelicateCoilApi
 import coil3.asImage
 import coil3.decode.DataSource
 import coil3.intercept.Interceptor
-import coil3.memory.MemoryCache
 import coil3.request.ImageResult
 import coil3.request.SuccessResult
 import dev.betteriptv.app.ui.theme.Motion
@@ -53,10 +52,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * A Title page arrives whole: opened from a grown card, its first frame is that card's backdrop;
- * the header and actions appear together once read; a Show's Play waits disabled, with focus on it,
- * until its Episodes are read. Checked frame by frame on the test clock, by what is drawn and what
- * is on screen at each frame. The Library is stood in for by the states [TitlePage] is given.
+ * A Title page arrives whole: the header, its poster and the actions appear together once read; a
+ * Show's Play waits disabled, with focus on it, until its Episodes are read. Checked frame by frame
+ * on the test clock, by what is drawn and what is on screen at each frame. The Library is stood in
+ * for by the states [TitlePage] is given.
  */
 @OptIn(DelicateCoilApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -86,19 +85,14 @@ class TitlePageArrivalTest {
         }
     }
 
-    private val cardBackdrop = "https://img.example/w780/heat-wide.jpg"
-    private val pageBackdrop = "https://img.example/w1280/heat-wide.jpg"
     private val poster = "https://img.example/heat.jpg"
-    private val arts = mapOf(cardBackdrop to Art(), pageBackdrop to Art(), poster to Art())
+    private val arts = mapOf(poster to Art())
 
     @Before fun serveTheArt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // Anything not in memory comes from disk, so it fades in.
         val serve = Interceptor { chain -> SuccessResult(arts.getValue(chain.request.data.toString()).asImage(), chain.request, dataSource = DataSource.DISK) as ImageResult }
-        val loader = ImageLoader.Builder(context).memoryCache { MemoryCache.Builder().maxSizeBytes(64L * 1024 * 1024).build() }.components { add(serve) }.build()
-        // The card grew into its backdrop before it was opened.
-        loader.memoryCache!![MemoryCache.Key(cardBackdrop)] = MemoryCache.Value(arts.getValue(cardBackdrop).asImage())
-        SingletonImageLoader.setUnsafe(loader)
+        SingletonImageLoader.setUnsafe(ImageLoader.Builder(context).components { add(serve) }.build())
     }
 
     @After fun forgetTheArt() = SingletonImageLoader.reset()
@@ -108,16 +102,15 @@ class TitlePageArrivalTest {
     private val movie = TitleId.Numbered(TitleKind.Movie, 949)
     private val show = TitleId.Numbered(TitleKind.Show, 1396)
 
-    private fun details(id: TitleId, name: String, backdrop: String?) = TitleDetails(id, name, 1995, poster, listOf(english), emptyList(), backdrop = backdrop)
+    private fun details(id: TitleId, name: String) = TitleDetails(id, name, 1995, poster, listOf(english), emptyList())
 
     private fun open(
         id: TitleId,
-        openedOn: String?,
         loaded: MutableState<Pair<TitleDetails, PlayPlan?>?>,
         episodes: MutableState<Pair<ShowEpisodes, PlayPlan?>?> = mutableStateOf(null),
     ) {
         compose.mainClock.autoAdvance = false
-        compose.setContent { TitlePage(id, openedOn, loaded.value, episodes.value, onPlay = { _, _ -> }) }
+        compose.setContent { TitlePage(id, loaded.value, episodes.value, onPlay = { _, _ -> }) }
     }
 
     /** Draws the screen as it is at this frame: the alpha each picture is drawn at, 0 when it isn't drawn. */
@@ -132,34 +125,12 @@ class TitlePageArrivalTest {
     private fun shows(text: String) = compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
     private fun showsPlay() = compose.onAllNodesWithTag("play").fetchSemanticsNodes().isNotEmpty()
 
-    // It draws the page, whose vector icons need real bitmaps.
-    @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Test fun openedFromAGrownCardTheFirstFrameIsThatCardsBackdropAndTheLargerOneTakesOverUnseen() {
-        val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
-        open(movie, cardBackdrop, loaded)
-
-        compose.mainClock.advanceTimeByFrame()
-        assertEquals("the card's backdrop, from memory, on the first frame", 1f, drawn().getValue(cardBackdrop))
-
-        loaded.value = details(movie, "Heat", pageBackdrop) to PlayPlan(movie, version, listOf("en"), listOf(version))
-        compose.mainClock.advanceTimeByFrame()
-        // The screen-sized copy fades in over the card's, which stays drawn under it: no frame shows the ground.
-        repeat(Motion.imageFadeMillis / 16 + 2) {
-            val now = drawn()
-            assertEquals(1f, now.getValue(cardBackdrop))
-            compose.mainClock.advanceTimeByFrame()
-        }
-        assertEquals(1f, drawn().getValue(pageBackdrop))
-        // With a backdrop, there is no poster beside the header.
-        assertEquals(0f, drawn().getValue(poster))
-    }
-
     @Test fun theHeaderAndTheActionsAppearTogether() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
-        open(movie, cardBackdrop, loaded)
+        open(movie, loaded)
 
         repeat(40) { frame ->
-            if (frame == 6) loaded.value = details(movie, "Heat", pageBackdrop) to PlayPlan(movie, version, listOf("en"), listOf(version))
+            if (frame == 6) loaded.value = details(movie, "Heat") to PlayPlan(movie, version, listOf("en"), listOf(version))
             compose.mainClock.advanceTimeByFrame()
             compose.waitForIdle()
             assertEquals("frame $frame", shows("Heat"), showsPlay())
@@ -171,8 +142,8 @@ class TitlePageArrivalTest {
     @Test fun aShowWaitsForItsEpisodesUpToThePageArrivalTimeWithFocusOnADisabledPlay() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
         val episodes = mutableStateOf<Pair<ShowEpisodes, PlayPlan?>?>(null)
-        open(show, cardBackdrop, loaded, episodes)
-        loaded.value = details(show, "Breaking Bad", pageBackdrop) to null
+        open(show, loaded, episodes)
+        loaded.value = details(show, "Breaking Bad") to null
 
         // The details alone don't make the page: it waits for the Episodes, up to the arrival time.
         var waitedMillis = 0L
@@ -199,8 +170,8 @@ class TitlePageArrivalTest {
     @Test fun aShowWhoseEpisodesArriveInTimeOpensWholeWithPlayEnabled() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
         val episodes = mutableStateOf<Pair<ShowEpisodes, PlayPlan?>?>(null)
-        open(show, cardBackdrop, loaded, episodes)
-        loaded.value = details(show, "Breaking Bad", pageBackdrop) to null
+        open(show, loaded, episodes)
+        loaded.value = details(show, "Breaking Bad") to null
         compose.mainClock.advanceTimeBy(100)
         compose.waitForIdle()
         assertTrue(!shows("Breaking Bad"))
@@ -216,19 +187,16 @@ class TitlePageArrivalTest {
 
     // It draws the page, whose vector icons need real bitmaps.
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Test fun withoutATextlessBackdropThePageStillOpensWithThePosterBesideTheHeader() {
+    @Test fun thePageOpensOnTheBareGroundThenShowsThePosterBesideTheHeader() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
-        // The card didn't grow, so there is no backdrop to open on, and the Provider has none for the page.
-        open(movie, null, loaded)
+        open(movie, loaded)
         compose.mainClock.advanceTimeByFrame()
+        // Nothing fills the screen while the details are read: no backdrop, ever (ADR 0018).
         assertEquals(0f, drawn().values.max())
 
-        loaded.value = details(movie, "Heat", backdrop = null) to PlayPlan(movie, version, listOf("en"), listOf(version))
+        loaded.value = details(movie, "Heat") to PlayPlan(movie, version, listOf("en"), listOf(version))
         compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + Motion.imageFadeMillis + 200L)
-        val now = drawn()
-        assertEquals(1f, now.getValue(poster))
-        assertEquals(0f, now.getValue(cardBackdrop))
-        assertEquals(0f, now.getValue(pageBackdrop))
+        assertEquals(1f, drawn().getValue(poster))
         assertTrue(shows("Heat"))
     }
 }

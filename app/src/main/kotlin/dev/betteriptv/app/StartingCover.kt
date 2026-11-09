@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -33,29 +34,29 @@ import dev.betteriptv.core.FeaturedTitle
 
 /** The art the player shows while a Version starts, until its first frame. */
 sealed interface StartingArt {
-    /** A Title's (a Movie's, or the Show of an Episode): its backdrop, dimmed, with its name over it. */
-    data class Title(val backdrop: String?) : StartingArt
+    /** A Title's (a Movie's, or the Show of an Episode): its poster, centred on the ground; its name in its place when it has none. [posters] are its card's, in the card's order. */
+    data class Title(val posters: List<String>) : StartingArt
 
     /** A Channel's, a Game's Feed's included: its logo on glass. */
     data class Channel(val logo: String?) : StartingArt
 }
 
-/** What the featured hero's Play starts on: the very backdrop the hero drew, so it comes from memory. */
-internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Title(backdrop)
+/** What the featured hero's Play starts on: the very poster the hero drew, so it comes from memory. */
+internal val FeaturedTitle.startingArt: StartingArt.Title get() = StartingArt.Title(posters)
 
 /**
- * What covers the picture while a Version starts, so waiting isn't a black screen: a Title's
- * backdrop dimmed by a `veil`, with its [name] in Display type in the middle, or a Channel's
+ * What covers the picture while a Version starts, so waiting isn't a black screen: a Title's poster
+ * centred on the ground (its [name] in Display type in its place when it has none), or a Channel's
  * logo on a glass card. The player's starting label sits over it. Once the engine shows its first
  * frame ([pictured]), it fades away over [Motion.screenFadeMillis] of frames ([Fade]) to the picture under it, and
  * leaves the screen. Without [art] (a Sports replay) it is the bare `ground`.
  *
  * Once the session has [failed], the cover is back at full strength whether or not a frame showed (VLC
- * can show its picture and still fail), without its name or glass card, so the failure's message reads
- * in the centre over the dimmed backdrop instead of on black.
+ * can show its picture and still fail), without its poster, name or glass card, so the failure's
+ * message reads in the centre on the ground.
  *
- * The backdrop is the one the Title page drew, so it comes from memory and shows on the first frame;
- * one refused as it was decoded ([rememberBackdrop]) leaves the ground under the veil.
+ * The poster is the one the Title page or the hero drew, at the same size ([rememberPoster]), so it
+ * comes from memory and shows on the first frame.
  */
 @Composable
 internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, failed: Boolean = false) {
@@ -71,13 +72,18 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, f
     if (gone && !failed) return
     Box(Modifier.fillMaxSize().testTag(STARTING_COVER).graphicsLayer { this.alpha = if (failed) 1f else alpha.value }.background(Colors.ground)) {
         when (art) {
-            is StartingArt.Title -> {
-                rememberBackdrop(art.backdrop)?.let { backdrop ->
-                    Image(backdrop, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().testTag(STARTING_BACKDROP))
+            is StartingArt.Title -> if (!failed) {
+                val poster = rememberPoster(art.posters)
+                if (poster != null) {
+                    Image(
+                        poster,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.align(Alignment.Center).width(Cards.posterWidth).aspectRatio(2f / 3f).clip(RoundedCornerShape(Corners.card)).testTag(STARTING_POSTER),
+                    )
+                } else {
+                    TitleName(name, Modifier.align(Alignment.Center).padding(horizontal = Spacing.screenX), TextAlign.Center)
                 }
-                // Dimmed, so the name and the starting label read over any backdrop.
-                Box(Modifier.fillMaxSize().background(Colors.veil))
-                if (!failed) TitleName(name, Modifier.align(Alignment.Center).padding(horizontal = Spacing.screenX), TextAlign.Center)
             }
             is StartingArt.Channel -> if (!failed) Box(
                 Modifier.align(Alignment.Center).width(GLASS_WIDTH).aspectRatio(16f / 9f)
@@ -101,5 +107,5 @@ internal fun StartingCover(art: StartingArt?, name: String, pictured: Boolean, f
 private val GLASS_WIDTH = Cards.posterHeight * 16 / 9
 
 internal const val STARTING_COVER = "starting-cover"
-internal const val STARTING_BACKDROP = "starting-backdrop"
+internal const val STARTING_POSTER = "starting-poster"
 internal const val STARTING_GLASS = "starting-glass"
