@@ -13,7 +13,7 @@ import org.junit.rules.TemporaryFolder
  * A Title's card names and pictures it from the Provider's Listings (#474, ADR 0014), seen through
  * the Library over the fake Provider: the App language's Listing names it, else the English one,
  * else the first. Its poster is the App language Listing's, else a Content language Listing's (in
- * the Viewer's order), else the English one's, else a streaming service Listing's, else the file
+ * the Viewer's order), else the English one's, else the French one's, else a streaming service Listing's, else the file
  * most Listings share, ties to the Best
  * playable Version's; a poster under 300 px wide is refused for the next one (#526).
  */
@@ -116,6 +116,18 @@ class ListingNamesTest {
         assertEquals("https://art/fr.jpg", card("fr").image)
         assertEquals("https://art/en.jpg", card("en").image)
         assertEquals("https://art/fr.jpg", card("tr", listOf("fr", "en")).image)
+    }
+
+    @Test fun anEnglishViewerSeesTheFrenchPosterWhereNoEnglishListingHasOne() = runBlocking {
+        // The surveyed Provider's Verity (2026): FR, GR and IR Listings, each its own one-sheet. An
+        // English Viewer whose Content languages leave French out saw the Greek one.
+        syncFilm(
+            "GR - Verity (2026)" to "https://art/gr.jpg", "IR - Verity (2026)" to "https://art/ir.jpg",
+            "FR - Verity (2026)" to "https://art/fr.jpg",
+        )
+
+        assertEquals("https://art/fr.jpg", card("en", listOf("en")).image)
+        assertEquals("https://art/gr.jpg", card("el", listOf("el")).image)
     }
 
     @Test fun aTitleWithNoListingInTheViewersLanguagesShowsTheFileMostListingsShare() = runBlocking {

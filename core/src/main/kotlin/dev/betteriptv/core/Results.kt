@@ -31,7 +31,7 @@ sealed interface TitleId {
  * A Title's card. [name] and [year] come from its Listing in the App language, else the English
  * one, else the [best] Version's. Its [posters] are the Provider's poster URLs in the order the card
  * tries them (ADR 0014, #526): the App language Listing's, else a Content language Listing's in the
- * Viewer's order, else the English one's, else a streaming service Listing's (`NF`, `D+`), else
+ * Viewer's order, else the English one's, else the French one's, else a streaming service Listing's (`NF`, `D+`), else
  * the file most Listings share; one under 300 px wide
  * ([Library.MIN_POSTER_WIDTH]) is left out where its URL names the width, and passed over for the
  * next where it decodes that narrow. The [image] is the first, null when none is left, and the card

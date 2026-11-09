@@ -2922,14 +2922,15 @@ class Library private constructor(
         fun inLanguage(wanted: String) = ranked.firstOrNull { it.listedLanguage == wanted }
         val naming = inLanguage(language) ?: inLanguage("en") ?: ranked.first()
         val cleaned = prefixTable.cleanName(naming.listing.name)
-        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en").distinct()
+        val languages = (listOf(language) + contentLanguages.map(::primaryLanguage) + "en" + "fr").distinct()
         return Shown(ranked.first(), naming, cleaned.name, cleaned.year ?: naming.listing.details?.year, posters(ranked, languages))
     }
 
     /**
      * A Title's posters in the order its card tries them (#526), so the poster's printed title is in
      * the language the Viewer reads: the Listings' in each of the Viewer's [languages] in turn (the
-     * App language, the Content languages in their order, English), the best Version's first within
+     * App language, the Content languages in their order, English, then French, the other App
+     * language, so Verity's French one-sheet beats its Greek one), the best Version's first within
      * one; then a streaming service's Listing's (a Source, no language: `NF`, `D+`, `AMZ`), which
      * links the English one-sheet where no Listing is in the Viewer's languages; then the file most of
      * [ranked]'s Listings share, a file counting once per language so a copy the Provider lists twice
