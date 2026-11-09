@@ -13,7 +13,8 @@ import org.junit.rules.TemporaryFolder
  * A Title's card names and pictures it from the Provider's Listings (#474, ADR 0014), seen through
  * the Library over the fake Provider: the App language's Listing names it, else the English one,
  * else the first. Its poster is the App language Listing's, else a Content language Listing's (in
- * the Viewer's order), else the English one's, else the file most Listings share, ties to the Best
+ * the Viewer's order), else the English one's, else a streaming service Listing's, else the file
+ * most Listings share, ties to the Best
  * playable Version's; a poster under 300 px wide is refused for the next one (#526).
  */
 class ListingNamesTest {
@@ -121,6 +122,20 @@ class ListingNamesTest {
         syncFilm("ES - La Película (2024)" to "https://art/es.jpg", "IT - Il Film (2024)" to "https://art/es.jpg", "DE - Der Film (2024)" to "https://art/de.jpg")
 
         assertEquals("https://art/es.jpg", card("tr", listOf("tr")).image)
+    }
+
+    @Test fun aTitleWithNoListingInTheViewersLanguagesShowsAStreamingServiceListingsPosterBeforeTheSharedFile() = runBlocking {
+        // The artwork survey: Titles with no EN or FR Listing showed the Spanish, Greek or German file
+        // most Listings share, while their Netflix, Disney+ or Prime copy (a Source, no language) links
+        // the English one-sheet.
+        syncFilm(
+            "DE - Der Film (2024)" to "https://art/de.jpg", "GR - Η Ταινία (2024)" to "https://art/de.jpg",
+            "ES - La Película (2024)" to "https://art/de.jpg", "4K-NF - Film (2024)" to "https://art/nf.jpg",
+            "SC - Film (2024)" to "https://art/sc.jpg",
+        )
+
+        assertEquals("https://art/nf.jpg", card("en", listOf("en", "fr")).image)
+        assertEquals("https://art/de.jpg", card("de").image)
     }
 
     @Test fun theCardKeepsTheRestOfThePostersInOrderForWhenOneIsRefusedAsItDecodes() = runBlocking {
