@@ -12,3 +12,6 @@ __pycache__/
 .impeccable/questions/
 .impeccable/review/
 .impeccable/mocks/
+
+# ndk-build's working files (app/src/main/cpp)
+.cxx/

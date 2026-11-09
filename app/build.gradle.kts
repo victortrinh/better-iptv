@@ -14,6 +14,9 @@ val commitCount: Int = providers.exec { commandLine("git", "rev-list", "--count"
 android {
     namespace = "dev.betteriptv.app"
     compileSdk = 36
+    // The recognizer's /proc/cpuinfo redirect (ADR 0017) is the app's only native code, a C file built
+    // by the NDK's own ndk-build: no CMake to install. CI downloads this NDK when it lacks it.
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         applicationId = "dev.betteriptv"
@@ -83,6 +86,8 @@ android {
         compose = true
         buildConfig = true
     }
+
+    externalNativeBuild { ndkBuild { path = file("src/main/cpp/Android.mk") } }
 
     compileOptions {
         // java.time (used by the core) needs API 26; desugaring brings it to Fire OS 6.
