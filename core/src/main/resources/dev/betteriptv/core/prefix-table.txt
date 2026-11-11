@@ -15,13 +15,17 @@
 #   - a line with an empty rule (`A+ |`, or just `A+`) keeps the key known but saying nothing, which
 #     is how a Provider switches a Base meaning off; an empty country alias or genre word drops it;
 #   - its event time zone replaces this table's;
-#   - every other line adds: Clutter names, live Clutter names, empty Event slots, Tier tags.
+#   - every other line adds: Clutter names, live Clutter names, empty Event slots, Tier tags, words
+#     that aren't Tier tags.
 # There is no delete syntax.
 #
 # The cloud serves a Provider table's learned lines (what that Provider's file reads agreed on, ADR
 # 0014) after its hand lines, under `[learned prefixes]`, which only a Provider table has. A learned
 # line lays its attributes over this table's line for the Prefix, one by one (a learned `fr` keeps a
-# line's `fr-CA`), and a hand line for the same Prefix wins over it. It names only what a file
+# line's `fr-CA`), and a hand line for the same Prefix wins over it, unless the hand line says
+# `keep-learned`: then the learned line lays over the hand line instead, which is how the curator
+# accepts a learned line that contradicts this table (`FR | language=fr; keep-learned` keeps French
+# Listings whose files learned Multi-audio) and takes it off the weekly issue. It names only what a file
 # states: language, quality, hdr, dolby-audio, or `multi-audio`, which says the Prefix's files mostly
 # carry several audio languages, so it names none and its Versions are Untagged. A learned language
 # is the audio's only: the Listings are still written (name, plot, poster) in the language this
@@ -32,7 +36,10 @@
 # Header read or Playback Confirms or corrects it.
 #
 # Lines are `key | attribute; attribute; ...`. Attributes:
-#   language=xx         the main audio's language, as a BCP 47 tag (fr-CA is Québec French)
+#   language=xx         the main audio's language, as a BCP 47 tag (fr-CA is Québec French), and
+#                       the language the Listings are written in (name, plot, poster)
+#   listed=xx           the language the Listings are written in alone, whatever `language=` says:
+#                       `IR | listed=fa` is Persian Listings whose audio isn't named (it splits)
 #   subtitles=xx,yy     subtitle languages; `mul` means many languages
 #   subtitled           the language named so far is the subtitles', the audio is the original
 #   quality=4K
@@ -40,6 +47,7 @@
 #   source=Name         the streaming service the Version was copied from
 #   dolby-audio, cam, audio-description
 #   multi-audio         learned lines only: no language (see above)
+#   keep-learned        a Provider table's Prefix lines only: the learned line still applies (see above)
 #   sports-replay       kept out of the movie list
 #   clutter             not watchable content: kept out of every list
 #
@@ -69,6 +77,10 @@
 # and `hevc`. Two live Listings are one Channel when their names match once the Tier tag and the
 # quality words are gone; the country tag (`UK:`, `CA FR:`, two capitals before the colon) stays
 # part of the Channel's identity.
+#
+# Not tier tags are words the weekly issue offered as candidate Tier tags that aren't (`BAN`, `HINDI`,
+# `NOW`: a country, a language feed, an operator of one country), one per line: never offered again,
+# and kept as part of the Channel's name.
 #
 # The event time zone is the zone the Provider writes Event channel times in (`(2026-10-29
 # 18:00:30)`, `@ Oct 27 7:00 PM`) when the name states none; a zone the name states (`(GMT)`,

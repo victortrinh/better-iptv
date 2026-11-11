@@ -6,9 +6,11 @@
 //   - the learned lines that contradict the Base table ("`EN`: learned French 95%, Base says English");
 //   - the candidate Tier tags devices reported in the last 30 days.
 // A Prefix with a hand line in the Provider's hand file (or, for an unknown one, now in the Base table)
-// is left out, and so is a candidate already a Tier tag there: the hand line settled it. Hosts only tests
-// serve (FakeProvider on loopback or the emulator's 10.0.2.2) are left out altogether. Nothing here is
-// applied by itself.
+// is left out, whatever the line says: one that names only the listed language (`IR | listed=fa`) or
+// keeps the learned line (`FR | language=fr; keep-learned`) settles its splits and contradictions too.
+// A candidate already a Tier tag there is left out, and so is one listed under `[not tier tags]`: the
+// curator settled it. Hosts only tests serve (FakeProvider on loopback or the emulator's 10.0.2.2) are
+// left out altogether. Nothing here is applied by itself.
 //
 // Run it as `node scripts/weekly-issue.mjs unknowns.json splits.json learned.json tier-tags.json`, each
 // file what `wrangler d1 execute --json` printed for the workflow's queries; it prints the body, or
@@ -31,11 +33,12 @@ const SHOWN = new Set(["language", "quality"]);
 
 /**
  * What a table in the Base table's format says: each Prefix's rule as attributes (language, quality,
- * multi-audio), and its Tier tags, uppercase.
+ * multi-audio), its Tier tags and the words it says aren't Tier tags, uppercase.
  */
 export function readTable(text) {
   const prefixes = new Map();
   const tierTags = new Set();
+  const notTierTags = new Set();
   let section = null;
   for (const raw of text.split("\n")) {
     const line = raw.replace(/#.*$/, "").trim();
@@ -55,9 +58,11 @@ export function readTable(text) {
       prefixes.set(key.trim(), attributes);
     } else if (section === "tier tags") {
       tierTags.add(line.replace(/:$/, "").toUpperCase());
+    } else if (section === "not tier tags") {
+      notTierTags.add(line.replace(/:$/, "").toUpperCase());
     }
   }
-  return { prefixes, tierTags };
+  return { prefixes, tierTags, notTierTags };
 }
 
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
@@ -145,7 +150,8 @@ export function weeklyIssue(rows, baseText, handFiles = {}) {
   }
   for (const row of tierTags) {
     const word = row.word.toUpperCase();
-    if (base.tierTags.has(word) || hand(row.provider).tierTags.has(word)) continue;
+    const settledBy = (table) => table.tierTags.has(word) || table.notTierTags.has(word);
+    if (settledBy(base) || settledBy(hand(row.provider))) continue;
     section(row.provider).tierTags.push(row);
   }
 
@@ -182,7 +188,7 @@ export function weeklyIssue(rows, baseText, handFiles = {}) {
         "",
         "#### Candidate Tier tags",
         "",
-        "Words before the colon at the start of live Listings' names whose removal makes them the same Channel as another. A wrong Tier tag merges two Channels: add one to `[tier tags]` only when its Listings are the same Channel.",
+        "Words before the colon at the start of live Listings' names whose removal makes them the same Channel as another. A wrong Tier tag merges two Channels: add one to `[tier tags]` only when its Listings are the same Channel, and one that isn't to `[not tier tags]` so it stops coming back.",
         "",
         "| Word | Listings merged | Example | First seen | Last seen |",
         "| --- | ---: | --- | --- | --- |",

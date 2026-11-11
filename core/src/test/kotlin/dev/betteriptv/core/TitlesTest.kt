@@ -201,9 +201,9 @@ class TitlesTest {
         title(ballerina, listOf("fr", "en")).let { details ->
             assertEquals(listOf("fr", "en", null), details.languages.map { it.language })
             assertEquals(
-                // Most Versions first: Spanish 4, German 3, Hindi 2, then one each. `TR - ... [TR - ALT YAZI]` is
-                // subtitled in Turkish, so it's Untagged.
-                listOf("es", "de", "hi", "el", "fa", "he", "kmr", "nl", "pl", "pt", "ro", "te", "tr"),
+                // Most Versions first: German 3, Spanish 3, Hindi 2, then one each. `TR - ... [TR - ALT YAZI]` is
+                // subtitled in Turkish and `IR - ... [IR - PERSIAN SUB/DUB]` names no audio (#545), so they're Untagged.
+                listOf("de", "es", "hi", "el", "he", "kmr", "nl", "pl", "pt", "ro", "te", "tr"),
                 details.otherLanguages.map { it.language },
             )
         }

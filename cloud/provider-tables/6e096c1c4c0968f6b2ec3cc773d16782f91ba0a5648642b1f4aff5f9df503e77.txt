@@ -72,6 +72,71 @@ DSC-S       | source=Discovery+; subtitles=ar
 AR-DSC-S    | source=Discovery+; subtitles=ar
 DE-JO       | source=Joyn; language=de
 
+# Read splits (#545): the Listings are written in the Base language, the files' audio is mixed
+IR          | listed=fa                 # English 67%, Multi-audio 29%, Japanese 4%: mostly PERSIAN SUB/DUB
+ES          | listed=es                 # English 40%, Multi-audio 40%, Spanish 20%
+
+# Learned lines that contradict the Base table and are right (#545): Base's line, with the learned audio over it
+FR          | language=fr; keep-learned   # Multi-audio 95%
+DE          | language=de; keep-learned   # Multi-audio 67%; quality split (HD 84%), so none is named
+GR          | language=el; keep-learned   # English 91%: English films with Greek subtitles
+
+[category hints]
+
+# IR names no audio (above); these Categories still say Persian: Iranian films and series, and
+# copies dubbed (دوبله) into Persian. IR - PERSIAN SUB/DUB, where the reads split, stays unnamed.
+PERSIAN MOVIES      | language=fa       # IR - PERSIAN MOVIES, 1,015 Listings
+PERSIAN SERIES      | language=fa       # 725 Series
+دوبله               | language=fa       # IR - PERSIAN کلاسیک دوبله (628), PERSIAN ترکی دوبله (182)
+
+[not tier tags]
+
+# Candidate Tier tags whose Listings are different Channels (#545): the word carries the country or
+# the language feed. NBA and MUSIC are left on the weekly issue, undecided.
+# Countries: BAN: RTV (Bangladesh) beside RWA: RTV (Rwanda), NIC: and LSV: CANAL 2.
+AFR
+BAN
+CABO
+CAM
+CHL
+CON
+ERI
+ETH
+ETHO
+GEN
+GHA
+IRL
+LSV
+MALI
+NIC
+NIG
+RWA
+SEN
+SOM
+SPO
+TOG
+UGA
+# Language feeds: HINDI: and TAMIL: CARTOON NETWORK beside the English one.
+HINDI
+TAMIL
+# Operators of different countries: NOW: SKY ATLANTIC (UK) beside WOW: and SKYGO: SKY ATLANTIC
+# (Germany), Euronews's language editions under T2:, JOYN:, MEO:.
+AMP
+C+
+DSTV
+JOYN
+M+
+MEO
+NOW
+PLAY
+PLAY+
+SAT
+SKY
+SKYGO
+T2
+TUBI
+WOW
+
 [event time zone]
 
 # This Provider's "@ Oct 24 19:00" and "(2026-10-29 18:00:30)" are Eastern time: "NHL: Leafs vs

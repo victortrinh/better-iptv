@@ -50,6 +50,53 @@ class PrefixTableTest {
         assertEquals(Known(Quality.HD, Provenance.Likely), description.attributes.quality)
     }
 
+    @Test fun `a listed language names what the Listing is written in, not its audio`() {
+        val base = "[prefixes]\nIR | language=fa\n"
+        val split = PrefixTable.parse(base, "[prefixes]\nIR | listed=fa\n").describe("IR - A Film (2020)", "IR - PERSIAN SUB/DUB")
+        assertNull(split.unknownPrefix)
+        assertNull(split.attributes.language)
+        assertEquals("fa", split.listedLanguage)
+        // Whichever comes first, `listed=` wins over the language `language=` would list.
+        listOf("listed=fa; language=en", "language=en; listed=fa").forEach { rule ->
+            val dubbed = PrefixTable.parse(base, "[prefixes]\nIR | $rule\n").describe("IR - A Film (2020)", "MOVIES")
+            assertEquals(Known("en", Provenance.Likely), dubbed.attributes.language)
+            assertEquals("fa", dubbed.listedLanguage)
+        }
+        assertTrue(runCatching { PrefixTable.parse(base, "[prefixes]\nIR | listed=\n") }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test fun `a hand line marked keep-learned lets the learned line still lay over it`() {
+        val base = "[prefixes]\nFR | language=fr\nGR | language=el\n"
+        val learned = "[learned prefixes]\nFR | multi-audio\nGR | language=en\n"
+        val kept = PrefixTable.parse(base, "[prefixes]\nFR | language=fr; keep-learned\nGR | language=el; keep-learned\n\n$learned")
+        val fr = kept.describe("FR - A Film (2020)", "MOVIES")
+        assertNull(fr.attributes.language)
+        assertTrue(fr.attributes.multiAudio)
+        assertEquals("fr", fr.listedLanguage)
+        val gr = kept.describe("GR - A Film (2020)", "MOVIES")
+        assertEquals(Known("en", Provenance.Likely), gr.attributes.language)
+        assertEquals("el", gr.listedLanguage)
+        // Without the marker, the hand line wins over the learned one.
+        val hand = PrefixTable.parse(base, "[prefixes]\nFR | language=fr\n\n$learned").describe("FR - A Film (2020)", "MOVIES")
+        assertEquals(Known("fr", Provenance.Likely), hand.attributes.language)
+        // Only a Provider table's Prefix lines carry it.
+        listOf(
+            { PrefixTable.parse("[prefixes]\nXX | keep-learned\n") },
+            { PrefixTable.parse(base, "[category hints]\nVOSTFR | subtitled; keep-learned\n") },
+            { PrefixTable.parse(base, "[learned prefixes]\nFR | multi-audio; keep-learned\n") },
+        ).forEach { assertTrue(runCatching(it).exceptionOrNull() is IllegalArgumentException) }
+    }
+
+    @Test fun `a word the table says isn't a Tier tag is never a candidate`() {
+        val base = "[tier tags]\nVIP\n"
+        assertEquals("NOW" to "SKY ATLANTIC", PrefixTable.parse(base).tierTagWord("NOW: SKY ATLANTIC"))
+        val table = PrefixTable.parse(base, "[not tier tags]\nNOW\nBAN:\n")
+        assertNull(table.tierTagWord("NOW: SKY ATLANTIC"))
+        assertNull(table.tierTagWord("ban: RTV"))
+        // It stays part of the Channel's name, so another word beside it can still be one.
+        assertEquals("PLUS" to "NOW: SKY ATLANTIC", table.tierTagWord("NOW PLUS: SKY ATLANTIC"))
+    }
+
     @Test fun `a report names the Prefix, known or not, and the hints as the table writes them`() {
         val table = PrefixTable.base()
         val reported = table.reported("ZZ - A Film (2020)", "ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ MULTI-SUBS")
