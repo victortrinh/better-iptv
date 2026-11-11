@@ -894,6 +894,15 @@ describe("file reads", () => {
     expect(response.status).toBe(400);
   });
 
+  it("doesn't keep reads from a host only tests serve (#545)", async () => {
+    const emulator = "f9292b96ff7d66abe0820bbe9bd022cb0abd37bd673d7b462e1bba84245a9f66"; // 10.0.2.2
+    const token = await registerDevice();
+    expect((await call("POST", "/v1/file-reads", { provider: emulator, files: [{ listingId: 12, file, prefix: "SC", hints: [] }] }, token)).status).toBe(204);
+    const lookup = await call("POST", "/v1/file-reads/lookup", { provider: emulator, listings: [12] }, token);
+    expect(await lookup.json()).toEqual({ files: [] });
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM learned_line WHERE provider = ?").bind(emulator).first())?.n).toBe(0);
+  });
+
   it("refuses reads that aren't small objects", async () => {
     const token = await registerDevice();
     expect((await call("POST", "/v1/file-reads", { provider, files: [{ listingId: 12, file: "x" }] }, token)).status).toBe(400);
@@ -962,6 +971,16 @@ describe("unknown Prefixes", () => {
       { provider: other, word: "PLUS", listing_count: 2, example: "PLUS: SKY ONE", first_seen: week1, last_seen: week1 },
     ]);
     expect((await rows()).map((r) => r.prefix)).toContain("BR");
+  });
+
+  it("doesn't keep reports from a host only tests serve (#545)", async () => {
+    const token = await registerDevice();
+    const loopback = "12ca17b49af2289436f303e0166030a21e525d266e209267433801a8fd4071a0"; // 127.0.0.1
+    const report = { provider: loopback, prefixes: [{ prefix: "SC", listingCount: 3, example: "SC - A Film (2020)" }], tierTags: [{ word: "PLUS", listingCount: 2, example: "PLUS: SKY ONE" }] };
+    expect((await call("POST", "/v1/unknown-prefixes", report, token)).status).toBe(204);
+    const kept = (table: string) => env.DB.prepare(`SELECT count(*) AS n FROM ${table} WHERE provider = ?`).bind(loopback).first().then((r) => r?.n);
+    expect(await kept("unknown_prefix")).toBe(0);
+    expect(await kept("tier_tag_candidate")).toBe(0);
   });
 
   it("takes a report without candidate Tier tags, as older apps send, and only well-formed ones", async () => {

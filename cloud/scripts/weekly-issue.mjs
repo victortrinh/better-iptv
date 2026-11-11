@@ -6,12 +6,25 @@
 //   - the learned lines that contradict the Base table ("`EN`: learned French 95%, Base says English");
 //   - the candidate Tier tags devices reported in the last 30 days.
 // A Prefix with a hand line in the Provider's hand file (or, for an unknown one, now in the Base table)
-// is left out, and so is a candidate already a Tier tag there: the hand line settled it. Nothing here is
+// is left out, and so is a candidate already a Tier tag there: the hand line settled it. Hosts only tests
+// serve (FakeProvider on loopback or the emulator's 10.0.2.2) are left out altogether. Nothing here is
 // applied by itself.
 //
 // Run it as `node scripts/weekly-issue.mjs unknowns.json splits.json learned.json tier-tags.json`, each
 // file what `wrangler d1 execute --json` printed for the workflow's queries; it prints the body, or
 // nothing when no section has anything to show.
+
+/**
+ * The Provider keys of hosts only tests serve (#545), as src/test-hosts.ts lists them: localhost,
+ * 127.0.0.1, ::1 and the emulator's 10.0.2.2. The cloud no longer keeps their reports, and their rows
+ * already in D1 (learned lines are kept for good) are left out of the issue.
+ */
+export const TEST_HOST_KEYS = new Set([
+  "49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763",
+  "12ca17b49af2289436f303e0166030a21e525d266e209267433801a8fd4071a0",
+  "eff8e7ca506627fe15dda5e0e512fcaad70b6d520f37cc76597fdb4f2d83a1a3",
+  "f9292b96ff7d66abe0820bbe9bd022cb0abd37bd673d7b462e1bba84245a9f66",
+]);
 
 /** The attributes the issue shows splits and contradictions of: the ones a hand line is written for. */
 const SHOWN = new Set(["language", "quality"]);
@@ -90,7 +103,9 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  *   learned   {provider, prefix, attribute, value, reads, agreeing}
  *   tierTags  {provider, word, listings, example, first_seen, last_seen}
  */
-export function weeklyIssue({ unknowns = [], splits = [], learned = [], tierTags = [] }, baseText, handFiles = {}) {
+export function weeklyIssue(rows, baseText, handFiles = {}) {
+  const real = (list = []) => list.filter((row) => !TEST_HOST_KEYS.has(row.provider));
+  const [unknowns, splits, learned, tierTags] = [rows.unknowns, rows.splits, rows.learned, rows.tierTags].map(real);
   const base = readTable(baseText);
   const hands = new Map();
   const hand = (provider) => {
