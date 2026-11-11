@@ -83,10 +83,10 @@ internal data class VersionsList(
  * under their Version in muted type), Other languages, and the [cast] and [directors] the Provider names.
  * Focus opens on the first Version; choosing a row plays that one ([onChoose]). Back is the
  * caller's, and returns to the Versions action. While Header reads are [checking] Versions, the
- * legend says so ([CheckingVersions]).
+ * legend says so ([CheckingVersions]); until they're [checked], the rows show no quality badges (#546).
  */
 @Composable
-internal fun VersionsContent(versions: VersionsList, cast: List<String>, directors: List<String>, onChoose: (Version) -> Unit, checking: Boolean = false) {
+internal fun VersionsContent(versions: VersionsList, cast: List<String>, directors: List<String>, onChoose: (Version) -> Unit, checking: Boolean = false, checked: Boolean = true) {
     val context = LocalContext.current
     var showOthers by rememberSaveable(versions.heading) { mutableStateOf(false) }
     // With no Version in the Viewer's languages, the other languages are all there is to show.
@@ -133,7 +133,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
             }
             item(key = "columns") { VersionHeader(Modifier.padding(bottom = 2.dp), columns = table.columns) }
             table.groups.take(shown.size).forEachIndexed { index, group ->
-                languageGroup(context, group, table.columns, first = index == 0, firstVersion, onChoose, lastKey, toEnd)
+                languageGroup(context, group, table.columns, first = index == 0, firstVersion, onChoose, lastKey, toEnd, checked)
             }
             if (hidden.isNotEmpty()) {
                 // Other languages open under this row, so it keeps focus where it is.
@@ -146,7 +146,7 @@ internal fun VersionsContent(versions: VersionsList, cast: List<String>, directo
                         detail = hidden.joinToString(", ") { group -> group.language?.let(::languageName).orEmpty() },
                     )
                 }
-                if (showOthers) table.groups.drop(shown.size).forEach { languageGroup(context, it, table.columns, first = false, firstVersion, onChoose, lastKey, toEnd) }
+                if (showOthers) table.groups.drop(shown.size).forEach { languageGroup(context, it, table.columns, first = false, firstVersion, onChoose, lastKey, toEnd, checked) }
             }
             if (cast.isNotEmpty()) {
                 item(key = "cast") {
@@ -184,6 +184,7 @@ private fun LazyListScope.languageGroup(
     onChoose: (Version) -> Unit,
     lastKey: Any?,
     toEnd: Modifier,
+    checked: Boolean,
 ) {
     item(key = "language ${group.language}") {
         Text(
@@ -198,7 +199,8 @@ private fun LazyListScope.languageGroup(
     group.rows.forEachIndexed { index, row ->
         item(key = row.version.listingId) {
             VersionRow(
-                context.versionLine(row),
+                // Until the Versions are checked, the Quality column stays, empty, so nothing moves when they are (#546).
+                context.versionLine(row).let { if (checked) it else it.copy(badges = emptyList()) },
                 // A Backup plays itself first: the Viewer chose it for what its name doesn't say (burned-in subtitles).
                 onClick = { onChoose(row.version) },
                 modifier = (if (first && index == 0) Modifier.focusRequester(firstVersion) else Modifier)

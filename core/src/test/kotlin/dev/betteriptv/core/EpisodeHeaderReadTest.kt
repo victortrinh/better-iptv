@@ -84,6 +84,18 @@ class EpisodeHeaderReadTest {
         assertEquals(0, provider.refusedStreams)
     }
 
+    @Test fun `a Show's Versions are checked once its Episodes are read and each Episode's best Versions are`() = runBlocking {
+        syncShow("EN - Game of Thrones" to listOf(201L to "eng", 202L to "eng"))
+        listOf(201L, 202L).forEach { provider.episodeFiles[it] = englishOnly }
+
+        // Before its Episodes are read, nothing says what they hold.
+        assertEquals(false, library.versionsChecked(show, listOf("en")))
+        library.episodes(show, listOf("en"))
+        assertEquals(false, library.versionsChecked(show, listOf("en")))
+        openShow(listOf("en"))
+        assertEquals(true, library.versionsChecked(show, listOf("en")))
+    }
+
     @Test fun `an FR Episode with English first and French after it is Confirmed French, one with only English moves to English`() = runBlocking {
         syncShow("FR - Game of Thrones" to listOf(101L to "eng", 102L to "eng"))
         provider.episodeFiles[101] = englishThenFrench
