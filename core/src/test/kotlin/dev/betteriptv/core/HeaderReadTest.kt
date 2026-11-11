@@ -82,6 +82,17 @@ class HeaderReadTest {
         assertEquals(0, provider.openStreamCount)
     }
 
+    @Test fun `a Movie's Versions are checked once each language's best one is read, or can't be`() = runBlocking {
+        syncVersions("EN - Movie (2025)" to "EN - MOVIES" with "mkv", "FR - Le Film (2025)" to "FR - FILMS" with "avi")
+        provider.movieFiles[1] = matroskaFile(englishAndFrench)
+
+        // Nothing read yet: what the page shows is guessed from the Prefixes.
+        assertEquals(false, library.versionsChecked(movie, listOf("en", "fr")))
+        readHeaders(listOf("en", "fr"))
+        // An AVI isn't Header read, so it leaves nothing to wait for.
+        assertEquals(true, library.versionsChecked(movie, listOf("en", "fr")))
+    }
+
     @Test fun `an FR Version without a French Track moves to the language it really has`() = runBlocking {
         syncVersions("FR - Le Film (2025)" to "FR - FILMS" with "mkv", "DE - Der Film (2025)" to "DE - FILME" with "mkv")
         provider.movieFiles[1] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AC3")))

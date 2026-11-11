@@ -2630,13 +2630,8 @@ class Library private constructor(
         val title = store.title(id) ?: return
         val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
-        val shows = if (id.kind == TitleKind.Show) {
-            val kept = store.showDetails(title.listings.map { it.id })
-            title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
-        } else {
-            readMovieDetails(client, title.listings, changed)
-            null
-        }
+        val shows = keptShows(title)
+        if (shows == null) readMovieDetails(client, title.listings, changed)
         // The Provider numbers Movies and Episodes from one sequence, so Listing ids don't collide.
         val ids = shows?.flatMap { (_, episodes) -> episodes.map { it.id } } ?: title.listings.map { it.id }
         val provider = providerKey(login)
@@ -2644,9 +2639,7 @@ class Library private constructor(
         if (lookUpFileReads(provider, ids)) changed()
         // This page's Versions come before Background reading's.
         connection.cancelRead()
-        val unread = (if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio))
-            .map { listingId -> listingId to ((if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv") }
-            .filter { (_, container) -> container in HEADER_READABLE }
+        val unread = toRead(title, shows, contentLanguages, preferOriginalAudio)
         var left = unread.size
         if (left > 0) checking(left)
         for ((listingId, container) in unread) {
@@ -2672,6 +2665,33 @@ class Library private constructor(
         }
         shareFileReads(provider)
     }
+
+    /**
+     * Whether a details page of [id] has nothing left to Header read, so what it shows of its
+     * Versions is what their files hold, as far as they can be read (#546): every Version
+     * [readHeaders] would read is read, and a Show's show details are kept. Only from what the device
+     * keeps; nothing is asked of the Provider or the cloud.
+     */
+    suspend fun versionsChecked(id: TitleId, contentLanguages: List<String>, preferOriginalAudio: Boolean = true): Boolean = withContext(Dispatchers.IO) {
+        val title = store.title(id) ?: return@withContext true
+        val shows = keptShows(title)
+        // A Show whose Episodes aren't read yet has Versions nothing has looked at.
+        if (shows != null && shows.size < title.listings.size) return@withContext false
+        toRead(title, shows, contentLanguages, preferOriginalAudio).isEmpty()
+    }
+
+    /** A Show's show Listings with the Episodes their kept show details list, or null for a Movie. */
+    private fun keptShows(title: StoredTitle): List<Pair<Candidate, List<ProviderEpisode>>>? {
+        if (title.id.kind != TitleKind.Show) return null
+        val kept = store.showDetails(title.listings.map { it.id })
+        return title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
+    }
+
+    /** The Listings [readHeaders] reads, in its order, with their file containers: only those a Header read can read. */
+    private fun toRead(title: StoredTitle, shows: List<Pair<Candidate, List<ProviderEpisode>>>?, contentLanguages: List<String>, preferOriginalAudio: Boolean): List<Pair<Long, String>> =
+        (if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio))
+            .map { listingId -> listingId to ((if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv") }
+            .filter { (_, container) -> container in HEADER_READABLE }
 
     /**
      * Keeps the Provider's movie details (their bitrate among them) of the movie [listings] whose

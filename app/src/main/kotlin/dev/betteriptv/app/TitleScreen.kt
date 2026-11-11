@@ -67,8 +67,10 @@ import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import dev.betteriptv.app.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -126,9 +128,15 @@ fun TitleScreen(
     var removals by remember(id) { mutableIntStateOf(0) }
     // Whether the Header reads still have Versions to read, so the page can say so (#457).
     var checking by remember(id) { mutableStateOf(false) }
+    // Whether the page's Versions are read as far as they can be, so it names their quality (#546):
+    // known with the details, or once the Header reads end, however they end.
+    var checked by remember(id) { mutableStateOf(false) }
+    var readsEnded by remember(id, contentLanguages, preferOriginalAudio) { mutableStateOf(false) }
     // The plan comes with the details, so first focus lands once, on Play or on the first Version.
     val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, qualityCap, reads, removals) {
         val details = library.title(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
+        // Set with the details, so a page that arrives checked never shows itself without its badges.
+        if (id.kind != TitleKind.Show) checked = readsEnded || library.versionsChecked(id, contentLanguages, preferOriginalAudio)
         value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap, preferOriginalAudio)
     }
     // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
@@ -136,6 +144,7 @@ fun TitleScreen(
         if (id.kind != TitleKind.Show) return@produceState
         val episodes = library.episodes(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
         val device = withContext(Dispatchers.Default) { deviceProfile() }
+        checked = readsEnded || library.versionsChecked(id, contentLanguages, preferOriginalAudio)
         value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio) }
     }
     // A Show's reads need its show details, so they start once its Episodes are in.
@@ -143,7 +152,11 @@ fun TitleScreen(
     // Only while the app shows: a Show's reads can take minutes, each holding the Viewer's one stream (#503).
     val onScreen = rememberOnScreen()
     LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) {
-        if (readable) onScreen.whileTrue { library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
+        if (!readable) return@LaunchedEffect
+        onScreen.whileTrue { library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
+        // Refused or not, what they couldn't read stays a guess: the page shows it now.
+        readsEnded = true
+        checked = true
     }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own poster, already in memory.
@@ -161,6 +174,7 @@ fun TitleScreen(
         id, loaded, show,
         onPlay = play,
         checking = checking,
+        checked = checked,
         kids = library.kids,
         contentLanguages = contentLanguages,
         section = section,
@@ -202,7 +216,9 @@ fun TitleScreen(
  * and no Versions action: Play picks the Best playable Version, as on any profile.
  *
  * While the Header reads are [checking] Versions, the page says so under its actions and the Versions
- * screen beside its legend ([CheckingVersions], #457); a Kids page doesn't.
+ * screen beside its legend ([CheckingVersions], #457); a Kids page doesn't. Until its Versions are
+ * [checked], and while they're [checking], the page names no quality, neither in its badges, the
+ * Versions value nor the Versions screen's rows, so it never shows a guess the reads then correct (#546).
  */
 @Composable
 internal fun TitlePage(
@@ -220,8 +236,11 @@ internal fun TitlePage(
     contentLanguages: List<String> = emptyList(),
     kids: Boolean = false,
     checking: Boolean = false,
+    checked: Boolean = true,
 ) {
     val title = loaded?.first
+    // Never while a Header read is under way, as what it Confirms would change them.
+    val named = checked && !checking
     var waited by remember(id) { mutableStateOf(false) }
     LaunchedEffect(id) {
         delay(Motion.pageArrivalMillis.toLong())
@@ -238,7 +257,7 @@ internal fun TitlePage(
             val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
-                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, onChoose = { onChoose(it, title.name) }, checking = checking)
+                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, onChoose = { onChoose(it, title.name) }, checking = checking, checked = named)
                     TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.posters), onClose = onCloseSection) }
                     TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
                     null -> TitleContent(
@@ -250,6 +269,7 @@ internal fun TitlePage(
                         onSection = onSection,
                         kids = kids,
                         checking = checking,
+                        checked = named,
                     )
                 }
             }
@@ -292,6 +312,7 @@ private fun TitleContent(
     onSection: (TitleSection) -> Unit,
     kids: Boolean = false,
     checking: Boolean = false,
+    checked: Boolean = true,
 ) {
     val context = LocalContext.current
     // The poster its card and the hero show, at the same size: from memory when they drew it.
@@ -359,7 +380,9 @@ private fun TitleContent(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                BadgeRow(best?.attributes?.cardBadges().orEmpty())
+                // Until the Versions are checked, the guessed badges keep their place unseen, so the actions don't move when the real ones show (#546).
+                val badges = best?.attributes?.cardBadges().orEmpty()
+                BadgeRow(badges, if (checked) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
             }
             // A Show's header names the Episode its Play starts; its line is kept while the Episodes are read.
             if (isShow && (plan?.episode != null || episodes == null)) {
@@ -435,7 +458,7 @@ private fun TitleContent(
                         Icons.AutoMirrored.Filled.List,
                         onClick = { onSection(TitleSection.Versions) },
                         modifier = Modifier.testTag("versions action").focusRequester(versionsAction),
-                        value = versions?.let { context.versionsValue(plan?.version, it.count) } ?: "",
+                        value = versions?.let { context.versionsValue(plan?.version?.takeIf { checked }, it.count) } ?: "",
                         enabled = versions != null,
                     )
                 }

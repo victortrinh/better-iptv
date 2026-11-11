@@ -6,8 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.core.app.ApplicationProvider
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
@@ -67,9 +69,13 @@ class TitleBadgesTest {
 
     private fun details(id: TitleId, versions: List<Version>) = TitleDetails(id, "The New Look", 2024, null, listOf(LanguageGroup("en", versions)), emptyList())
 
+    private var checked by mutableStateOf(true)
+    private var checking by mutableStateOf(false)
+    private var section by mutableStateOf<TitleSection?>(null)
+
     private fun open(id: TitleId, loaded: Pair<TitleDetails, PlayPlan?>, episodes: Pair<ShowEpisodes, PlayPlan?>? = null) {
         var read by mutableStateOf(false)
-        compose.setContent { TitlePage(id, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> }) }
+        compose.setContent { TitlePage(id, loaded.takeIf { read }, episodes.takeIf { read }, onPlay = { _, _ -> }, section = section, checked = checked, checking = checking) }
         compose.waitForIdle()
         read = true
         compose.mainClock.advanceTimeBy(1_000)
@@ -106,5 +112,48 @@ class TitleBadgesTest {
 
         assertEquals(1, badges("4K"))
         assertEquals(1, badges("DV"))
+    }
+
+    @Test fun untilItsVersionsAreCheckedThePageNamesNoQuality() {
+        checked = false
+        open(movie, details(movie, listOf(dolbyVision, fullHd)) to PlayPlan(movie, fullHd, listOf("en"), listOf(fullHd)))
+
+        // Neither the badges nor the Versions value guess what the files hold; the count is known.
+        assertEquals(0, badges("1080p"))
+        compose.onAllNodesWithText("2 Versions").assertCountEquals(1)
+        compose.onAllNodesWithText("English · 1080p · 2 Versions").assertCountEquals(0)
+        val playTop = compose.onNodeWithTag("play").fetchSemanticsNode().boundsInRoot.top
+
+        checked = true
+        compose.waitForIdle()
+        assertEquals(1, badges("1080p"))
+        // The badges showing moves nothing.
+        assertEquals(playTop, compose.onNodeWithTag("play").fetchSemanticsNode().boundsInRoot.top)
+        compose.onAllNodesWithText("English · 1080p · 2 Versions").assertCountEquals(1)
+    }
+
+    @Test fun untilItsVersionsAreCheckedTheVersionsScreenNamesNoQuality() {
+        checked = false
+        section = TitleSection.Versions
+        open(movie, details(movie, listOf(dolbyVision, fullHd)) to PlayPlan(movie, fullHd, listOf("en"), listOf(fullHd)))
+
+        assertEquals(0, badges("4K"))
+        assertEquals(0, badges("1080p"))
+
+        checked = true
+        compose.waitForIdle()
+        assertEquals(1, badges("4K"))
+        assertEquals(1, badges("1080p"))
+    }
+
+    @Test fun whileAReadIsUnderWayThePageNamesNoQuality() {
+        checking = true
+        open(movie, details(movie, listOf(dolbyVision, fullHd)) to PlayPlan(movie, fullHd, listOf("en"), listOf(fullHd)))
+
+        assertEquals(0, badges("1080p"))
+
+        checking = false
+        compose.waitForIdle()
+        assertEquals(1, badges("1080p"))
     }
 }
