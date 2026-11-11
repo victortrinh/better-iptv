@@ -53,6 +53,25 @@ describe("the weekly issue", () => {
     expect(body.indexOf("#### Learned lines that contradict the Base table")).toBeLessThan(body.indexOf("#### Candidate Tier tags"));
   });
 
+  it("leaves out hosts only tests serve, whatever they reported before the cloud stopped keeping it (#545)", () => {
+    const emulator = "f9292b96ff7d66abe0820bbe9bd022cb0abd37bd673d7b462e1bba84245a9f66"; // 10.0.2.2
+    const loopback = "12ca17b49af2289436f303e0166030a21e525d266e209267433801a8fd4071a0"; // 127.0.0.1
+    const body: string = weeklyIssue(
+      {
+        unknowns: [unknown(emulator, "AR-DSC-S", 4), unknown(loopback, "SC", 2), unknown(a, "BR", 260)],
+        splits: [split(emulator, "SC", { sv: 11, da: 9 })],
+        learned: [learnt(loopback, "EN", "fr", 19, 20)],
+        tierTags: [tierTag(emulator, "PLUS", 40), tierTag(loopback, "MAX", 12)],
+      },
+      base,
+    );
+    expect(body).toContain(`### \`${a}\``);
+    expect(body).not.toContain(emulator);
+    expect(body).not.toContain(loopback);
+    expect(body).not.toContain("PLUS");
+    expect(weeklyIssue({ unknowns: [unknown(emulator, "XB", 1)], tierTags: [tierTag(loopback, "MAX", 12)] }, base)).toBe("");
+  });
+
   it("shows each part only when there is something to show, and nothing at all when no Provider has anything", () => {
     const body: string = weeklyIssue({ splits: [split(b, "SC", { sv: 11, da: 9 })] }, base);
     expect(body).toContain(`### \`${b}\``);

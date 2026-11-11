@@ -7,6 +7,7 @@ import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { fillGames, games, SUBREQUESTS } from "./games";
 import { providerTable } from "./provider-tables";
+import { isTestHostKey } from "./test-hosts";
 import { isCandidateTierTag, isUnknownPrefix, MAX_PREFIX_BATCH, MAX_TIER_TAG_BATCH, saveCandidateTierTags, saveUnknownPrefixes, type CandidateTierTag, type UnknownPrefix } from "./prefixes";
 import { isLeague, type League, LEAGUES } from "./schedule";
 import { ServiceUnavailable } from "./subtitle-service";
@@ -31,6 +32,7 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  *   "example": "BR - Cold Pursuit (2019)"}], "tierTags": [{"word": "PLUS", "listingCount": 40, "example":
  *   "PLUS: TNT SPORT 1 HD"}]}`: keeps the Prefixes a Sync found its Prefix table doesn't know, and its
  *   candidate Tier tags (optional, #439), for the developer to add, `204`.
+ *   Both reports are taken but not kept from a host only tests serve (src/test-hosts.ts, #545).
  * - `POST /v1/provider-table`, with `{"provider": "…"}`: that Provider's Provider table, as text in the
  *   Base table's format (`text/plain`): its hand lines, then its learned lines under `[learned prefixes]`,
  *   empty for a Provider the cloud has never seen (ADR 0014).
@@ -160,14 +162,18 @@ async function api(request: Request, env: Env, pathname: string, device: string)
   if (request.method === "POST" && pathname === "/v1/file-reads") {
     const asked = await fileReadsRequest(request, "files");
     if (typeof asked === "string") return problem(400, asked);
-    await saveFileReads(env.DB, asked.provider, asked.files);
+    // A test host's reads aren't a real Provider's files (#545): taken, but not kept.
+    if (!isTestHostKey(asked.provider)) await saveFileReads(env.DB, asked.provider, asked.files);
     return new Response(null, { status: 204 });
   }
   if (request.method === "POST" && pathname === "/v1/unknown-prefixes") {
     const asked = await unknownPrefixesRequest(request);
     if (typeof asked === "string") return problem(400, asked);
-    await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
-    await saveCandidateTierTags(env.DB, asked.provider, asked.tierTags);
+    // A test host's catalog isn't a real Provider's (#545): taken, but not kept for the weekly issue.
+    if (!isTestHostKey(asked.provider)) {
+      await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
+      await saveCandidateTierTags(env.DB, asked.provider, asked.tierTags);
+    }
     return new Response(null, { status: 204 });
   }
   if (request.method === "POST" && pathname === "/v1/provider-table") {
