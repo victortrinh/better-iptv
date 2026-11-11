@@ -106,6 +106,29 @@ describe("the weekly issue", () => {
     expect(weeklyIssue({ unknowns: [unknown(a, "XB", 2)] }, `${base}\n[prefixes]\nXB | language=en\n`)).toBe("");
   });
 
+  it("drops a split named by its listed language alone, a contradiction kept as learned, and a word that isn't a Tier tag", () => {
+    const rows = {
+      splits: [split(a, "IR", { en: 16, "multi-audio": 7, ja: 1 }), split(a, "DE", { HD: 16, SD: 2, "4K": 1 }, "quality")],
+      learned: [learnt(a, "FR", "multi-audio", 18, 19), learnt(a, "DE", "multi-audio", 12, 18)],
+      tierTags: [tierTag(a, "NOW", 36), tierTag(a, "BAN", 8), tierTag(a, "NBA", 2)],
+    };
+    const baseWith = `${base}\n[prefixes]\nIR | language=fa\nFR | language=fr\nDE | language=de\n`;
+    const before: string = weeklyIssue(rows, baseWith);
+    expect(before).toContain("- `IR`: English 67%");
+    expect(before).toContain("- `FR`: learned Multi-audio 95%, Base says French");
+
+    const hand = "[prefixes]\nIR | listed=fa\nFR | language=fr; keep-learned\nDE | language=de; keep-learned\n\n[not tier tags]\nNOW\nban:\n";
+    const after: string = weeklyIssue(rows, baseWith, { [a]: hand });
+    expect(after).not.toContain("#### Split reads");
+    expect(after).not.toContain("#### Learned lines");
+    expect(after).not.toContain("`NOW`");
+    expect(after).not.toContain("`BAN`");
+    // A word left out of both lists is still the curator's to decide.
+    expect(after).toContain("| `NBA` | 2 |");
+    // The Base table can say a word isn't a Tier tag for every Provider.
+    expect(weeklyIssue({ tierTags: [tierTag(a, "NBA", 2)] }, `${base}\n[not tier tags]\nNBA\n`)).toBe("");
+  });
+
   it("orders Providers by what there is to settle", () => {
     const body: string = weeklyIssue({ unknowns: [unknown(a, "XB", 2), unknown(b, "BR", 260)] }, base);
     expect(body.indexOf(b)).toBeLessThan(body.indexOf(a));

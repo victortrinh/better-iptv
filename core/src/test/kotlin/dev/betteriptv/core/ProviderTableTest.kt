@@ -48,16 +48,17 @@ class ProviderTableTest {
 
     private fun Library.movie(id: Long) = movieListings(0, 10_000).single { it.id == id }.attributes
 
-    @Test fun `with the hand file, the surveyed Provider's Listings are described as before the split`() = runBlocking {
+    @Test fun `with the hand file, the surveyed Provider's Listings are described as before the split, but for IR and ES`() = runBlocking {
         val library = library(surveyedProviderTable)
         library.sync()
 
         assertEquals(resource("/snapshots/library-descriptions.txt"), libraryDescriptions(library))
     }
 
-    @Test fun `with the hand file, every Prefix, Category hint and quality word the table had reads as before the split`() {
+    @Test fun `with the hand file, every Prefix, Category hint and quality word the table had reads as before the split, but for IR and ES`() {
         // Language, quality, Source, Clutter, Sports replay and Channel key of the fixture's Listings
-        // and of one Listing per line the table had, against what the table made of them before.
+        // and of one Listing per line the table had, against what the table made of them before. IR and
+        // ES name no audio since #545: their reads split, so only their listed language is named.
         assertEquals(resource("/snapshots/fixture-descriptions.txt"), FixtureDescriptions.render(surveyedPrefixTable()))
         assertEquals(ZoneId.of("America/Toronto"), surveyedPrefixTable().eventTimeZone)
     }

@@ -21,6 +21,8 @@ internal class PrefixTable private constructor(
     private val emptyEventSlots: List<Regex>,
     /** The Tier tags, as uppercase words without their colon. */
     private val tierTags: Set<String>,
+    /** The words the curator found aren't Tier tags (`[not tier tags]`), uppercase: never a candidate ([tierTagWord]). */
+    private val notTierTags: Set<String>,
     /** Each Channel quality word, uppercase, with what it says of the variant. */
     private val qualityWords: Map<String, Rule>,
     /** The live Category country codes that aren't countries (`AR`, `EX YU`), uppercase, to the name the browser shows for them. */
@@ -246,16 +248,16 @@ internal class PrefixTable private constructor(
     /**
      * The word a live Listing named [name] would lose were it a Tier tag, uppercase, with the key of the
      * Channel it would then be a variant of: the one word before the first colon at the start of the
-     * name that is neither a Tier tag nor a country tag (`PLUS: TNT SPORT 1 HD` is PLUS, then the
-     * Channel "TNT SPORT 1"; `UK PLUS: SKY ONE` is PLUS, then "UK: SKY ONE"). Null when there is no
-     * such word, or more than one. Whether the word is a candidate Tier tag depends on the other live
+     * name that is neither a Tier tag, a country tag nor a word the table says isn't a Tier tag
+     * (`PLUS: TNT SPORT 1 HD` is PLUS, then the Channel "TNT SPORT 1"; `UK PLUS: SKY ONE` is PLUS,
+     * then "UK: SKY ONE"). Null when there is no such word, or more than one. Whether the word is a candidate Tier tag depends on the other live
      * Listings ([CandidateTierTags]); nothing here applies it.
      */
     fun tierTagWord(name: String): Pair<String, String>? {
         val normalised = withoutSmallCapitals(Normalizer.normalize(name, Normalizer.Form.NFKC))
         val head = HEAD.find(normalised) ?: return null
         val words = head.groupValues[1].split(' ')
-        val others = words.filter { it.uppercase(Locale.ROOT) !in tierTags && !COUNTRY_CODE.matches(it) }
+        val others = words.filter { it.uppercase(Locale.ROOT).let { word -> word !in tierTags && word !in notTierTags } && !COUNTRY_CODE.matches(it) }
         val word = others.singleOrNull() ?: return null
         val kept = words - word
         val rest = normalised.substring(head.range.last + 1)
@@ -323,6 +325,8 @@ internal class PrefixTable private constructor(
         val hevc: Boolean = false,
         /** A Channel quality word that counts only in the Provider's superscript form. */
         val superscript: Boolean = false,
+        /** A hand line that lets the Provider's learned line still lay over it (`keep-learned`), instead of replacing it. */
+        val keepLearned: Boolean = false,
         /** Learned: the Prefix's files mostly carry several audio languages, so it names none (it is Untagged). */
         val multiAudio: Boolean = false,
     ) {
@@ -478,6 +482,7 @@ internal class PrefixTable private constructor(
             val liveClutterNames = mutableListOf<Regex>()
             val emptyEventSlots = mutableListOf<Regex>()
             val tierTags = LinkedHashSet<String>()
+            val notTierTags = LinkedHashSet<String>()
             val qualityWords = LinkedHashMap<String, Rule>()
             val countryAliases = LinkedHashMap<String, String>()
             /** Each genre word, as written, to its genre. */
@@ -541,7 +546,12 @@ internal class PrefixTable private constructor(
                         else -> {
                             val rule = parseRule(line.substringAfter('|', "")) { fail(it) }
                             when (section) {
-                                "prefixes" -> { once(key); prefixes[key] = rule; if (ofProvider) handPrefixes += key }
+                                "prefixes" -> {
+                                    once(key)
+                                    if (rule.keepLearned && !ofProvider) fail("keep-learned is a Provider table's")
+                                    prefixes[key] = rule
+                                    if (ofProvider && !rule.keepLearned) handPrefixes += key
+                                }
                                 "learned prefixes" -> {
                                     if (!ofProvider) fail("learned prefixes come only from a Provider table")
                                     once(key)
@@ -550,9 +560,11 @@ internal class PrefixTable private constructor(
                                 "category hints" -> { once(key); hints[key] = rule }
                                 // The colon is where the tag ends, not part of it.
                                 "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
+                                "not tier tags" -> notTierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
                                 "channel quality words" -> key.uppercase(Locale.ROOT).let { once(it); qualityWords[it] = rule }
                                 else -> fail("outside a [section]")
                             }
+                            if (rule.keepLearned && section != "prefixes") fail("keep-learned is for a Prefix's line")
                         }
                     }
                 }
@@ -565,17 +577,28 @@ internal class PrefixTable private constructor(
                 val ranked = genreWords.map { (word, genre) -> GenreWord(word, fold(word), WholeWord(fold(word)), genre, genres.getOrPut(genre) { genres.size }) }
                 return PrefixTable(
                     prefixes, hints.map { (phrase, rule) -> Hint(phrase, wholeWord(phrase), rule) }, clutterNames, liveClutterNames, emptyEventSlots,
-                    tierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map { WholeWord(fold(it)) }, eventTimeZone ?: ZoneOffset.UTC,
+                    tierTags, notTierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map { WholeWord(fold(it)) }, eventTimeZone ?: ZoneOffset.UTC,
                 )
             }
         }
 
-        private fun parseRule(text: String, fail: (String) -> Nothing): Rule =
-            text.split(';').map { it.trim() }.filter { it.isNotEmpty() }.fold(Rule()) { rule, attribute ->
+        /**
+         * A line's rule from its attributes. `language=` names the audio and the listed language at once;
+         * `listed=` names the listed language alone, whichever comes first, so `IR | listed=fa` is a
+         * Persian Listing whose audio isn't named.
+         */
+        private fun parseRule(text: String, fail: (String) -> Nothing): Rule {
+            var listed: String? = null
+            val rule = text.split(';').map { it.trim() }.filter { it.isNotEmpty() }.fold(Rule()) { rule, attribute ->
                 val name = attribute.substringBefore('=').trim()
                 val value = attribute.substringAfter('=', "").trim()
                 when (name) {
                     "language" -> rule.copy(language = value, listed = value)
+                    "listed" -> {
+                        if (value.isEmpty()) fail("listed needs a language")
+                        listed = value
+                        rule
+                    }
                     "subtitles" -> rule.copy(subtitles = rule.subtitles + value.split(',').map { it.trim() })
                     "subtitled" -> rule.copy(subtitled = true)
                     "quality" -> rule.copy(quality = when (value) { "4K" -> Quality.UHD; "HD" -> Quality.HD; "SD" -> Quality.SD; else -> fail("unknown quality $value") })
@@ -589,9 +612,12 @@ internal class PrefixTable private constructor(
                     "hevc" -> rule.copy(hevc = true)
                     "superscript" -> rule.copy(superscript = true)
                     "multi-audio" -> rule.copy(multiAudio = true)
+                    "keep-learned" -> rule.copy(keepLearned = true)
                     else -> fail("unknown attribute $attribute")
                 }
             }
+            return listed?.let { rule.copy(listed = it) } ?: rule
+        }
 
         /** [phrase] as whole words of a [fold]ed Category name; a hyphen joins words, so SUBS doesn't match inside MULTI-SUBS. */
         private fun wholeWord(phrase: String) = Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(phrase))}(?![\p{L}\p{N}-])""")
