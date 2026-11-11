@@ -54,8 +54,17 @@ private const val FSI = '\u2068'
 private const val PDI = '\u2069'
 
 
-/** A card's badges: quality, HDR, then language, as in "4K · HDR · EN". */
+/**
+ * A card's badges (Home rows, Movies and Shows, the hero): quality, HDR, then language, as in
+ * "4K · HDR · EN", the picture's only once Confirmed. A Prefix's quality is a guess a Header read
+ * often corrects (a `4K-EN` Listing whose file is 1080p), so a card waits for Background reading or
+ * the Title's page to Confirm it (#546).
+ */
 fun VersionAttributes.cardBadges(): List<BadgeSpec> =
+    pictureBadges().filter { it.certainty == Certainty.Confirmed } + listOfNotNull(language?.badge { it.uppercase(Locale.ROOT) })
+
+/** The badges of a Title page's header and the player: quality, HDR, then language, Likely ones outlined. */
+fun VersionAttributes.pageBadges(): List<BadgeSpec> =
     pictureBadges() + listOfNotNull(language?.badge { it.uppercase(Locale.ROOT) })
 
 /** A Version row's badges: the picture and Dolby audio. Its languages have their own columns. */

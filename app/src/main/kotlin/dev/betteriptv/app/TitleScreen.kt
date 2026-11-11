@@ -381,7 +381,7 @@ private fun TitleContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 // Until the Versions are checked, the guessed badges keep their place unseen, so the actions don't move when the real ones show (#546).
-                val badges = best?.attributes?.cardBadges().orEmpty()
+                val badges = best?.attributes?.pageBadges().orEmpty()
                 BadgeRow(badges, if (checked) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
             }
             // A Show's header names the Episode its Play starts; its line is kept while the Episodes are read.

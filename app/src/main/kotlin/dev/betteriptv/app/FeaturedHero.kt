@@ -92,10 +92,9 @@ internal fun FeaturedHero(
                 }
                 Text(metadata, style = Type.body.inLayoutDirection(), color = Colors.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 // The Version its Play starts, as on its page (#521); none on a Show whose Episodes were never read.
-                title.badge?.let {
-                    Spacer(Modifier.width(12.dp))
-                    BadgeRow(it.cardBadges())
-                }
+                // Its quality only once Confirmed, and the row keeps its height meanwhile, so nothing under it moves (#546).
+                Spacer(Modifier.width(12.dp))
+                BadgeRow(title.badge?.cardBadges().orEmpty(), holdPlace = true)
             }
             title.description?.let {
                 Spacer(Modifier.height(10.dp))

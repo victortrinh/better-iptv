@@ -535,4 +535,33 @@ class FeaturedHeroTest {
         heroShows("Arrival")
         assertEquals(1, badges("1080p"))
     }
+
+    @Test fun theHeroNamesNoGuessedQualityAndNothingMovesWhenItIsConfirmed() {
+        // A `4K-EN` Listing whose file is really 1080p (#546): its 4K is the Prefix's guess.
+        var badge by mutableStateOf(VersionAttributes(language = Known("en", Provenance.Likely), quality = Known(Quality.UHD, Provenance.Likely)))
+        screen(feature = { featured("Dune").copy(badge = null) }, featureBadge = { badge })
+
+        assertEquals(0, badges("4K"))
+        assertEquals(1, badges("EN"))
+        val playTop = compose.onNodeWithText("Play").fetchSemanticsNode().boundsInRoot.top
+
+        badge = fullHd
+        entry++
+        compose.waitForIdle()
+        assertEquals(1, badges("1080p"))
+        assertEquals(playTop, compose.onNodeWithText("Play").fetchSemanticsNode().boundsInRoot.top)
+    }
+
+    @Test fun aHeroWithOnlyGuessesKeepsItsBadgeRowsHeight() {
+        var badge by mutableStateOf<VersionAttributes?>(VersionAttributes(quality = Known(Quality.UHD, Provenance.Likely)))
+        screen(feature = { featured("Dune").copy(badge = null) }, featureBadge = { badge })
+        assertEquals(0, badges("4K"))
+        val playTop = compose.onNodeWithText("Play").fetchSemanticsNode().boundsInRoot.top
+
+        badge = VersionAttributes(quality = Known(Quality.UHD, Provenance.Confirmed))
+        entry++
+        compose.waitForIdle()
+        assertEquals(1, badges("4K"))
+        assertEquals(playTop, compose.onNodeWithText("Play").fetchSemanticsNode().boundsInRoot.top)
+    }
 }
