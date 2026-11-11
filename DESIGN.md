@@ -419,6 +419,7 @@ All focus feedback comes from `FocusSurface(weight = …)`. Never draw focus by 
 ### Badges (`Badge`, `BadgeRow`, `CertaintyLegend`)
 - **Confirmed:** solid `confirmed` fill, `on-confirmed` caption text. **Likely:** no fill, a 1.5 dp `likely` outline, `likely` text. The difference is in the shape, not only the colour.
 - `BadgeRow` spaces badges 4 dp apart. `compact = true` (under cards) trims padding to 4 dp and spacing to 3 dp.
+- A card's badges (the info under the rail, the hero; `cardBadges`) name a quality or HDR only once it is Confirmed, never a Prefix's guess, which a Header read often corrects (a `4K-EN` Listing whose file is 1080p, #546). Its language shows Likely or Confirmed. The hero's `BadgeRow` keeps a badge's height with none to show (`holdPlace`), so its buttons don't move when they come. The Title page and the player show what's Likely, outlined (`pageBadges`).
 - `CertaintyLegend` explains the two styles ("read from the file" / "from the name only") wherever a screen first shows many Versions, for household members who didn't set the app up. On the Versions screen it sits on the ground, where its muted caption keeps 4.5:1.
 
 ### Version table (`VersionRow`, `VersionHeader`)
@@ -477,7 +478,7 @@ adb shell am start -n dev.betteriptv.debug/dev.betteriptv.app.prototype.Prototyp
 ### Do:
 - **Do** read every colour, size, corner and gap from `Colors`, `Type`, `Corners`, `Spacing`, `Cards` and `FocusScale`. Screens never hold raw values.
 - **Do** make every focusable thing a `FocusSurface`, or a component built on it, and pick its weight: Card for artwork, Control for buttons/tabs/keys/choices, Row for anything spanning a list.
-- **Do** show Confirmed as a solid badge and Likely as an outlined badge everywhere a Version attribute appears: hero, card, details, player.
+- **Do** show Confirmed as a solid badge and Likely as an outlined badge everywhere a Version attribute appears: hero, card, details, player. A card and the hero leave a Likely quality out instead (Badges, above).
 - **Do** show a Title by its poster, a card's size, beside its text on the bare ground: the hero, the Title page and the starting cover. Never a Title's backdrop behind a screen (ADR 0018); the scrims are for a Game page's team colours.
 - **Do** name a Title in Display type (`TitleName`) on the hero and the Title page, and by its poster's own printed title on a card and the starting cover; never a logo, from anywhere.
 - **Do** build what shows under a focused card from what the device already holds. Details are read when a page opens, never on focus.

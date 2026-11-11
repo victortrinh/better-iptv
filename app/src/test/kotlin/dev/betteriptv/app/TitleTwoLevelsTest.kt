@@ -305,7 +305,7 @@ class TitleTwoLevelsTest {
     }
 
     @Test fun badgesOnTheMetadataLineStillShowConfirmedAndLikely() {
-        val badges = VersionAttributes(language = likely("en"), quality = fullHd(confirmed = true)).cardBadges()
+        val badges = VersionAttributes(language = likely("en"), quality = fullHd(confirmed = true)).pageBadges()
 
         assertEquals(listOf("1080p" to Certainty.Confirmed, "EN" to Certainty.Likely), badges.map { it.text to it.certainty })
         open()

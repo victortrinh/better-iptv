@@ -890,7 +890,7 @@ private fun Overlay(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                     // A Channel has no badges: its label stands alone.
                     if (!live) {
-                        BadgeRow(version.attributes.cardBadges())
+                        BadgeRow(version.attributes.pageBadges())
                         Spacer(Modifier.width(Spacing.s))
                     }
                     Text(listOfNotNull(programme, context.playLabel(version)).joinToString(" · "), style = Type.caption, color = Colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)

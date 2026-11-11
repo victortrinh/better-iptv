@@ -12,7 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.R
@@ -51,10 +53,20 @@ fun Badge(spec: BadgeSpec, modifier: Modifier = Modifier, compact: Boolean = fal
     }
 }
 
-/** Badges side by side. [compact] trims their padding to fit under a poster. */
+/**
+ * Badges side by side. [compact] trims their padding to fit under a poster. [holdPlace] keeps a
+ * badge's height with none to show, so the line they sit on doesn't move when they come (#546).
+ */
 @Composable
-fun BadgeRow(badges: List<BadgeSpec>, modifier: Modifier = Modifier, compact: Boolean = false) {
+fun BadgeRow(badges: List<BadgeSpec>, modifier: Modifier = Modifier, compact: Boolean = false, holdPlace: Boolean = false) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Measured as a badge, but taking no width and drawing nothing.
+        if (holdPlace && badges.isEmpty()) {
+            Badge(BadgeSpec(" ", Certainty.Likely), Modifier.layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                layout(0, placeable.height) {}
+            }.clearAndSetSemantics {}, compact = compact)
+        }
         badges.forEach { Badge(it, compact = compact) }
     }
 }
