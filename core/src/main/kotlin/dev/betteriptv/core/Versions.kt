@@ -130,6 +130,13 @@ internal fun groupByLanguage(candidates: List<Candidate>, contentLanguages: List
 }
 
 /**
+ * The Versions a Versions screen lists for [candidates], in its order ([groupByLanguage]), each with
+ * its Backups: what the player lists too, so the two never disagree.
+ */
+internal fun listed(candidates: List<Candidate>, contentLanguages: List<String>, original: String? = null): List<Version> =
+    groupByLanguage(candidates, contentLanguages, original).let { (viewers, others) -> (viewers + others).flatMap { it.versions } }
+
+/**
  * The playable Versions of a Title for Play, best first: those in the language the Viewer last
  * picked ([remembered]), then, when Prefer original audio acts on the Title ([original], from
  * [originalAudioLanguage]), those with Original audio ([hasOriginalAudio]), then those in the
@@ -233,11 +240,13 @@ internal fun withBackups(chosen: Candidate, candidates: List<Candidate>): Versio
  * language with a lower quality (unknown counts as lowest), CAM and Audio-description ones aside.
  * Backups count because they were grouped before Play: one whose quality wasn't known then may not
  * match what the player has since learned of [playing]. Null when [playing]'s own quality isn't known.
+ * An Untagged [playing] is in the language [versions] list it under (Likely the Title's original).
  */
 internal fun lowerVersion(playing: Version, versions: List<Version>): Version? {
     val quality = playing.attributes.qualityRank ?: return null
-    val language = playing.attributes.language?.value?.let(::primaryLanguage)
-    return versions.flatMap { listOf(it) + it.backups }.firstOrNull { other ->
+    val all = versions.flatMap { listOf(it) + it.backups }
+    val language = (playing.attributes.language ?: all.firstOrNull { it.listingId == playing.listingId }?.attributes?.language)?.value?.let(::primaryLanguage)
+    return all.firstOrNull { other ->
         val attributes = other.attributes
         other.listingId != playing.listingId && !attributes.cam && !attributes.audioDescription &&
             attributes.language?.value?.let(::primaryLanguage) == language &&
