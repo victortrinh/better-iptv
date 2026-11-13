@@ -157,6 +157,29 @@ class ProviderDetailsTest {
         assertEquals(1, unread.languages.size)
     }
 
+    @Test fun `a Provider slow to answer doesn't hold the page, which opens from what is kept and has the details once they come`() = runBlocking {
+        syncHeat()
+        serveHeatDetails()
+        provider.movieDetailsDelayMillis = 1_500
+        library.providerDetailsWait = java.time.Duration.ofMillis(200)
+
+        val asked = System.nanoTime()
+        val opened = page(heat)
+        val waited = (System.nanoTime() - asked) / 1_000_000
+        assertTrue("the page waited $waited ms", waited < 1_200)
+        assertEquals("Heat", opened.name)
+        assertNull(opened.description)
+        assertEquals(listOf("Action"), opened.genres)
+
+        // Read again meanwhile, the page joins the call under way rather than asking the Provider again.
+        assertNull(page(heat).description)
+        Thread.sleep(1_800)
+        val filled = page(heat)
+        assertEquals(listOf("get_vod_info 1"), detailsCalls())
+        assertEquals("A group of professional bank robbers start to feel the heat from police… Twice spaced.", filled.description)
+        assertEquals(listOf("Michael Mann"), filled.directors)
+    }
+
     @Test fun `a Movie filed under a genre Category has that genre before its details are read, and its details' genres join it after`() = runBlocking {
         syncHeat()
         serveHeatDetails()

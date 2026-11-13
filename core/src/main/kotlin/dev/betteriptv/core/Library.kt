@@ -141,6 +141,12 @@ class Library private constructor(
     private val saves = Executors.newSingleThreadExecutor { Thread(it, "library-saves").apply { isDaemon = true } }
     /** The thread asking the cloud for other devices' file reads of a Movie whose details are read ([title]). */
     private val fileReadLookUps = Executors.newSingleThreadExecutor { Thread(it, "library-file-reads").apply { isDaemon = true } }
+    /** The threads reading a Movie's details from the Provider for its page, which waits for them only so long ([movieDetailsForPage]). */
+    private val movieDetailsReads = Executors.newCachedThreadPool { Thread(it, "library-movie-details").apply { isDaemon = true } }
+    /** The details reads under way, by Listing. */
+    private val movieDetailsReading = ConcurrentHashMap<Long, java.util.concurrent.Future<StoredMovieDetails?>>()
+    /** How long a Movie's page waits for the Provider's details before it opens from what is kept. */
+    internal var providerDetailsWait: Duration = PROVIDER_DETAILS_WAIT
     /** The thread asking the cloud for Games behind a read that doesn't wait for them ([games]). */
     private val gamesFetches = Executors.newSingleThreadExecutor { Thread(it, "library-games").apply { isDaemon = true } }
     private val gamesFetching = AtomicBoolean()
@@ -1202,7 +1208,10 @@ class Library private constructor(
         val originalLanguage = originalLanguage(id)
         var candidates = candidates(title, contentLanguages)
         var shown = shown(candidates, contentLanguages, appLanguage, originalLanguage)
-        var kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing) else emptyMap()
+        // A Provider slow to answer never holds the page: past this it opens from what is kept, and
+        // has the details once they come (the page's reads tell it, [readMovieDetails]).
+        val detailsBy = System.nanoTime() + providerDetailsWait.toNanos()
+        var kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing, detailsBy) else emptyMap()
         if (kept[shown.best.listing.id]?.bitrate != null) {
             // The details just read Confirm the bitrate: the page arrives with it, as with the shared reads.
             candidates = candidates(title, contentLanguages)
@@ -1215,7 +1224,7 @@ class Library private constructor(
             // The next Listings in that order are read while what is kept has no plot the Viewer reads:
             // the English Listing may say nothing, or tell of the Title in Greek.
             for (teller in shown.tellers.take(TELLERS_READ)) {
-                if (teller.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, teller.listing)
+                if (teller.listing.id != shown.best.listing.id) kept = movieDetailsForPage(title, teller.listing, detailsBy)
                 // Unread still: the Provider isn't answering, and the next call would wait as long.
                 val told = kept[teller.listing.id] ?: break
                 if (Scripts.reads(appLanguage, told.details.plot)) break
@@ -1241,22 +1250,45 @@ class Library private constructor(
     /**
      * The Provider's movie details kept for [title]'s Listings, with [listing]'s read now when none
      * are kept for it from when the Provider last changed it, and kept for good. One call, when the
-     * page opens; none when the Provider can't be reached, and the kept ones stand.
+     * page opens; none when the Provider can't be reached, and the kept ones stand. With a [deadline]
+     * (a [System.nanoTime]), a Provider slow to answer is waited for no longer than that: the kept
+     * ones stand meanwhile, and its answer is kept when it comes.
      */
-    private fun movieDetailsForPage(title: StoredTitle, listing: StoredListing): Map<Long, StoredMovieDetails> {
+    private fun movieDetailsForPage(title: StoredTitle, listing: StoredListing, deadline: Long? = null): Map<Long, StoredMovieDetails> {
         val kept = store.movieDetails(title.listings.map { it.id })
         val have = kept[listing.id]
         if (have != null && have.added == listing.added) return kept
         val login = credentials.load() ?: return kept
-        val read = try {
-            XtreamClient(login, http).movieDetails(listing.id)
-        } catch (e: ProviderException) {
+        // One call per Listing at a time: a page read again while the Provider is slow joins the call under way.
+        val reading = try {
+            movieDetailsReading.computeIfAbsent(listing.id) { id ->
+                movieDetailsReads.submit(java.util.concurrent.Callable<StoredMovieDetails?> {
+                    try {
+                        val read = XtreamClient(login, http).movieDetails(id)
+                        val now = Instant.now()
+                        store.saveMovieDetails(id, read, listing.added, now)
+                        detailsGeneration.incrementAndGet()
+                        StoredMovieDetails(read.bitrate, now, listing.added, read.details)
+                    } catch (e: ProviderException) {
+                        null
+                    } finally {
+                        movieDetailsReading.remove(id)
+                    }
+                })
+            }
+        } catch (e: RejectedExecutionException) {
+            // The Library is closing.
             return kept
         }
-        val now = Instant.now()
-        store.saveMovieDetails(listing.id, read, listing.added, now)
-        detailsGeneration.incrementAndGet()
-        return kept + (listing.id to StoredMovieDetails(read.bitrate, now, listing.added, read.details))
+        val read = try {
+            if (deadline == null) reading.get() else reading.get((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+        } catch (e: TimeoutException) {
+            // Kept once it comes: the page shows it the next time it reads its details.
+            null
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        }
+        return if (read == null) kept else kept + (listing.id to read)
     }
 
     /**
@@ -2719,7 +2751,8 @@ class Library private constructor(
         val now = Instant.now()
         read.forEach { (listing, details) -> store.saveMovieDetails(listing.id, details, listing.added, now) }
         if (read.isNotEmpty()) detailsGeneration.incrementAndGet()
-        if (read.any { (_, details) -> details.bitrate != null }) changed()
+        // Whatever they say: a page that opened before a slow Provider answered shows its details now.
+        if (read.isNotEmpty()) changed()
     }
 
     private class Read(val contents: FileContents?)
@@ -3138,6 +3171,7 @@ class Library private constructor(
         gamesFetches.shutdownNow()
         signOuts.shutdownNow()
         fileReadLookUps.shutdownNow()
+        movieDetailsReads.shutdownNow()
         guideFetches.shutdownNow()
         // The answers waiting are saved first, unless a Sync keeps them waiting.
         saves.shutdown()
@@ -3235,6 +3269,8 @@ class Library private constructor(
         private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
         /** How long a Movie's details wait for the cloud's file reads of its Versions: the page-arrival time (DESIGN.md, Motion). */
         private val SHARED_READS_WAIT: Duration = Duration.ofMillis(300)
+        /** How long a Movie's page waits for the Provider's details: several times what the Provider takes when well, far under the HTTP client's minute. */
+        private val PROVIDER_DETAILS_WAIT: Duration = Duration.ofSeconds(3)
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
         private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
         /** How long a Sync waits for the Provider table before going on with the one kept. */
