@@ -51,7 +51,7 @@ class PlayerChoicesTest {
 
     // Remembered choices
 
-    @Test fun `the audio language the Viewer picks plays next time, and its Versions rank first`() = runBlocking {
+    @Test fun `the audio language the Viewer picks plays next time, the Versions listed as the Title's page lists them`() = runBlocking {
         syncMovies()
         assertEquals("EN - Movie (2025)", library.playPlan(movie, listOf("en", "fr"), fullHdTv)!!.version.name)
 
@@ -59,11 +59,11 @@ class PlayerChoicesTest {
 
         val plan = library.playPlan(movie, listOf("en", "fr"), fullHdTv)!!
         assertEquals("FR - Le Film (2025)", plan.version.name)
-        assertEquals(listOf("FR - Le Film (2025)", "EN - Movie (2025)"), plan.versions.map { it.name })
+        assertEquals(listOf("EN - Movie (2025)", "FR - Le Film (2025)"), plan.versions.map { it.name })
         assertEquals(TrackChoice(audio = 1, subtitle = null), plan.chooseTracks(tracks("eng", "fre"), tracks(), fullHdTv))
-        // Choosing a Version by hand still lists the remembered language's first after it.
+        // Choosing a Version by hand lists them the same.
         val chosen = library.chosenPlayPlan(movie, listingId = 1, listOf("en", "fr"))!!
-        assertEquals(listOf("EN - Movie (2025)", "FR - Le Film (2025)"), chosen.versions.map { it.name })
+        assertEquals(plan.versions, chosen.versions)
         assertEquals("fr", chosen.remembered.audio)
     }
 
@@ -235,6 +235,15 @@ class PlayerChoicesTest {
         assertEquals(EpisodeNumber(1, 1), plan.episode)
         assertEquals(100001L, plan.version.listingId)
         assertEquals("en", plan.version.attributes.language?.value)
+    }
+
+    @Test fun `the player lists an Episode's Versions as its Versions screen does`() = runBlocking {
+        val plan = episodePlan(1, 1)
+        val episode = library.episodes(chelseaDetective, english)!!.seasons.flatMap { it.episodes }.single { it.id == EpisodeNumber(1, 1) }
+        val listed = (episode.languages + episode.otherLanguages).flatMap { it.versions }
+
+        assertEquals(listed, plan.versions)
+        assertEquals(listed, library.chosenEpisodePlayPlan(chelseaDetective, EpisodeNumber(1, 1), listed.last().listingId, english)!!.versions)
     }
 
     @Test fun `the next Episode is offered when one ends, then the next season's first`() = runBlocking {

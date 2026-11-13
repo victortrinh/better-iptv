@@ -1580,12 +1580,15 @@ class Library private constructor(
         val remembered = rememberedTracks()
         val originalLanguage = originalLanguage(id)
         val original = originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)
-        val candidates = candidates(title, contentLanguages).let { if (original != null) likelyInOriginalLanguage(it, originalLanguage) else it }
+        // The player lists the Versions as the Title's page does ([title]), whatever Play ranks them by.
+        val plain = candidates(title, contentLanguages)
+        val likely = likelyInOriginalLanguage(plain, originalLanguage)
+        val candidates = if (original != null) likely else plain
         val ranked = playable(candidates, contentLanguages, device, qualityCap, remembered.audio, original)
         val stopped = stopped(id)
         ranked.firstOrNull()?.let {
             PlayPlan(
-                id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), stopped?.position ?: 0,
+                id, withBackups(it, ranked), contentLanguages, listed(likely, contentLanguages, original), stopped?.position ?: 0,
                 remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage, choices = titleChoices(id),
                 preferOriginalAudio = preferOriginalAudio,
             )
@@ -1647,7 +1650,7 @@ class Library private constructor(
                 val ranked = playable(candidates, contentLanguages, device, qualityCap, remembered.audio, original)
                 ranked.firstOrNull()?.let {
                     val at = stopped[episode]
-                    PlayPlan(id, withBackups(it, ranked), contentLanguages, leadersWithBackups(ranked), at?.position ?: 0, episode, remembered, at?.duration, originalLanguage, choices, preferOriginalAudio)
+                    PlayPlan(id, withBackups(it, ranked), contentLanguages, listed(candidates, contentLanguages, original), at?.position ?: 0, episode, remembered, at?.duration, originalLanguage, choices, preferOriginalAudio)
                 }
             }
         }
@@ -1665,21 +1668,20 @@ class Library private constructor(
 
     /**
      * What choosing the Version [listingId] (a Provider Episode id) of the Show [id]'s [episode] in its
-     * Versions plays, as [chosenPlayPlan] does for a Movie: that Version with its Backups, then the
-     * Episode's other Versions, from where the Viewer stopped in it. Null when the Show doesn't have it.
+     * Versions plays, as [chosenPlayPlan] does for a Movie: that Version with its Backups, the player
+     * listing the Episode's Versions as that screen does, from where the Viewer stopped in it. Null when the Show doesn't have it.
      */
     suspend fun chosenEpisodePlayPlan(id: TitleId, episode: EpisodeNumber, listingId: Long, contentLanguages: List<String>, preferOriginalAudio: Boolean = true): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Show) return@withContext null
         val candidates = episodeCandidates(id, contentLanguages)?.get(episode) ?: return@withContext null
         candidates.find { it.listing.id == listingId }?.let { chosen ->
             val version = withBackups(chosen, candidates)
-            val remembered = rememberedTracks()
-            val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
+            val originalLanguage = originalLanguage(id)
             landHistory(id)
             val at = store.episodeProgress(profile, id).firstOrNull { it.episode == episode && !it.watched }
             PlayPlan(
-                id, version, contentLanguages, listOf(version) + others, at?.position ?: 0, episode,
-                remembered, at?.duration, originalLanguage(id), titleChoices(id), preferOriginalAudio,
+                id, version, contentLanguages, listed(candidates, contentLanguages, originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)), at?.position ?: 0, episode,
+                rememberedTracks(), at?.duration, originalLanguage, titleChoices(id), preferOriginalAudio,
             )
         }
     }
@@ -1750,20 +1752,19 @@ class Library private constructor(
 
     /**
      * What playing the Version from Listing [listingId], chosen by the Viewer, starts, from where they
-     * stopped last time; null for a Show or when the Title doesn't have it.
+     * stopped last time, the player listing the Title's Versions as its Versions screen does; null for a Show or when the Title doesn't have it.
      */
     suspend fun chosenPlayPlan(id: TitleId, listingId: Long, contentLanguages: List<String>, preferOriginalAudio: Boolean = true): PlayPlan? = withContext(Dispatchers.IO) {
         if (id.kind != TitleKind.Movie) return@withContext null
-        val candidates = store.title(id)?.let { candidates(it, contentLanguages) } ?: return@withContext null
+        val originalLanguage = originalLanguage(id)
+        // As the Versions screen it was chosen on has them ([title]): an Untagged one Likely in the original language.
+        val candidates = store.title(id)?.let { likelyInOriginalLanguage(candidates(it, contentLanguages), originalLanguage) } ?: return@withContext null
         candidates.find { it.listing.id == listingId }?.let { chosen ->
-            val version = withBackups(chosen, candidates)
-            val remembered = rememberedTracks()
-            // The chosen Version leads the Versions to switch to, whether or not it would have led its Backups.
-            val others = leadersWithBackups(preferred(candidates, rankingLanguages(remembered, contentLanguages)).filter { it.equivalence != chosen.equivalence })
             val stopped = stopped(id)
             PlayPlan(
-                id, version, contentLanguages, listOf(version) + others, stopped?.position ?: 0,
-                remembered = remembered, length = stopped?.duration, originalLanguage = originalLanguage(id), choices = titleChoices(id),
+                id, withBackups(chosen, candidates), contentLanguages,
+                listed(candidates, contentLanguages, originalAudioLanguage(originalLanguage, contentLanguages, preferOriginalAudio)), stopped?.position ?: 0,
+                remembered = rememberedTracks(), length = stopped?.duration, originalLanguage = originalLanguage, choices = titleChoices(id),
                 preferOriginalAudio = preferOriginalAudio,
             )
         }
