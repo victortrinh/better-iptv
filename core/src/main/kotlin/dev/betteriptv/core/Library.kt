@@ -2626,9 +2626,11 @@ class Library private constructor(
      * What a Title's details page starts, without the page waiting for it: for a Movie, the bitrates
      * from the Provider's movie details of its Versions (API calls, never a stream); what Viewers of
      * the same Provider read before (from the cloud); then Header reads one at a time while the
-     * Viewer's connection is free. A Movie's are of the best unconfirmed Version in each language, the
+     * Viewer's connection is free, in rounds until every Version is read: what a read Confirms moves its
+     * Version to another language or quality, so a single round would leave the page to change again
+     * at each later visit. A Movie's round is of the best unread Version in each language, the
      * Viewer's [contentLanguages] first; with [preferOriginalAudio] on a Title released outside them,
-     * in order of how likely each is to carry Original audio ([readOrder]). A Show's are of each
+     * in order of how likely each is to carry Original audio ([readOrder]). A Show's is of each
      * Episode's, from the show details [episodes] kept, in the Show's order: the Viewer's languages
      * first, and among them first the Versions whose first audio Track, as the Provider's details
      * name it, disagrees with the Prefix. In both, the Versions whose Prefix neither the Base table
@@ -2671,29 +2673,38 @@ class Library private constructor(
         if (lookUpFileReads(provider, ids)) changed()
         // This page's Versions come before Background reading's.
         connection.cancelRead()
-        val unread = toRead(title, shows, contentLanguages, preferOriginalAudio)
-        var left = unread.size
-        if (left > 0) checking(left)
-        for ((listingId, container) in unread) {
-            val location = if (shows == null) client.movieLocation(listingId, container) else client.episodeLocation(listingId, container)
-            // A Background read that started before this page's turn ends within its bound: never wait past it (#505).
-            withTimeoutOrNull(headerReader.bound + PROVIDER_RELEASE_GRACE) { reads.lock() } ?: break
-            val read = try {
-                connection.whileFree {
-                    val contents = headerReader.read(location, container)
-                    // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
-                    store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
-                    Read(contents)
-                }
-            } catch (e: IOException) {
-                // The Provider refused: no more reads for now, nor Background reading today.
-                if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
-                null
-            } finally {
-                reads.unlock()
-            } ?: break
-            if (read.contents != null) changed()
-            checking(--left)
+        // What a read Confirms moves its Version to another language or quality, which leaves another
+        // one the best unread of its group: the order is worked out again after each round, until
+        // nothing is left, so one visit settles the page and the next one arrives checked.
+        val tried = HashSet<Long>()
+        var left = 0
+        rounds@ while (true) {
+            val unread = toRead(title, shows, contentLanguages, preferOriginalAudio).filter { (listingId, _) -> tried.add(listingId) }
+            if (unread.isEmpty()) break
+            val total = maxOf(unread.size, leftToRead(ids, episodes = shows != null))
+            if (total != left) checking(total)
+            left = total
+            for ((listingId, container) in unread) {
+                val location = if (shows == null) client.movieLocation(listingId, container) else client.episodeLocation(listingId, container)
+                // A Background read that started before this page's turn ends within its bound: never wait past it (#505).
+                withTimeoutOrNull(headerReader.bound + PROVIDER_RELEASE_GRACE) { reads.lock() } ?: break@rounds
+                val read = try {
+                    connection.whileFree {
+                        val contents = headerReader.read(location, container)
+                        // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
+                        store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
+                        Read(contents)
+                    }
+                } catch (e: IOException) {
+                    // The Provider refused: no more reads for now, nor Background reading today.
+                    if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
+                    null
+                } finally {
+                    reads.unlock()
+                } ?: break@rounds
+                if (read.contents != null) changed()
+                checking(--left)
+            }
         }
         shareFileReads(provider)
     }
@@ -2719,7 +2730,13 @@ class Library private constructor(
         return title.listings.filter { it.id in kept }.map { candidates(it) to kept.getValue(it.id).episodes }
     }
 
-    /** The Listings [readHeaders] reads, in its order, with their file containers: only those a Header read can read. */
+    /** How many of the Versions [ids] (a Movie's Listings, or a Show's [episodes]) a Header read can read and none has. */
+    private fun leftToRead(ids: List<Long>, episodes: Boolean): Int {
+        val read = ids.chunked(LISTINGS_PER_QUERY).flatMap { store.fileReads(it).keys }.toSet()
+        return ids.count { it !in read && ((if (episodes) store.episodeContainer(it) else store.container(it)) ?: "mkv") in HEADER_READABLE }
+    }
+
+    /** The Listings [readHeaders] reads, in a round, in its order, with their file containers: only those a Header read can read. */
     private fun toRead(title: StoredTitle, shows: List<Pair<Candidate, List<ProviderEpisode>>>?, contentLanguages: List<String>, preferOriginalAudio: Boolean): List<Pair<Long, String>> =
         (if (shows == null) unread(title, contentLanguages, preferOriginalAudio) else unreadEpisodes(title, shows, contentLanguages, preferOriginalAudio))
             .map { listingId -> listingId to ((if (shows == null) store.container(listingId) else store.episodeContainer(listingId)) ?: "mkv") }

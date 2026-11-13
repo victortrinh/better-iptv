@@ -100,8 +100,8 @@ class UnknownPrefixFirstTest {
 
         openPage(preferOriginalAudio = false)
 
-        // `XB`'s newest copy and `XQ`'s, then English; the second `XB` copy waits, as a second copy in a language does.
-        assertEquals(listOf(1L, 3L, 2L), readIds())
+        // `XB`'s newest copy and `XQ`'s, then English; the second `XB` copy comes in the next round, as a second copy in a language does.
+        assertEquals(listOf(1L, 3L, 2L, 4L), readIds())
     }
 
     @Test fun `once Confirmed, the unknown-Prefix Version's badges are solid and it sits in its language's group`() = runBlocking {

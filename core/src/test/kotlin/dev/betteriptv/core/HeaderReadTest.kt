@@ -105,7 +105,7 @@ class HeaderReadTest {
         assertEquals(Known("de", Provenance.Confirmed), version("DE - Der Film (2025)").attributes.language)
     }
 
-    @Test fun `the best unconfirmed Version per language is read, the Viewer's languages first`() = runBlocking {
+    @Test fun `the best unread Version per language is read first, the Viewer's languages first, then the rest`() = runBlocking {
         syncVersions(
             "4K-EN - Movie (2025)" to "4K MOVIES" with "mkv",
             "EN - Movie (2025)" to "EN - MOVIES" with "mkv",
@@ -115,8 +115,44 @@ class HeaderReadTest {
 
         readHeaders()
 
-        assertEquals(listOf("1:bytes=0-262143", "3:bytes=0-262143"), provider.ranges)
-        assertEquals(Provenance.Likely, version("EN - Movie (2025)").attributes.language?.provenance)
+        assertEquals(listOf("1:bytes=0-262143", "3:bytes=0-262143", "2:bytes=0-262143"), provider.ranges)
+        assertEquals(Provenance.Confirmed, version("EN - Movie (2025)").attributes.language?.provenance)
+    }
+
+    /** A read moves a Version to the quality and language its file has, which leaves another one the best unread of its group. */
+    @Test fun `one visit settles a Movie whose reads correct its Prefixes, and the next visits read nothing and change nothing`() = runBlocking {
+        syncVersions(
+            "4K-EN - Movie (2025)" to "4K MOVIES" with "mkv",
+            "4K-EN - Movie (2025)" to "4K MOVIES" with "mkv",
+            "4K-FR - Le Film (2025)" to "4K MOVIES" with "mkv",
+            "EN - Movie (2025)" to "EN - MOVIES" with "mkv",
+            "FR - Le Film (2025)" to "FR - FILMS" with "mkv",
+            "DE - Der Film (2025)" to "DE - FILME" with "mkv",
+        )
+        val english = listOf(FileTrack("audio", "eng", "A_AC3"))
+        // Two `4K-EN` copies that are 1080p and 720p, a `4K-FR` and a `DE` one in English, a plain `EN` one in 4K.
+        provider.movieFiles[1] = matroskaFile(english, width = 1920, height = 800)
+        provider.movieFiles[2] = matroskaFile(english, width = 1280, height = 536)
+        provider.movieFiles[3] = matroskaFile(english, width = 3840, height = 1600)
+        provider.movieFiles[4] = matroskaFile(english, width = 3840, height = 1600)
+        provider.movieFiles[5] = matroskaFile(listOf(FileTrack("audio", "fre", "A_AC3")))
+        provider.movieFiles[6] = matroskaFile(english)
+        val languages = listOf("en", "fr")
+        val device = DeviceProfile(maxHeight = 2160, hdr = emptySet())
+        suspend fun page() = library.playPlan(movie, languages, device)!!.version to library.title(movie, languages, "en")!!.let { it.languages + it.otherLanguages }
+
+        readHeaders(languages)
+
+        assertEquals(true, library.versionsChecked(movie, languages))
+        assertEquals(6, provider.ranges.size)
+        val settled = page()
+        assertEquals(Known(Quality.UHD, Provenance.Confirmed), settled.first.attributes.quality)
+        repeat(3) {
+            assertEquals(0, readHeaders(languages))
+            assertEquals(true, library.versionsChecked(movie, languages))
+            assertEquals(settled, page())
+        }
+        assertEquals(6, provider.ranges.size)
     }
 
     @Test fun `the page hears how many Versions are left to check, down to none`() = runBlocking {
@@ -181,8 +217,8 @@ class HeaderReadTest {
         val left = mutableListOf<Int>()
         library.readHeaders(movie, listOf("en"), checking = { left += it }) {}
 
-        // The best unread Version of each language and Prefix no table knows, down to none.
-        assertEquals((10 downTo 0).toList(), left)
+        // Every Version, the best unread one of each language and Prefix no table knows first, down to none.
+        assertEquals((13 downTo 0).toList(), left)
     }
 
     @Test fun `a Provider that stops sending a file mid-read ends the checking within the read's bound`() = runBlocking {
@@ -194,7 +230,7 @@ class HeaderReadTest {
         val started = TimeSource.Monotonic.markNow()
         withTimeout(10_000) { library.readHeaders(movie, listOf("en"), checking = { left += it }) {} }
 
-        assertEquals(listOf(10, 0), left)
+        assertEquals(listOf(13, 0), left)
         assertTrue("took ${started.elapsedNow()}", started.elapsedNow() < 3.seconds)
         // One request, then nothing more for now: the Provider isn't answering.
         assertEquals(1, provider.streamRequests)
