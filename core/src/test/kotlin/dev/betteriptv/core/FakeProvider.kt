@@ -103,6 +103,9 @@ class FakeProvider : Closeable {
     /** Movie details by Provider stream id (`get_vod_info`), as JSON, served instead of an empty answer; [serveMovieDetails] writes one. */
     val movieDetails = ConcurrentHashMap<Long, String>()
 
+    /** How long the Provider takes to answer `get_vod_info`: a Provider slow to answer, not down. */
+    @Volatile var movieDetailsDelayMillis = 0L
+
     /**
      * Serves movie details for Provider stream [id], shaped like the surveyed Provider's
      * `get_vod_info` answer: what it says of the Movie, and its own reading of the file ([bitrate],
@@ -370,6 +373,7 @@ class FakeProvider : Closeable {
                 respond(exchange) { it.write(guideJson(id, programmes).toByteArray()) }
             }
             "get_vod_info" -> respond(exchange) { body ->
+                if (movieDetailsDelayMillis > 0) Thread.sleep(movieDetailsDelayMillis)
                 body.write((movieDetails[query["vod_id"]?.toLongOrNull()] ?: """{"info":[],"movie_data":{}}""").toByteArray())
             }
             "get_series_info" -> {

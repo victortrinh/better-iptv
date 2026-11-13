@@ -934,12 +934,12 @@ private fun HomeRow.heading(): String = when (this) {
 }
 
 /**
- * Where the rows go while they are read past the page arrival time: the pulsing dot, centred in the
- * room under the tabs, at [alpha] (read in drawing, so its fades redraw nothing else). Without
+ * Where the rows go while they are read past the page arrival time, and a Title page while its
+ * details are: the pulsing dot, centred in the room it is given, at [alpha] (read in drawing, so its fades redraw nothing else). Without
  * headings, focus or a shape of the rows to come.
  */
 @Composable
-private fun WaitingDot(alpha: () -> Float) {
+internal fun WaitingDot(alpha: () -> Float) {
     Box(Modifier.fillMaxSize().testTag(WAITING), contentAlignment = Alignment.Center) {
         PulsingDot(WAITING_DOT_SIZE, Modifier.graphicsLayer { this.alpha = alpha() })
     }

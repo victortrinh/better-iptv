@@ -139,6 +139,41 @@ class TitlePageArrivalTest {
         compose.onNodeWithTag("play").assertIsFocused()
     }
 
+    private fun showsTheDot() = compose.onAllNodesWithTag(WAITING).fetchSemanticsNodes().isNotEmpty()
+
+    @Test fun detailsSlowerThanThePageArrivalTimeAreWaitedForWithTheDotWhichGoesOnceThePageIsIn() {
+        val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
+        open(movie, loaded)
+
+        // Nothing for the page arrival time, then the dot, for as long as the details take.
+        compose.mainClock.advanceTimeBy(Motion.pageArrivalMillis - 50L)
+        compose.waitForIdle()
+        assertTrue(!showsTheDot())
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+        assertTrue(showsTheDot())
+        assertTrue(!shows("Heat"))
+
+        loaded.value = details(movie, "Heat") to PlayPlan(movie, version, listOf("en"), listOf(version))
+        compose.mainClock.advanceTimeBy(Motion.screenFadeMillis + 100L)
+        compose.waitForIdle()
+        assertTrue(shows("Heat"))
+        assertTrue(!showsTheDot())
+        compose.onNodeWithTag("play").assertIsFocused()
+    }
+
+    @Test fun aPageThatArrivesWithinThePageArrivalTimeShowsNoDot() {
+        val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
+        open(movie, loaded)
+
+        repeat(60) { frame ->
+            if (frame == 6) loaded.value = details(movie, "Heat") to PlayPlan(movie, version, listOf("en"), listOf(version))
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            assertTrue("frame $frame", !showsTheDot())
+        }
+    }
+
     @Test fun aShowWaitsForItsEpisodesUpToThePageArrivalTimeWithFocusOnADisabledPlay() {
         val loaded = mutableStateOf<Pair<TitleDetails, PlayPlan?>?>(null)
         val episodes = mutableStateOf<Pair<ShowEpisodes, PlayPlan?>?>(null)

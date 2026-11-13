@@ -66,6 +66,8 @@ import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
 import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
@@ -206,7 +208,9 @@ fun TitleScreen(
  * drive it.
  *
  * It arrives whole (DESIGN.md, Motion): the header and actions wait for the details, the plan and a
- * Show's Episodes, up to [Motion.pageArrivalMillis], then fade in together. A Show whose Episodes
+ * Show's Episodes, up to [Motion.pageArrivalMillis], then fade in together. Details that take
+ * longer (a Provider slow to answer) are waited for with the pulsing dot ([WaitingDot]), centred,
+ * which crossfades out as the page fades in. A Show whose Episodes
  * take longer shows Play disabled, with focus on it, and Play enables where it is once they're read.
  *
  * With a [section] open, the page gives way to that screen, and coming back ([returnedFrom]) puts
@@ -242,15 +246,26 @@ internal fun TitlePage(
     // Never while a Header read is under way, as what it Confirms would change them.
     val named = checked && !checking
     var waited by remember(id) { mutableStateOf(false) }
+    // Details still to come after the page arrival time (a Provider slow to answer) are waited for
+    // with the dot, centred, which fades in and then crossfades out as the page fades in, as on the
+    // rows screens (DESIGN.md, Motion). A page that arrives within the time shows no dot.
+    var waiting by remember(id) { mutableStateOf(false) }
+    val waitingFade = remember(id) { Fade(0f) }
+    val hasDetails by rememberUpdatedState(title != null)
     LaunchedEffect(id) {
         delay(Motion.pageArrivalMillis.toLong())
         waited = true
+        if (hasDetails) return@LaunchedEffect
+        waiting = true
+        waitingFade.fadeIn(Motion.screenFadeMillis)
     }
     // Neither the details nor the Episodes go back to unread once read, so once arrived it stays.
     val arrived = title != null && (id.kind != TitleKind.Show || show != null || waited)
     val fade = remember(id) { Animatable(0f) }
     LaunchedEffect(arrived) { if (arrived) fade.animateTo(1f, tween(Motion.screenFadeMillis)) }
+    val arriving by remember(id) { derivedStateOf { fade.value < 1f } }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
+        if (waiting && arriving) WaitingDot { waitingFade.value * (1f - fade.value) }
         if (arrived) {
             val plan = loaded.second ?: show?.second
             checkNotNull(title)
