@@ -45,6 +45,8 @@ The release app, `dev.betteriptv`, is a separate package from the debug app, `de
 
 2. Start Zugig from **Your Apps & Channels** and log in. From then on the app updates itself.
 
+On a Google TV or another Android TV the same APK installs the same way: see `install-on-google-tv.md`.
+
 If the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the stick has an old debug-signed build under `dev.betteriptv`, from before debug builds became their own package. Uninstall that one first (`adb uninstall dev.betteriptv`, which deletes its catalog and login), then install again.
 
 ### A stale icon in Your Apps

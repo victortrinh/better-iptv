@@ -18,11 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,7 +32,7 @@ import dev.betteriptv.app.ui.theme.Type
  * One Channel: its logo, whole, on a 16:9 glass card, or its name when there is no logo. Its name
  * and its [caption] (its country tag and the menu key's hint, to add or remove the Favourite) appear
  * under it while it has focus, unless [named] is false (Home, where [RailInfo] tells them). Pressing
- * it calls [onClick]; the remote's menu key calls [onMenu].
+ * it calls [onClick]; the remote's menu key, or OK held, calls [onMenu] ([menuKey]).
  */
 @Composable
 fun ChannelCard(
@@ -56,11 +51,7 @@ fun ChannelCard(
     Column(modifier.width(Cards.wideWidth)) {
         FocusSurface(
             onClick,
-            Modifier.fillMaxWidth().aspectRatio(16f / 9f).onPreviewKeyEvent { event ->
-                if (event.key != Key.Menu) return@onPreviewKeyEvent false
-                if (event.type == KeyEventType.KeyUp) onMenu()
-                true
-            },
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f).menuKey(onClick, onMenu),
             container = Colors.surface,
             onFocus = onFocus,
             interactionSource = interaction,

@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.betteriptv.app.ui.components.rememberHasMenuKey
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.GameFeeds
@@ -65,7 +66,7 @@ fun LiveScreen(
         reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), catalog),
         read = { library.liveRows(leagues, region, contentLanguages) },
         // Before a Sync there are no Channels to save; after one, the Viewer saves them from Search.
-        empty = stringResource(if (noChannels) R.string.home_empty else R.string.live_empty),
+        empty = stringResource(if (noChannels) R.string.home_empty else if (rememberHasMenuKey()) R.string.live_empty else R.string.live_empty_hold),
         onOpen = { _, _ -> },
         onWatch = onWatch,
         onOpenGame = onOpenGame,

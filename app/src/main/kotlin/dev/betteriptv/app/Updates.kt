@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.NuageButton
 import dev.betteriptv.app.ui.components.PulsingDot
+import dev.betteriptv.app.ui.components.rememberHasMenuKey
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
@@ -230,6 +231,8 @@ private const val INSTALLER_WAITING = 0.85f
 fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) {
     BackHandler(onBack = onLater)
     val context = LocalContext.current
+    // Fire OS keeps the switch under My Fire TV; Google TV and other Android TVs under Apps.
+    val fireTv = rememberHasMenuKey()
     val first = remember { FocusRequester() }
     // Each step's main button takes focus as it appears.
     LaunchedEffect(state::class) { runCatching { first.requestFocus() } }
@@ -250,9 +253,9 @@ fun UpdateScreen(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit) 
                             NuageButton(stringResource(R.string.update_open_settings), { openInstallSettings(context) }, Modifier.focusRequester(first))
                             NuageButton(stringResource(R.string.update_later), onLater)
                         }
-                        Caption(stringResource(R.string.update_allow_fire))
+                        Caption(stringResource(if (fireTv) R.string.update_allow_fire else R.string.update_allow_android_tv))
                     } else {
-                        Body(stringResource(R.string.update_allow_old))
+                        Body(stringResource(if (fireTv) R.string.update_allow_old else R.string.update_allow_old_android_tv))
                         Buttons {
                             NuageButton(stringResource(R.string.update_open_settings), { openInstallSettings(context) }, Modifier.focusRequester(first))
                             NuageButton(stringResource(R.string.update_later), onLater)

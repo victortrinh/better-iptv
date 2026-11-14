@@ -13,6 +13,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
+import dev.betteriptv.app.ui.components.rememberHasMenuKey
 import dev.betteriptv.app.ui.components.NuageIconButton
 import dev.betteriptv.app.ui.components.NuageIcons
 import androidx.compose.runtime.DisposableEffect
@@ -413,7 +414,9 @@ fun PlayerScreen(
                 programme = programme,
                 target = { scrubTo },
                 onNext = next?.let { { onPlay(it, 0) } },
-                onVersions = { panel = Panel.Versions },
+                feeds = playingFeed != null,
+                // What the menu key opens, for the remotes without one.
+                onVersions = { panel = if (playingFeed != null) Panel.Feeds else Panel.Versions },
                 onTracks = { panel = Panel.Tracks },
             )
         }
@@ -638,8 +641,11 @@ private fun VersionLabel(text: String, feeds: Boolean = false, programme: String
         } else {
             Text(text, style = Type.label, color = Colors.ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
         }
-        Spacer(Modifier.width(Spacing.m))
-        Text(stringResource(if (feeds) R.string.player_feeds_hint else R.string.player_versions_hint), style = Type.caption, color = Colors.inkMuted)
+        // Only where the remote has the key: elsewhere the overlay's button opens the list.
+        if (rememberHasMenuKey()) {
+            Spacer(Modifier.width(Spacing.m))
+            Text(stringResource(if (feeds) R.string.player_feeds_hint else R.string.player_versions_hint), style = Type.caption, color = Colors.inkMuted)
+        }
     }
 }
 
@@ -861,6 +867,7 @@ private fun Overlay(
     onVersions: () -> Unit,
     onTracks: () -> Unit,
     programme: String? = null,
+    feeds: Boolean = false,
 ) {
     val context = LocalContext.current
     val play = remember { FocusRequester() }
@@ -911,6 +918,7 @@ private fun Overlay(
             onNext = onNext,
             onVersions = onVersions,
             onTracks = onTracks,
+            feeds = feeds,
             modifier = Modifier.align(Alignment.BottomStart),
         )
     }
@@ -919,7 +927,7 @@ private fun Overlay(
 /**
  * The bottom of the player overlay: elapsed time, the scrubber and the time left, then Back 10 s,
  * Play/Pause and Forward 10 s as round icons in the middle (then Next Episode, when there is one to
- * play, [onNext]), between Versions on the left and Audio and subtitles on the right.
+ * play, [onNext]), between Versions (a Game's [feeds] instead) on the left and Audio and subtitles on the right.
  * The times sit in fixed slots in tabular digits, so the scrubber stays still as they tick (#70).
  * A [live] Channel has no scrubber and no jumps: Play/Pause stays alone in the middle. While the
  * Viewer scrubs to a [target], the playhead and its time stand there instead.
@@ -940,6 +948,7 @@ internal fun PlayerControls(
     modifier: Modifier = Modifier,
     onNext: (() -> Unit)? = null,
     target: Long? = null,
+    feeds: Boolean = false,
 ) {
     val time = Type.label.copy(fontFeatureSettings = "tnum")
     val measurer = rememberTextMeasurer()
@@ -979,7 +988,7 @@ internal fun PlayerControls(
         }
         Spacer(Modifier.height(Spacing.l))
         ControlsRow(
-            start = { NuageButton(stringResource(R.string.versions_title), onClick = onVersions, icon = Icons.AutoMirrored.Filled.List) },
+            start = { NuageButton(stringResource(if (feeds) R.string.feeds_title else R.string.versions_title), onClick = onVersions, icon = Icons.AutoMirrored.Filled.List) },
             transport = {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
                     if (!live) NuageIconButton(NuageIcons.Replay10, stringResource(R.string.player_back), onBack, slot = PLAY_SIZE)

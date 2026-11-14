@@ -36,11 +36,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -48,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
+import dev.betteriptv.app.ui.components.menuKey
 import dev.betteriptv.app.ui.components.FocusSurface
 import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.theme.Colors
@@ -281,17 +277,13 @@ private fun CategoryRow(category: BrowsedCategory, picked: Boolean, onClick: () 
  * type, [programme] (what is on now and when the next programme starts, [nowNextLabel]) muted on the
  * right, at most [PROGRAMME_WIDTH] wide, and, while focused, what the menu key does in muted caption
  * after it. A null [programme] leaves the row to the logo and the name, as it must for the Channels
- * the guide doesn't know. Pressing the row watches the Channel ([onWatch]); the menu key calls [onFavourite].
+ * the guide doesn't know. Pressing the row watches the Channel ([onWatch]); the menu key, or OK held, calls [onFavourite].
  */
 @Composable
 private fun ChannelRow(channel: Channel, onWatch: () -> Unit, onFavourite: () -> Unit, modifier: Modifier = Modifier, programme: String? = null) {
     FocusSurface(
         onWatch,
-        modifier.fillMaxWidth().onPreviewKeyEvent { event ->
-            if (event.key != Key.Menu) return@onPreviewKeyEvent false
-            if (event.type == KeyEventType.KeyUp) onFavourite()
-            true
-        },
+        modifier.fillMaxWidth().menuKey(onWatch, onFavourite),
         weight = FocusWeight.Row,
         container = Colors.surface,
         focusedContainer = Colors.focus,
