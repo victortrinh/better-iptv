@@ -17,6 +17,7 @@
     <string name="shows_title">Séries</string>
     <string name="live_title">En direct</string>
     <string name="live_empty">Vos favoris apparaîtront ici. Appuyez sur la touche menu sur une chaîne dans la recherche pour en ajouter une.</string>
+    <string name="live_empty_hold">Vos favoris apparaîtront ici. Maintenez OK sur une chaîne dans la recherche pour en ajouter une.</string>
     <string name="row_live_now">En ce moment</string>
     <string name="row_today">Aujourd\'hui</string>
     <string name="row_more_live_events">Autres événements en direct</string>
@@ -359,6 +360,8 @@
     <string name="player_live">En direct · %1$s</string>
     <string name="channel_add_favourite">≡ Ajouter aux favoris</string>
     <string name="channel_remove_favourite">≡ Retirer des favoris</string>
+    <string name="channel_add_favourite_hold">Maintenez OK pour ajouter aux favoris</string>
+    <string name="channel_remove_favourite_hold">Maintenez OK pour retirer des favoris</string>
     <string name="guide_now_next">%1$s · Ensuite %2$s</string>
     <string name="guide_next">Ensuite %1$s · %2$s</string>
     <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
@@ -394,6 +397,8 @@
     <string name="update_allow_steps">Android le demande une seule fois. Ouvrez les paramètres, activez Zugig, puis appuyez sur Retour.</string>
     <string name="update_allow_fire">Si les paramètres s\'ouvrent ailleurs : Paramètres → Ma Fire TV → Options pour les développeurs → Installer des applis inconnues → Zugig : activé.</string>
     <string name="update_allow_old">Paramètres → Ma Fire TV → Options pour les développeurs → Applications de sources inconnues : activé, puis revenez ici.</string>
+    <string name="update_allow_android_tv">Si les paramètres s\'ouvrent ailleurs : Paramètres → Applications → Sécurité et restrictions → Sources inconnues → Zugig : activé.</string>
+    <string name="update_allow_old_android_tv">Paramètres → Sécurité et restrictions → Sources inconnues : activé, puis revenez ici.</string>
     <string name="update_open_settings">Ouvrir les paramètres</string>
 
     <string name="settings_account">Compte</string>

@@ -6,7 +6,7 @@
 
 android
 
-Android TV (10-foot UI, D-pad remote, no touch), built with Jetpack Compose for TV (`androidx.tv:tv-material`). The main device is an Amazon Fire TV Stick running Fire OS; the app is sideloaded.
+Android TV (10-foot UI, D-pad remote, no touch), built with Jetpack Compose for TV (`androidx.tv:tv-material`). The main device is an Amazon Fire TV Stick running Fire OS; the app is sideloaded. The same APK runs on Google TV and other Android TV devices (`docs/install-on-google-tv.md`).
 
 ## Users
 
@@ -26,6 +26,7 @@ Every IPTV player shows the Provider's Listings as the Provider files them. This
 
 - Viewed from a couch at TV distance, often in a dim room, on a 1080p or 4K TV.
 - Driven only by the Fire TV remote: D-pad, select, back, home, play/pause, rewind/fast-forward. Text entry is painful, so search must need as few keypresses as possible.
+- A Google TV remote has fewer keys: no menu, play/pause, rewind or fast-forward. Nothing may hang on those alone; where the Fire TV remote uses the menu key, holding OK does the same.
 - The Fire TV Stick is a weak device; scrolling and focus moves must stay instant.
 - The subscription allows one stream at a time: Header reads and Playback compete for it.
 

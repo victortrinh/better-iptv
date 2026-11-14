@@ -35,6 +35,9 @@
     <string name="player_live">Live · %1$s</string>
     <string name="channel_add_favourite">≡ Add to Favourites</string>
     <string name="channel_remove_favourite">≡ Remove from Favourites</string>
+    <!-- On a remote without a menu key (Google TV), where holding OK does it. -->
+    <string name="channel_add_favourite_hold">Hold OK to add to Favourites</string>
+    <string name="channel_remove_favourite_hold">Hold OK to remove from Favourites</string>
     <!-- What a Channel is showing, from the Provider's guide: the programme on now and when the next starts ("The National · Next 10:00 PM"), or the next alone when nothing is on now. -->
     <string name="guide_now_next">%1$s · Next %2$s</string>
     <string name="guide_next">Next %1$s · %2$s</string>
@@ -43,6 +46,7 @@
     <string name="shows_title">Shows</string>
     <string name="live_title">Live</string>
     <string name="live_empty">Your Favourites show up here. Press the menu key on a Channel in Search to add one.</string>
+    <string name="live_empty_hold">Your Favourites show up here. Hold OK on a Channel in Search to add one.</string>
     <string name="row_live_now">Live now</string>
     <string name="row_today">Today</string>
     <!-- Live's row of Event channels no Game matched: tennis, snooker, college games. -->
@@ -403,6 +407,9 @@
     <string name="update_allow_steps">Android asks once. Open settings, turn on Zugig, then press Back.</string>
     <string name="update_allow_fire">If settings open elsewhere: Settings → My Fire TV → Developer options → Install unknown apps → Zugig: On.</string>
     <string name="update_allow_old">Settings → My Fire TV → Developer options → Apps from Unknown Sources: On, then come back here.</string>
+    <!-- The same two, on Google TV and other Android TVs. -->
+    <string name="update_allow_android_tv">If settings open elsewhere: Settings → Apps → Security &amp; restrictions → Unknown sources → Zugig: On.</string>
+    <string name="update_allow_old_android_tv">Settings → Security &amp; restrictions → Unknown sources: On, then come back here.</string>
     <string name="update_open_settings">Open settings</string>
 
     <string name="settings_account">Account</string>

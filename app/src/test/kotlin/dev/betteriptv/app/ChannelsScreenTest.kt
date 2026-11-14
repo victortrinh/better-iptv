@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 
 /**
  * The Channels screen's focus (#259): the column of Categories and the list of the picked one's
- * Channels, Left and Right between them, OK watching and the menu key favouriting. Its data comes
+ * Channels, Left and Right between them, OK watching and the menu key, or OK held, favouriting. Its data comes
  * from the Library ([ChannelBrowserTest] in core covers it); here it is made up.
  */
 @OptIn(ExperimentalTestApi::class)
@@ -126,10 +126,29 @@ class ChannelsScreenTest {
 
     @Test
     fun okWatchesTheChannelAndTheMenuKeyFavouritesIt() {
+        // A Fire TV: its remote has the menu key, and the hint names it.
+        shadowOf(ApplicationProvider.getApplicationContext<Context>().packageManager).setSystemFeature("amazon.hardware.fire_tv", true)
         screen()
         press(listOf(Key.DirectionRight, Key.DirectionDown, Key.Menu))
         assertEquals(listOf("UK: SKY SPORTS" to true), favourited)
         compose.onNodeWithText("≡ Remove from Favourites").assertExists()
+
+        press(listOf(Key.DirectionCenter))
+        assertEquals(listOf("UK: SKY SPORTS"), watched)
+    }
+
+    /** A Google TV's remote has no menu key: OK held does what it does, once, and watches nothing. */
+    @Test
+    fun holdingOkFavouritesTheChannelWhereTheRemoteHasNoMenuKey() {
+        screen()
+        press(listOf(Key.DirectionRight, Key.DirectionDown))
+        compose.onNodeWithText("Hold OK to add to Favourites").assertExists()
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter, pressDurationMillis = 1_500) }
+        compose.waitForIdle()
+        assertEquals(listOf("UK: SKY SPORTS" to true), favourited)
+        assertEquals(emptyList<String>(), watched)
+        compose.onNodeWithText("Hold OK to remove from Favourites").assertExists()
 
         press(listOf(Key.DirectionCenter))
         assertEquals(listOf("UK: SKY SPORTS"), watched)

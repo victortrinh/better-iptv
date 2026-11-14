@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import dev.betteriptv.app.ui.components.ChannelCard
+import dev.betteriptv.app.ui.components.rememberHasMenuKey
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.LiveCountry
 
@@ -36,9 +37,18 @@ fun ChannelCard(
 /** What a country card and the Channels screen call this country: its alias when the Provider's code isn't a country, else its name in the [appLanguage]. */
 fun LiveCountry.name(appLanguage: String): String = alias ?: countryName(code, appLanguage)
 
-/** What the menu key does on this Channel's card: add or remove the Favourite. */
+/**
+ * What the menu key does on this Channel's card: add or remove the Favourite. On a remote without
+ * one ([rememberHasMenuKey]) it names holding OK instead: "Hold OK to add to Favourites".
+ */
 @Composable
-fun Channel.menuHint(): String = stringResource(if (favourite) R.string.channel_remove_favourite else R.string.channel_add_favourite)
+fun Channel.menuHint(): String = stringResource(
+    when {
+        rememberHasMenuKey() -> if (favourite) R.string.channel_remove_favourite else R.string.channel_add_favourite
+        favourite -> R.string.channel_remove_favourite_hold
+        else -> R.string.channel_add_favourite_hold
+    },
+)
 
 /**
  * The caption under this Channel's name: its country tag, when it has one, then what the menu key
