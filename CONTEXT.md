@@ -58,6 +58,10 @@ _Avoid_: Refresh, import, scan
 One of a Sync's two halves: the Channels (live Categories and Listings), then the Titles (movie and show Categories and Listings, and Sports replays). A first Sync lands each Stage as soon as it is ready, so Live and Home open on the Channels while the Titles are still read.
 _Avoid_: Phase, half, pass
 
+**Head start**:
+The fresh Categories a first Sync lands right after the Channels, so there are Movies and Shows to play within seconds while the rest is read: per Content language, the Categories the Prefix table says hold new releases, else the first in the Provider's order. It is not a Stage: the Titles Stage replaces it whole, and a later Sync has none. Until then a Title in it has only the Versions its Head start Listings give it.
+_Avoid_: Slice, preview, first look, fast lane
+
 **Step**:
 What a Sync is doing now, as the first-Sync checklist names it: Channels, Movies, Shows, Saving.
 _Avoid_: Stage, phase
@@ -109,7 +113,7 @@ _Avoid_: Mirror, fallback
 
 **Match**:
 The link between a Listing and its Title.
-_Avoid_: Merge, dedupe
+_Avoid_: Merge, dedupe, regroup
 
 **Mismatch**:
 A Listing whose Title number points to the wrong Title (for example `PL - Poza (1970)` carrying the number of `EN - Pose (2025)`). It is told by its year: a Listing dated more than a year away from its sibling Listings' year (the year most of the dated Listings of its number and kind carry, ties going to the earliest; a Show without a year in its name is dated by its release date) is a Mismatch, and is kept apart as an Unmatched Title of its own. A Mismatch dated like its siblings (`FR - Trotro` carries Game of Thrones' number and release date) can't be told, and stays with its number.
