@@ -96,17 +96,19 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
         }
         Column(Modifier.width(400.dp), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
             val fieldModifier = Modifier.fillMaxWidth()
+            // One keyboard for the form: its action key carries it from a field to the next.
+            val typing = remember { mutableStateOf(false) }
             NuageTextField(
                 address,
                 { if (it.length - address.length <= 1 || !splitM3uUrl(it)) address = it },
                 stringResource(R.string.login_address),
                 fieldModifier.onFocusChanged { if (!it.hasFocus) splitM3uUrl(address) },
-                placeholder = stringResource(R.string.login_address_hint), keyboardType = KeyboardType.Uri,
+                placeholder = stringResource(R.string.login_address_hint), keyboardType = KeyboardType.Uri, typing = typing,
             )
-            NuageTextField(username, { username = it }, stringResource(R.string.login_username), fieldModifier)
+            NuageTextField(username, { username = it }, stringResource(R.string.login_username), fieldModifier, typing = typing)
             NuageTextField(
                 password, { password = it }, stringResource(R.string.login_password), fieldModifier,
-                keyboardType = KeyboardType.Password,
+                keyboardType = KeyboardType.Password, typing = typing,
                 onDone = { if (canLogIn) logIn() else focus.moveFocus(FocusDirection.Down) },
             )
             Spacer(Modifier.height(Spacing.xs))
