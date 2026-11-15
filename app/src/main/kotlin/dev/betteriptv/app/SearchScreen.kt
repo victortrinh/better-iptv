@@ -90,6 +90,8 @@ fun SearchScreen(
     val scope = rememberCoroutineScope()
     // Bumped when a Sync lands (its Channels first), a held catalog is applied or Matches regroup the Titles.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
+    // A first Sync still adding the catalog (ADR 0019): a Search that finds nothing says more is coming.
+    val status by library.syncStatus.collectAsStateWithLifecycle()
     var results by remember { mutableStateOf(SearchResults.NONE) }
     // The query [results] answer: the one being typed until the index, if still being built, has them.
     var answered by remember { mutableStateOf("") }
@@ -152,7 +154,7 @@ fun SearchScreen(
             Spacer(Modifier.width(COLUMN_GAP))
             Column(Modifier.weight(1f)) {
                 Query(query)
-                Results(query, results, searching = answered != query, tab, grid, firstResult, onOpen, onWatch, onPlayReplay) { channel, favourite ->
+                Results(query, results, searching = answered != query, stillAdding = stillAddingCatalog(status), tab, grid, firstResult, onOpen, onWatch, onPlayReplay) { channel, favourite ->
                     scope.launch {
                         library.setFavourite(channel.key, favourite)
                         results = results.copy(channels = results.channels.map { if (it.key == channel.key) it.copy(favourite = favourite) else it })
@@ -196,6 +198,7 @@ private fun Results(
     query: String,
     results: SearchResults,
     searching: Boolean,
+    stillAdding: Boolean,
     tab: FocusRequester,
     grid: FocusRequester,
     firstResult: FocusRequester,
@@ -208,7 +211,13 @@ private fun Results(
         // Before anything is typed, the query line says what to.
         if (query.isBlank()) return
         val message = if (searching) stringResource(R.string.search_searching) else stringResource(R.string.search_none, query.trim())
-        Text(message, style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = GRID_TOP))
+        Column(Modifier.padding(top = GRID_TOP)) {
+            Text(message, style = Type.body, color = Colors.inkMuted)
+            // The Head start is all Search knows until the full catalog lands: nothing found may only mean not yet.
+            if (!searching && stillAdding) {
+                Text(stringResource(R.string.search_still_adding), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.s))
+            }
+        }
         return
     }
     val cards = remember(results, query) { results.cards(query) }

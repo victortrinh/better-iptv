@@ -101,6 +101,8 @@
     <string name="search_start">Type two letters to find Movies, Shows, Channels and people.</string>
     <string name="search_searching">Searching…</string>
     <string name="search_none">Nothing matches \"%1$s\".</string>
+    <!-- Under search_none while a first Sync is still adding the catalog. -->
+    <string name="search_still_adding">Still adding your catalog. Try again in a moment.</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_never">Not synced yet.</string>
     <!-- The first-Sync checklist, centred where the rows will be: its title and its steps, in order. -->
@@ -127,12 +129,11 @@
     <string name="sync_just_now">just now</string>
     <string name="sync_failed_empty">Sync failed: %1$s</string>
     <string name="catalog_activity_syncing">Syncing…</string>
+    <string name="catalog_activity_adding_the_rest">Adding the rest of your catalog…</string>
     <string name="catalog_activity_ready">Update ready · shows when you switch tabs</string>
     <string name="catalog_activity_up_to_date">Up to date</string>
     <string name="catalog_work_channel">Catalog updates</string>
     <string name="catalog_work_notification">Updating your catalog</string>
-    <!-- Over Home's placeholder rows while a first Sync, its Channels landed, still reads the Titles. -->
-    <string name="home_titles_pending">Movies and shows arrive once syncing finishes.</string>
 
     <string name="badge_confirmed">Confirmed</string>
     <string name="badge_confirmed_meaning">read from the file</string>

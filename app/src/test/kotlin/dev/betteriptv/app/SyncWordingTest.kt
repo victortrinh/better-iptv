@@ -21,6 +21,17 @@ class SyncWordingTest {
     private val synced = CompletedSync(Instant.now(), Duration.ofMillis(239_700), 150, emptyList(), showListingCount = 45, channelListingCount = 5)
 
     @Test
+    fun thePillSaysWhatTheCatalogIsDoing() {
+        val line = { status: SyncStatus -> catalogActivity(status)?.let { context.getString(it.label()) } }
+        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, headStartAt = Instant.now())))
+        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Instant.now(), SyncStep.Shows)))
+        assertEquals("Syncing…", line(SyncStatus.Running(synced, synced.finishedAt, SyncStep.Movies)))
+        assertEquals("Update ready · shows when you switch tabs", line(SyncStatus.Ready(synced, Instant.now())))
+        assertEquals(null, line(SyncStatus.Synced(synced)))
+        assertEquals("Up to date", context.getString(afterword(CatalogActivity.AddingTheRest, SyncStatus.Synced(synced))!!.label()))
+    }
+
+    @Test
     fun namesAFirstSyncsStepAndCountsItsEntries() {
         assertEquals("Syncing… Channels", context.describe(SyncStatus.Running(null, null, SyncStep.Channels)))
         assertEquals("Syncing… Movies · 12,345 entries", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))

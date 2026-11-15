@@ -36,19 +36,23 @@ import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.delay
 
 /** What the tab bar's pill says while the catalog on screen may still change (#304). */
-internal enum class CatalogActivity { Syncing, UpdateReady, UpToDate }
+internal enum class CatalogActivity { Syncing, AddingTheRest, UpdateReady, UpToDate }
 
 /**
  * The pill's line for [status]: a Sync running, or its held catalog waiting for the next screen; null
  * while neither is, and while the first Sync's checklist fills the screen, since it says as much. A
- * failed Sync shows only in Settings.
+ * first Sync whose Channels have landed is adding the rest (ADR 0019): what is on screen, the Head
+ * start's Titles too once they land, is only part of the catalog. A failed Sync shows only in Settings.
  */
 internal fun catalogActivity(status: SyncStatus): CatalogActivity? = when {
     status.channelsAt == null -> null
-    status is SyncStatus.Running -> CatalogActivity.Syncing
+    status is SyncStatus.Running -> if (status.last == null) CatalogActivity.AddingTheRest else CatalogActivity.Syncing
     status is SyncStatus.Ready -> CatalogActivity.UpdateReady
     else -> null
 }
+
+/** Whether a Search that finds nothing should say more is coming: while a first Sync is adding the rest (ADR 0019). */
+internal fun stillAddingCatalog(status: SyncStatus): Boolean = catalogActivity(status) == CatalogActivity.AddingTheRest
 
 /** What the pill says once the work it [shown] ends: Up to date, unless the Sync failed or it showed nothing. */
 internal fun afterword(shown: CatalogActivity?, status: SyncStatus): CatalogActivity? =
@@ -105,13 +109,14 @@ internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier
     }
 }
 
-private fun CatalogActivity.label() = when (this) {
+internal fun CatalogActivity.label() = when (this) {
     CatalogActivity.Syncing -> R.string.catalog_activity_syncing
+    CatalogActivity.AddingTheRest -> R.string.catalog_activity_adding_the_rest
     CatalogActivity.UpdateReady -> R.string.catalog_activity_ready
     CatalogActivity.UpToDate -> R.string.catalog_activity_up_to_date
 }
 
-/** Room between the tab capsule and the right margin, with the French "ready" line in it. */
+/** Room between the tab capsule and the right margin, with the French "ready" and "adding the rest" lines in it. */
 private val PILL_MAX_WIDTH = 240.dp
 private val DOT_SIZE = 6.dp
 private const val FADE_MS = 300
