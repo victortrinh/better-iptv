@@ -118,6 +118,51 @@ class HeadStartTest {
         assertEquals(listOf("get_vod_streams category 2", "get_series category 3"), categoryRequests)
     }
 
+    @Test fun `a Hand line the cloud serves marks a Category fresh, and it is read ahead of the first in the language`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = "[category hints]\nDRENIER AJOUTEE | fresh\n"
+        movieCategories("FR - ACTION", "FR - LE DRENIER AJOUTEE", "EN - COMEDY")
+
+        library.sync(contentLanguages = listOf("fr"))
+
+        assertEquals(listOf("get_vod_streams category 2"), categoryRequests)
+    }
+
+    @Test fun `without the Hand line, a misspelt fresh Category is passed over for the first in the language`() = runBlocking {
+        movieCategories("FR - ACTION", "FR - LE DRENIER AJOUTEE", "EN - COMEDY")
+
+        library.sync(contentLanguages = listOf("fr"))
+
+        assertEquals(listOf("get_vod_streams category 1"), categoryRequests)
+    }
+
+    @Test fun `the surveyed Provider's Hand lines mark its fresh Categories that the Base table's words miss`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = surveyedProviderTable
+        movieCategories(
+            "FR - FILM CAM", "FR - LE DRENIER AJOUTEE", "FR - HORREUR", "FR - LE DRENIER AJOUTEE ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+            "QC - FILMS VIEILLE", "QC - FILMS NOUVELLE VERSION",
+            "SVENSKA 2020 & GAMMAL", "SVENSKA NYA UTGÅVAN",
+            "IL - FREE TV - סרטים", "IL - סרטים 2023 + האחרון",
+        )
+        showCategories("HEBREW EN SERIES", "HEBREW המהדורות האחרונות")
+
+        library.sync(contentLanguages = listOf("fr-FR", "fr-CA", "sv", "he"))
+
+        // French takes its two (the Québec one is the third and waits for the full catalog), then Swedish and Hebrew one each.
+        assertEquals(
+            listOf("get_vod_streams category 2", "get_vod_streams category 4", "get_vod_streams category 8", "get_vod_streams category 10", "get_series category 2"),
+            categoryRequests,
+        )
+    }
+
+    @Test fun `the surveyed Provider's Québec fresh Category is read when French has no other`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = surveyedProviderTable
+        movieCategories("QC - FILMS VIEILLE", "QC - FILMS NOUVELLE VERSION")
+
+        library.sync(contentLanguages = listOf("fr-CA"))
+
+        assertEquals(listOf("get_vod_streams category 2"), categoryRequests)
+    }
+
     @Test fun `a show Category that names a language or its country is in that language`() = runBlocking {
         provider.serveMovies()
         showCategories("ENGLISH SERIES", "FRANCE DERNIER AJOUT", "GERMANY SERIE")

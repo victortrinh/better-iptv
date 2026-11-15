@@ -37,6 +37,8 @@ describe("Provider tables", () => {
     expect(text).toBe(env.TEST_PROVIDER_TABLES.files[surveyed]);
     expect(text).toContain("CD          | language=de");
     expect(text).toContain("4M-AMZ      | source=Prime Video; quality=4K");
+    // A Hand line marking a Category fresh (#565) goes out with the rest, for the device's Head start.
+    expect(text).toMatch(/^\[category hints\]$[^\[]*^DRENIER AJOUTEE\s+\| fresh/m);
   });
 
   it("answers an empty table for a Provider it has never seen", async () => {
