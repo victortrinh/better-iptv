@@ -102,16 +102,13 @@ fun HomeScreen(
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Live, Movies and Shows.
     val noChannels = status.channelsAt == null
-    // Once they have, a caption under the rows says the Titles are coming, until they land; a failure then shows on Movies and Shows.
+    // Once they have, the Titles are coming until they land, and the Catalog pill says so (#562); a failure then shows on Movies and Shows.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
-    // A Head start's Titles are there already (ADR 0019): its rows say so themselves, and the caption goes.
-    val headStart = status.headStartAt != null
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     // A catalog that lands is read at once: the rows around the focused one may come and go, but the
     // focused row itself waits for focus to leave it ([RowsLayout]).
-    val caption = stringResource(R.string.home_titles_pending)
     // The first Sync's sign-in card (#438): under the checklist, then under the rows until the Titles land.
     val scope = rememberCoroutineScope()
     val signIn = firstSyncSignIn(
@@ -133,11 +130,10 @@ fun HomeScreen(
         placeholder = if (noChannels) {
             { SyncChecklist(status, SyncStep.Channels, onRetry, card = signIn?.let { { SignInCard(it) } }) }
         } else null,
-        // Kept, though empty, once the Head start lands without a card: the rows are a read away, and Home isn't called empty meanwhile.
+        // Kept, though empty without a card: the Titles' rows are a read away, and Home isn't called empty meanwhile.
         trailing = if (titlesComing) {
             {
                 Column(Modifier.padding(horizontal = Spacing.screenX)) {
-                    if (!headStart) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
                     signIn?.let { SignInCard(it, Modifier.padding(top = Spacing.m)) }
                 }
             }
