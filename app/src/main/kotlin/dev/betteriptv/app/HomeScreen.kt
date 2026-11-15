@@ -133,7 +133,8 @@ fun HomeScreen(
         placeholder = if (noChannels) {
             { SyncChecklist(status, SyncStep.Channels, onRetry, card = signIn?.let { { SignInCard(it) } }) }
         } else null,
-        trailing = if (titlesComing && (!headStart || signIn != null)) {
+        // Kept, though empty, once the Head start lands without a card: the rows are a read away, and Home isn't called empty meanwhile.
+        trailing = if (titlesComing) {
             {
                 Column(Modifier.padding(horizontal = Spacing.screenX)) {
                     if (!headStart) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
