@@ -16,6 +16,15 @@ enum class StepState { Done, Running, Pending, Failed }
 fun showsChecklist(status: SyncStatus): Boolean = status.channelsAt == null
 
 /**
+ * Whether a first Sync is running with nothing yet to show for its Titles: the Channels are in, no
+ * Head start landed (ADR 0019) and the Sync hasn't failed. A Movies or Shows tab, or a Home with no
+ * row at all, then says where its rows will be that the movies and shows are on their way; the line
+ * goes as rows arrive, and never shows once a Head start has landed.
+ */
+fun titlesOnTheirWay(status: SyncStatus): Boolean =
+    !showsChecklist(status) && status.last == null && status.headStartAt == null && status !is SyncStatus.Failed
+
+/**
  * The checklist's lines, as [status] has them: the steps before the one running are Done, the one
  * running Running, the rest Pending; a failed Sync marks its step Failed. Before any Sync, Channels
  * that landed (the app closed between a first Sync's stages) are Done already.

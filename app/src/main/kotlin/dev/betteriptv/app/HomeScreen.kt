@@ -104,6 +104,7 @@ fun HomeScreen(
     val noChannels = showsChecklist(status)
     // Once they have, the Titles are coming until they land, and the Catalog pill says so (#562); a failure then shows in Settings.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
+    val onTheirWay = titlesOnTheirWay(status)
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
@@ -135,6 +136,8 @@ fun HomeScreen(
         trailing = if (titlesComing) {
             {
                 Column(Modifier.padding(horizontal = Spacing.screenX)) {
+                    // A Home with no row at all and no Head start says its movies and shows are on their way, where the rows will be.
+                    if (onTheirWay && state.rows?.isEmpty() == true) Text(stringResource(R.string.titles_on_their_way), style = Type.body, color = Colors.inkMuted)
                     signIn?.let { SignInCard(it, Modifier.padding(top = Spacing.m)) }
                 }
             }

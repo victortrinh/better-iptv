@@ -64,4 +64,23 @@ class SyncChecklistItemsTest {
         assertFalse(showsChecklist(SyncStatus.Running(synced, now, SyncStep.Channels, 1)))
         assertFalse(showsChecklist(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Channels)))
     }
+
+    @Test fun `a first Sync with its Channels in and no Head start says the movies and shows are on their way`() {
+        assertTrue(titlesOnTheirWay(SyncStatus.Running(null, now, SyncStep.Movies, 1)))
+        assertTrue(titlesOnTheirWay(SyncStatus.Running(null, now, SyncStep.Saving, 1)))
+        assertTrue(titlesOnTheirWay(SyncStatus.NeverSynced(now)))
+    }
+
+    @Test fun `the line never shows once a Head start has landed`() {
+        assertFalse(titlesOnTheirWay(SyncStatus.Running(null, now, SyncStep.Movies, 1, headStartAt = now)))
+        assertFalse(titlesOnTheirWay(SyncStatus.NeverSynced(now, headStartAt = now)))
+    }
+
+    @Test fun `nor under the checklist, after a failure, or on a later Sync`() {
+        assertFalse(titlesOnTheirWay(SyncStatus.NeverSynced()))
+        assertFalse(titlesOnTheirWay(SyncStatus.Running(null, null, SyncStep.Channels, 1)))
+        assertFalse(titlesOnTheirWay(SyncStatus.Failed(Unreachable("x"), null, now, SyncStep.Movies)))
+        assertFalse(titlesOnTheirWay(SyncStatus.Synced(synced)))
+        assertFalse(titlesOnTheirWay(SyncStatus.Running(synced, now, SyncStep.Movies, 1)))
+    }
 }

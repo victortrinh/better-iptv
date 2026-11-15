@@ -365,6 +365,7 @@
     <string name="guide_now_next">%1$s · Ensuite %2$s</string>
     <string name="guide_next">Ensuite %1$s · %2$s</string>
     <string name="home_empty">Vos rangées apparaîtront une fois votre catalogue synchronisé.</string>
+    <string name="titles_on_their_way">Vos films et séries arrivent.</string>
     <string name="search_title">Recherche</string>
     <string name="search_hint">Toutes les langues fonctionnent, et les accents et petites fautes ne posent pas de problème : « pokemon » trouve Pokémon.</string>
     <string name="search_start">Tapez deux lettres pour trouver des films, des séries, des chaînes et des personnes.</string>
