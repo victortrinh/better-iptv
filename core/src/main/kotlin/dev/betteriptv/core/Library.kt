@@ -464,7 +464,8 @@ class Library private constructor(
      * fresh Categories of the Viewer's [contentLanguages] ([headStartCategories]), each read with a
      * request of its own, one at a time, and landed as Titles to play while the full lists are read;
      * the Titles stage then replaces them whole. With no Content languages, or when a Category can't
-     * be read, there is none, and no error either. A later Sync has none. A later Sync computes both behind the catalog on
+     * be read, there is none, and no error either. A first Sync stopped past its Head start (the app
+     * closed, the full read failed) keeps it on screen, and the next one doesn't read it again. A later Sync has none. A later Sync computes both behind the catalog on
      * screen, then either swaps them in together (the default), or with [hold] keeps them staged as
      * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
      * move under focus; a Sync started meanwhile discards what was held.
@@ -545,7 +546,8 @@ class Library private constructor(
                 step = SyncStep.Movies
                 running()
                 timer?.mark(SyncStep.Channels.name)
-                if (last == null && contentLanguages.isNotEmpty()) {
+                // A Head start already on the device is kept as it is: a reopened app's Sync, or a Retry, goes straight to the full read.
+                if (last == null && headStartAt == null && contentLanguages.isNotEmpty()) {
                     landHeadStart(client, table, contentLanguages)?.let { headStartAt = it; running() }
                     timer?.mark(SyncTiming.HEAD_START)
                 }

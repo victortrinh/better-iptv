@@ -89,6 +89,16 @@ PERSIAN MOVIES      | language=fa       # IR - PERSIAN MOVIES, 1,015 Listings
 PERSIAN SERIES      | language=fa       # 725 Series
 دوبله               | language=fa       # IR - PERSIAN کلاسیک دوبله (628), PERSIAN ترکی دوبله (182)
 
+# Fresh Categories the Base table's words miss (#565): new releases under this Provider's own
+# names, which a first Sync reads first as its Head start (ADR 0019). Each sits beside a Category
+# of the old ones (FR - 2021 ANCIEN FILM, QC - FILMS VIEILLE, SVENSKA 2020 & GAMMAL,
+# IL - סרטים 2022 + ישן), which is how the unnamed ones were told.
+DRENIER AJOUTEE     | fresh             # typo of DERNIER AJOUT: FR - LE DRENIER AJOUTEE (721), and its ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ one (76)
+NOUVELLE VERSION    | fresh             # QC - FILMS NOUVELLE VERSION (137)
+NYA UTGÅVAN         | fresh             # Swedish, new release: SVENSKA NYA UTGÅVAN (771)
+האחרון              | fresh             # Hebrew, the latest: IL - סרטים 2023 + האחרון (35)
+המהדורות האחרונות   | fresh             # Hebrew, the latest releases: HEBREW המהדורות האחרונות (29 Series)
+
 [not tier tags]
 
 # Candidate Tier tags whose Listings are different Channels (#545): the word carries the country or

@@ -424,8 +424,8 @@ internal fun RowsLayout(
         if (chosen != null) state.featured = if (late) null else chosen.await()
         // It shows from the top, unless the Viewer is on a row: rows never move under focus, and Up finds it.
         if (arrivingLate && state.featured != null && !inRows) state.list.requestScrollToItem(0)
-        // Rows arriving where there were none (a Head start's, over the caption that stood for them) show
-        // from the top: the list would else keep what it showed, [trailing], in place under them, out of sight.
+        // Rows arriving where there were none (a Head start's, on a tab bare till then) show from the
+        // top: the list would else keep what it held, [trailing], in place under them, out of sight.
         if (before?.isEmpty() == true && fresh.isNotEmpty()) state.list.requestScrollToItem(0)
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh

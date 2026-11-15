@@ -64,23 +64,4 @@ class SyncChecklistItemsTest {
         assertFalse(showsChecklist(SyncStatus.Running(synced, now, SyncStep.Channels, 1)))
         assertFalse(showsChecklist(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Channels)))
     }
-
-    @Test fun `with the Channels in and no Head start, the Titles are still to arrive`() {
-        assertTrue(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Movies, 1)))
-        assertTrue(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Saving, 1)))
-        assertTrue(titlesStillToArrive(SyncStatus.NeverSynced(now)))
-    }
-
-    @Test fun `a Head start's Titles have arrived`() {
-        assertFalse(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Movies, 1, headStartAt = now)))
-        assertFalse(titlesStillToArrive(SyncStatus.NeverSynced(now, headStartAt = now)))
-    }
-
-    @Test fun `nothing is said to arrive under the checklist, after a failure or once a Sync has finished`() {
-        assertFalse(titlesStillToArrive(SyncStatus.NeverSynced()))
-        assertFalse(titlesStillToArrive(SyncStatus.Running(null, null, SyncStep.Channels, 1)))
-        assertFalse(titlesStillToArrive(SyncStatus.Failed(Unreachable("x"), null, now, SyncStep.Movies)))
-        assertFalse(titlesStillToArrive(SyncStatus.Synced(synced)))
-        assertFalse(titlesStillToArrive(SyncStatus.Running(synced, now, SyncStep.Movies, 1)))
-    }
 }

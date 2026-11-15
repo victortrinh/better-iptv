@@ -53,6 +53,11 @@
 #   fresh               Category hints only: the Category holds new releases, so a first Sync
 #                       reads it first, as its Head start (ADR 0019). A Category naming this year
 #                       or the last (`PELÍCULAS 2026`) is fresh without a line.
+#                       This table holds the words Providers share (`NEW RELEASE`, `DERNIER
+#                       AJOUT`); a Provider's own name or misspelling for its new releases is
+#                       a Hand line in its Provider table, under `[category hints]`:
+#                       `DRENIER AJOUTEE | fresh` marks `FR - LE DRENIER AJOUTEE`. It says
+#                       nothing of the Category's language, which its Prefix or name gives.
 #
 # A Prefix with no attributes is known but says nothing (a collection label, say). Prefixes missing
 # from both tables are reported to the cloud after each Sync (never shown to the Viewer), and the

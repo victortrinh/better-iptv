@@ -47,7 +47,7 @@ A Provider table entry the cloud worked out from what Header reads of that Prefi
 _Avoid_: Inferred rule, auto rule
 
 **Hand line**:
-A Provider table entry written by a person, for what reads can't teach (Clutter, Tier tags, a Source) or where reads disagree.
+A Provider table entry written by a person, for what reads can't teach (Clutter, Tier tags, a Source, a Category that is fresh for the Head start) or where reads disagree.
 _Avoid_: Override, manual rule
 
 **Multi-audio**:

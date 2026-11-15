@@ -18,7 +18,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.theme.NuageTheme
 import dev.betteriptv.core.HomeRow
 import dev.betteriptv.core.TitleId
@@ -36,11 +35,11 @@ import org.robolectric.annotation.Config
 
 /**
  * A first Sync's Head start lands on a tab that had no row (#561): the rows it brings show from the
- * top of the screen ([RowsLayout]), not above the caption that stood for them, out of sight.
+ * top of the screen ([RowsLayout]), not above the empty slot that stood under the tabs, out of sight.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w960dp-h540dp-mdpi")
-class RowsArriveOverCaptionTest {
+class RowsArriveOnABareTabTest {
     /** The compose rule's host activity, registered as [RowEntryTest] does so release unit tests run it too. */
     @get:Rule(order = 0)
     val host = TestRule { base, _ ->
@@ -62,7 +61,7 @@ class RowsArriveOverCaptionTest {
     private fun title(name: String) = TitleSummary(TitleId.Unmatched(TitleKind.Movie, name.hashCode().toLong()), name, 2024, null, VersionAttributes())
 
     @Test
-    fun rowsThatArriveWhereOnlyTheCaptionStoodShowFromTheTop() {
+    fun rowsThatArriveOnABareTabShowFromTheTop() {
         compose.setContent {
             NuageTheme {
                 RowsLayout(
@@ -75,13 +74,12 @@ class RowsArriveOverCaptionTest {
                     info = { _, _, _ -> },
                     appLanguage = "en",
                     onOpen = { _, _ -> },
-                    // As the Movies and Shows tabs': a caption while there is no row, then nothing.
-                    trailing = { if (rows.isEmpty()) Text("Movies and shows arrive once syncing finishes.") },
+                    // As the Movies and Shows tabs' while a first Sync's Titles are coming: there, and empty.
+                    trailing = {},
                 ) { tab -> Box(Modifier.size(80.dp, 30.dp).focusRequester(tab).focusable()) }
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithText("Movies and shows arrive once syncing finishes.").assertIsDisplayed()
 
         rows = listOf(HomeRow.Genre("Comedy", List(4) { title("Comedy $it") }))
         reading++

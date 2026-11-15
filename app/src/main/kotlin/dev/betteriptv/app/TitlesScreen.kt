@@ -10,9 +10,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.Text
-import dev.betteriptv.app.ui.theme.Colors
-import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.core.FeaturedScreen
 import dev.betteriptv.core.FeaturedTitle
@@ -38,7 +35,7 @@ class TitlesState {
  * week, then New movies (or shows), then its genres. Sync now and how the Sync
  * is going are in Settings; a first Sync's checklist shows here only until its Channels land. While
  * its Head start is all the catalog holds (ADR 0019), the tab shows New movies (or shows) alone, and
- * with no Head start a caption that the Titles are coming. Above the rows, a featured Title of the kind from Trending, else New, a
+ * with no Head start nothing: the Catalog pill says the rest is coming. Above the rows, a featured Title of the kind from Trending, else New, a
  * different one each time the tab is entered ([Library.featured]): its Play plays it ([onPlay]), its
  * Details opens it ([onOpen]). [restoreFocus] is the card to focus on coming back, the one the
  * Viewer opened. [focusTab]: reached by picking its tab, which keeps focus.
@@ -68,11 +65,9 @@ fun TitlesScreen(
     // A first Sync's checklist shows only until the Channels land, as on Home and Live (ADR 0019).
     val noChannels = showsChecklist(status)
     // From then until the Titles land, the tab shows what a Head start gave it: New movies (or shows)
-    // and a featured Title. With no row to show (no Head start, or none of this kind), a caption says
-    // the Titles are coming, as under Home's rows.
+    // and a featured Title. With no row to show (no Head start, or none of this kind) it is bare, as
+    // Home is under its Channels' rows: the Catalog pill says the rest is being added (#562).
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
-    val nothingYet = titlesComing && state.rows.rows?.isEmpty() == true
-    val caption = stringResource(R.string.home_titles_pending)
     val duringFirstSync = remember { status.last == null }
     RowsScreen(
         library, contentLanguages, appLanguage, state.rows, restoreFocus, focusTab,
@@ -83,11 +78,9 @@ fun TitlesScreen(
         placeholder = if (noChannels) {
             { SyncChecklist(status, onRetry) }
         } else null,
-        // Kept, though empty, while the Titles are coming: the tab isn't called empty in the moment a Head start lands.
+        // Empty, and there so the tab isn't called empty while the Titles are coming.
         trailing = if (titlesComing) {
-            {
-                if (nothingYet) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = Spacing.screenX, vertical = 12.dp))
-            }
+            {}
         } else null,
         feature = { readDetails -> library.featured(if (kind == TitleKind.Movie) FeaturedScreen.Movies else FeaturedScreen.Shows, contentLanguages, appLanguage, device(), qualityCap, preferOriginalAudio, readDetails) },
         featureBadge = { id -> library.featuredBadge(id, contentLanguages, device(), qualityCap, preferOriginalAudio) },

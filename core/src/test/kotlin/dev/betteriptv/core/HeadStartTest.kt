@@ -2,8 +2,10 @@ package dev.betteriptv.core
 
 import dev.betteriptv.core.FakeProvider.MovieListing
 import dev.betteriptv.core.FakeProvider.ShowListing
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -114,6 +116,51 @@ class HeadStartTest {
         library.sync(contentLanguages = english)
 
         assertEquals(listOf("get_vod_streams category 2", "get_series category 3"), categoryRequests)
+    }
+
+    @Test fun `a Hand line the cloud serves marks a Category fresh, and it is read ahead of the first in the language`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = "[category hints]\nDRENIER AJOUTEE | fresh\n"
+        movieCategories("FR - ACTION", "FR - LE DRENIER AJOUTEE", "EN - COMEDY")
+
+        library.sync(contentLanguages = listOf("fr"))
+
+        assertEquals(listOf("get_vod_streams category 2"), categoryRequests)
+    }
+
+    @Test fun `without the Hand line, a misspelt fresh Category is passed over for the first in the language`() = runBlocking {
+        movieCategories("FR - ACTION", "FR - LE DRENIER AJOUTEE", "EN - COMEDY")
+
+        library.sync(contentLanguages = listOf("fr"))
+
+        assertEquals(listOf("get_vod_streams category 1"), categoryRequests)
+    }
+
+    @Test fun `the surveyed Provider's Hand lines mark its fresh Categories that the Base table's words miss`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = surveyedProviderTable
+        movieCategories(
+            "FR - FILM CAM", "FR - LE DRENIER AJOUTEE", "FR - HORREUR", "FR - LE DRENIER AJOUTEE ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ",
+            "QC - FILMS VIEILLE", "QC - FILMS NOUVELLE VERSION",
+            "SVENSKA 2020 & GAMMAL", "SVENSKA NYA UTGÅVAN",
+            "IL - FREE TV - סרטים", "IL - סרטים 2023 + האחרון",
+        )
+        showCategories("HEBREW EN SERIES", "HEBREW המהדורות האחרונות")
+
+        library.sync(contentLanguages = listOf("fr-FR", "fr-CA", "sv", "he"))
+
+        // French takes its two (the Québec one is the third and waits for the full catalog), then Swedish and Hebrew one each.
+        assertEquals(
+            listOf("get_vod_streams category 2", "get_vod_streams category 4", "get_vod_streams category 8", "get_vod_streams category 10", "get_series category 2"),
+            categoryRequests,
+        )
+    }
+
+    @Test fun `the surveyed Provider's Québec fresh Category is read when French has no other`() = runBlocking {
+        cloud.providerTables[providerKey(provider.login)] = surveyedProviderTable
+        movieCategories("QC - FILMS VIEILLE", "QC - FILMS NOUVELLE VERSION")
+
+        library.sync(contentLanguages = listOf("fr-CA"))
+
+        assertEquals(listOf("get_vod_streams category 2"), categoryRequests)
     }
 
     @Test fun `a show Category that names a language or its country is in that language`() = runBlocking {
@@ -244,15 +291,81 @@ class HeadStartTest {
         assertEquals(2, library.movieListingCount())
     }
 
-    @Test fun `a full read that fails keeps the Head start`() = runBlocking {
+    @Test fun `a full read that fails keeps the Channels and the Head start, and Retry reads the full catalog alone`() = runBlocking {
         movieCategories("EN - NEW RELEASE", "EN - COMEDY")
 
         duringTheFullRead { provider.down = true }
 
         val failed = library.syncStatus.value as SyncStatus.Failed
         assertNull(failed.last)
+        assertNotNull(failed.channelsAt)
         assertNotNull(failed.headStartAt)
+        assertEquals(listOf("CA | NEWS"), library.liveCategories().map { it.name })
         assertEquals(1, library.movieListingCount())
+
+        provider.down = false
+        val asked = provider.requests.size
+        val retried = library.sync(contentLanguages = english)
+
+        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it })
+        assertNull(retried.headStartAt)
+        assertEquals(2, (retried as SyncStatus.Synced).last.movieListingCount)
+        assertEquals(2, library.movieListingCount())
+    }
+
+    @Test fun `an app closed during the full read reopens on the Head start, and its Sync goes straight to the full read`() = runBlocking {
+        provider.serveMovieListings(MovieListing("EN - Old Film (1999)", "EN - 2020 & OLD", 1), MovieListing("EN - Fresh Film (2026)", "EN - NEW RELEASE", 2))
+        provider.serveShows(ShowListing("EN - Old Show (2001)", "ENGLISH SERIES 2001", 4), ShowListing("EN - Fresh Show (2026)", "EN - NEW RELEASE", 5))
+        // The catalog as a Sync stopped in its full read leaves it on the device, whatever became of that Sync.
+        val left = folder.newFolder("left")
+        duringTheFullRead {
+            folder.root.listFiles { file -> file.name.startsWith("catalog.db") }!!.forEach { it.copyTo(left.resolve(it.name)) }
+        }
+        library.close()
+        val asked = provider.requests.size
+
+        library = Library.open(left.resolve("catalog.db").path, credentials, cloud.url)
+
+        val reopened = library.syncStatus.value as SyncStatus.NeverSynced
+        assertNotNull(reopened.channelsAt)
+        assertNotNull(reopened.headStartAt)
+        assertEquals(listOf("Fresh Film"), library.titles(0, 10, english, "en").map { it.name })
+        assertEquals(listOf("Fresh Show"), library.titles(0, 10, english, "en", TitleKind.Show).map { it.name })
+        assertEquals("EN - Fresh Film (2026)", library.playPlan(freshFilm, english, tv)?.version?.name)
+        assertEquals(asked, provider.requests.size)
+
+        val synced = library.sync(contentLanguages = english)
+
+        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it })
+        assertTrue("get_vod_streams" in provider.requests.drop(asked))
+        assertNull(synced.headStartAt)
+        assertEquals(2, (synced as SyncStatus.Synced).last.movieListingCount)
+        assertEquals(setOf("Old Film", "Fresh Film"), library.titles(0, 10, english, "en").map { it.name }.toSet())
+        assertEquals(setOf("Old Show", "Fresh Show"), library.titles(0, 10, english, "en", TitleKind.Show).map { it.name }.toSet())
+    }
+
+    @Test fun `a Sync cancelled during the full read leaves the Head start in its status, and the next one doesn't read it again`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        val pause = provider.pauseBeforeFullLists()
+        val closing = CoroutineScope(Dispatchers.Default)
+        val sync = closing.async { library.sync(contentLanguages = english) }
+        pause.awaitReached()
+        // The Provider stops answering as the app goes: the Sync ends without a catalog.
+        provider.down = true
+        closing.cancel()
+        pause.resume()
+        sync.join()
+        provider.down = false
+        val asked = provider.requests.size
+
+        assertNotNull(library.syncStatus.value.headStartAt)
+        assertNull(library.syncStatus.value.last)
+        assertEquals(1, library.movieListingCount())
+
+        library.sync(contentLanguages = english)
+
+        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it })
+        assertEquals(2, library.movieListingCount())
     }
 
     @Test fun `a later Sync has no Head start`() = runBlocking {
