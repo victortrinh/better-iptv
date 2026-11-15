@@ -67,7 +67,7 @@ The fresh Categories a first Sync lands right after the Channels, so there are M
 _Avoid_: Slice, preview, first look, fast lane
 
 **Step**:
-What a Sync is doing now, as the first-Sync checklist names it: Channels, Movies, Shows, Saving.
+What a Sync is doing now: Channels, Movies, Shows, Saving. Settings' status line names the Step throughout; the first-Sync checklist lists all four but shows only until the Channels land, so a Viewer sees it for a few seconds. A Head start is not a Step.
 _Avoid_: Stage, phase
 
 **Pending catalog**:

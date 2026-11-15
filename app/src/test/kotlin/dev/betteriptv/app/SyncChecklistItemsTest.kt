@@ -5,11 +5,13 @@ import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.Unreachable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Duration
 import java.time.Instant
 
-/** The first-Sync checklist's lines for each status, on Home and Live (every step) and on Movies and Shows (from Movies). */
+/** The first-Sync checklist: its lines for each status, and when it shows (only until the Channels land, on every tab). */
 class SyncChecklistItemsTest {
     private val now = Instant.now()
     private val synced = CompletedSync(now, Duration.ofSeconds(1), 150, emptyList())
@@ -40,9 +42,45 @@ class SyncChecklistItemsTest {
         assertEquals(List(4) { StepState.Done }, checklistItems(SyncStatus.Ready(synced, now)).map { it.state })
     }
 
-    @Test fun `Movies and Shows list from Movies on, never the Channels`() {
-        val items = checklistItems(SyncStatus.Running(null, now, SyncStep.Movies, 1), from = SyncStep.Movies)
-        assertEquals(listOf(SyncStep.Movies, SyncStep.Shows, SyncStep.Saving), items.map { it.step })
-        assertEquals(listOf(StepState.Running, StepState.Pending, StepState.Pending), items.map { it.state })
+    @Test fun `the checklist shows until the Channels land`() {
+        assertTrue(showsChecklist(SyncStatus.NeverSynced()))
+        assertTrue(showsChecklist(SyncStatus.Running(null, null, SyncStep.Channels, 10)))
+        assertTrue(showsChecklist(SyncStatus.Failed(Unreachable("x"), null, null, SyncStep.Channels)))
+    }
+
+    @Test fun `once the Channels have landed no tab shows the checklist, whatever the Sync is doing`() {
+        SyncStep.entries.forEach { step ->
+            assertFalse(showsChecklist(SyncStatus.Running(null, now, step, 1)))
+            assertFalse(showsChecklist(SyncStatus.Running(null, now, step, 1, headStartAt = now)))
+            assertFalse(showsChecklist(SyncStatus.Failed(Unreachable("x"), null, now, step)))
+        }
+        assertFalse(showsChecklist(SyncStatus.NeverSynced(now)))
+        assertFalse(showsChecklist(SyncStatus.NeverSynced(now, headStartAt = now)))
+    }
+
+    @Test fun `a later Sync never shows the checklist`() {
+        assertFalse(showsChecklist(SyncStatus.Synced(synced)))
+        assertFalse(showsChecklist(SyncStatus.Ready(synced, now)))
+        assertFalse(showsChecklist(SyncStatus.Running(synced, now, SyncStep.Channels, 1)))
+        assertFalse(showsChecklist(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Channels)))
+    }
+
+    @Test fun `with the Channels in and no Head start, the Titles are still to arrive`() {
+        assertTrue(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Movies, 1)))
+        assertTrue(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Saving, 1)))
+        assertTrue(titlesStillToArrive(SyncStatus.NeverSynced(now)))
+    }
+
+    @Test fun `a Head start's Titles have arrived`() {
+        assertFalse(titlesStillToArrive(SyncStatus.Running(null, now, SyncStep.Movies, 1, headStartAt = now)))
+        assertFalse(titlesStillToArrive(SyncStatus.NeverSynced(now, headStartAt = now)))
+    }
+
+    @Test fun `nothing is said to arrive under the checklist, after a failure or once a Sync has finished`() {
+        assertFalse(titlesStillToArrive(SyncStatus.NeverSynced()))
+        assertFalse(titlesStillToArrive(SyncStatus.Running(null, null, SyncStep.Channels, 1)))
+        assertFalse(titlesStillToArrive(SyncStatus.Failed(Unreachable("x"), null, now, SyncStep.Movies)))
+        assertFalse(titlesStillToArrive(SyncStatus.Synced(synced)))
+        assertFalse(titlesStillToArrive(SyncStatus.Running(synced, now, SyncStep.Movies, 1)))
     }
 }

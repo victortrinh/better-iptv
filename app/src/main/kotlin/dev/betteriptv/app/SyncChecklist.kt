@@ -35,16 +35,16 @@ import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 
 /**
- * A first Sync's checklist, centred where the rows will be: one line per step from [from] on,
- * marked done, running, pending or failed, with no counts, so the Viewer sees how far through the
- * list the Sync is and what it is doing, readable from the couch. Only the running step's dot
- * moves, breathing. A failed step names why under it, with Retry, which takes focus. Home and
- * Live show it until the Channels land; Movies and Shows, from Movies on, until the Titles do.
- * Home's carries the sign-in card ([card], #438) under it, `xl` down, the two centred together.
+ * A first Sync's checklist, centred where the rows will be: one line per step, marked done, running,
+ * pending or failed, with no counts, so the Viewer sees how far through the list the Sync is and
+ * what it is doing, readable from the couch. Only the running step's dot moves, breathing. A failed
+ * step names why under it, with Retry, which takes focus. Every tab shows it only until the Channels
+ * land ([showsChecklist]). Home's carries the sign-in card ([card], #438) under it, `xl` down, the
+ * two centred together.
  */
 @Composable
-internal fun SyncChecklist(status: SyncStatus, from: SyncStep, onRetry: () -> Unit, card: (@Composable () -> Unit)? = null) {
-    val items = remember(status, from) { checklistItems(status, from) }
+internal fun SyncChecklist(status: SyncStatus, onRetry: () -> Unit, card: (@Composable () -> Unit)? = null) {
+    val items = remember(status) { checklistItems(status) }
     val failed = status as? SyncStatus.Failed
     val retry = remember { FocusRequester() }
     if (failed != null) LaunchedEffect(failed) { retry.requestFocus() }

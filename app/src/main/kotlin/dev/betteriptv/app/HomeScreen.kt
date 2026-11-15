@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -31,7 +32,6 @@ import dev.betteriptv.core.QualityCap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import dev.betteriptv.core.SyncStatus
-import dev.betteriptv.core.SyncStep
 import dev.betteriptv.core.TitleId
 
 /** The browsing screens, in tab order. */
@@ -101,11 +101,11 @@ fun HomeScreen(
     val device = suspend { withContext(Dispatchers.Default) { readDeviceProfile(context) } }
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Live, Movies and Shows.
-    val noChannels = status.channelsAt == null
-    // Once they have, a caption under the rows says the Titles are coming, until they land; a failure then shows on Movies and Shows.
+    val noChannels = showsChecklist(status)
+    // Once they have, the sign-in card stays under the rows until the Titles land; a failure then shows in Settings.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
-    // A Head start's Titles are there already (ADR 0019): its rows say so themselves, and the caption goes.
-    val headStart = status.headStartAt != null
+    // With it, a caption says the Titles are coming, unless a Head start's are there already (ADR 0019): its rows say so themselves.
+    val stillToArrive = titlesStillToArrive(status)
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
@@ -114,6 +114,7 @@ fun HomeScreen(
     val caption = stringResource(R.string.home_titles_pending)
     // The first Sync's sign-in card (#438): under the checklist, then under the rows until the Titles land.
     val scope = rememberCoroutineScope()
+    val duringFirstSync = remember { status.last == null }
     val signIn = firstSyncSignIn(
         // Not offered until Accounts can send their Magic link (#458).
         offered = BuildConfig.ACCOUNTS && library.offersSignInCard.value,
@@ -131,13 +132,13 @@ fun HomeScreen(
         onWatch = onWatch,
         onOpenGame = onOpenGame,
         placeholder = if (noChannels) {
-            { SyncChecklist(status, SyncStep.Channels, onRetry, card = signIn?.let { { SignInCard(it) } }) }
+            { SyncChecklist(status, onRetry, card = signIn?.let { { SignInCard(it) } }) }
         } else null,
         // Kept, though empty, once the Head start lands without a card: the rows are a read away, and Home isn't called empty meanwhile.
         trailing = if (titlesComing) {
             {
                 Column(Modifier.padding(horizontal = Spacing.screenX)) {
-                    if (!headStart) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
+                    if (stillToArrive) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
                     signIn?.let { SignInCard(it, Modifier.padding(top = Spacing.m)) }
                 }
             }
@@ -145,8 +146,9 @@ fun HomeScreen(
         feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, device(), qualityCap, preferOriginalAudio, readDetails) },
         featureBadge = { id -> library.featuredBadge(id, contentLanguages, device(), qualityCap, preferOriginalAudio) },
         onPlayFeatured = onPlay,
-        // The hero arrives with a first Sync's Head start, and with its Titles when it had none.
-        heroMayArrive = status.last == null,
+        // The hero arrives with a first Sync's Head start, and with its Titles when it had none: a Home
+        // that was up during the first Sync still asks as they land, the Sync by then finished.
+        heroMayArrive = duringFirstSync,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
     }

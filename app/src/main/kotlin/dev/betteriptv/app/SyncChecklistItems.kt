@@ -9,13 +9,27 @@ data class ChecklistItem(val step: SyncStep, val state: StepState)
 enum class StepState { Done, Running, Pending, Failed }
 
 /**
- * The checklist's lines from [from] on, as [status] has them: the steps before the one running are
- * Done, the one running Running, the rest Pending; a failed Sync marks its step Failed. Before any
- * Sync, Channels that landed (the app closed between a first Sync's stages) are Done already. Home
- * and Live list every step; Movies and Shows start at Movies, once the Channels are theirs to skip.
+ * Whether a first Sync's checklist shows where a screen's rows will be: only until its Channels land,
+ * on every tab (ADR 0019). From then on Home, Movies, Shows and Live show what has landed; a Sync
+ * that fails later says so in Settings, with Retry.
  */
-fun checklistItems(status: SyncStatus, from: SyncStep = SyncStep.Channels): List<ChecklistItem> {
-    val steps = SyncStep.entries.filter { it >= from }
+fun showsChecklist(status: SyncStatus): Boolean = status.channelsAt == null
+
+/**
+ * Whether a first Sync is still to land its Titles with nothing yet to show for them: the Channels
+ * are in, no Head start landed (ADR 0019) and the Sync hasn't failed. Home, and a Movies or Shows tab
+ * with no row, then say under the rows that movies and shows arrive once syncing finishes.
+ */
+fun titlesStillToArrive(status: SyncStatus): Boolean =
+    !showsChecklist(status) && status.last == null && status.headStartAt == null && status !is SyncStatus.Failed
+
+/**
+ * The checklist's lines, as [status] has them: the steps before the one running are Done, the one
+ * running Running, the rest Pending; a failed Sync marks its step Failed. Before any Sync, Channels
+ * that landed (the app closed between a first Sync's stages) are Done already.
+ */
+fun checklistItems(status: SyncStatus): List<ChecklistItem> {
+    val steps = SyncStep.entries
     return steps.map { step ->
         val state = when (status) {
             is SyncStatus.Synced, is SyncStatus.Ready -> StepState.Done
