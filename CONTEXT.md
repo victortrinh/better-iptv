@@ -1,6 +1,6 @@
 # Zugig
 
-A TV app that turns an Xtream Codes IPTV subscription into a fast, clean library: one card per film or show, the best copy picked automatically, real trending, and live games easy to find.
+An app for TVs, phones and computers that turns an Xtream Codes IPTV subscription into a fast, clean library: one card per film or show, the best copy picked automatically, real trending, and live games easy to find.
 
 ## Language
 
@@ -9,6 +9,10 @@ A TV app that turns an Xtream Codes IPTV subscription into a fast, clean library
 **Provider**:
 The IPTV service the Viewer subscribes to, reached through an Xtream Codes login.
 _Avoid_: Server, panel, playlist
+
+**Demo Provider**:
+A Provider Zugig runs itself, holding only films, Shows and Channels that are free to show. Store reviewers sign in to it, and store screenshots and tests are made on it.
+_Avoid_: Fake Provider, test server, sample catalog
 
 **Connection limit**:
 How many streams the Viewer's subscription may play at once, across all devices.
@@ -173,6 +177,16 @@ _Avoid_: Downgrade, fallback
 What decodes and shows a Version: Media3 by default, or VLC for the rare file Media3 can't open. The Viewer can switch with "Try other player".
 _Avoid_: Backend, decoder
 
+### The app's parts
+
+**Core**:
+The part of Zugig that is the same on every device: it Syncs, Matches, picks the Best playable Version and decides what each screen shows. Each platform's app draws what the Core hands it and plays with its own Player engine.
+_Avoid_: Backend, engine, shared library, SDK
+
+**Cloud**:
+The part of Zugig that runs off the device and serves what is the same for every Viewer, plus Accounts and Purchases. It never holds a Viewer's Provider login.
+_Avoid_: Backend, server, API
+
 ### Viewer, languages and region
 
 **Viewer**:
@@ -303,6 +317,10 @@ _Avoid_: Recently added, new releases
 The one-time payment a household makes to Unlock Zugig on its devices.
 _Avoid_: Licence, subscription, premium, pro, upgrade
 
+**Seller**:
+Who takes a Purchase's payment: Paddle, or the store a device's app came from where that store demands it. A Purchase Unlocks the household's devices whoever its Seller was.
+_Avoid_: Payment provider, store, merchant
+
 **Unlocked**:
 A device on which the paid features work, because of a Purchase or during its Trial.
 _Avoid_: Paid, premium, activated, pro
@@ -316,5 +334,5 @@ The days after a device first opens Zugig during which it is Unlocked without a 
 _Avoid_: Free period, demo
 
 **Unlock screen**:
-Where a device becomes Unlocked: it names the Purchase and what it includes, and shows the code a phone uses to pay or to add this device to a household's Purchase.
+Where a device becomes Unlocked: it names the Purchase and what it includes, and shows the code a phone uses to pay or to add this device to a household's Purchase. Where the device's store is the Seller, it offers the store's own purchase instead of the code.
 _Avoid_: Paywall, checkout, store
