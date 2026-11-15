@@ -98,11 +98,13 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
      * Streams the movie Listings as (Provider id, name, category id, added in epoch seconds, Title
      * number from its `tmdb` field, image URL, file extension, the Provider's rating). A number that isn't positive (empty,
      * `0`, an IMDb `tt…` ID) is null, and so is an extension that isn't a short word (`mkv`, `mp4`).
-     * The rating is on a 10 scale; absent or zero is null.
+     * The rating is on a 10 scale; absent or zero is null. With [category], only that Category's
+     * Listings are asked for (a Head start's per-Category request), else the whole list.
      */
     fun movieListings(
+        category: String? = null,
         each: (id: Long, name: String, categoryId: String?, added: Long?, titleNumber: Long?, image: String?, container: String?, rating: Double?) -> Unit,
-    ) = api("get_vod_streams") { json ->
+    ) = api("get_vod_streams", *ofCategory(category)) { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
@@ -131,9 +133,10 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
      * Streams the show Listings ([ProviderShowListing]): the Provider show id, name, category id, last
      * changed in epoch seconds (the Provider changes a Show when it adds Episodes to it), Title number,
      * image URL, and what the Listing says of the Show: plot, genre, cast, director, rating, release
-     * date, backdrops and trailer key.
+     * date, backdrops and trailer key. With [category], only that Category's Listings are asked for,
+     * as for [movieListings].
      */
-    fun showListings(each: (ProviderShowListing) -> Unit) = api("get_series") { json ->
+    fun showListings(category: String? = null, each: (ProviderShowListing) -> Unit) = api("get_series", *ofCategory(category)) { json ->
         json.eachObject {
             var id: Long? = null
             var name: String? = null
@@ -171,6 +174,9 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
             }
         }
     }
+
+    /** The parameter that asks a list for one [category] alone, or none for the whole list. */
+    private fun ofCategory(category: String?): Array<Pair<String, String>> = if (category == null) emptyArray() else arrayOf("category_id" to category)
 
     /** A list of image URLs (`backdrop_path`), or the one URL some Providers send bare; blanks left out. */
     private fun JsonReader.readImages(): List<String> = when (peek()) {

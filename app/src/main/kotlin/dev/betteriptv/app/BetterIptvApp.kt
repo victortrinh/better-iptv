@@ -178,7 +178,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         if (library.syncStatus.value is SyncStatus.Running) return
         scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
-            when (val status = keepingAlive { library.sync(hold = true) }) {
+            // A first Sync's Head start is read for the Content languages as they are now (ADR 0019).
+            when (val status = keepingAlive { library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages) }) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
                     "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.mismatches} Mismatches kept apart",
