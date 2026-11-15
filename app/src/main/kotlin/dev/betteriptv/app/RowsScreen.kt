@@ -257,6 +257,7 @@ fun RowsScreen(
     feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
     featureBadge: (suspend (TitleId) -> VersionAttributes?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
+    heroMayArrive: Boolean = false,
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
@@ -277,6 +278,7 @@ fun RowsScreen(
         placeholder = placeholder,
         trailing = trailing,
         feature = feature,
+        heroMayArrive = heroMayArrive,
         featureBadge = featureBadge,
         onPlayFeatured = onPlayFeatured,
         header = header,
@@ -298,7 +300,9 @@ fun RowsScreen(
  * [restoreFocus] from a page the screen opened), and the hero then never changes until the screen is
  * entered again. The Title for the next entry is read during this one, so it shows at once with
  * the rows kept from last time; the first time, it is read with the rows. The first Down scrolls the
- * hero away under the tabs, and Up from the first row brings it back whole. Its badge alone is read
+ * hero away under the tabs, and Up from the first row brings it back whole. While [heroMayArrive]
+ * (a first Sync still landing its catalog) a screen entered with no Title to feature asks again each
+ * time its rows are read, so the hero arrives with the Head start. Its badge alone is read
  * again ([featureBadge]) each time it shows, coming back from a page included, so it follows what
  * that page read.
  */
@@ -325,6 +329,7 @@ internal fun RowsLayout(
     feature: (suspend (readDetails: Boolean) -> FeaturedTitle?)? = null,
     featureBadge: (suspend (TitleId) -> VersionAttributes?)? = null,
     onPlayFeatured: (RowCard, FeaturedTitle) -> Unit = { _, _ -> },
+    heroMayArrive: Boolean = false,
     header: @Composable (tab: FocusRequester) -> Unit,
 ) {
     val reader by rememberUpdatedState(read)
@@ -404,7 +409,10 @@ internal fun RowsLayout(
         // ([loadPoster], at the size the hero draws it), so the hero arrives whole instead of its text
         // first. A Title read later than that is kept for the next entry; a poster that arrives later
         // fades in as it comes.
-        val choose = !checked && entering && !state.upNextRead
+        // A screen whose catalog is still landing ([heroMayArrive]) had no Title to feature as it was
+        // entered: it asks again when its rows are read again, so the hero arrives with a Head start.
+        val arrivingLate = checked && heroMayArrive && state.featured == null
+        val choose = (!checked && entering && !state.upNextRead) || arrivingLate
         val feature = featurer
         val chosen = if (choose && feature != null) async { feature(true) } else null
         val art = chosen?.let { async { it.await()?.let { title -> loadPoster(context, title.posters, posterSize) } } }
@@ -413,6 +421,8 @@ internal fun RowsLayout(
         val late = chosen != null && !chosen.isCompleted
         state.held = null
         if (chosen != null) state.featured = if (late) null else chosen.await()
+        // It shows from the top, unless the Viewer is on a row: rows never move under focus, and Up finds it.
+        if (arrivingLate && state.featured != null && !inRows) state.list.requestScrollToItem(0)
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)
@@ -429,7 +439,7 @@ internal fun RowsLayout(
         val first = !checked
         checked = true
         // The next entry's hero, read now with its poster so it shows at once then.
-        if (first && entering) featurer?.let { next ->
+        if ((first && entering) || chosen != null) featurer?.let { next ->
             state.upNext = if (late) chosen!!.await().also { art!!.await() } else next(true)?.also { loadPoster(context, it.posters, posterSize) }
             state.upNextRead = true
         }

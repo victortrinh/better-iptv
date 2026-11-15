@@ -203,7 +203,7 @@ class Library private constructor(
             pendingAt != null && last != null -> SyncStatus.Ready(last, pendingAt)
             pendingAt != null -> SyncStatus.Synced(store.applyPending()!!).also { prefixTable = prefixTableFor(credentials.load()) }
             last != null -> SyncStatus.Synced(last)
-            else -> SyncStatus.NeverSynced(store.channelsSyncedAt())
+            else -> SyncStatus.NeverSynced(store.channelsSyncedAt(), store.headStartAt())
         }
     }
 
@@ -460,7 +460,11 @@ class Library private constructor(
      * the finished Sync.
      *
      * A first Sync swaps each stage in as it lands, so Live and Home open on the Channels within
-     * seconds while the Titles are still read. A later Sync computes both behind the catalog on
+     * seconds while the Titles are still read. Between the two it lands a Head start (ADR 0019): the
+     * fresh Categories of the Viewer's [contentLanguages] ([headStartCategories]), each read with a
+     * request of its own, one at a time, and landed as Titles to play while the full lists are read;
+     * the Titles stage then replaces them whole. With no Content languages, or when a Category can't
+     * be read, there is none, and no error either. A later Sync has none. A later Sync computes both behind the catalog on
      * screen, then either swaps them in together (the default), or with [hold] keeps them staged as
      * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
      * move under focus; a Sync started meanwhile discards what was held.
@@ -469,18 +473,19 @@ class Library private constructor(
      * from this status: the Sync itself is finished, and another may start meanwhile. This returns once
      * that is done too.
      */
-    suspend fun sync(hold: Boolean = false): SyncStatus {
-        val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold) } }
+    suspend fun sync(hold: Boolean = false, contentLanguages: List<String> = emptyList()): SyncStatus {
+        val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold, contentLanguages) } }
         if (landed is SyncStatus.Synced) afterCatalogLanded(hold)
         return _syncStatus.value
     }
 
-    private fun syncUnderLock(hold: Boolean): SyncStatus {
+    private fun syncUnderLock(hold: Boolean, contentLanguages: List<String>): SyncStatus {
         val last = _syncStatus.value.last
         var channelsAt = _syncStatus.value.channelsAt
+        var headStartAt = _syncStatus.value.headStartAt
         var step = SyncStep.Channels
         var entriesRead = 0
-        val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead) }
+        val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead, headStartAt) }
         running()
         val started = System.nanoTime()
         val timer = onSyncTimed?.let { SyncTimer() }
@@ -539,9 +544,13 @@ class Library private constructor(
                 }
                 step = SyncStep.Movies
                 running()
+                timer?.mark(SyncStep.Channels.name)
+                if (last == null && contentLanguages.isNotEmpty()) {
+                    landHeadStart(client, table, contentLanguages)?.let { headStartAt = it; running() }
+                    timer?.mark(SyncTiming.HEAD_START)
+                }
                 val pending = store.stageTitles(
                     fill = { staging ->
-                        timer?.mark(SyncStep.Channels.name)
                         val movieCategories = HashMap<String, String>()
                         val showCategories = HashMap<String, String>()
                         val listing = { kind: TitleKind, id: Long, name: String, category: String, categoryId: String?, added: Long?, titleNumber: Long?, image: String?, container: String?,
@@ -620,14 +629,14 @@ class Library private constructor(
                 syncWriting = false
             }
         } catch (e: ProviderException) {
-            SyncStatus.Failed(e.problem, last, channelsAt, step)
+            SyncStatus.Failed(e.problem, last, channelsAt, step, headStartAt)
         } catch (e: CancellationException) {
-            // A first Sync stopped short keeps the Channels it landed, as a reopened app does.
-            _syncStatus.value = last?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(channelsAt)
+            // A first Sync stopped short keeps the Channels and the Head start it landed, as a reopened app does.
+            _syncStatus.value = last?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(channelsAt, headStartAt)
             throw e
         } catch (e: Exception) {
             // Anything else (a full disk, say) also leaves the previous catalog in place.
-            SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last, channelsAt, step)
+            SyncStatus.Failed(CatalogNotSaved(e.message ?: e.javaClass.simpleName), last, channelsAt, step, headStartAt)
         }
         if (finished is SyncStatus.Failed) runCatching { store.discardPending() }
         // The new catalog shows from here: screens count its Titles again before the status changes (#271).
@@ -635,6 +644,50 @@ class Library private constructor(
         _syncStatus.value = finished
         if (finished is SyncStatus.Synced) prepareSearchInBackground()
         return finished
+    }
+
+    /**
+     * Reads and lands a first Sync's Head start (ADR 0019): the Categories [headStartCategories]
+     * picks for the [contentLanguages], the movies' then the shows', each with a request of its own,
+     * one at a time, described with [table] and Matched as the Titles stage does. Returns when it
+     * landed, having told the screens to read again, or null when there is none: no Category
+     * qualifies, none has a Listing that shows, or the Provider wouldn't answer. A Head start is
+     * never a reason for a Sync to fail, so whatever goes wrong here is dropped, but for a Sync
+     * that was cancelled.
+     */
+    private fun landHeadStart(client: XtreamClient, table: PrefixTable, contentLanguages: List<String>): Instant? {
+        return try {
+            val at = Instant.now()
+            val landed = store.landHeadStart(at) { staging ->
+                fun categories(kind: TitleKind, read: ((String, String) -> Unit) -> Unit): Map<String, String> {
+                    val names = LinkedHashMap<String, String>()
+                    read { id, name -> names[id] = name }
+                    val picked = headStartCategories(table, names.toList(), contentLanguages)
+                    picked.forEach { staging.category(kind, it, names.getValue(it)) }
+                    return picked.associateWith(names::getValue)
+                }
+                categories(TitleKind.Movie, client::movieCategories).forEach { (category, categoryName) ->
+                    client.movieListings(category) { id, name, _, added, titleNumber, image, container, rating ->
+                        val hidden = table.describe(name, categoryName).hidden != null
+                        staging.listing(TitleKind.Movie, id, name, category, added, image, hidden, titleNumber, table.cleanName(name).year, container, rating, null)
+                    }
+                }
+                categories(TitleKind.Show, client::showCategories).forEach { (category, categoryName) ->
+                    client.showListings(category) { show ->
+                        val hidden = table.describe(show.name, categoryName).hidden != null
+                        val year = table.cleanName(show.name).year ?: releaseYear(show.details.releaseDate)
+                        staging.listing(TitleKind.Show, show.id, show.name, category, show.modified, show.image, hidden, show.titleNumber, year, null, show.details.rating, show.details)
+                    }
+                }
+            }
+            if (!landed) return null
+            catalogChanged()
+            at
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -1280,10 +1333,18 @@ class Library private constructor(
                     try {
                         val read = XtreamClient(login, http).movieDetails(id)
                         val now = Instant.now()
-                        store.saveMovieDetails(id, read, listing.added, now)
-                        detailsGeneration.incrementAndGet()
+                        val keep = {
+                            store.saveMovieDetails(id, read, listing.added, now)
+                            detailsGeneration.incrementAndGet()
+                        }
+                        // A Sync holds the writer until its catalog is in place, minutes on a first Sync: a Head start's page
+                        // and hero show what was read now, and it is kept once the Sync lets go (ADR 0019).
+                        if (syncWriting) saves.execute { runCatching(keep) } else keep()
                         StoredMovieDetails(read.bitrate, now, listing.added, read.details)
                     } catch (e: ProviderException) {
+                        null
+                    } catch (e: RejectedExecutionException) {
+                        // The Library is closing.
                         null
                     } finally {
                         movieDetailsReading.remove(id)
@@ -1870,7 +1931,8 @@ class Library private constructor(
      * then New on your service (the most recently added Titles, newest first by when the Provider
      * added them, two added the same second by its rating), then the Viewer's Favourites (in the
      * order they were added; finished Event channels left out), then one row per genre
-     * ([genreRows]), the genre the Provider has the most Titles of first. Browse rows show only
+     * ([genreRows]), the genre the Provider has the most Titles of first. While a first Sync's Head
+     * start is all the catalog holds, there is no Trending and no genre row yet. Browse rows show only
      * Titles with a Version in the Viewer's [contentLanguages], or an Untagged one Likely in one;
      * Trending none at all under [MIN_TRENDING_SIZE]. Continue watching shows whatever the Viewer started, a Show at the Episode to
      * watch next, until they finish it. Genres come from the Prefix table's mapping of the Provider's
@@ -1890,7 +1952,9 @@ class Library private constructor(
         val favourites = store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
-        val trends = trendingTitles(appLanguage, now)
+        // A first Sync's Head start has no Trending and no genre rows: they would change a minute later (ADR 0019).
+        val whole = store.lastSync() != null
+        val trends = if (whole) trendingTitles(appLanguage, now) else emptyList()
         // The newest movies and the newest shows, in the Viewer's languages, together newest first.
         val browsable = listOf(movies, shows).map { titles -> watchable(titles, contentLanguages) }
         val newest = (browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(newestFirst)
@@ -1898,7 +1962,7 @@ class Library private constructor(
         // Trending sits above New, so New skips what Trending shows.
         val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_TRENDING_SIZE)
         val new = screen.row(newest, ROW_SIZE)
-        val genres = genreRows(TitleKind.entries, contentLanguages, appLanguage, screen, GENRE_ROWS)
+        val genres = if (whole) genreRows(TitleKind.entries, contentLanguages, appLanguage, screen, GENRE_ROWS) else emptyList()
         val inGenres = genres.flatMap { (_, titles) -> titles }
         val onScreen = (resumes.map { it.first } + movies + trending + inGenres).distinctBy { it.id }
         val kept = keptMovieDetails(onScreen)
@@ -2018,7 +2082,8 @@ class Library private constructor(
     private fun featuredTitle(screen: FeaturedScreen, contentLanguages: List<String>, appLanguage: String, now: Instant, readDetails: Boolean): FeaturedTitle? {
         if (kids) return kidsFeatured(screen, contentLanguages, appLanguage, readDetails)
         val kinds = featuredKinds(screen)
-        val trends = trendingTitles(appLanguage, now)
+        // From a Head start the hero takes the newest: Trending waits for the full catalog, as its row does.
+        val trends = if (store.lastSync() != null) trendingTitles(appLanguage, now) else emptyList()
         val trending = kinds.map { kind -> trends.filter { it.id.kind == kind } }
         val newest = kinds.map { kind -> store.titles(kind, 0, if (kind == TitleKind.Movie) HOME_MOVIES else HOME_SHOWS) }
         return nextFeatured(screen.name.lowercase(), listOf(trending, newest), contentLanguages, appLanguage, readDetails)
@@ -2332,7 +2397,7 @@ class Library private constructor(
         val screen = ScreenRows()
         val new = screen.row((browsable[0].take(NEW_MOVIES) + browsable[1].take(NEW_SHOWS)).sortedWith(newestFirst), ROW_SIZE)
         val ofKind = TitleKind.entries.zip(browsable).map { (kind, titles) -> kind to screen.row(titles, ROW_SIZE) }
-        val genres = kidsGenres(TitleKind.entries, catalog, contentLanguages, appLanguage, screen)
+        val genres = if (store.lastSync() != null) kidsGenres(TitleKind.entries, catalog, contentLanguages, appLanguage, screen) else emptyList()
         fun cards(titles: List<StoredTitle>) = titles.map { rowCard(it, contentLanguages, appLanguage) }
         return buildList {
             continueWatchingRow(resumes, keptMovieDetails(resumes.map { it.first })) { rowCard(it, contentLanguages, appLanguage) }?.let(::add)

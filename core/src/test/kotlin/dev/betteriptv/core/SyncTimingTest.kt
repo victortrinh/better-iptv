@@ -31,6 +31,16 @@ class SyncTimingTest {
         cloud.close()
     }
 
+    @Test fun `a first Sync that reads a Head start times it between the Channels and the Movies`() = runBlocking {
+        library.onSyncTimed = { timings += it }
+
+        library.sync(contentLanguages = listOf("en"))
+
+        val timing = timings.single()
+        assertEquals(listOf("Channels", "Head start", "Movies", "Shows", "Saving"), timing.steps.map { it.name })
+        assertEquals(timing.steps.last().time, timing.saving.fold(java.time.Duration.ZERO) { sum, part -> sum + part.time })
+    }
+
     @Test fun `a first Sync reports a time for every Step and every part of Saving, with the Listing counts`() = runBlocking {
         library.onSyncTimed = { timings += it }
 

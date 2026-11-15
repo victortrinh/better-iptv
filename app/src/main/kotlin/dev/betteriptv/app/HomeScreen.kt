@@ -69,7 +69,9 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
  * then a row per genre. The Games are asked
  * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live, but
  * never hold the other rows: the kept Games show first, and the rows are read again once fresh ones
- * land ([Library.catalogChanges]). Above the rows, a featured Title from Trending, else New, a
+ * land ([Library.catalogChanges]). While a first Sync's Head start is all the catalog holds (ADR
+ * 0019), the rows are Continue watching, Live now, New on your service and Favourites, with no
+ * Trending or genre row yet. Above the rows, a featured Title from Trending, else New, a
  * different one each time Home is entered ([Library.featured]): its Play plays it ([onPlay]), its
  * Details opens it ([onOpen]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
  * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
@@ -102,6 +104,8 @@ fun HomeScreen(
     val noChannels = status.channelsAt == null
     // Once they have, a caption under the rows says the Titles are coming, until they land; a failure then shows on Movies and Shows.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
+    // A Head start's Titles are there already (ADR 0019): its rows say so themselves, and the caption goes.
+    val headStart = status.headStartAt != null
     val refreshes = gamesRefreshes(state)
     // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
@@ -129,10 +133,11 @@ fun HomeScreen(
         placeholder = if (noChannels) {
             { SyncChecklist(status, SyncStep.Channels, onRetry, card = signIn?.let { { SignInCard(it) } }) }
         } else null,
+        // Kept, though empty, once the Head start lands without a card: the rows are a read away, and Home isn't called empty meanwhile.
         trailing = if (titlesComing) {
             {
                 Column(Modifier.padding(horizontal = Spacing.screenX)) {
-                    Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
+                    if (!headStart) Text(caption, style = Type.caption, color = Colors.inkMuted, modifier = Modifier.padding(vertical = 12.dp))
                     signIn?.let { SignInCard(it, Modifier.padding(top = Spacing.m)) }
                 }
             }
@@ -140,6 +145,8 @@ fun HomeScreen(
         feature = { readDetails -> library.featured(FeaturedScreen.Home, contentLanguages, appLanguage, device(), qualityCap, preferOriginalAudio, readDetails) },
         featureBadge = { id -> library.featuredBadge(id, contentLanguages, device(), qualityCap, preferOriginalAudio) },
         onPlayFeatured = onPlay,
+        // The hero arrives with a first Sync's Head start, and with its Titles when it had none.
+        heroMayArrive = status.last == null,
     ) { tab ->
         BrowseTabs(Browse.Home, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)
     }

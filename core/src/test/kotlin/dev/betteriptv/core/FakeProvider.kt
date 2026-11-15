@@ -1,5 +1,6 @@
 package dev.betteriptv.core
 
+import com.squareup.moshi.JsonReader
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.Closeable
@@ -20,6 +21,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPOutputStream
+import okio.Buffer
+import okio.buffer
+import okio.source
 
 /**
  * A local Xtream Codes Provider that replays the sanitized fixture cut by scripts/cut_fixture.py.
@@ -198,6 +202,51 @@ class FakeProvider : Closeable {
     /** The stream ids whose guide was asked for, in order. */
     val guideRequests: List<Long> get() = _guideRequests.toList()
 
+    /** Answers a per-Category Listing request (`get_vod_streams` or `get_series` with a `category_id`) with HTTP 503, as a Provider that serves only whole lists. */
+    @Volatile var refuseCategoryRequests = false
+
+    /** The most `player_api` requests that were being answered at once so far: 1 when they came one at a time. */
+    val mostRequestsAtOnce: Int get() = _mostRequestsAtOnce.get()
+    private val requestsNow = AtomicInteger()
+    private val _mostRequestsAtOnce = AtomicInteger()
+
+    @Volatile private var fullListPause: Pause? = null
+
+    /**
+     * Holds the next request for a whole movie or show list (one with no `category_id`) until the
+     * returned [Pause] is resumed, so a test can look at what a Sync landed before its full read.
+     */
+    fun pauseBeforeFullLists(): Pause = Pause().also { fullListPause = it }
+
+    /** A held request ([pauseBeforeFullLists]): [awaitReached] returns once the Provider is asked, [resume] lets it answer. */
+    class Pause internal constructor() {
+        private val reached = java.util.concurrent.CountDownLatch(1)
+        private val resumed = java.util.concurrent.CountDownLatch(1)
+
+        fun awaitReached() = check(reached.await(30, java.util.concurrent.TimeUnit.SECONDS)) { "the full lists were never asked for" }
+
+        fun resume() = resumed.countDown()
+
+        internal fun hold() {
+            reached.countDown()
+            resumed.await()
+        }
+    }
+
+    /** A movie Listing to serve ([serveMovieListings]): its [name], its [category], its [titleNumber] and when it was [added] (newest first by default). */
+    class MovieListing(val name: String, val category: String, val titleNumber: Long?, val added: Long? = null)
+
+    /** Serves these movie Listings, numbered from 1 in this order, filed under their Categories (numbered from 1 in order of first appearance). */
+    fun serveMovieListings(vararg listings: MovieListing) {
+        val categories = listings.map { it.category }.distinct()
+        movieCategoriesOverride = categories.withIndex()
+            .joinToString(",", "[", "]") { (i, name) -> """{"category_id":"${i + 1}","category_name":${json(name)}}""" }
+        movieListOverride = listings.withIndex().joinToString(",", "[", "]") { (i, listing) ->
+            """{"stream_id":${i + 1},"name":${json(listing.name)},"tmdb":${json(listing.titleNumber?.toString().orEmpty())},""" +
+                """"category_id":"${categories.indexOf(listing.category) + 1}","added":"${listing.added ?: (1_700_000_000 - i)}","container_extension":"mkv"}"""
+        }
+    }
+
     /** Called with each `player_api` request's action (null for the account) before it is answered. */
     @Volatile var onRequest: ((action: String?) -> Unit)? = null
 
@@ -205,8 +254,9 @@ class FakeProvider : Closeable {
 
     /**
      * Every `player_api` request answered so far, in order, as its action with the id it asked about
-     * (`get_vod_info 1001`, `get_series_info 2008`, `get_vod_streams`; `account` for the login check),
-     * so tests can count what a screen cost the Provider.
+     * (`get_vod_info 1001`, `get_series_info 2008`, `get_vod_streams`; `account` for the login check;
+     * `get_vod_streams category 3` for a per-Category Listing request), so tests can count what a
+     * screen cost the Provider.
      */
     val requests: List<String> get() = _requests.toList()
 
@@ -342,8 +392,27 @@ class FakeProvider : Closeable {
             wrongLoginStatus?.let { return exchange.sendResponseHeaders(it, -1) }
             return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
+        _mostRequestsAtOnce.accumulateAndGet(requestsNow.incrementAndGet(), ::maxOf)
+        try {
+            answer(exchange, query)
+        } finally {
+            requestsNow.decrementAndGet()
+        }
+    }
+
+    private fun answer(exchange: HttpExchange, query: Map<String, String>) {
         onRequest?.invoke(query["action"])
-        _requests += listOfNotNull(query["action"] ?: "account", query["vod_id"] ?: query["series_id"] ?: query["stream_id"]).joinToString(" ")
+        val category = query["category_id"]
+        _requests += listOfNotNull(query["action"] ?: "account", query["vod_id"] ?: query["series_id"] ?: query["stream_id"], category?.let { "category $it" }).joinToString(" ")
+        if (query["action"] in LISTS) {
+            if (category != null) {
+                if (refuseCategoryRequests) return exchange.sendResponseHeaders(503, -1)
+                val file = if (query["action"] == "get_vod_streams") "vod_streams.json" else "series_streams.json"
+                val override = if (query["action"] == "get_vod_streams") movieListOverride else showListOverride
+                return respond(exchange) { body -> categoryList(category, file, override, body) }
+            }
+            fullListPause?.also { fullListPause = null }?.hold()
+        }
         when (query["action"]) {
             null -> respond(exchange) { it.write(account().toByteArray()) }
             "get_vod_categories" -> respond(exchange) { body ->
@@ -411,6 +480,29 @@ class FakeProvider : Closeable {
                 throw CutOff()
             }
             else -> body.write(fixture("vod_streams.json"))
+        }
+    }
+
+    /**
+     * The Listings of the whole list ([file] in the survey's directory, else [override], else the
+     * fixture's) filed under Category [category], as the Provider answers a per-Category request:
+     * read one Listing at a time, so a survey's 59 MB list never sits in memory.
+     */
+    private fun categoryList(category: String, file: String, override: String?, body: OutputStream) {
+        val source = catalogDirectory?.resolve(file)?.takeIf { it.isFile }?.source()?.buffer()
+            ?: Buffer().write(override?.toByteArray() ?: fixture(file))
+        JsonReader.of(source).use { json ->
+            body.write('['.code)
+            var first = true
+            json.beginArray()
+            while (json.hasNext()) {
+                val listing = json.nextSource().readUtf8()
+                if (CATEGORY_ID.find(listing)?.groupValues?.get(1) != category) continue
+                if (!first) body.write(','.code)
+                first = false
+                body.write(listing.toByteArray())
+            }
+            body.write(']'.code)
         }
     }
 
@@ -510,6 +602,8 @@ class FakeProvider : Closeable {
     private class CutOff : Exception()
 
     private companion object {
+        val LISTS = setOf("get_vod_streams", "get_series")
+        val CATEGORY_ID = Regex(""""category_id"\s*:\s*"?([^",}\s]*)""")
         const val NO_EPISODES = """{"seasons":[],"info":[],"episodes":[]}"""
     }
 

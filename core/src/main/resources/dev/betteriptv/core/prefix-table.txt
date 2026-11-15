@@ -50,6 +50,9 @@
 #   keep-learned        a Provider table's Prefix lines only: the learned line still applies (see above)
 #   sports-replay       kept out of the movie list
 #   clutter             not watchable content: kept out of every list
+#   fresh               Category hints only: the Category holds new releases, so a first Sync
+#                       reads it first, as its Head start (ADR 0019). A Category naming this year
+#                       or the last (`PELÍCULAS 2026`) is fresh without a line.
 #
 # A Prefix with no attributes is known but says nothing (a collection label, say). Prefixes missing
 # from both tables are reported to the cloud after each Sync (never shown to the Viewer), and the
@@ -221,6 +224,14 @@ DOLBY AUDIO         | dolby-audio
 FILM CAM            | cam
 CAM & NEW RELEASE   | cam
 AUDIO-DESCRIPTION   | audio-description
+NEW RELEASE         | fresh
+NEW RELEASES        | fresh
+DERNIER AJOUT       | fresh             # French: last added
+DERNIERS AJOUTS     | fresh
+NUOVI               | fresh             # Italian
+NEU                 | fresh             # German
+NUEVO               | fresh             # Spanish
+ESTRENOS            | fresh             # Spanish: premieres
 SOCCER              | sports-replay
 FORMULA 1           | sports-replay
 WRESTLING           | sports-replay

@@ -487,12 +487,57 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             }
         }
 
+    /**
+     * Lands a first Sync's Head start (ADR 0019): what [fill] stores becomes the catalog's Titles at
+     * once, through the path the Titles stage takes ([stageTitles]: each Mismatch apart, Titles by
+     * their newest Listing), as of [at]. Nothing lands, and false is returned, when [fill] stored no
+     * Listing that shows. It is no Sync: [lastSync] stays null, and the Titles stage replaces what it
+     * landed whole. While it is staged it is marked as a Head start, so an app closed midway never
+     * takes it for a finished Sync's pending catalog ([pendingAt]).
+     */
+    fun landHeadStart(at: Instant, fill: (TitleStaging) -> Unit): Boolean = synchronized(writer) {
+        writeMeta(mapOf(PENDING_HEAD_START to at.toString()))
+        try {
+            var listings = 0
+            stageTitles(fill, onFilled = {}, completed = { movieCount, showCount, mismatches ->
+                listings = movieCount + showCount
+                CompletedSync(at, Duration.ZERO, movieCount, emptyList(), mismatches, showCount)
+            })
+            if (listings == 0) return false
+            writer.execSQL("BEGIN IMMEDIATE")
+            try {
+                writer.execSQL("DROP TABLE listing")
+                writer.execSQL("DROP TABLE title")
+                writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
+                writer.execSQL("ALTER TABLE staging_title RENAME TO title")
+                TITLE_INDEXES.forEach { writer.execSQL(it) }
+                dropTitleStaging()
+                writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
+                writeMeta(mapOf(HEAD_START_AT to at.toString()))
+                writer.execSQL("COMMIT")
+            } catch (e: Throwable) {
+                writer.execSQL("ROLLBACK")
+                throw e
+            }
+            truncateLog()
+            true
+        } finally {
+            // Also after a failure or an empty Head start: the Titles stage that follows stages a real pending catalog.
+            if (meta(PENDING_HEAD_START) != null) discardPending()
+        }
+    }
+
+    /** When the Head start on screen landed ([landHeadStart]); null without one, and once a Sync's Titles replaced it. */
+    fun headStartAt(): Instant? = meta(HEAD_START_AT)?.let(Instant::parse)
+
     /** Whether a Sync's catalog is staged and waiting to be swapped in. */
     fun hasPending(): Boolean = synchronized(writer) { pendingAt() != null }
 
     /** When the pending catalog finished computing, if there is one. */
     fun pendingAt(): Instant? = synchronized(writer) {
         val at = meta(PENDING_SYNC_AT) ?: return null
+        // A Head start staged and not landed is no Sync's catalog ([landHeadStart]).
+        if (meta(PENDING_HEAD_START) != null) return null
         val staged = listOf("staging_kept_listing", "staging_title", "staging_replay", "staging_channel", "staging_live_category")
         if (staged.all { tableExists(it) }) Instant.parse(at) else null
     }
@@ -618,7 +663,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         )
         // The Provider table the staged catalog was described with is the one kept from now on.
         meta(PENDING_PROVIDER_TABLE_FOR)?.let { key -> writeMeta(mapOf(PROVIDER_TABLE_FOR to key, PROVIDER_TABLE to meta(PENDING_PROVIDER_TABLE)!!)) }
-        writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
+        writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%' OR key = '$HEAD_START_AT'")
         timer?.mark("Sync record")
     }
 
@@ -2584,6 +2629,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val CHANNELS_SYNCED_AT = "channels_synced_at"
         /** A staged catalog waiting to be swapped in, as [stageTitles] records it; all dropped by `pending_sync_%`. */
         const val PENDING_SYNC_AT = "pending_sync_at"
+        /** Set while a Head start is staged; cleared with the other `pending_sync_` keys. */
+        const val PENDING_HEAD_START = "pending_sync_head_start"
+        const val HEAD_START_AT = "head_start_at"
         const val PENDING_SYNC_MILLIS = "pending_sync_millis"
         const val PENDING_MOVIE_LISTINGS = "pending_sync_movie_listings"
         const val PENDING_SHOW_LISTINGS = "pending_sync_show_listings"

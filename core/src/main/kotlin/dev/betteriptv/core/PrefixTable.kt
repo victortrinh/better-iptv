@@ -200,6 +200,24 @@ internal class PrefixTable private constructor(
     /** Whether [category]'s name says its Listings are Clutter (radio, karaoke, audiobooks). */
     fun isClutterCategory(category: String): Boolean = categoryRules(category).any { it.clutter }
 
+    /** Whether [category]'s name says its Listings are Sports replays. */
+    fun isSportsReplayCategory(category: String): Boolean = categoryRules(category).any { it.sportsReplay }
+
+    /**
+     * Whether [category]'s name says it holds new releases, what a Head start reads first (ADR 0019):
+     * it has a word the table marks `fresh` (`EN - NEW RELEASE`, `FRANCE DERNIER AJOUT`), or it names
+     * [year] or the year before (`ES - PELÍCULAS 2026`, `DE - FILME 2025/2026`).
+     */
+    fun isFreshCategory(category: String, year: Int = Year.now().value): Boolean =
+        categoryRules(category).any { it.fresh } || YEAR_WORD.findAll(category).any { it.value.toInt() in year - 1..year }
+
+    /**
+     * The language a Category's [name] says its Listings are in, by the table: its own Prefix's
+     * (`EN - NEW RELEASE` is English, `GR - NEW RELEASES` Greek) or a Category hint's (`PERSIAN
+     * SERIES`), a primary subtag. Null when the table names none for it (`NETFLIX SERIES`).
+     */
+    fun categoryLanguage(name: String): String? = describe(name, name).listedLanguage
+
     /**
      * The Channel a live Listing named [name] is a variant of, and what the variant is ([ChannelName]).
      * The quality words are taken off the end of the name, one after another (`ᴴᴰ ʰᵉᵛᶜ`, `HD (SAT)`,
@@ -322,6 +340,8 @@ internal class PrefixTable private constructor(
         val audioDescription: Boolean = false,
         val sportsReplay: Boolean = false,
         val clutter: Boolean = false,
+        /** A Category hint whose Categories hold new releases ([isFreshCategory]). */
+        val fresh: Boolean = false,
         val hevc: Boolean = false,
         /** A Channel quality word that counts only in the Provider's superscript form. */
         val superscript: Boolean = false,
@@ -413,6 +433,9 @@ internal class PrefixTable private constructor(
         private val PREFIX = Regex("""^\s*((?=[A-Z0-9+=-]*[A-Z])[A-Z0-9+]+(?:[-=][A-Z0-9+]+)*)(?:\s+-\s*|-\s+|\s+\.\s+)""")
 
         private val YEAR = Regex("""\((19\d\d|20\d\d)\)""")
+
+        /** A year standing alone in a Category's name: `PELÍCULAS 2026`, `FILME 2025/2026`, never the 2160 of `2160P`. */
+        private val YEAR_WORD = Regex("""(?<![\p{L}\p{N}])(?:19|20)\d\d(?![\p{L}\p{N}])""")
 
         private val DOTTED = Regex("""(\S+?)\.(19\d\d|20\d\d)""")
 
@@ -609,6 +632,7 @@ internal class PrefixTable private constructor(
                     "audio-description" -> rule.copy(audioDescription = true)
                     "sports-replay" -> rule.copy(sportsReplay = true)
                     "clutter" -> rule.copy(clutter = true)
+                    "fresh" -> rule.copy(fresh = true)
                     "hevc" -> rule.copy(hevc = true)
                     "superscript" -> rule.copy(superscript = true)
                     "multi-audio" -> rule.copy(multiAudio = true)
@@ -623,7 +647,7 @@ internal class PrefixTable private constructor(
         private fun wholeWord(phrase: String) = Regex("""(?<![\p{L}\p{N}-])${Regex.escape(fold(phrase))}(?![\p{L}\p{N}-])""")
 
         /** Folds superscripts (`ᴰᴼᴸᴮʸ`), small capitals (`ɴᴇᴡꜱ`, and the small capital I that NFKC makes of `ᶦ`), accents and case, so Category hints match however they're styled. */
-        private fun fold(text: String): String {
+        fun fold(text: String): String {
             // Plain ASCII has nothing to fold but case: most Categories and genre fields are, and folding thousands costs on the stick (#497).
             if (text.all { it < '\u0080' }) return text.uppercase(Locale.ROOT)
             val compatible = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC))

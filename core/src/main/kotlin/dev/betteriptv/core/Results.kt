@@ -394,7 +394,8 @@ data class CompletedSync(
 
 /**
  * How a Sync is going. A first Sync lands in two stages: its Channels first, so Live and Home open
- * within seconds ([channelsAt] is set while [last] is still null), then its movies and shows. A later
+ * within seconds ([channelsAt] is set while [last] is still null), then a Head start of fresh
+ * Categories when it could read one ([headStartAt], ADR 0019), then its movies and shows. A later
  * Sync computes both behind the catalog on screen and, when held, waits as [Ready] for the app to
  * apply it between screens, so rows never move under focus.
  */
@@ -405,7 +406,13 @@ sealed interface SyncStatus {
     /** When the Channels on screen landed: before [last] on a first Sync, with it afterwards; null until any have. */
     val channelsAt: Instant?
 
-    data class NeverSynced(override val channelsAt: Instant? = null) : SyncStatus {
+    /**
+     * When a first Sync's Head start landed: its Titles are all the catalog holds until [last] is set.
+     * Null with the Channels alone (none could be read, or none yet) and once the full catalog is in.
+     */
+    val headStartAt: Instant? get() = null
+
+    data class NeverSynced(override val channelsAt: Instant? = null, override val headStartAt: Instant? = null) : SyncStatus {
         override val last: CompletedSync? = null
     }
 
@@ -413,7 +420,13 @@ sealed interface SyncStatus {
      * A Sync is at [step], having read [entriesRead] Channel variants, movie and show Listings so far,
      * Clutter and Sports replays left out. The Provider never sends a total.
      */
-    data class Running(override val last: CompletedSync?, override val channelsAt: Instant?, val step: SyncStep, val entriesRead: Int = 0) : SyncStatus {
+    data class Running(
+        override val last: CompletedSync?,
+        override val channelsAt: Instant?,
+        val step: SyncStep,
+        val entriesRead: Int = 0,
+        override val headStartAt: Instant? = null,
+    ) : SyncStatus {
         /** How far through, judged by [last]'s counts; below 1 until the Sync finishes, null without them. */
         val fraction: Float?
             get() {
@@ -436,6 +449,12 @@ sealed interface SyncStatus {
         override val channelsAt: Instant get() = last.finishedAt
     }
 
-    /** The Sync failed at [step]; the catalog from [last] is still shown, or on a first Sync whatever landed by [channelsAt]. */
-    data class Failed(val problem: SyncProblem, override val last: CompletedSync?, override val channelsAt: Instant?, val step: SyncStep) : SyncStatus
+    /** The Sync failed at [step]; the catalog from [last] is still shown, or on a first Sync whatever landed by [channelsAt] and [headStartAt]. */
+    data class Failed(
+        val problem: SyncProblem,
+        override val last: CompletedSync?,
+        override val channelsAt: Instant?,
+        val step: SyncStep,
+        override val headStartAt: Instant? = null,
+    ) : SyncStatus
 }

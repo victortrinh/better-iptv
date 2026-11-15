@@ -4,7 +4,8 @@ import java.time.Duration
 import java.util.Locale
 
 /**
- * Where one Sync's time went, for a debug build's log (#566): each Step in order, and inside Saving
+ * Where one Sync's time went, for a debug build's log (#566): each Step in order, a first Sync's
+ * Head start between Channels and Movies when it read one ([HEAD_START]), and inside Saving
  * each of its parts, which add up to it. [toString] is the block to log.
  */
 class SyncTiming(
@@ -15,6 +16,11 @@ class SyncTiming(
     val showListings: Int,
 ) {
     data class Part(val name: String, val time: Duration)
+
+    companion object {
+        /** The part a first Sync's Head start is timed under, between Channels and Movies (ADR 0019): it is no Step. */
+        const val HEAD_START = "Head start"
+    }
 
     override fun toString(): String = buildString {
         val total = steps.sumOf { it.time.toNanos() }
@@ -46,10 +52,14 @@ internal class SyncTimer {
         last = now
     }
 
-    /** The marks so far: the first three are the Channels, Movies and Shows Steps, the rest the parts of Saving. */
+    /**
+     * The marks so far: up to the Shows Step's they are the Steps (Channels, a first Sync's Head start
+     * when it read one, Movies, Shows), the rest the parts of Saving.
+     */
     fun timing(sync: CompletedSync): SyncTiming {
-        val saving = parts.drop(3)
+        val read = parts.indexOfFirst { it.name == SyncStep.Shows.name } + 1
+        val saving = parts.drop(read)
         val saved = saving.fold(Duration.ZERO) { sum, part -> sum + part.time }
-        return SyncTiming(parts.take(3) + SyncTiming.Part(SyncStep.Saving.name, saved), saving, sync.channelListingCount, sync.movieListingCount, sync.showListingCount)
+        return SyncTiming(parts.take(read) + SyncTiming.Part(SyncStep.Saving.name, saved), saving, sync.channelListingCount, sync.movieListingCount, sync.showListingCount)
     }
 }
