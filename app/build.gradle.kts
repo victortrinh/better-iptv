@@ -150,6 +150,8 @@ dependencies {
     implementation(libs.media3.ui)
     // A Channel's Backup is its stream as HLS.
     implementation(libs.media3.hls)
+    // Media3 reads the Provider through the Library's OkHttp client, as the rest of the app does.
+    implementation(libs.media3.okhttp)
     // DTS and TrueHD audio, which Fire sticks can't decode, and ASS subtitles with their full styling.
     implementation(libs.media3.ffmpeg)
     implementation(libs.ass.media)

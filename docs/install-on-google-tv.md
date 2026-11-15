@@ -24,4 +24,5 @@ Zugig appears in **Apps → Your apps** with its banner.
 - **Updates.** The first update asks to allow Zugig to install apps; the switch is under **Settings → Apps → Security & restrictions → Unknown sources**. These devices run Android 10 or later, which doesn't let an app reopen itself after an update, so open Zugig again from the launcher.
 - **The Appstore tile refresh** (`AppstoreTileReceiver`) does nothing here: there is no Amazon Appstore.
 - **Trailers** that can't be embedded open in Google's YouTube app for TV.
+- **Media3 reads the Provider through OkHttp**, on every device since. On a TV with Google TV, Media3 on Android's own HTTP stack failed to start every Version, which VLC then played through the relay (OkHttp). Not confirmed on that TV yet: if Media3 still fails there, `adb logcat -s Player` names why it stopped.
 - **Speed and formats** were measured on the stick only (`playback-samples.md`). What plays is read from the device at each Play (`readDeviceProfile`), so a device that decodes more is offered more.

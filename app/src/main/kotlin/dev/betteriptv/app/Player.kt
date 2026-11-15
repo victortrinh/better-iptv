@@ -98,9 +98,9 @@ internal class ProviderLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
     }
 
     /**
-     * The code the Provider answered with. Android's HTTP stack throws on a 407 instead of handing
-     * it over ("Received HTTP_PROXY_AUTH (407) code while not using proxy"), so that one is read
-     * from the message.
+     * The code the Provider answered with. OkHttp, like Android's own HTTP stack, throws on a 407
+     * instead of handing it over ("Received HTTP_PROXY_AUTH (407) code while not using proxy"), so
+     * that one is read from the message.
      */
     private fun Throwable.responseCode(): Int? = when (this) {
         is InvalidResponseCodeException -> responseCode

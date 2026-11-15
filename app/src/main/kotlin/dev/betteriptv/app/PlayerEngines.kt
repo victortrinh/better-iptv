@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
@@ -48,6 +49,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.OkHttpClient
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -57,6 +59,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
@@ -69,13 +72,21 @@ internal const val PLAYER_TAG = "Player"
  * Creates the engine a Playback session asks for, choosing a [plan]'s Tracks for this stick and TV
  * once the file is open, with what the Viewer chose for its Title ([choices]) and last picked
  * anywhere ([remembered]), both read as each file opens, so a pick made while playing carries over
- * to a Backup, and drawing subtitles in the [style] of the moment.
+ * to a Backup, and drawing subtitles in the [style] of the moment. Media3 reads the Provider through
+ * [http], the Library's client.
  */
-fun playerEngines(context: Context, plan: PlayPlan, remembered: () -> RememberedTracks, choices: () -> TitleChoices, style: () -> SubtitleStyle): (Engine) -> PlayerEngine {
+fun playerEngines(
+    context: Context,
+    plan: PlayPlan,
+    http: OkHttpClient,
+    remembered: () -> RememberedTracks,
+    choices: () -> TitleChoices,
+    style: () -> SubtitleStyle,
+): (Engine) -> PlayerEngine {
     val device = readDeviceProfile(context)
     return { engine ->
         when (engine) {
-            Engine.Media3 -> Media3Engine(context, plan, device, remembered, choices)
+            Engine.Media3 -> Media3Engine(context, plan, device, http, remembered, choices)
             Engine.Vlc -> VlcEngine(context, plan, device, remembered, choices, style())
         }
     }
@@ -131,10 +142,10 @@ private const val SEEK_GRACE_MILLIS = 2_000L
 
 /** Media3 (ExoPlayer), the default engine. Used on the main thread only. */
 @OptIn(UnstableApi::class)
-class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, remembered: () -> RememberedTracks, choices: () -> TitleChoices) : ControlledEngine {
+class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, http: OkHttpClient, remembered: () -> RememberedTracks, choices: () -> TitleChoices) : ControlledEngine {
     override val engine = Engine.Media3
     private val requests = OpenRequests()
-    private val playing = buildPlayer(context, requests.counting(DefaultDataSource.Factory(context)))
+    private val playing = buildPlayer(context, requests.counting(providerSources(context, http)))
     override val chosen = MutableStateFlow<TrackChoice?>(null)
     override val pictured = MutableStateFlow(false)
     val player: ExoPlayer = playing.player.apply {
@@ -291,6 +302,25 @@ class Media3Engine(context: Context, plan: PlayPlan, device: DeviceProfile, reme
         withTimeoutOrNull(RELEASE_TIMEOUT) { requests.awaitNone() }
     }
 }
+
+/**
+ * Where Media3 reads its files from: the Provider through [http], the client the catalog, Header reads
+ * and VLC's relay go through, instead of Android's own HTTP stack. That one names the device in its
+ * User-Agent and isn't the same code from one maker's TV to the next: on a TV with Google TV, Media3
+ * failed to start every Version that VLC then played through the relay. The client keeps Media3's
+ * own timeouts, which the start timeout and [RELEASE_TIMEOUT] count on.
+ */
+@OptIn(UnstableApi::class)
+internal fun providerSources(context: Context, http: OkHttpClient): DataSource.Factory {
+    val calls = http.newBuilder()
+        .connectTimeout(MEDIA3_HTTP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+        .readTimeout(MEDIA3_HTTP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+        .build()
+    return DefaultDataSource.Factory(context, OkHttpDataSource.Factory(calls))
+}
+
+/** Media3's own connect and read timeouts (its `DefaultHttpDataSource`'s defaults). */
+private const val MEDIA3_HTTP_TIMEOUT_MILLIS = 8_000L
 
 /**
  * Whether playback at [position] is within [END_MARGIN] of the file's [duration]: a failure there,

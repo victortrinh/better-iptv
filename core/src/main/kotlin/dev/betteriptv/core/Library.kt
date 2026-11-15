@@ -2959,6 +2959,13 @@ class Library private constructor(
     internal fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine, startTimeout: kotlin.time.Duration) =
         PlaybackSession(this, plan, engines, startTimeout)
 
+    /**
+     * The HTTP client everything is read from the Provider with (the catalog, Header reads, the relay),
+     * for the player engine to read its files with too: a device whose own HTTP stack the Provider
+     * won't answer still plays what it can list.
+     */
+    val providerHttp: OkHttpClient get() = http
+
     /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
     internal fun relay(location: String) = StreamRelay(location, http)
 
