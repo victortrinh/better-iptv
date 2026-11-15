@@ -50,6 +50,8 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
         )
+        // A debug build logs where each Sync's time went (#566): `adb logcat -s SyncTiming`. A release build times nothing.
+        if (BuildConfig.DEBUG) library.onSyncTimed = { timing -> Log.d("SyncTiming", timing.toString()) }
         // On the Profile the device was last on: nobody is asked on launch. Its settings follow it.
         settings = ViewerSettingsStore(this, library, scope)
         // The first launch after the release that dropped the cloud's metadata clears the image cache, once (#480).

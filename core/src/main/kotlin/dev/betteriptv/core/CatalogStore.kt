@@ -362,9 +362,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
      * Mismatch an Unmatched Title of its own. [onFilled] runs once [fill] returns, before the Titles are
      * built. [completed] runs once they are, with the new Listing counts and how many Unmatched Titles
      * the year rule made, and the Sync it returns is kept as pending until [swapTitles] or [applyPending]
-     * lands it, through a close and reopen if need be.
+     * lands it, through a close and reopen if need be. A [timer] is told each statement as it ends.
      */
-    fun stageTitles(fill: (TitleStaging) -> Unit, onFilled: () -> Unit, completed: (movieCount: Int, showCount: Int, mismatches: Int) -> CompletedSync): CompletedSync =
+    internal fun stageTitles(
+        fill: (TitleStaging) -> Unit,
+        onFilled: () -> Unit,
+        completed: (movieCount: Int, showCount: Int, mismatches: Int) -> CompletedSync,
+        timer: SyncTimer? = null,
+    ): CompletedSync =
         synchronized(writer) {
             writer.execSQL("DROP TABLE IF EXISTS staging_category")
             writer.execSQL("DROP TABLE IF EXISTS staging_listing")
@@ -402,6 +407,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     ) WHERE rank = 1
                     """.trimIndent(),
                 )
+                timer?.mark("Number-year build")
                 // A Listing dated further from it is a Mismatch, an Unmatched Title of its own.
                 writer.execSQL(
                     """
@@ -412,9 +418,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     """.trimIndent(),
                 )
                 writer.execSQL("DROP TABLE staging_number_year")
+                timer?.mark("Mismatch update")
                 // Titles are listed by their newest Listing.
                 writer.execSQL("INSERT INTO staging_title (kind, position, key) $TITLES_BY_NEWEST_LISTING".format("staging_listing WHERE hidden = 0"))
+                timer?.mark("Title insert")
                 writer.execSQL("CREATE INDEX staging_title_key ON staging_title (key)")
+                timer?.mark("Title key index")
                 writer.execSQL(
                     """
                     INSERT INTO staging_kept_listing (kind, position, id, name, category, added, image, title, title_key, title_number, container, $DETAILS_COLUMN_NAMES)
@@ -426,10 +435,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     WHERE l.hidden = 0
                     """.trimIndent(),
                 )
+                timer?.mark("Kept-Listing insert")
                 writer.execSQL("DROP INDEX staging_title_key")
                 writer.execSQL("DROP TABLE staging_listing")
                 writer.execSQL("DROP TABLE staging_category")
+                timer?.mark("Staging drop")
                 writer.execSQL("COMMIT")
+                timer?.mark("Commit")
 
                 fun count(kind: TitleKind) = writer.prepare("SELECT count(*) FROM staging_kept_listing WHERE kind = ?").use {
                     it.bindText(1, kindKey(kind))
@@ -466,6 +478,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 )
                 writer.execSQL("COMMIT")
                 truncateLog()
+                timer?.mark("Counts and pending Sync")
                 sync
             } catch (e: Throwable) {
                 if (writer.inTransaction()) writer.execSQL("ROLLBACK")
@@ -486,10 +499,10 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writeMeta(mapOf(PENDING_HEAD_START to at.toString()))
         try {
             var listings = 0
-            stageTitles(fill, onFilled = {}) { movieCount, showCount, mismatches ->
+            stageTitles(fill, onFilled = {}, completed = { movieCount, showCount, mismatches ->
                 listings = movieCount + showCount
                 CompletedSync(at, Duration.ZERO, movieCount, emptyList(), mismatches, showCount)
-            }
+            })
             if (listings == 0) return false
             writer.execSQL("BEGIN IMMEDIATE")
             try {
@@ -561,35 +574,38 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
 
     /** Swaps the staged Titles in, recording the pending Sync as the last one, its duration now counting the swap. */
-    fun swapTitles(): CompletedSync = synchronized(writer) {
+    internal fun swapTitles(timer: SyncTimer? = null): CompletedSync = synchronized(writer) {
         val started = System.nanoTime()
         writer.execSQL("BEGIN IMMEDIATE")
         try {
-            swapTitlesIn(started)
+            swapTitlesIn(started, timer = timer)
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             writer.execSQL("ROLLBACK")
             throw e
         }
         truncateLog()
+        timer?.mark("Swap commit")
         lastSync()!!
     }
 
     /** Swaps a pending catalog in, Channels and Titles together, or returns null without one. */
-    fun applyPending(): CompletedSync? = synchronized(writer) {
+    internal fun applyPending(timer: SyncTimer? = null): CompletedSync? = synchronized(writer) {
         if (pendingAt() == null) return null
         val started = System.nanoTime()
         writer.execSQL("BEGIN IMMEDIATE")
         try {
             val at = Instant.now()
             swapChannelsIn(at)
-            swapTitlesIn(started, at)
+            timer?.mark("Channel swap")
+            swapTitlesIn(started, at, timer)
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             writer.execSQL("ROLLBACK")
             throw e
         }
         truncateLog()
+        timer?.mark("Swap commit")
         lastSync()
     }
 
@@ -613,17 +629,20 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writeMeta(mapOf(CHANNELS_SYNCED_AT to at.toString()))
     }
 
-    private fun swapTitlesIn(swapStarted: Long, at: Instant = Instant.now()) {
+    private fun swapTitlesIn(swapStarted: Long, at: Instant = Instant.now(), timer: SyncTimer? = null) {
         writer.execSQL("DROP TABLE listing")
         writer.execSQL("DROP TABLE title")
         writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
         writer.execSQL("ALTER TABLE staging_title RENAME TO title")
         writer.execSQL("DROP TABLE replay")
         writer.execSQL("ALTER TABLE staging_replay RENAME TO replay")
+        timer?.mark("Table swap")
         TITLE_INDEXES.forEach { writer.execSQL(it) }
+        timer?.mark("Index creation")
         // Show details of Listings the Provider no longer has won't be asked for again.
         writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
         writer.execSQL("DELETE FROM episode WHERE listing_id NOT IN (SELECT listing_id FROM show_details)")
+        timer?.mark("Stale details delete")
         writer.execSQL("DELETE FROM unknown_prefix")
         writer.execSQL("INSERT INTO unknown_prefix SELECT * FROM staging_unknown_prefix")
         writer.execSQL("DROP TABLE staging_unknown_prefix")
@@ -645,6 +664,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         // The Provider table the staged catalog was described with is the one kept from now on.
         meta(PENDING_PROVIDER_TABLE_FOR)?.let { key -> writeMeta(mapOf(PROVIDER_TABLE_FOR to key, PROVIDER_TABLE to meta(PENDING_PROVIDER_TABLE)!!)) }
         writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%' OR key = '$HEAD_START_AT'")
+        timer?.mark("Sync record")
     }
 
     private fun dropTitleStaging() {

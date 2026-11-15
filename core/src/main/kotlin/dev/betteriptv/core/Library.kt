@@ -446,6 +446,12 @@ class Library private constructor(
     }
 
     /**
+     * Told where each Sync's time went as it ends, landed or held, on the Sync's thread: a debug build
+     * logs it (#566). With none set, the default, a Sync reads no clock for it.
+     */
+    @Volatile var onSyncTimed: ((SyncTiming) -> Unit)? = null
+
+    /**
      * Downloads the Provider's catalog and replaces the device's copy, in two stages. The Channels
      * stage (live Categories and Listings) comes first; the Titles stage (movie and show Categories
      * and Listings) after, grouped by their Title numbers with each Mismatch apart. Only `player_api` requests
@@ -482,6 +488,7 @@ class Library private constructor(
         val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead, headStartAt) }
         running()
         val started = System.nanoTime()
+        val timer = onSyncTimed?.let { SyncTimer() }
         val finished = try {
             val login = credentials.load() ?: throw ProviderException(WrongLogin)
             val client = XtreamClient(login, http)
@@ -537,7 +544,11 @@ class Library private constructor(
                 }
                 step = SyncStep.Movies
                 running()
-                if (last == null) landHeadStart(client, table, contentLanguages)?.let { headStartAt = it; running() }
+                timer?.mark(SyncStep.Channels.name)
+                if (last == null && contentLanguages.isNotEmpty()) {
+                    landHeadStart(client, table, contentLanguages)?.let { headStartAt = it; running() }
+                    timer?.mark(SyncTiming.HEAD_START)
+                }
                 val pending = store.stageTitles(
                     fill = { staging ->
                         val movieCategories = HashMap<String, String>()
@@ -569,6 +580,7 @@ class Library private constructor(
                             listing(TitleKind.Movie, id, name, movieCategories[categoryId].orEmpty(), categoryId, added, titleNumber, image, container, rating, null, null)
                         }
                         if (movieListings == 0) requireListings(movieCategories, "movie")
+                        timer?.mark(SyncStep.Movies.name)
                         step = SyncStep.Shows
                         running()
                         client.showCategories { id, name ->
@@ -587,6 +599,7 @@ class Library private constructor(
                         if (showListings == 0) requireListings(showCategories, "show")
                     },
                     onFilled = {
+                        timer?.mark(SyncStep.Shows.name)
                         step = SyncStep.Saving
                         running()
                     },
@@ -602,12 +615,16 @@ class Library private constructor(
                             tierTags.candidates(),
                         )
                     },
+                    timer = timer,
                 )
                 when {
-                    last == null -> SyncStatus.Synced(store.swapTitles())
+                    last == null -> SyncStatus.Synced(store.swapTitles(timer))
                     hold -> SyncStatus.Ready(last, pending.finishedAt)
-                    else -> SyncStatus.Synced(store.applyPending()!!)
-                }.also { if (it is SyncStatus.Synced) prefixTable = table }
+                    else -> SyncStatus.Synced(store.applyPending(timer)!!)
+                }.also {
+                    if (it is SyncStatus.Synced) prefixTable = table
+                    if (timer != null) onSyncTimed?.invoke(timer.timing(pending))
+                }
             } finally {
                 syncWriting = false
             }
@@ -639,7 +656,6 @@ class Library private constructor(
      * that was cancelled.
      */
     private fun landHeadStart(client: XtreamClient, table: PrefixTable, contentLanguages: List<String>): Instant? {
-        if (contentLanguages.isEmpty()) return null
         return try {
             val at = Instant.now()
             val landed = store.landHeadStart(at) { staging ->
