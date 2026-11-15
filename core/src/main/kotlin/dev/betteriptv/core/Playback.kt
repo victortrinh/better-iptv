@@ -69,8 +69,9 @@ enum class QualityCap(val quality: Quality) { UHD(Quality.UHD), FullHD(Quality.F
 /**
  * What pressing Play starts: a [version] with its [Version.backups], and the Viewer's
  * [contentLanguages] and [remembered] choices, which choose its Tracks once the player has read
- * them. [versions] are the Title's Versions the player can switch to, best first and the Viewer's
- * languages first, each with its Backups; [version] is among them. Playback starts [from]
+ * them. [versions] are the Title's Versions the player can switch to, every one its Versions screen
+ * lists and in that order ([listed]), each with its Backups; [version] is among them or their Backups
+ * (a Channel's are its variants, best first). Playback starts [from]
  * milliseconds in: where the Viewer stopped last time, or the start; [length] is the file's length
  * the player knew then, null when it didn't or the Viewer never stopped in it. A Show's plan plays
  * its [episode]; a Movie's has none. A Channel's plan has no [titleId]: it plays live.

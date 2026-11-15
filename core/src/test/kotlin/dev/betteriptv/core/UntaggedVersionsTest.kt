@@ -77,6 +77,23 @@ class UntaggedVersionsTest {
         assertEquals(setOf("SC - Toy Story 5 (NordicDub) (2026)"), details.group(null)!!.names())
     }
 
+    @Test fun `the player lists the Versions the Title's page lists, the ones this TV can't show and the Untagged ones' Likely language included`() = runBlocking {
+        cloud.titleFacts(toyStory5, originalLanguage = "en")
+        sync()
+
+        val details = library.title(toyStory5, listOf("en"), "en")!!
+        val listed = (details.languages + details.otherLanguages).flatMap { it.versions }
+        val fullHdTv = DeviceProfile(maxHeight = 1080, hdr = emptySet())
+        val plan = library.playPlan(toyStory5, listOf("en"), fullHdTv)!!
+        assertEquals(listed, plan.versions)
+        assertEquals("EN - Toy Story 5  (2026)", plan.version.name)
+        // Chosen on the Versions screen, a Source's copy plays as that screen named it.
+        val disney = listings.indexOfFirst { it.first == "D+ - Toy Story 5 (2026)" } + 1L
+        val chosen = library.chosenPlayPlan(toyStory5, disney, listOf("en"))!!
+        assertEquals(listed, chosen.versions)
+        assertEquals(Known("en", Provenance.Likely), chosen.version.attributes.language)
+    }
+
     @Test fun `a Title released in French makes its Source copies Likely French`() = runBlocking {
         cloud.titleFacts(toyStory5, originalLanguage = "fr")
         sync()
