@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
+import dev.betteriptv.core.TitlesTab
 
 /**
  * What a Titles tab keeps while another screen shows: its [rows] (scroll positions and the rows
@@ -32,7 +33,8 @@ class TitlesState {
 
 /**
  * The Movies or Shows tab ([kind]), in rows like Home's ([RowsScreen]): the kind's Trending this
- * week, then New movies (or shows), then its genres. Sync now and how the Sync
+ * week, then New movies (or shows), then its genres. The screen works out none of them: it asks the
+ * Core for the tab ([TitlesTab], [liveContent]) and draws the Rows it is handed. Sync now and how the Sync
  * is going are in Settings; a first Sync's checklist shows here only until its Channels land. While
  * its Head start is all the catalog holds (ADR 0019), the tab shows New movies (or shows) alone, and
  * with no Head start one line, that the movies and shows are on their way. Above the rows, a featured Title of the kind from Trending, else New, a
@@ -60,8 +62,6 @@ fun TitlesScreen(
     val context = LocalContext.current
     val device = suspend { withContext(Dispatchers.Default) { readDeviceProfile(context) } }
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    // Read again when a Sync lands (a first Sync's Head start too), a held catalog is applied or Matches merge Titles.
-    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     // A first Sync's checklist shows only until the Channels land, as on Home and Live (ADR 0019).
     val noChannels = showsChecklist(status)
     // From then until the Titles land, the tab shows what a Head start gave it: New movies (or shows)
@@ -69,10 +69,14 @@ fun TitlesScreen(
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
     val onTheirWay = titlesOnTheirWay(status)
     val duringFirstSync = remember { status.last == null }
+    // The tab's content, from the Core: handed over again when a catalog lands (a first Sync's Head
+    // start too), a held catalog is applied, Matches merge Titles or the Profile switches.
+    val tab = remember(kind, contentLanguages, appLanguage) { TitlesTab(kind, contentLanguages, appLanguage) }
+    val content = liveContent(library, tab)
     RowsScreen(
         library, contentLanguages, appLanguage, state.rows, restoreFocus, focusTab,
-        reading = listOf(kind, contentLanguages, appLanguage, catalog),
-        read = { library.tabRows(kind, contentLanguages, appLanguage) },
+        reading = listOf(tab, content.changes),
+        read = { content.read().rows },
         empty = stringResource(if (onTheirWay) R.string.titles_on_their_way else R.string.home_empty),
         onOpen = onOpen,
         placeholder = if (noChannels) {
