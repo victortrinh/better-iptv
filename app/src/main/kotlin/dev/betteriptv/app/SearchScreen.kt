@@ -57,6 +57,7 @@ import dev.betteriptv.core.Replay
 import dev.betteriptv.core.SearchCard
 import dev.betteriptv.core.SearchResults
 import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.tooShortToSearch
 import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -208,13 +209,20 @@ private fun Results(
     onFavourite: (Channel, Boolean) -> Unit,
 ) {
     if (results.isEmpty) {
-        // Before anything is typed, the query line says what to.
-        if (query.isBlank()) return
-        val message = if (searching) stringResource(R.string.search_searching) else stringResource(R.string.search_none, query.trim())
+        val message = searchMessage(query, searching) ?: return
         Column(Modifier.padding(top = GRID_TOP)) {
-            Text(message, style = Type.body, color = Colors.inkMuted)
+            Text(
+                when (message) {
+                    SearchMessage.TypeMore -> stringResource(R.string.search_start)
+                    SearchMessage.Searching -> stringResource(R.string.search_searching)
+                    SearchMessage.NothingMatches -> stringResource(R.string.search_none, query.trim())
+                },
+                style = Type.body,
+                color = Colors.inkMuted,
+                modifier = Modifier.padding(end = Spacing.screenX),
+            )
             // The Head start is all Search knows until the full catalog lands: nothing found may only mean not yet.
-            if (!searching && stillAdding) {
+            if (message == SearchMessage.NothingMatches && stillAdding) {
                 Text(stringResource(R.string.search_still_adding), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(top = Spacing.s))
             }
         }
@@ -229,6 +237,22 @@ private fun Results(
             is SearchCard.OfReplay -> ReplayCard(card.replay, onPlayReplay, modifier)
         }
     }
+}
+
+/** What stands where Search's cards go when it has none to show. */
+internal enum class SearchMessage { TypeMore, Searching, NothingMatches }
+
+/**
+ * What Search says under a [query] that shows no card, null before anything is typed (the query line
+ * says what to type). Under two letters it keeps asking for two, as the query line did: Search looks
+ * nothing up with one ([tooShortToSearch]), so "Nothing matches" would be untrue (#605). From two,
+ * "Searching…" while the answer is awaited ([searching]), then "Nothing matches".
+ */
+internal fun searchMessage(query: String, searching: Boolean): SearchMessage? = when {
+    query.isBlank() -> null
+    tooShortToSearch(query) -> SearchMessage.TypeMore
+    searching -> SearchMessage.Searching
+    else -> SearchMessage.NothingMatches
 }
 
 private val SearchCard.key: String

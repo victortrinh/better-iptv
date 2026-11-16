@@ -20,6 +20,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyDescendant
@@ -234,6 +235,41 @@ class CatalogLandsUnderFocusTest {
         // Up finds Trending, then the featured Title.
         press(listOf(Key.DirectionUp))
         focusedCard("Hit0")
+        press(listOf(Key.DirectionUp))
+        compose.onNodeWithText("Play").assertIsFocused()
+    }
+
+    /** Proposal for #605: a Viewer who pressed nothing is on a card the screen chose, and gets the hero as an entry would. */
+    @Test fun aFeaturedTitleArrivingWhileTheViewerPressedNothingShowsFromTheTopAndItsPlayTakesFocus() {
+        // Home as the Channels land: its first card took focus by itself.
+        rows = listOf(HomeRow.NewOnYourService(titles("Fresh")))
+        screen()
+        focusedCard("Fresh0")
+
+        // The Head start lands with a Title to feature, no key pressed since the screen came up.
+        hero = featured("War")
+        reading++
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Play").assertIsFocused()
+        compose.onNodeWithText("War").assertIsDisplayed()
+        // Down finds the row again, on its first card.
+        press(listOf(Key.DirectionDown))
+        focusedCard("Fresh0")
+    }
+
+    @Test fun aFeaturedTitleArrivingAfterAnyPressLeavesFocusWhereItIsEvenOnTheFirstCard() {
+        rows = listOf(HomeRow.NewOnYourService(titles("Fresh")))
+        screen()
+        // Right and back: the Viewer is on the first card again, but chose it.
+        press(listOf(Key.DirectionRight, Key.DirectionLeft))
+        val before = focusedCard("Fresh0")
+
+        hero = featured("War")
+        reading++
+        compose.waitForIdle()
+
+        assertEquals(before, focusedCard("Fresh0"))
         press(listOf(Key.DirectionUp))
         compose.onNodeWithText("Play").assertIsFocused()
     }

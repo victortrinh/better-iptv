@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,34 @@ internal fun catalogActivity(status: SyncStatus): CatalogActivity? = when {
     else -> null
 }
 
+/**
+ * The pill's line on a screen of rows: [status]'s, and, once a first Sync has finished under a pill
+ * that [shown] it adding the rest, still that until the screen's rows are the full catalog's
+ * ([rowsBehind], [LocalRowsBehind]). The genre rows of a big catalog take seconds to work out, and
+ * "Up to date" over the Head start's rows would be untrue (#605).
+ */
+internal fun catalogActivity(status: SyncStatus, shown: CatalogActivity?, rowsBehind: Boolean): CatalogActivity? =
+    catalogActivity(status) ?: CatalogActivity.AddingTheRest.takeIf { status is SyncStatus.Synced && shown == it && rowsBehind }
+
+/**
+ * How long the pill waits before it says [next], given what it [shown] and whether that is [visible].
+ * A first Sync's pill takes over from the checklist as the Channels land, so it shows at once: a wait
+ * left the screen with neither (#605), and that work is never quick. Other work that starts while
+ * the screen is up shows after [PILL_APPEARS_AFTER], so a quick one doesn't flash; what follows work
+ * already showing changes the line at once.
+ */
+internal fun appearsAfter(next: CatalogActivity, visible: Boolean, shown: CatalogActivity?): Long = when {
+    next == CatalogActivity.AddingTheRest -> 0L
+    !visible || shown == CatalogActivity.UpToDate -> PILL_APPEARS_AFTER
+    else -> 0L
+}
+
+/**
+ * Whether the screen's rows are behind what they are read for: read again (a catalog landing, say)
+ * and not yet showing. Said by a screen of rows ([RowsLayout]) to its tabs, for the Catalog pill.
+ */
+internal val LocalRowsBehind = compositionLocalOf { false }
+
 /** Whether a Search that finds nothing should say more is coming: while a first Sync is adding the rest (ADR 0019). */
 internal fun stillAddingCatalog(status: SyncStatus): Boolean = catalogActivity(status) == CatalogActivity.AddingTheRest
 
@@ -62,24 +91,26 @@ internal fun afterword(shown: CatalogActivity?, status: SyncStatus): CatalogActi
 /**
  * A glass pill at the tab bar's right end, never focusable, saying the rows may still change: a slow
  * pulsing dot, the checklist's, and one caption line. Work already running when the screen opens shows
- * at once; work that starts later shows after [APPEAR_AFTER], so a quick one doesn't flash. Once it ends, "Up to date" shows for [UP_TO_DATE_FOR], then the pill fades.
+ * at once, and so does a first Sync's as its checklist goes; other work that starts later shows after
+ * [PILL_APPEARS_AFTER], so a quick one doesn't flash ([appearsAfter]). Once it ends, and the screen's rows
+ * are those of the catalog that landed ([LocalRowsBehind]), "Up to date" shows for [UP_TO_DATE_FOR], then the pill fades.
  */
 @Composable
 internal fun CatalogActivityPill(library: Library, modifier: Modifier = Modifier) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    val current = catalogActivity(status)
     val latestStatus by rememberUpdatedState(status)
     // What the pill says, kept while it fades out; [visible] says whether it shows.
-    var shown by remember { mutableStateOf(current) }
-    var visible by remember { mutableStateOf(current != null) }
+    var shown by remember { mutableStateOf(catalogActivity(status)) }
+    var visible by remember { mutableStateOf(shown != null) }
+    val current = catalogActivity(status, shown.takeIf { visible }, LocalRowsBehind.current)
     LaunchedEffect(current) {
         if (current != null) {
-            if (!visible || shown == CatalogActivity.UpToDate) delay(APPEAR_AFTER)
+            delay(appearsAfter(current, visible, shown))
             shown = current
             visible = true
         } else {
             // Wait a beat before calling it done, so a held catalog landing doesn't flash "Up to date" twice.
-            delay(APPEAR_AFTER)
+            delay(PILL_APPEARS_AFTER)
             val after = afterword(shown.takeIf { visible }, latestStatus)
             if (after != null) {
                 shown = after
@@ -121,5 +152,5 @@ internal fun CatalogActivity.label() = when (this) {
 private val PILL_MAX_WIDTH = 240.dp
 private val DOT_SIZE = 6.dp
 private const val FADE_MS = 300
-private const val APPEAR_AFTER = 1_000L
+internal const val PILL_APPEARS_AFTER = 1_000L
 private const val UP_TO_DATE_FOR = 3_000L

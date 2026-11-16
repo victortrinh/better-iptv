@@ -59,6 +59,13 @@ sealed interface SearchCard {
     data class OfReplay(val replay: Replay) : SearchCard
 }
 
+/**
+ * Whether [query] has too few letters for Search to look anything up ([SearchIndex.MIN_LETTERS], in
+ * its words, so spaces and punctuation don't count): it answers nothing then, which says nothing of
+ * the catalog, and the screen keeps asking for more letters.
+ */
+fun tooShortToSearch(query: String): Boolean = SearchIndex.words(query).sumOf { it.length } < SearchIndex.MIN_LETTERS
+
 /** One of the Prefix table's genres ([name], in the App language), with its Titles the Provider has, best first. */
 data class Genre(val name: String, val titles: List<TitleSummary>)
 

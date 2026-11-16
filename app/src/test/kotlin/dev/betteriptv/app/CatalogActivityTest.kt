@@ -71,4 +71,28 @@ class CatalogActivityTest {
         assertNull(afterword(null, SyncStatus.Synced(synced)))
         assertNull(afterword(CatalogActivity.UpToDate, SyncStatus.Synced(synced)))
     }
+
+    @Test fun `the pill takes over from the first Sync's checklist at once, and other work waits a beat`() {
+        // The Channels land and the checklist goes: no moment with neither (#605).
+        assertEquals(0L, appearsAfter(CatalogActivity.AddingTheRest, visible = false, shown = null))
+        // A later Sync that starts while the screen is up may be quick: it shows after a beat, so it doesn't flash.
+        assertEquals(PILL_APPEARS_AFTER, appearsAfter(CatalogActivity.Syncing, visible = false, shown = null))
+        assertEquals(PILL_APPEARS_AFTER, appearsAfter(CatalogActivity.Syncing, visible = true, shown = CatalogActivity.UpToDate))
+        // What follows work already showing changes its line at once.
+        assertEquals(0L, appearsAfter(CatalogActivity.UpdateReady, visible = true, shown = CatalogActivity.Syncing))
+    }
+
+    @Test fun `a first Sync that finished is still adding the rest until the screen's rows are the full catalog's`() {
+        // The genre rows of a big catalog take seconds to read: the pill doesn't say Up to date over the Head start's (#605).
+        assertEquals(CatalogActivity.AddingTheRest, catalogActivity(SyncStatus.Synced(synced), shown = CatalogActivity.AddingTheRest, rowsBehind = true))
+        assertNull(catalogActivity(SyncStatus.Synced(synced), shown = CatalogActivity.AddingTheRest, rowsBehind = false))
+        // Rows read again at any other time (Live's Games, a screen just entered) show no pill.
+        assertNull(catalogActivity(SyncStatus.Synced(synced), shown = null, rowsBehind = true))
+        assertNull(catalogActivity(SyncStatus.Synced(synced), shown = CatalogActivity.UpToDate, rowsBehind = true))
+        assertNull(catalogActivity(SyncStatus.Synced(synced), shown = CatalogActivity.Syncing, rowsBehind = true))
+        // A first Sync that failed says so in Settings, whatever the rows are doing.
+        assertNull(catalogActivity(SyncStatus.Failed(Unreachable("x"), null, now, SyncStep.Shows, now), shown = CatalogActivity.AddingTheRest, rowsBehind = true))
+        // While it runs, the status says it all.
+        assertEquals(CatalogActivity.AddingTheRest, catalogActivity(SyncStatus.Running(null, now, SyncStep.Shows), shown = null, rowsBehind = false))
+    }
 }
