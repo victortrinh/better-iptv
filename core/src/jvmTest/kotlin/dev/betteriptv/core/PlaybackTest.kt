@@ -21,19 +21,24 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
 import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** The Playback session: which player engine plays a Version, and moving between Media3 and VLC. */
-class PlaybackTest {
+/**
+ * The Playback session: which player engine plays a Version, and moving between Media3 and VLC. An
+ * engine that overlaps its requests plays through a relay: a fake one here, and Android's own, on real
+ * sockets, in [PlaybackOverSocketsTest], which runs these same tests on the JVM.
+ */
+open class PlaybackTest {
+    /** How the Provider is reached, and the relay with it. */
+    protected open val transport: FakeTransport get() = InProcess
+
     @get:Rule val folder = TemporaryFolder()
-    private val provider = FakeProvider()
+    private val provider = FakeProvider(transport)
     private lateinit var library: Library
     private lateinit var plan: PlayPlan
 
     @Before fun setUp() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials())
+        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), network = transport.network())
         library.logIn(provider.login)
         provider.movieCategoriesOverride = """[{"category_id":"1","category_name":"EN - MOVIES"}]"""
         provider.movieListOverride =
@@ -345,7 +350,7 @@ class PlaybackTest {
             withContext(Dispatchers.IO) {
                 streams += provider.play(location).also { it.readNBytes(1024) }
                 // Like VLC reading the file's index at its end: a second request before closing the first.
-                if (overlapsRequests) streams += ranged(location, "bytes=1000000-").also { it.readNBytes(1024) }
+                if (overlapsRequests) streams += provider.play(location, "bytes=1000000-").also { it.readNBytes(1024) }
             }
             opened.value = true
             if (script != Script.CantOpen) events(PlayerEvent.Started)
@@ -361,12 +366,5 @@ class PlaybackTest {
             released = true
             streams.forEach(InputStream::close)
         }
-    }
-
-    private fun ranged(location: String, range: String): InputStream {
-        val connection = URI(location).toURL().openConnection() as HttpURLConnection
-        connection.setRequestProperty("Range", range)
-        if (connection.responseCode !in 200..299) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
-        return connection.inputStream
     }
 }

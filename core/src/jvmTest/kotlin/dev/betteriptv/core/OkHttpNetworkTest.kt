@@ -12,7 +12,7 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 /** Android's network for the Core (#579): the Core's client on the app's OkHttp client. */
-class OkHttpNetworkTest {
+class OkHttpNetworkTest : SocketTest() {
     @Test fun `the Core's client asks as OkHttp does, on the pool of the client it is given`() = runBlocking {
         ServerSocket(0, 1, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).use { server ->
             val asked = CompletableDeferred<List<String>>()
