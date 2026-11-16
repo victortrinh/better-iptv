@@ -141,5 +141,7 @@ describe("the weekly issue", () => {
     expect(body).toContain("`ZZQ`");
     expect(body).not.toContain("`CD`");
     expect(body).not.toContain("Candidate Tier tags");
+    // The last two of #545's candidates, a league and a genre shelf, are settled as not Tier tags there.
+    expect(weeklyIssue({ tierTags: [tierTag(surveyed, "NBA", 2), tierTag(surveyed, "MUSIC", 5)] }, env.TEST_BASE_TABLE, env.TEST_PROVIDER_TABLES.files)).toBe("");
   });
 });

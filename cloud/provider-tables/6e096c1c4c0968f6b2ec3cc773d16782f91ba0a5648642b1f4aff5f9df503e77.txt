@@ -102,7 +102,8 @@ NYA UTGÅVAN         | fresh             # Swedish, new release: SVENSKA NYA UTG
 [not tier tags]
 
 # Candidate Tier tags whose Listings are different Channels (#545): the word carries the country or
-# the language feed. NBA and MUSIC are left on the weekly issue, undecided.
+# the language feed, the operator, the league or the genre shelf, and without it the Listing would
+# join another country's package of the same name.
 # Countries: BAN: RTV (Bangladesh) beside RWA: RTV (Rwanda), NIC: and LSV: CANAL 2.
 AFR
 BAN
@@ -146,6 +147,13 @@ SKYGO
 T2
 TUBI
 WOW
+# A league and a genre shelf, each the name's own. NBA: heads the US| NBA PPV Categories' League Pass,
+# team and replay feeds (NBA: TORONTO RAPTORS) and Event channels (NBA: Brooklyn vs Cleveland @ ...);
+# without it NBA: NBA TV would join France's VIP: and Turkey's GOLD: NBA TV. MUSIC: sits beside AFR:
+# in AFR| AFRICA VIP; without it MUSIC: TRACE URBAN, TRACE AFRICA and TRACE TOCA would join France's
+# and Portugal's VIP: ones, as AFR: TRACE URBAN would have.
+NBA
+MUSIC
 
 [event time zone]
 
