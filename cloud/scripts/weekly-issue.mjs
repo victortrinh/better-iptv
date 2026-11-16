@@ -162,7 +162,7 @@ export function weeklyIssue(rows, baseText, handFiles = {}) {
 
   const out = [
     "What the cloud couldn't settle of each Provider's Prefix table: the Prefixes devices' Syncs found that no table knows (last 30 days), the Prefixes whose file reads split under the bar, the learned lines that contradict the Base table, and the candidate Tier tags Syncs found (last 30 days).",
-    "Write a hand line for each in the Provider's hand file, `cloud/provider-tables/<hash>.txt`, or add an unknown Prefix to the Base table, `core/src/main/resources/dev/betteriptv/core/prefix-table.txt`, when most Providers share it. A Prefix with a hand line drops off this list the next week. Nothing here is applied by itself; the Viewer never sees this list.",
+    "Write a hand line for each in the Provider's hand file, `cloud/provider-tables/<hash>.txt`, or add an unknown Prefix to the Base table, `core/src/commonMain/resources/dev/betteriptv/core/prefix-table.txt`, when most Providers share it. A Prefix with a hand line drops off this list the next week. Nothing here is applied by itself; the Viewer never sees this list.",
     "Each section is one Provider, by the SHA-256 of its host. Providers with the most to settle come first.",
   ];
   for (const [provider, s] of shown) {

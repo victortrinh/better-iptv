@@ -29,7 +29,7 @@ jobs:
           # Only main writes the dependency and build caches: saving them cost every branch run 40 s.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Test the core
-        run: ./gradlew :core:test
+        run: ./gradlew :core:jvmTest
 
   apk:
     runs-on: ubuntu-latest

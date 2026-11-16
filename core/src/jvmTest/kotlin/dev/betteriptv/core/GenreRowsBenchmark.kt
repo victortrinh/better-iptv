@@ -20,7 +20,7 @@ import kotlin.random.Random
  * fields are the surveyed Provider's own (4,000-odd distinct ones); without, made up from genre
  * words in its languages. Skipped unless run with `-Pbenchmark`:
  *
- *     ./gradlew :core:test --tests '*GenreRowsBenchmark' -Pbenchmark -Psurvey=/path/to/.survey/raw
+ *     ./gradlew :core:jvmTest --tests '*GenreRowsBenchmark' -Pbenchmark -Psurvey=/path/to/.survey/raw
  *
  * It times a cold start's first Home (the genre index built), a second landing on each screen, a
  * landing after Background reading keeps one more Movie's details, and the parse of every distinct
