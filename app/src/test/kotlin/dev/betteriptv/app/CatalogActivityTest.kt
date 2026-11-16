@@ -51,6 +51,12 @@ class CatalogActivityTest {
         assertEquals(CatalogActivity.UpdateReady, catalogActivity(SyncStatus.Ready(synced, now)))
     }
 
+    @Test fun `a first Sync's catalog that waits for the player to close is still adding the rest`() {
+        val waiting = SyncStatus.Ready(null, now, landedChannelsAt = now, headStartAt = now)
+        assertEquals(CatalogActivity.AddingTheRest, catalogActivity(waiting))
+        assertTrue(stillAddingCatalog(waiting))
+    }
+
     @Test fun `an idle or failed catalog shows nothing`() {
         assertNull(catalogActivity(SyncStatus.Synced(synced)))
         assertNull(catalogActivity(SyncStatus.Failed(Unreachable("x"), synced, now, SyncStep.Movies)))

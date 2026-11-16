@@ -192,9 +192,13 @@ class Library private constructor(
     /** Whether a held Sync's catalog waits to be swapped in by [applyPendingCatalog]. */
     val hasPendingCatalog: Boolean get() = _syncStatus.value is SyncStatus.Ready
 
+    /** Whether the catalog that waits is a first Sync's, held only for the player to close: it lands then, on whatever screen. */
+    val hasPendingFirstCatalog: Boolean get() = _syncStatus.value.let { it is SyncStatus.Ready && it.last == null }
+
     /**
      * The status as the stored catalog says: a held Sync's catalog waits as [SyncStatus.Ready], unless
-     * none shows yet (the app closed between a first Sync's two swaps), when it lands here and now.
+     * none shows yet (the app closed between a first Sync's two swaps, or while its catalog waited for
+     * the player to close), when it lands here and now.
      */
     private fun openingStatus(): SyncStatus {
         val last = store.lastSync()
@@ -469,19 +473,22 @@ class Library private constructor(
      * closed, the full read failed) keeps it on screen, and the next one doesn't read it again. A later Sync has none. A later Sync computes both behind the catalog on
      * screen, then either swaps them in together (the default), or with [hold] keeps them staged as
      * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
-     * move under focus; a Sync started meanwhile discards what was held.
+     * move under focus; a Sync started meanwhile discards what was held. A first Sync's Titles stage
+     * is held the same way only while [hold] is set and the [playerOpen] (asked as the stage is ready
+     * to land): nothing lands under what the Viewer watches, a Head start Title or a Channel, and the
+     * app applies it as the player closes.
      *
      * Once a catalog lands, the cloud is told the unknown Prefixes and asked for the Title facts, apart
      * from this status: the Sync itself is finished, and another may start meanwhile. This returns once
      * that is done too.
      */
-    suspend fun sync(hold: Boolean = false, contentLanguages: List<String> = emptyList()): SyncStatus {
-        val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold, contentLanguages) } }
+    suspend fun sync(hold: Boolean = false, contentLanguages: List<String> = emptyList(), playerOpen: () -> Boolean = { false }): SyncStatus {
+        val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold, contentLanguages, playerOpen) } }
         if (landed is SyncStatus.Synced) afterCatalogLanded(hold)
         return _syncStatus.value
     }
 
-    private fun syncUnderLock(hold: Boolean, contentLanguages: List<String>): SyncStatus {
+    private fun syncUnderLock(hold: Boolean, contentLanguages: List<String>, playerOpen: () -> Boolean): SyncStatus {
         val last = _syncStatus.value.last
         var channelsAt = _syncStatus.value.channelsAt
         var headStartAt = _syncStatus.value.headStartAt
@@ -621,6 +628,8 @@ class Library private constructor(
                     timer = timer,
                 )
                 when {
+                    // Under the player nothing lands: a first Sync's catalog too waits for it to close (#563).
+                    last == null && hold && playerOpen() -> SyncStatus.Ready(null, pending.finishedAt, channelsAt, headStartAt)
                     last == null -> SyncStatus.Synced(store.swapTitles(timer))
                     hold -> SyncStatus.Ready(last, pending.finishedAt)
                     else -> SyncStatus.Synced(store.applyPending(timer)!!)
@@ -730,7 +739,7 @@ class Library private constructor(
                 // The held catalog lands with the Provider table it was described with (#431).
                 prefixTable = prefixTableFor(credentials.load())
                 if (sync == null) {
-                    _syncStatus.value = store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(store.channelsSyncedAt())
+                    _syncStatus.value = store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(store.channelsSyncedAt(), store.headStartAt())
                     return@withContext false
                 }
                 catalogChanged()

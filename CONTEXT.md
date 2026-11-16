@@ -71,7 +71,7 @@ What a Sync is doing now: Channels, Movies, Shows, Saving. Settings' status line
 _Avoid_: Stage, phase
 
 **Pending catalog**:
-A later Sync's finished catalog, staged beside the one on screen until the app lands it between screens (coming to the front, or entering a top-level screen), never while the player is open, so rows never move under focus. A Sync started meanwhile discards it.
+A later Sync's finished catalog, staged beside the one on screen until the app lands it between screens (coming to the front, or entering a top-level screen), never while the player is open, so rows never move under focus. A Sync started meanwhile discards it. A first Sync's catalog lands as soon as it is read, over its Head start; it is a Pending catalog only while the player is open, and lands as the player closes.
 _Avoid_: Staged, queued, held catalog
 
 **Clutter**:
