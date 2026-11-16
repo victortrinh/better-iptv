@@ -2071,7 +2071,16 @@ class Library private constructor(
     }
 
     /**
-     * The home screen's rows: Continue watching, then Live now (the Games of the [leagues] on that
+     * What is on [screen], finished and ready to draw, as live state: the one way an app asks the
+     * Core for a screen (ADR 0020). Collecting reads the content and emits it, then emits it again
+     * each time it changes, without being asked: when a catalog lands (a first Sync's Head start and
+     * a Pending catalog too), Title facts land, the device goes to another Profile or the Account's
+     * history lands. An app collects while the screen shows and only redraws.
+     */
+    fun <Content : Any> screen(screen: Screen<Content>): Flow<Content> = liveContent(screen)
+
+    /**
+     * Home's rows ([Screen.Home]): Continue watching, then Live now (the Games of the [leagues] on that
      * are in progress with a Feed, as on the Live tab; no row at all otherwise), then Trending
      * ([trendingTitles]: what Wikipedia's readers looked up most this week, movies and shows mixed),
      * then New on your service (the most recently added Titles, newest first by when the Provider
@@ -2086,10 +2095,7 @@ class Library private constructor(
      * ([ScreenRows]); a genre row left with too few Titles gives its place to the next genre. Rows
      * with no Titles are left out.
      */
-    suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, leagues: List<League> = emptyList()): List<HomeRow> =
-        homeRows(contentLanguages, appLanguage, region, leagues, Clock.System.now())
-
-    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, leagues: List<League>, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, leagues: List<League> = emptyList(), now: Instant = Clock.System.now()): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsHomeRows(contentLanguages, appLanguage)
         // Home gets one Games row, Live now, while a Game with a Feed is on (docs/roadmap.md, M3): the same Games and Feeds as the
         // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
