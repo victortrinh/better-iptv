@@ -4,14 +4,19 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
-import dev.betteriptv.app.ui.theme.TextSize
-import dev.betteriptv.core.BackgroundPace
+import dev.betteriptv.core.BackgroundReading
+import dev.betteriptv.core.DeviceSettings
+import dev.betteriptv.core.KeptDeviceSettings
 import dev.betteriptv.core.KeptSettings
 import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Profile
 import dev.betteriptv.core.ProfileSetting
 import dev.betteriptv.core.QualityCap
+import dev.betteriptv.core.SubtitleColour
+import dev.betteriptv.core.SubtitleSize
+import dev.betteriptv.core.SubtitleStyle
+import dev.betteriptv.core.TextSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,15 +52,18 @@ data class ViewerSettings(
     /** The current Profile's half. */
     val profile: ProfileSettings get() = ProfileSettings(contentLanguages, preferOriginalAudio, appLanguage, playNextAutomatically, leagues)
 
-    /** The device's half. */
-    val device: DeviceSettings get() = DeviceSettings(region, qualityCap, subtitleStyle, backgroundReading, textSize)
+    /**
+     * The device's half (#428): what the TV, the stick and the room are like, which the Core keeps on
+     * the device ([KeptDeviceSettings]). The [region] is the household's, and syncs with the Account (#440).
+     */
+    val device: DeviceSettings get() = DeviceSettings(qualityCap, subtitleStyle, backgroundReading, textSize)
 
     companion object {
-        fun of(profile: ProfileSettings, device: DeviceSettings) = ViewerSettings(
+        fun of(profile: ProfileSettings, device: DeviceSettings, region: String) = ViewerSettings(
             contentLanguages = profile.contentLanguages,
             preferOriginalAudio = profile.preferOriginalAudio,
             appLanguage = profile.appLanguage,
-            region = device.region,
+            region = region,
             qualityCap = device.qualityCap,
             subtitleStyle = device.subtitleStyle,
             playNextAutomatically = profile.playNextAutomatically,
@@ -75,80 +83,27 @@ data class ProfileSettings(
     val leagues: Set<League>?,
 )
 
-/**
- * The settings the device keeps for everyone (#428): where the TV is ([region], the household's,
- * which syncs with the Account since #440) and what the TV, the stick and the room are like, which
- * never leave the TV.
- */
-data class DeviceSettings(
-    val region: String,
-    val qualityCap: QualityCap,
-    val subtitleStyle: SubtitleStyle,
-    val backgroundReading: BackgroundReading,
-    val textSize: TextSize,
-)
-
-/** How fast Background reading goes; [pace] is null when it is off. */
-enum class BackgroundReading(val pace: BackgroundPace?) { Off(null), Gentle(BackgroundPace.Gentle), Normal(BackgroundPace.Normal) }
-
-/**
- * How the player draws subtitles that carry no style of their own (styled ASS subtitles keep
- * theirs): their [size], [colour], what's behind them ([background]) and how high they sit ([position]).
- */
-data class SubtitleStyle(
-    val size: SubtitleSize = SubtitleSize.Medium,
-    val colour: SubtitleColour = SubtitleColour.White,
-    val background: SubtitleBackground = SubtitleBackground.Outline,
-    val position: SubtitlePosition = SubtitlePosition.Bottom,
-)
-
 /** A subtitle size, as a share of Media3's default. */
-enum class SubtitleSize(val scale: Float) { Small(0.65f), Medium(0.8f), Large(1f), Largest(1.3f) }
-
-enum class SubtitleColour(val argb: Int) { White(0xFFFFFFFF.toInt()), Yellow(0xFFFFE14D.toInt()) }
-
-/** What sits behind subtitles: a dark outline round the letters, a shadow, or a dark box. */
-enum class SubtitleBackground { Outline, Shadow, Box }
-
-/**
- * How high subtitles sit, in [percent] of the screen's height from its bottom (Media3 text cues), or
- * of the picture's (VLC), a [STEP] at a time from [LOWEST] to [HIGHEST]. [Bottom] lands in the black
- * bar under a wide picture (#292). [Raised] clears the player overlay's scrubber, whose track sits
- * 23% to 24% up a 1080-line screen (#277), on a 16:9 film too, where the screen is the picture: its
- * text ends about 2% above the track. Higher than half the screen, a line sits over faces.
- */
-@JvmInline
-value class SubtitlePosition(val percent: Int) {
-    init {
-        require(percent in LOWEST..HIGHEST && (percent - LOWEST) % STEP == 0) { "No subtitle position at $percent%" }
+val SubtitleSize.scale: Float
+    get() = when (this) {
+        SubtitleSize.Small -> 0.65f
+        SubtitleSize.Medium -> 0.8f
+        SubtitleSize.Large -> 1f
+        SubtitleSize.Largest -> 1.3f
     }
 
-    val fromBottom: Float get() = percent / 100f
-
-    /** A step lower, or this one at the lowest. */
-    fun lower(): SubtitlePosition = SubtitlePosition((percent - STEP).coerceAtLeast(LOWEST))
-
-    /** A step higher, or this one at the highest. */
-    fun higher(): SubtitlePosition = SubtitlePosition((percent + STEP).coerceAtMost(HIGHEST))
-
-    companion object {
-        const val LOWEST = 2
-        const val HIGHEST = 50
-        const val STEP = 3
-        val Bottom = SubtitlePosition(5)
-        val Raised = SubtitlePosition(26)
-
-        /** The position [percent] up, or the nearest step to it within the range. */
-        fun nearest(percent: Int): SubtitlePosition =
-            SubtitlePosition(LOWEST + ((percent.coerceIn(LOWEST, HIGHEST) - LOWEST + STEP / 2) / STEP) * STEP)
+val SubtitleColour.argb: Int
+    get() = when (this) {
+        SubtitleColour.White -> 0xFFFFFFFF.toInt()
+        SubtitleColour.Yellow -> 0xFFFFE14D.toInt()
     }
-}
 
 /** The app's interface languages: the App language is one of these. */
 val APP_LANGUAGES = listOf("en", "fr")
 
 /**
- * Keeps the [ViewerSettings]: the device's half in a file of its own, which never leaves the TV; the
+ * Keeps the [ViewerSettings]: the device's half in [device], the Core's, which keeps it in the
+ * platform's settings store ([AndroidSettingsStore]) and never lets it leave the TV; the
  * current Profile's half and the Region in [kept], the Library, which syncs them with the Account
  * (#440) and follows the Profile the device is on. Until the Viewer changes them, they follow the
  * device: its language is the Content language, and the App language when it is French, and its
@@ -156,8 +111,9 @@ val APP_LANGUAGES = listOf("en", "fr")
  * Profile's half in its own, and before Profiles (#428) both halves in the device's) moves into
  * [kept] once, as the oldest change, so an Account's settings win over it.
  */
-class ViewerSettingsStore(private val context: Context, private val kept: KeptSettings, scope: CoroutineScope) {
-    private val devicePrefs = context.getSharedPreferences(DEVICE_FILE, Context.MODE_PRIVATE)
+class ViewerSettingsStore(private val context: Context, private val kept: KeptSettings, private val device: KeptDeviceSettings, scope: CoroutineScope) {
+    /** The file the device's half is in ([AndroidSettingsStore]), for what older apps kept there besides. */
+    private val devicePrefs = context.getSharedPreferences(AndroidSettingsStore.FILE, Context.MODE_PRIVATE)
     private val _settings: MutableStateFlow<ViewerSettings>
     val settings: StateFlow<ViewerSettings>
 
@@ -173,7 +129,7 @@ class ViewerSettingsStore(private val context: Context, private val kept: KeptSe
     fun update(change: (ViewerSettings) -> ViewerSettings) {
         val old = _settings.value
         val new = change(old)
-        write(new.device)
+        if (new.device != old.device) device.update { new.device }
         val before = encode(old.profile)
         val changed = encode(new.profile).filter { (key, value) -> before[key] != value }
         kept.saveProfileSettings(changed)
@@ -187,8 +143,9 @@ class ViewerSettingsStore(private val context: Context, private val kept: KeptSe
     }
 
     private fun read(): ViewerSettings {
-        val device = readDevice()
-        return ViewerSettings.of(readProfile(kept.profileSettings.value), device.copy(region = kept.region.value ?: device.region))
+        // Until the household has a Region, it is the device's country.
+        val region = kept.region.value ?: Resources.getSystem().configuration.locales[0].country.takeIf { it.length == 2 } ?: Library.DEFAULT_REGION
+        return ViewerSettings.of(readProfile(kept.profileSettings.value), device.settings.value, region)
     }
 
     /** What older apps kept in files, moved into [kept]: each Profile's half, and the Region. */
@@ -230,47 +187,7 @@ class ViewerSettingsStore(private val context: Context, private val kept: KeptSe
         prefs.getString(LEAGUES, null)?.let { put(ProfileSetting.LEAGUES, it) }
     }
 
-    private fun write(device: DeviceSettings) {
-        devicePrefs.edit()
-            .putString(QUALITY_CAP, device.qualityCap.name)
-            .putString(SUBTITLE_SIZE, device.subtitleStyle.size.name)
-            .putString(SUBTITLE_COLOUR, device.subtitleStyle.colour.name)
-            .putString(SUBTITLE_BACKGROUND, device.subtitleStyle.background.name)
-            .remove(SUBTITLE_POSITION)
-            .putInt(SUBTITLE_HEIGHT, device.subtitleStyle.position.percent)
-            .putString(BACKGROUND_READING, device.backgroundReading.name)
-            .putString(TEXT_SIZE, device.textSize.name)
-            .apply()
-    }
-
-    private fun readDevice(): DeviceSettings {
-        val prefs = devicePrefs
-        val device = Resources.getSystem().configuration.locales[0]
-        return DeviceSettings(
-            region = device.country.takeIf { it.length == 2 } ?: Library.DEFAULT_REGION,
-            qualityCap = prefs.getString(QUALITY_CAP, null)?.let { name -> QualityCap.entries.find { it.name == name } } ?: QualityCap.UHD,
-            subtitleStyle = SubtitleStyle(
-                size = read(prefs, SUBTITLE_SIZE, SubtitleSize.entries) ?: SubtitleSize.Medium,
-                colour = read(prefs, SUBTITLE_COLOUR, SubtitleColour.entries) ?: SubtitleColour.White,
-                background = read(prefs, SUBTITLE_BACKGROUND, SubtitleBackground.entries) ?: SubtitleBackground.Outline,
-                position = when {
-                    prefs.contains(SUBTITLE_HEIGHT) -> SubtitlePosition.nearest(prefs.getInt(SUBTITLE_HEIGHT, SubtitlePosition.Bottom.percent))
-                    // Before the height was stepped, it was Bottom or Raised.
-                    prefs.getString(SUBTITLE_POSITION, null) == "Raised" -> SubtitlePosition.Raised
-                    else -> SubtitlePosition.Bottom
-                },
-            ),
-            backgroundReading = read(prefs, BACKGROUND_READING, BackgroundReading.entries) ?: BackgroundReading.Gentle,
-            textSize = read(prefs, TEXT_SIZE, TextSize.entries) ?: TextSize.Medium,
-        )
-    }
-
-    private fun <T : Enum<T>> read(prefs: SharedPreferences, key: String, entries: List<T>): T? =
-        prefs.getString(key, null)?.let { name -> entries.find { it.name == name } }
-
     private companion object {
-        /** The device's half; before #440 the Region too, and before Profiles both halves. */
-        const val DEVICE_FILE = "viewer_settings"
         fun profileFile(id: Long) = "profile_settings_$id"
         val PROFILE_FILE = Regex("""profile_settings_(\d+)\.xml""")
 
@@ -278,15 +195,7 @@ class ViewerSettingsStore(private val context: Context, private val kept: KeptSe
         const val PREFER_ORIGINAL_AUDIO = "prefer_original_audio"
         const val APP_LANGUAGE = "app_language"
         const val REGION = "region"
-        const val QUALITY_CAP = "quality_cap"
-        const val SUBTITLE_SIZE = "subtitle_size"
-        const val SUBTITLE_COLOUR = "subtitle_colour"
-        const val SUBTITLE_BACKGROUND = "subtitle_background"
-        const val SUBTITLE_POSITION = "subtitle_position"
-        const val SUBTITLE_HEIGHT = "subtitle_height"
         const val PLAY_NEXT_AUTOMATICALLY = "play_next_automatically"
-        const val BACKGROUND_READING = "background_reading"
-        const val TEXT_SIZE = "text_size"
         const val LEAGUES = "leagues"
 
         /** What the device's file held of a Profile's half before Profiles. */

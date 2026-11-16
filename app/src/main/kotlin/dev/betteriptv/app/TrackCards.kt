@@ -56,6 +56,11 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.SubtitleBackground
+import dev.betteriptv.core.SubtitleColour
+import dev.betteriptv.core.SubtitlePosition
+import dev.betteriptv.core.SubtitleSize
+import dev.betteriptv.core.SubtitleStyle
 
 /**
  * An audio or subtitle Track to pick: its [name], a [detail] under it, and whether it is [on]. Its

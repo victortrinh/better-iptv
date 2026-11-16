@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Keeps the app's process alive while a Sync or Matching runs ([BetterIptvApp.catalogJobs]), so
+ * Keeps the app's process alive while a Sync or Matching runs ([AndroidBackgroundWork.running]), so
  * Fire OS doesn't end it when the Viewer switches to another app. It runs nothing itself: the work
  * stays in the app's scope, and the service stops once that is idle. A process ended anyway (force
  * stop, reboot) picks up on the next launch: a stale Sync starts again and Matching resumes.
@@ -36,7 +36,7 @@ class CatalogWorkService : Service() {
         // Stops once idle, unless work started again meanwhile: its own start then stops it.
         watcher?.cancel()
         watcher = scope.launch {
-            (application as BetterIptvApp).catalogJobs.first { it == 0 }
+            (application as BetterIptvApp).background.running.first { it == 0 }
             stopSelf(startId)
         }
         // A process ended mid-work has nothing to resume here: the next launch does it.

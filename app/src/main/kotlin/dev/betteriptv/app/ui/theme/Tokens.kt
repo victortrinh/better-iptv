@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.betteriptv.app.R
+import dev.betteriptv.core.TextSize
 import kotlin.math.roundToInt
 
 /*
@@ -66,13 +67,9 @@ private val inter = FontFamily(
 )
 
 /**
- * The Viewer's Text size (Settings > Display), for different TVs and viewing distances: the app
- * draws on the same 960×540 dp canvas on every TV, so it can't tell how big its text looks (#223).
- */
-enum class TextSize { Small, Medium, Large }
-
-/**
- * The type scale at one [TextSize], in Inter; [Type] reads the one [NuageTheme] provides. Sizes are
+ * The type scale at one [TextSize] (the Viewer's, in Settings > Display, for different TVs and viewing
+ * distances: the app draws on the same 960×540 dp canvas on every TV, so it can't tell how big its
+ * text looks, #223), in Inter; [Type] reads the one [NuageTheme] provides. Sizes are
  * for the 960×540 dp TV canvas, read from about 3 m.
  */
 class TypeScale private constructor(

@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
+import dev.betteriptv.core.TextSize
 
 /**
  * Wraps the app. The TV Material theme is mapped from the tokens so stock components match, and
