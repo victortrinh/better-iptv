@@ -486,7 +486,7 @@ class HeadStartTest {
         val asked = provider.requests.size
         val retried = library.sync(contentLanguages = english)
 
-        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it })
+        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it || it.startsWith("get_live") })
         assertNull(retried.headStartAt)
         assertEquals(2, (retried as SyncStatus.Synced).last.movieListingCount)
         assertEquals(2, library.movieListingCount())
@@ -521,6 +521,68 @@ class HeadStartTest {
         assertEquals(2, (synced as SyncStatus.Synced).last.movieListingCount)
         assertEquals(setOf("Old Film", "Fresh Film"), library.titles(0, 10, english, "en").map { it.name }.toSet())
         assertEquals(setOf("Old Show", "Fresh Show"), library.titles(0, 10, english, "en", TitleKind.Show).map { it.name }.toSet())
+    }
+
+    /** Closes the app during a first Sync's full read and opens it again on the catalog as that left it on the device. */
+    private suspend fun reopenDuringTheFullRead() {
+        val left = folder.newFolder("left")
+        duringTheFullRead {
+            folder.root.listFiles { file -> file.name.startsWith("catalog.db") }!!.forEach { it.copyTo(left.resolve(it.name)) }
+        }
+        library.close()
+        library = Library.open(left.resolve("catalog.db").path, credentials, cloud.url)
+    }
+
+    private val channelRequests get() = provider.requests.filter { it == "get_live_categories" || it == "get_live_streams" }
+
+    @Test fun `a reopened first Sync keeps the Channels it landed and reads the full catalog alone`() = runBlocking {
+        provider.serveChannels("MAX: TNT SPORT 1 SD" to "UK | SPORTS", "PLUS: TNT SPORT 1 HD" to "UK | SPORTS", "CA: CBC HD" to "CA | NEWS")
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        reopenDuringTheFullRead()
+        val asked = provider.requests.size
+
+        val running = duringTheFullRead { library.syncStatus.value as SyncStatus.Running }
+        val synced = library.syncStatus.value as SyncStatus.Synced
+
+        // The Channels Step is done from the start: the Sync opens on the movies.
+        assertEquals(SyncStep.Movies, running.step)
+        assertNotNull(running.channelsAt)
+        val requests = provider.requests.drop(asked)
+        assertEquals(emptyList<String>(), requests.filter { it.startsWith("get_live") || "category " in it })
+        assertTrue("get_vod_streams" in requests && "get_series" in requests)
+        assertEquals(2, synced.last.movieListingCount)
+        assertEquals(listOf("UK | SPORTS", "CA | NEWS"), library.liveCategories().map { it.name })
+        // What the Channels read tells a Sync is told from the Channels kept.
+        assertEquals(3, synced.last.channelListingCount)
+        assertEquals(listOf(CandidateTierTag("MAX", 1, "MAX: TNT SPORT 1 SD"), CandidateTierTag("PLUS", 1, "PLUS: TNT SPORT 1 HD")), synced.last.candidateTierTags)
+    }
+
+    @Test fun `a reopened first Sync reads Channels landed more than a day ago again`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        reopenDuringTheFullRead()
+        val asked = provider.requests.size
+        val landed = library.syncStatus.value.channelsAt!!
+        provider.serveChannels("CA: CBC HD" to "CA | NEWS", "CA: CTV HD" to "CA | NEWS")
+        library.syncClock = Clock.offset(Clock.systemUTC(), Duration.ofHours(25))
+
+        val synced = library.sync(contentLanguages = english) as SyncStatus.Synced
+
+        val requests = provider.requests.drop(asked)
+        assertTrue(requests.indexOf("get_live_streams") in 0 until requests.indexOf("get_vod_streams"))
+        // The Head start is kept all the same.
+        assertEquals(emptyList<String>(), requests.filter { "category " in it })
+        assertEquals(2, synced.last.channelListingCount)
+        assertTrue(library.syncStatus.value.channelsAt!!.isAfter(landed))
+    }
+
+    @Test fun `a later Sync reads the Channels again`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        library.sync(contentLanguages = english)
+        val asked = channelRequests.size
+
+        library.sync(contentLanguages = english)
+
+        assertEquals(asked + 2, channelRequests.size)
     }
 
     @Test fun `a Sync cancelled during the full read leaves the Head start in its status, and the next one doesn't read it again`() = runBlocking {
