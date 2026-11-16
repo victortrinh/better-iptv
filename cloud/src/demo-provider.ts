@@ -3,9 +3,10 @@ import liveListings from "../demo-provider/live_streams.json";
 import showCategories from "../demo-provider/series_categories.json";
 import bbsTheDocumentary from "../demo-provider/series_info_2001.json";
 import caminandes from "../demo-provider/series_info_2002.json";
-import lesVampires from "../demo-provider/series_info_2003.json";
 import showListings from "../demo-provider/series_streams.json";
+import streamAddresses from "../demo-provider/stream_addresses.json";
 import movieCategories from "../demo-provider/vod_categories.json";
+import movieDetails from "../demo-provider/vod_info.json";
 import movieListings from "../demo-provider/vod_streams.json";
 
 /**
@@ -18,7 +19,12 @@ import movieListings from "../demo-provider/vod_streams.json";
  * in the README). Listings are named with Prefixes and Categories the Base table understands and carry Title
  * numbers, so Match groups them as it does a household's Provider's.
  *
- * Nothing plays yet: no stream address is served (#575), and a movie has no details.
+ * It serves no video. A stream address (`/movie/…`, `/series/…`, `/live/…`, as the Core builds them) answers
+ * with a redirect to where the file or channel is hosted and may be linked from: `demo-provider/stream_addresses.json`
+ * names each one's host, the page stating its licence, and the credit it asks for.
+ *
+ * What a device on the Demo Provider reports of it is not kept ([isDemoProviderKey]), so demo data teaches the
+ * Prefix table nothing.
  */
 
 /**
@@ -30,7 +36,19 @@ export const DEMO_PROVIDER_LOGIN = { username: "demo", password: "zugig-demo" };
 /** The path an Xtream Provider's API answers at. */
 export const DEMO_PROVIDER_PATH = "/player_api.php";
 
-const SHOW_DETAILS: Record<string, unknown> = { 2001: bbsTheDocumentary, 2002: caminandes, 2003: lesVampires };
+const SHOW_DETAILS: Record<string, unknown> = { 2001: bbsTheDocumentary, 2002: caminandes };
+
+/** What the Demo Provider says of each film, by Title number: one film's Listings share it. */
+const MOVIE_DETAILS: Record<string, Record<string, unknown>> = movieDetails;
+
+/** What a Provider answers for a movie it has no details for. */
+const NO_DETAILS = { info: [], movie_data: {} };
+
+/** The kinds of stream address, as the first segment of the path the Core asks. */
+const STREAM_KINDS = new Set(["movie", "series", "live"]);
+
+/** Where each stream is hosted, by `<kind>/<id>`. */
+const STREAMS = new Map(streamAddresses.map((address) => [`${address.kind}/${address.id}`, address.url]));
 
 /** What a Provider answers for a Show it has no Episodes for. */
 const NO_EPISODES = { seasons: [], info: [], episodes: [] };
@@ -52,7 +70,7 @@ export function demoProvider(request: Request): Response {
     case "get_vod_streams":
       return answer(filedUnder(movieListings, category));
     case "get_vod_info":
-      return answer({ info: [], movie_data: {} });
+      return answer(detailsOf(query.get("vod_id")));
     case "get_series_categories":
       return answer(showCategories);
     case "get_series":
@@ -98,6 +116,48 @@ function account(request: Request) {
       time_now: now.toISOString().slice(0, 19).replace("T", " "),
     },
   };
+}
+
+/** The `get_vod_info` answer for movie Listing [id]: the film's details, and the Listing as `movie_data`. */
+function detailsOf(id: string | null) {
+  const listing = movieListings.find((movie) => String(movie.stream_id) === id);
+  const info = listing && MOVIE_DETAILS[listing.tmdb];
+  if (!listing || !info) return NO_DETAILS;
+  const { stream_id, name, added, category_id, category_ids, container_extension, custom_sid, direct_source } = listing;
+  return { info: { ...info, tmdb_id: listing.tmdb }, movie_data: { stream_id, name, added, category_id, category_ids, container_extension, custom_sid, direct_source } };
+}
+
+/** Whether [pathname] is a stream address: `/<movie|series|live>/…`. */
+export const isDemoStreamPath = (pathname: string): boolean => STREAM_KINDS.has(pathname.split("/")[1]);
+
+/**
+ * Answers a stream address, `/<kind>/<username>/<password>/<id>.<container>`, with a redirect to where the
+ * file or channel is hosted: the Demo Provider serves no video. A Channel is HLS only (`.m3u8`), its
+ * broadcaster's own playlist; asked for as MPEG-TS it isn't found, and the Core goes on to HLS.
+ */
+export function demoStream(request: Request): Response {
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  const [kind, username, password, file, ...rest] = new URL(request.url).pathname.split("/").slice(1).map(decodeURIComponent);
+  if (username !== DEMO_PROVIDER_LOGIN.username || password !== DEMO_PROVIDER_LOGIN.password) return new Response(null, { status: 403 });
+  const [, id, container] = /^(\d+)\.(\w+)$/.exec(rest.length === 0 ? (file ?? "") : "") ?? [];
+  const location = kind === "live" && container !== "m3u8" ? undefined : STREAMS.get(`${kind}/${id}`);
+  if (location === undefined) return new Response(null, { status: 404 });
+  return new Response(null, { status: 302, headers: { Location: location, "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } });
+}
+
+/**
+ * Whether [provider] (the SHA-256 of a Provider's host, as a device reports it) is the Demo Provider's: its
+ * host is the Cloud's own, the one [request] came to, or the app's domain when that is set ([siteUrl]).
+ * What a device reports of the Demo Provider isn't a household's Provider's catalog or files, so none of it is kept.
+ */
+export async function isDemoProviderKey(request: Request, siteUrl: string | undefined, provider: string): Promise<boolean> {
+  const hosts = [new URL(request.url).hostname];
+  if (siteUrl) hosts.push(new URL(siteUrl).hostname);
+  for (const host of hosts) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(host.toLowerCase()));
+    if ([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("") === provider) return true;
+  }
+  return false;
 }
 
 /** The Listings filed under [category], or all of them without one. */

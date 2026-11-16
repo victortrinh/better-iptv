@@ -19,7 +19,10 @@
         "episode_num": 1,
         "title": "EN - Caminandes (2013) - S01E01 - Llama Drama",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 90,
+          "duration": "00:01:30"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -30,7 +33,10 @@
         "episode_num": 2,
         "title": "EN - Caminandes (2013) - S01E02 - Gran Dillama",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 146,
+          "duration": "00:02:26"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -41,7 +47,10 @@
         "episode_num": 3,
         "title": "EN - Caminandes (2013) - S01E03 - Llamigos",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 150,
+          "duration": "00:02:30"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,

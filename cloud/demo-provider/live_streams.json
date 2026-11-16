@@ -16,23 +16,5 @@
     "tv_archive": 0,
     "direct_source": "",
     "tv_archive_duration": 0
-  },
-  {
-    "num": 2,
-    "name": "US: NASA ISS LIVE HD",
-    "stream_type": "live",
-    "stream_id": 3002,
-    "stream_icon": "",
-    "epg_channel_id": "",
-    "added": "1763164800",
-    "is_adult": 0,
-    "category_id": "1",
-    "category_ids": [
-      1
-    ],
-    "custom_sid": null,
-    "tv_archive": 0,
-    "direct_source": "",
-    "tv_archive_duration": 0
   }
 ]
