@@ -255,12 +255,10 @@ private fun BoxScope.Root(app: BetterIptvApp) {
                     openedGame = null
                 }
                 GameScreen(
-                    game.entry,
+                    app.library, game.entry, contentLanguages, settings.region,
                     deviceProfile = { readDeviceProfile(context) },
                     planFor = { channel, device -> app.library.channelPlayPlan(channel, contentLanguages, device, settings.qualityCap) },
-                    onPlay = { plan, name, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(game.entry, feed), channel = feed.channel) },
-                    replayFor = { app.library.gameReplay(it) },
-                    replayPlanFor = { app.library.replayPlayPlan(it, contentLanguages) },
+                    onPlay = { plan, name, entry, feed -> playing = NowPlaying(plan, name, game = PlayingFeed(entry, feed), channel = feed.channel) },
                     onPlayReplay = { plan, name -> playing = NowPlaying(plan, name) },
                 )
             } else if (country != null) {

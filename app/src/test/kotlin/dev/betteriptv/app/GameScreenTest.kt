@@ -31,6 +31,8 @@ import dev.betteriptv.core.FeedKind
 import dev.betteriptv.core.FeedName
 import dev.betteriptv.core.Game
 import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.GamePageContent
+import dev.betteriptv.core.GameReplay
 import dev.betteriptv.core.GameEvent
 import dev.betteriptv.core.GameFight
 import dev.betteriptv.core.GameFighter
@@ -96,7 +98,7 @@ class GameScreenTest {
     }
 
     private fun open(entry: GameFeeds, onPlay: (PlayPlan, String, Feed) -> Unit = { _, _, _ -> }) =
-        compose.setContent { GameScreen(entry, deviceProfile = { stick }, planFor = ::planFor, onPlay = onPlay) }
+        compose.setContent { GameScreen(GamePageContent(entry), deviceProfile = { stick }, planFor = ::planFor, onPlay = onPlay) }
 
     @Test fun playTakesFirstFocusNamesTheBestFeedAndPlaysItsVariantsBestFirst() {
         var played: Triple<PlayPlan, String, Feed>? = null
@@ -177,7 +179,7 @@ class GameScreenTest {
         val plan = PlayPlan(TitleId.Unmatched(TitleKind.Movie, 77), version, listOf("en"), listOf(version))
         var played: Pair<PlayPlan, String>? = null
         compose.setContent {
-            GameScreen(GameFeeds(over, emptyList()), deviceProfile = { stick }, planFor = ::planFor, onPlay = { _, _, _ -> }, replayFor = { replay }, replayPlanFor = { plan }, onPlayReplay = { p, n -> played = p to n })
+            GameScreen(GamePageContent(GameFeeds(over, emptyList()), GameReplay(replay, plan)), deviceProfile = { stick }, planFor = ::planFor, onPlay = { _, _, _ -> }, onPlayReplay = { p, n -> played = p to n })
         }
 
         compose.waitUntil { compose.onAllNodesWithTag("replay").fetchSemanticsNodes().isNotEmpty() }
