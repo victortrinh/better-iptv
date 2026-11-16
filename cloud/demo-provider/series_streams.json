@@ -1,0 +1,71 @@
+[
+  {
+    "num": 1,
+    "name": "EN - BBS: The Documentary (2005)",
+    "series_id": 2001,
+    "cover": "",
+    "plot": "The story of the dial-up bulletin board system, told in eight parts by the people who ran and used them.",
+    "cast": "",
+    "director": "Jason Scott",
+    "genre": "Documentary",
+    "releaseDate": "2005",
+    "release_date": "2005",
+    "last_modified": "1763164800",
+    "rating": "",
+    "rating_5based": 0,
+    "backdrop_path": [],
+    "youtube_trailer": "",
+    "tmdb": "84836",
+    "episode_run_time": "0",
+    "category_id": "1",
+    "category_ids": [
+      1
+    ]
+  },
+  {
+    "num": 2,
+    "name": "EN - Caminandes (2013)",
+    "series_id": 2002,
+    "cover": "",
+    "plot": "Koro the llama meets one obstacle after another in Patagonia. Three shorts from Blender Studio.",
+    "cast": "",
+    "director": "Pablo Vazquez",
+    "genre": "Animation / Comedy / Family",
+    "releaseDate": "2013",
+    "release_date": "2013",
+    "last_modified": "1763161200",
+    "rating": "",
+    "rating_5based": 0,
+    "backdrop_path": [],
+    "youtube_trailer": "",
+    "tmdb": "",
+    "episode_run_time": "0",
+    "category_id": "2",
+    "category_ids": [
+      2
+    ]
+  },
+  {
+    "num": 3,
+    "name": "FR - Les Vampires (1915)",
+    "series_id": 2003,
+    "cover": "",
+    "plot": "Un journaliste poursuit les Vampires, une bande de criminels qui terrorise Paris. Sérial en dix épisodes.",
+    "cast": "Musidora, Édouard Mathé, Marcel Lévesque",
+    "director": "Louis Feuillade",
+    "genre": "Crime / Mystery",
+    "releaseDate": "1915-11-13",
+    "release_date": "1915-11-13",
+    "last_modified": "1763157600",
+    "rating": "",
+    "rating_5based": 0,
+    "backdrop_path": [],
+    "youtube_trailer": "",
+    "tmdb": "",
+    "episode_run_time": "0",
+    "category_id": "3",
+    "category_ids": [
+      3
+    ]
+  }
+]

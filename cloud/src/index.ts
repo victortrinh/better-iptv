@@ -2,6 +2,7 @@ import {
   accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink, useResetPinLink,
   type DeleteOutcome, type LinkOutcome, type ResetPinOutcome, type SendOutcome,
 } from "./accounts";
+import { DEMO_PROVIDER_PATH, demoProvider } from "./demo-provider";
 import { deviceOf, readRegistration, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
@@ -100,6 +101,9 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * email), `POST /delete-account` (emails a delete link), `GET /delete-account/link?token=…` (a button)
  * and `POST /delete-account/link` (the button: deletes the Account). "Reset the Household PIN" (#440), the
  * same four under `/reset-pin`: the button clears the Account's PIN on every TV. See src/accounts.ts.
+ *
+ * And the Demo Provider, for store reviewers, screenshots and tests: `GET /player_api.php`, the Xtream API a
+ * Provider answers, with its own login and no device token. See src/demo-provider.ts.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -110,6 +114,7 @@ export default {
       const { token, created } = await register(env.DB, request, registration);
       return json({ token }, created ? 201 : 200);
     }
+    if (pathname === DEMO_PROVIDER_PATH) return demoProvider(request);
     if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
     if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);
     if (pathname === "/delete-account" || pathname === "/delete-account/link") return deletePages(request, env, pathname);

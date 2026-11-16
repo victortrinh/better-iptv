@@ -1,0 +1,17 @@
+[
+  {
+    "category_id": "1",
+    "category_name": "EN - DOCUMENTARY",
+    "parent_id": 0
+  },
+  {
+    "category_id": "2",
+    "category_name": "EN - KIDS",
+    "parent_id": 0
+  },
+  {
+    "category_id": "3",
+    "category_name": "FR - SÉRIES CLASSIQUES",
+    "parent_id": 0
+  }
+]
