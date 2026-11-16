@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -92,6 +93,17 @@ class HeadStartTest {
                 sync.await()
             }
         }
+    }
+
+    @Test fun `Search finds a Head start's Titles and the Channels while the rest is read, then the whole catalog`() = runBlocking {
+        movieCategories("EN - COMEDY", "EN - NEW RELEASE")
+
+        duringTheFullRead {
+            assertEquals(listOf("Movie 1"), library.search("movie", english, "en").last().movies.map { it.name })
+            assertEquals(listOf("CBC"), library.search("cbc", english, "en").last().channels.map { it.name })
+        }
+
+        assertEquals(setOf("Movie 0", "Movie 1"), library.search("movie", english, "en").last().movies.map { it.name }.toSet())
     }
 
     @Test fun `Background reading waits for the full catalog, and reads once it has landed`() = runBlocking {

@@ -1002,8 +1002,9 @@ class Library private constructor(
     /**
      * Has the stored index ready to search. A Sync lands it with its catalog, so there is nothing to
      * do but on a database kept from before the index, whose catalog is indexed here, once, the Viewer
-     * waiting as they did at each launch before; and after a catalog that waited has landed, when the
-     * movie details kept meanwhile are read into it. Neither waits on a Sync that holds the writer.
+     * waiting as they did at each launch before (and for a Sync that holds the writer meanwhile, which
+     * lands an index of its own); and after a catalog that waited has landed, when the movie details
+     * kept meanwhile are read into it, which never waits on a Sync.
      */
     private fun storedSearchIndex() {
         if (!store.search.ready) synchronized(searchLock) { if (!store.search.ready) store.search.rebuild(SearchSources(prefixTable)) }

@@ -169,8 +169,10 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
      */
     fun rebuild(sources: SearchSources): Boolean {
         val token = java.lang.Long.toHexString(System.nanoTime())
-        synchronized(writer) {
+        val landed = synchronized(writer) {
             transaction {
+                // A Sync that held the writer until now may have landed its own.
+                if (meta(TITLES) == VERSION && meta(CHANNELS) == VERSION) return@transaction true
                 (CATALOG_TABLES + CHANNEL_TABLES).forEach { (name, shape) ->
                     writer.execSQL("DROP TABLE IF EXISTS $name")
                     writer.execSQL(shape.format(name))
@@ -178,8 +180,10 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
                 deleteMeta(TITLES)
                 deleteMeta(CHANNELS)
                 writeMeta(REBUILDING, token)
+                false
             }
         }
+        if (landed) return true
         var index: CatalogWriter? = null
         /** One write of the build, unless a Sync landed since it started. */
         fun write(step: () -> Unit): Boolean = synchronized(writer) {
