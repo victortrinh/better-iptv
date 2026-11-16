@@ -39,6 +39,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -399,6 +400,9 @@ internal fun RowsLayout(
     FocusTabOnArrival(focusTab || backOnTabs, tab)
     // The row focus is in, while it is in the rows (not up on the tabs): the one row a reading mustn't change.
     var inRows by remember { mutableStateOf(false) }
+    // Whether the Viewer pressed a key on this screen, or came back to a card they opened: until then
+    // focus is where the screen put it (its first card, as the Channels land), not where they chose.
+    var touched by rememberSaveable { mutableStateOf(restoreFocus != null) }
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
     // What the rows showing were read for: until they are those of [reading], the screen is behind it
     // and tells its tabs so ([LocalRowsBehind]), for the Catalog pill.
@@ -425,8 +429,14 @@ internal fun RowsLayout(
         val late = chosen != null && !chosen.isCompleted
         state.held = null
         if (chosen != null) state.featured = if (late) null else chosen.await()
-        // It shows from the top, unless the Viewer is on a row: rows never move under focus, and Up finds it.
-        if (arrivingLate && state.featured != null && !inRows) state.list.requestScrollToItem(0)
+        // It shows from the top, unless the Viewer is on a row they chose: rows never move under focus,
+        // and Up finds it. A Viewer who pressed nothing is on the card the screen gave first focus,
+        // and gets the hero as an entry would: from the top, focus on its Play (#605).
+        val byChoice = inRows && touched
+        if (arrivingLate && state.featured != null && !byChoice) {
+            state.list.requestScrollToItem(0)
+            if (inRows) pending = RowCard(HERO_ROW, HERO_PLAY)
+        }
         // Rows arriving where there were none (a Head start's, on a tab bare till then) show from the
         // top: the list would else keep what it held, [trailing], in place under them, out of sight.
         if (before?.isEmpty() == true && fresh.isNotEmpty()) state.list.requestScrollToItem(0)
@@ -515,7 +525,12 @@ internal fun RowsLayout(
     val heroDetails = remember { FocusRequester() }
     // The tabs stay on screen above the rows, which pass under them. The margins are content
     // padding, so a focused card grows into them instead of being clipped.
-    Column(Modifier.fillMaxSize().background(Colors.ground)) {
+    Column(
+        Modifier.fillMaxSize().background(Colors.ground).onPreviewKeyEvent {
+            touched = true
+            false
+        },
+    ) {
         // Focus the Viewer put on the tabs stays there: no card or Play waiting for first focus takes it.
         Box(
             Modifier.onFocusChanged {
