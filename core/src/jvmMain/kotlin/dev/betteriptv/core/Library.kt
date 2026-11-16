@@ -2488,8 +2488,10 @@ class Library private constructor(
      * Rows with no Titles are left out. Like Home, the Trending feed kept on the device stands while
      * the cloud can't answer; the genre rows need no cloud. While a first Sync's Head start is all the
      * catalog holds (ADR 0019), New is the tab's one row, as on Home.
+     *
+     * An app asks for the tab as a screen ([TitlesTab], [screen]) and is handed these.
      */
-    suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
+    internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
         tabRows(kind, contentLanguages, appLanguage, Clock.System.now())
 
     internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
