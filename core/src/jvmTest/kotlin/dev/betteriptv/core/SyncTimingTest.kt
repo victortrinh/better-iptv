@@ -38,7 +38,7 @@ class SyncTimingTest {
 
         val timing = timings.single()
         assertEquals(listOf("Channels", "Head start", "Movies", "Shows", "Saving"), timing.steps.map { it.name })
-        assertEquals(timing.steps.last().time, timing.saving.fold(java.time.Duration.ZERO) { sum, part -> sum + part.time })
+        assertEquals(timing.steps.last().time, timing.saving.fold(kotlin.time.Duration.ZERO) { sum, part -> sum + part.time })
     }
 
     @Test fun `a first Sync reports a time for every Step and every part of Saving, with the Listing counts`() = runBlocking {
@@ -66,7 +66,7 @@ class SyncTimingTest {
         library.sync()
 
         val timing = timings.single()
-        assertEquals(timing.steps.last().time, timing.saving.fold(java.time.Duration.ZERO) { sum, part -> sum + part.time })
+        assertEquals(timing.steps.last().time, timing.saving.fold(kotlin.time.Duration.ZERO) { sum, part -> sum + part.time })
     }
 
     @Test fun `a later Sync reports the Channel swap too, and a held one stops at its pending Sync`() = runBlocking {

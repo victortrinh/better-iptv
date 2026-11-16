@@ -15,10 +15,13 @@ import dev.betteriptv.core.GameState
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Replay
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaInstant
+import kotlinx.datetime.toJavaLocalDate
 
 /** A League's name in the App language: the acronym the Region knows it by, or its name where it has none. */
 @Composable
@@ -68,11 +71,11 @@ fun Context.leagueName(key: String): String = League.byKey(key)?.let { leagueNam
  * ("7:00 PM"), the weekday before it for a later one ("Tue 7:00 PM"). A Game whose day alone is
  * known ([Game.dayOnly]: a golf round before its tee times) says "Today" or its weekday. Never a score.
  */
-fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
+fun Context.gameCaption(game: Game, now: Instant = Clock.System.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     if (game.state == GameState.Live) return getString(R.string.game_live)
     if (game.dayOnly) {
-        val day = game.start.atZone(zone)
-        if (day.toLocalDate() == now.atZone(zone).toLocalDate()) return getString(R.string.row_today)
+        val day = game.start.toJavaInstant().atZone(zone)
+        if (day.toLocalDate() == now.toJavaInstant().atZone(zone).toLocalDate()) return getString(R.string.row_today)
         return day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(resources.configuration.locales[0], "EEE"), resources.configuration.locales[0]))
     }
     return startCaption(game.start, now, zone)
@@ -84,10 +87,10 @@ fun Context.gameCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId =
  * Event channel on More live events, where the start is read from the Provider's name in the
  * Provider's zone, so it is what the name said, moved to the device's zone.
  */
-fun Context.startCaption(start: Instant, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
+fun Context.startCaption(start: Instant, now: Instant = Clock.System.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     val locale = resources.configuration.locales[0]
-    val at = start.atZone(zone)
-    val sameDay = at.toLocalDate() == now.atZone(zone).toLocalDate()
+    val at = start.toJavaInstant().atZone(zone)
+    val sameDay = at.toLocalDate() == now.toJavaInstant().atZone(zone).toLocalDate()
     val time = if (DateFormat.is24HourFormat(this)) "Hm" else "hm"
     val pattern = DateFormat.getBestDateTimePattern(locale, if (sameDay) time else "EEE$time")
     return at.format(DateTimeFormatter.ofPattern(pattern, locale))
@@ -121,9 +124,9 @@ fun Context.gameLeague(game: Game): String = game.fight?.shortName ?: leagueName
  * 9:00 PM", in the device's [zone] and clock, the weekday before it when it isn't today), or null
  * for any other Game, a card that is over, or one whose main card is its start.
  */
-fun Context.mainCardCaption(game: Game, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String? {
+fun Context.mainCardCaption(game: Game, now: Instant = Clock.System.now(), zone: ZoneId = ZoneId.systemDefault()): String? {
     val mainCard = game.fight?.mainCard ?: return null
-    if (game.state == GameState.Over || !mainCard.isAfter(game.start)) return null
+    if (game.state == GameState.Over || mainCard <= game.start) return null
     return getString(R.string.game_main_card, startCaption(mainCard, now, zone))
 }
 
@@ -174,7 +177,7 @@ fun Context.replayInfo(entry: LeagueReplay): CardInfo.Game =
 /** The date in [replay]'s name, in the App language: the day and month, the year too when [long] or not [today]'s, or the year alone; null without one. */
 fun Context.replayDate(replay: Replay, long: Boolean, today: LocalDate = LocalDate.now()): String? {
     val locale = resources.configuration.locales[0]
-    val date = replay.date ?: return replay.year?.toString()
+    val date = replay.date?.toJavaLocalDate() ?: return replay.year?.toString()
     val skeleton = when {
         long -> "yMMMMd"
         date.year == today.year -> "MMMd"

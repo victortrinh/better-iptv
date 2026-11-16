@@ -87,7 +87,7 @@ android {
     }
 
     compileOptions {
-        // java.time (used by the core) needs API 26; desugaring brings it to Fire OS 6.
+        // java.time (which kotlinx-datetime, used by the core, runs on here) needs API 26; desugaring brings it to Fire OS 6.
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -132,6 +132,8 @@ baselineProfile {
 
 kotlin {
     compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
+    // The Core's timestamps are kotlin.time's Instant, still marked experimental in Kotlin 2.2 (#578).
+    compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
 }
 
 dependencies {

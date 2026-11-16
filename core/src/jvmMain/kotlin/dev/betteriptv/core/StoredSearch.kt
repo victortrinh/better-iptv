@@ -1,6 +1,6 @@
 package dev.betteriptv.core
 
-import java.time.Instant
+import kotlin.time.Instant
 
 /**
  * Search over the index a Sync stores ([SearchIndexStore]): what [Library.search] answers from. The
@@ -61,7 +61,7 @@ internal class StoredSearch(private val store: CatalogStore, private val limits:
 
         // Genres: the closest names first, then those with the most Titles.
         val genreSizes = HashMap<Long, Int>()
-        index.genreCounts().forEach { genreSizes.merge(it.genre, it.titles, Int::plus) }
+        index.genreCounts().forEach { genreSizes[it.genre] = (genreSizes[it.genre] ?: 0) + it.titles }
         val genreNames = index.genreNames(found.genres.keys)
         val shownGenres = found.genres.keys
             .map { genre -> genre to genreTitles(genre, unwanted, inScope) }
@@ -112,7 +112,7 @@ internal class StoredSearch(private val store: CatalogStore, private val limits:
         val sets = index.languageSets()
         val counts = LinkedHashMap<String, Int>()
         (if (kids == null) index.genreCounts() else index.genresOf(kids.titles)).forEach {
-            if (sets[it.languages].orEmpty().any(wanted::contains)) counts.merge(it.name, it.titles, Int::plus)
+            if (sets[it.languages].orEmpty().any(wanted::contains)) counts[it.name] = (counts[it.name] ?: 0) + it.titles
         }
         return counts.map { (genre, titles) -> Genres.named(genre, appLanguage) to titles }
             .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })

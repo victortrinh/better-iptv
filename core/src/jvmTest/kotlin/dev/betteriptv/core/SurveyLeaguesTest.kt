@@ -7,9 +7,11 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * Syncs a real survey snapshot (scripts/survey.py writes it to the git-ignored .survey/raw) and
@@ -42,8 +44,8 @@ class SurveyLeaguesTest {
         library.logIn(provider.login)
         println("Sync: ${library.sync()}")
 
-        val now = Instant.now()
-        val events = CatalogStore(database).eventChannels(1, now - Duration.ofDays(1), now + Duration.ofDays(9)).map { it.first.variants.first().name }
+        val now = Clock.System.now()
+        val events = CatalogStore(database).eventChannels(1, now - 1.days, now + 9.days).map { it.first.variants.first().name }
         val words = events.map(SearchIndex::words)
         fun holding(phrases: Collection<String>) = events.indices.filterTo(HashSet()) { i -> phrases.any { containsPhrase(words[i], SearchIndex.words(it)) } }
         println("Event channels in the window: ${events.size}")
@@ -63,7 +65,7 @@ class SurveyLeaguesTest {
         val cloud = System.getProperty("surveyCloud") ?: return@runBlocking
         library.close()
         openSurveyedLibrary(database, credentials, cloud).use { withCloud ->
-            withCloud.liveRows(League.entries, "CA", listOf("en"), now, ZoneId.of("America/Toronto"))
+            withCloud.liveRows(League.entries, "CA", listOf("en"), now, TimeZone.of("America/Toronto"))
                 .flatMap { row ->
                     when (row) {
                         is HomeRow.LiveNow -> row.games

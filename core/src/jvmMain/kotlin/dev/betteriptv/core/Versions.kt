@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import java.util.Locale
 
 /**
  * One Listing with what the Prefix table says about it: a Version before it's ranked and grouped.
@@ -31,9 +30,6 @@ internal val BEST_FIRST: Comparator<Candidate> =
         .thenBy { it.attributes.source == null }
         .thenByDescending { it.listing.added }
         .thenBy { it.listing.id }
-
-/** `fr-CA` is French: a Content language matches every regional variant of it. */
-internal fun primaryLanguage(tag: String): String = tag.substringBefore('-').lowercase(Locale.ROOT)
 
 private val Candidate.primaryLanguage get() = attributes.language?.value?.let(::primaryLanguage)
 

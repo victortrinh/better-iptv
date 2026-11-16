@@ -22,9 +22,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Clock
-import java.time.Duration
-import java.time.Year
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.concurrent.thread
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -42,7 +43,7 @@ class HeadStartTest {
     private val english = listOf("en")
     private val bilingual = listOf("en", "fr")
     private val tv = DeviceProfile(maxHeight = 2160, hdr = emptySet())
-    private val thisYear = Year.now().value
+    private val thisYear = thisYear()
     private val freshFilm = TitleId.Numbered(TitleKind.Movie, 2)
 
     @Before fun logIn() = runBlocking {
@@ -110,7 +111,7 @@ class HeadStartTest {
         movieCategories("EN - COMEDY", "EN - NEW RELEASE")
         provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")), width = 3840, height = 2160)
         val reading = CoroutineScope(Dispatchers.Default).launch {
-            library.readInBackground(english, BackgroundPace(gap = 20.milliseconds, perDay = 100), Clock.systemDefaultZone(), offlinePause = Duration.ofMinutes(15))
+            library.readInBackground(english, BackgroundPace(gap = 20.milliseconds, perDay = 100), Clock.System, offlinePause = 15.minutes)
         }
         try {
             duringTheFullRead {
@@ -575,7 +576,9 @@ class HeadStartTest {
         val asked = provider.requests.size
         val landed = library.syncStatus.value.channelsAt!!
         provider.serveChannels("CA: CBC HD" to "CA | NEWS", "CA: CTV HD" to "CA | NEWS")
-        library.syncClock = Clock.offset(Clock.systemUTC(), Duration.ofHours(25))
+        library.syncClock = object : Clock {
+            override fun now() = Clock.System.now() + 25.hours
+        }
 
         val synced = library.sync(contentLanguages = english) as SyncStatus.Synced
 
@@ -584,7 +587,7 @@ class HeadStartTest {
         // The Head start is kept all the same.
         assertEquals(emptyList<String>(), requests.filter { "category " in it })
         assertEquals(2, synced.last.channelListingCount)
-        assertTrue(library.syncStatus.value.channelsAt!!.isAfter(landed))
+        assertTrue(library.syncStatus.value.channelsAt!! > landed)
     }
 
     @Test fun `a later Sync reads the Channels again`() = runBlocking {

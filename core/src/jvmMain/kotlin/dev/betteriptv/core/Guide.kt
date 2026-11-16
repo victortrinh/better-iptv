@@ -1,7 +1,7 @@
 package dev.betteriptv.core
 
 import java.io.IOException
-import java.time.Instant
+import kotlin.time.Instant
 
 /**
  * One programme in the Provider's guide for a Channel: its [title] (decoded from the base64 the
@@ -27,8 +27,8 @@ data class NowNext(val now: Programme?, val next: Programme?) {
 internal class GuideEntry(val programmes: List<Programme>, val until: Instant) {
     /** The programme on at [now] and the one after it, among [programmes]. */
     fun at(now: Instant): NowNext {
-        val on = programmes.firstOrNull { !it.start.isAfter(now) && it.end.isAfter(now) }
-        val next = programmes.firstOrNull { it.start.isAfter(now) }
+        val on = programmes.firstOrNull { it.start <= now && it.end > now }
+        val next = programmes.firstOrNull { it.start > now }
         return NowNext(on, next)
     }
 }

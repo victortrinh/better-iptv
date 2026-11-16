@@ -1,0 +1,222 @@
+[
+  {
+    "kind": "movie",
+    "id": 1001,
+    "title": "Big Buck Bunny (2008), HD",
+    "url": "https://archive.org/download/BigBuckBunnyFULLHD60FPS/Big%20Buck%20Bunny%20-%20FULL%20HD%2060FPS.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BigBuckBunnyFULLHD60FPS",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1002,
+    "title": "Big Buck Bunny (2008), 4K",
+    "url": "https://archive.org/download/youtube-aqz-KE-bpKQ/aqz-KE-bpKQ.mkv",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/youtube-aqz-KE-bpKQ",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1003,
+    "title": "Sintel (2010)",
+    "url": "https://archive.org/download/Sintel/sintel-2048-stereo.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/Sintel",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "© copyright Blender Foundation | durian.blender.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1005,
+    "title": "Tears of Steel (2012)",
+    "url": "https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mov",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/Tears-of-Steel",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "(CC) Blender Foundation | mango.blender.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1007,
+    "title": "Elephants Dream (2006)",
+    "url": "https://archive.org/download/ElephantsDream/ed_1024.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/ElephantsDream",
+    "licence": "CC BY 2.5",
+    "licenceUrl": "https://creativecommons.org/licenses/by/2.5/",
+    "credit": "(c) copyright 2006, Blender Foundation / Netherlands Media Art Institute / www.elephantsdream.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1008,
+    "title": "Cosmos Laundromat (2015)",
+    "url": "https://archive.org/download/CosmosLaundromatFirstCycle/Cosmos%20Laundromat%20-%20First%20Cycle%20%281080p%29.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/CosmosLaundromatFirstCycle",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "credit": "(CC) Blender Foundation | gooseberry.blender.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1009,
+    "title": "Spring (2019)",
+    "url": "https://archive.org/download/springopenmovie/springopenmovie.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/springopenmovie",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "credit": "© Blender Foundation | cloud.blender.org/spring"
+  },
+  {
+    "kind": "movie",
+    "id": 1010,
+    "title": "Hero (2018)",
+    "url": "https://archive.org/download/hero_20260106/hero.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/hero_20260106",
+    "licence": "CC BY 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "credit": "© Blender Foundation, studio.blender.org"
+  },
+  {
+    "kind": "series",
+    "id": 10001,
+    "title": "BBS: The Documentary (2005), Episode 1: Baud",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep1_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10002,
+    "title": "BBS: The Documentary (2005), Episode 2: Sysops and Users",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep2_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10003,
+    "title": "BBS: The Documentary (2005), Episode 3: Make It Pay",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep3_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10004,
+    "title": "BBS: The Documentary (2005), Episode 4: FidoNet",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep4_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10005,
+    "title": "BBS: The Documentary (2005), Episode 5: Artscene",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep5_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10006,
+    "title": "BBS: The Documentary (2005), Episode 6: HPAC",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep6_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10007,
+    "title": "BBS: The Documentary (2005), Episode 7: Compression",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep7_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 10008,
+    "title": "BBS: The Documentary (2005), Episode 8: No Carrier",
+    "url": "https://archive.org/download/BBS.The.Documentary/BBS.The.Documentary.ep8_512kb.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/BBS.The.Documentary",
+    "licence": "CC BY-SA 3.0 US",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/us/",
+    "credit": "Jason Scott, bbsdocumentary.com"
+  },
+  {
+    "kind": "series",
+    "id": 20001,
+    "title": "Caminandes, Episode 1: Llama Drama",
+    "url": "https://archive.org/download/Caminandes1LlamaDrama/01_llama_drama_1080p.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/Caminandes1LlamaDrama",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "© Blender Foundation, caminandes.com"
+  },
+  {
+    "kind": "series",
+    "id": 20002,
+    "title": "Caminandes, Episode 2: Gran Dillama",
+    "url": "https://archive.org/download/Caminandes2GranDillama/02_gran_dillama_1080p.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/Caminandes2GranDillama",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "© Blender Foundation, caminandes.com"
+  },
+  {
+    "kind": "series",
+    "id": 20003,
+    "title": "Caminandes, Episode 3: Llamigos",
+    "url": "https://archive.org/download/CaminandesLlamigos/Caminandes_%20Llamigos-1080p.mp4",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/CaminandesLlamigos",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "© Blender Foundation, caminandes.com"
+  },
+  {
+    "kind": "live",
+    "id": 3001,
+    "title": "NASA TV (the NASA+ live channel)",
+    "url": "https://ee119c17e6ed643893ff6ae377fe0693.7wzuvg.channel-assembly.mediatailor.us-east-1.amazonaws.com/v1/channel/NASAPrime/NASAPlus.m3u8",
+    "host": "NASA (NASA+'s live address, on AWS MediaTailor)",
+    "page": "https://plus.nasa.gov/wp-json/nasaplus/v1/live-streams",
+    "licence": "US government work, public domain",
+    "licenceUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+    "credit": "NASA"
+  }
+]

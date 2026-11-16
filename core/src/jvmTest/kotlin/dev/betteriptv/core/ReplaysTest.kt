@@ -11,9 +11,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 
 /**
  * Sports replays (#258), seen through the Library after a Sync of a fake Provider's replay Listings:
@@ -29,7 +29,7 @@ class ReplaysTest {
 
     /** A Sunday, 4 PM in Toronto. */
     private val now = Instant.parse("2026-11-01T20:00:00Z")
-    private val toronto = ZoneId.of("America/Toronto")
+    private val toronto = TimeZone.of("America/Toronto")
 
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)

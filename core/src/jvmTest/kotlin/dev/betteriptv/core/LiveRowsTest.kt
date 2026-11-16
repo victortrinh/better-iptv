@@ -8,9 +8,13 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaInstant
+import kotlinx.datetime.toJavaZoneId
 
 /** The Live tab's rows, seen through the Library after a Sync: the Favourites row and the Channels row, until the sports hub's rows join them. */
 class LiveRowsTest {
@@ -41,7 +45,7 @@ class LiveRowsTest {
     private fun List<HomeRow>.favourites() = filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Clock.System.now() - ago).toJavaInstant().atZone(surveyedPrefixTable().eventTimeZone.toJavaZoneId()))
 
     @Test fun `without Favourites the Live tab has only the Channels row`() = runBlocking {
         provider.serveChannels("US: ESPN HD" to "US| SPORT")
@@ -83,7 +87,7 @@ class LiveRowsTest {
     }
 
     @Test fun `a finished Event channel among the Favourites is left out`() = runBlocking {
-        val over = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(30))})"
+        val over = "Arena: Jets vs Oilers (${startedAgo(30.hours)})"
         provider.serveChannels(over to "US| ARENA PPV", "CA: TSN 1" to "CA| SPORT")
         library.sync()
         library.setFavourite(channel("CA: TSN 1").key, true)

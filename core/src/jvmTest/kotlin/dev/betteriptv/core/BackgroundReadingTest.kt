@@ -17,11 +17,11 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 import kotlin.time.Duration.Companion.milliseconds
 
 /** Background reading: Header reads of the Versions the Viewer is about to see, slowly, while nothing plays. */
@@ -69,7 +69,7 @@ class BackgroundReadingTest {
     /** Starts Background reading at a test pace: a few milliseconds between reads, [perDay] a day. */
     private fun startReading(perDay: Int = 100, on: Library = library) {
         reading = CoroutineScope(Dispatchers.Default).launch {
-            on.readInBackground(english, BackgroundPace(gap = 20.milliseconds, perDay = perDay), clock, offlinePause = Duration.ofMinutes(15))
+            on.readInBackground(english, BackgroundPace(gap = 20.milliseconds, perDay = perDay), clock, offlinePause = 15.minutes, zone = TimeZone.UTC)
         }
     }
 
@@ -189,7 +189,7 @@ class BackgroundReadingTest {
         assertEquals(tried, provider.streamRequests)
 
         provider.unansweredFiles = false
-        clock.now += Duration.ofMinutes(16)
+        clock.now += 16.minutes
         awaitReads(3)
         assertEquals(listOf(1L, 2L, 3L), read())
     }
@@ -297,10 +297,8 @@ class BackgroundReadingTest {
         assertEquals(listOf(2L), read())
     }
 
-    /** A clock the test moves by hand, in UTC. */
-    private class TestClock(@Volatile var now: Instant) : Clock() {
-        override fun instant(): Instant = now
-        override fun getZone(): ZoneId = ZoneOffset.UTC
-        override fun withZone(zone: ZoneId): Clock = this
+    /** A clock the test moves by hand; its days are told in UTC. */
+    private class TestClock(@Volatile var now: Instant) : Clock {
+        override fun now(): Instant = now
     }
 }

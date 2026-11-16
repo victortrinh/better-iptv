@@ -15,10 +15,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Clock
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 
@@ -126,7 +125,7 @@ class SyncProgressTest {
         watching.cancel()
 
         assertNotNull(saving)
-        assertTrue(finished.last.duration.toNanos() >= saving!! - before)
+        assertTrue(finished.last.duration.inWholeNanoseconds >= saving!! - before)
     }
 
     @Test fun `a held Sync keeps the catalog on screen until it is applied`() = runBlocking {

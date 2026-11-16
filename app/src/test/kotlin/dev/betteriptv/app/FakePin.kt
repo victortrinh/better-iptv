@@ -3,8 +3,8 @@ package dev.betteriptv.app
 import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.PinCheck
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Instant
 
 /**
  * A Household PIN kept in memory, as the device keeps one (core's `HouseholdPinTest`): five wrong
@@ -22,7 +22,7 @@ class FakePin(var pin: String? = null) : HouseholdPin {
     }
 
     override suspend fun check(pin: String): PinCheck {
-        if (locked != null) return PinCheck.Locked(Instant.EPOCH)
+        if (locked != null) return PinCheck.Locked(Instant.fromEpochSeconds(0))
         if (pin == this.pin) {
             failures = 0
             return PinCheck.Right
@@ -31,7 +31,7 @@ class FakePin(var pin: String? = null) : HouseholdPin {
         if (failures < HouseholdPin.TRIES) return PinCheck.Wrong(HouseholdPin.TRIES - failures)
         failures = 0
         locked = HouseholdPin.LOCK
-        return PinCheck.Locked(Instant.EPOCH)
+        return PinCheck.Locked(Instant.fromEpochSeconds(0))
     }
 
     override fun lockedFor(): Duration? = locked

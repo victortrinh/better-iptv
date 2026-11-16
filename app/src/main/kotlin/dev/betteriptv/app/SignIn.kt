@@ -50,7 +50,8 @@ import dev.betteriptv.core.Library
 import dev.betteriptv.core.SignInCode
 import kotlinx.coroutines.delay
 import java.net.URI
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /** What the Sign-in screen shows (#429). */
 sealed interface SignInState {
@@ -78,14 +79,14 @@ internal suspend fun runSignIn(start: suspend () -> SignInCode?, check: suspend 
         val code = start()
         if (code == null) {
             show(SignInState.Unavailable)
-            delay(RETRY.toMillis())
+            delay(RETRY.inWholeMilliseconds)
             continue
         }
         show(SignInState.Showing(code))
         val renewAt = code.expiresIn - RENEW_EARLY
         var waited = Duration.ZERO
         while (waited < renewAt) {
-            delay(POLL.toMillis())
+            delay(POLL.inWholeMilliseconds)
             waited += POLL
             check()?.let { email ->
                 show(SignInState.SignedIn(email))
@@ -96,11 +97,11 @@ internal suspend fun runSignIn(start: suspend () -> SignInCode?, check: suspend 
 }
 
 /** How often the screen asks whether the TV is signed in (the roadmap's 2 s). */
-private val POLL: Duration = Duration.ofSeconds(2)
+private val POLL: Duration = 2.seconds
 /** A code is replaced this long before it expires, so the phone never types one that just did. */
-private val RENEW_EARLY: Duration = Duration.ofSeconds(15)
+private val RENEW_EARLY: Duration = 15.seconds
 /** How long after the cloud couldn't give a code it is asked again. */
-private val RETRY: Duration = Duration.ofSeconds(5)
+private val RETRY: Duration = 5.seconds
 
 /**
  * Settings → Account → Sign in (#429): the code and its QR, polling while it shows; once the phone

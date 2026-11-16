@@ -3,7 +3,8 @@ package dev.betteriptv.core
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.execSQL
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
+import kotlin.random.Random
 
 /**
  * What the search index takes from a Listing, as a Prefix table reads it: the name it is found by and
@@ -169,7 +170,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
      * [evenIfReady]. Returns whether the index is [ready] afterwards.
      */
     fun rebuild(sources: SearchSources, evenIfReady: Boolean = false): Boolean {
-        val token = java.lang.Long.toHexString(System.nanoTime())
+        val token = Random.nextLong().toString(16)
         val landed = synchronized(writer) {
             transaction {
                 // A Sync that held the writer until now may have landed its own.
@@ -441,7 +442,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
                     }
                 }
                 pair(insertGenreTitle, row, genre)
-                genreCounts.merge(countKey(genre, languages), 1, Long::plus)
+                countKey(genre, languages).let { genreCounts[it] = (genreCounts[it] ?: 0) + 1 }
             }
         }
 
@@ -625,11 +626,11 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
      * it does everything a prefix starts.
      */
     private fun started(table: String, typed: String): List<String>? {
-        val last = typed.codePointBefore(typed.length)
+        val last = typed.length.let { if (it > 1 && typed[it - 1].isLowSurrogate()) codePointAt(typed, it - 2) else typed[it - 1].code }
         val end = after(last) ?: return null
         val words = reader.prepare("SELECT group_concat(word, ' ') FROM (SELECT word FROM ${table}_word WHERE word > ?1 AND word < ?2 LIMIT ${MAX_STARTED + 1})").use {
             it.bindText(1, typed)
-            it.bindText(2, typed.substring(0, typed.length - Character.charCount(last)) + end)
+            it.bindText(2, typed.substring(0, typed.length - charCount(last)) + end)
             it.step()
             if (it.isNull(0)) emptyList() else it.getText(0).split(' ')
         }
@@ -643,7 +644,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
     private fun typos(table: String, typed: String): List<Pair<String, Int>> {
         // Shorter words tolerate none ([SearchIndex.distance]).
         if (typed.length < TYPO_LETTERS) return emptyList()
-        val words = words(table, typed.codePointAt(0))
+        val words = words(table, codePointAt(typed, 0))
         val found = ArrayList<Pair<String, Int>>()
         var from = 0
         while (from < words.length) {
@@ -667,7 +668,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
         return letterWords.getOrPut("$table ${first.toString(16)}") {
             val end = after(first)
             reader.prepare("SELECT group_concat(word, ' ') FROM ${table}_word WHERE word >= ?1 AND (?2 IS NULL OR word < ?2)").use {
-                it.bindText(1, String(Character.toChars(first)))
+                it.bindText(1, codePointString(first)!!)
                 if (end == null) it.bindNull(2) else it.bindText(2, end)
                 it.step()
                 if (it.isNull(0)) "" else it.getText(0)
@@ -677,8 +678,9 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
 
     /** The letter after [letter] as text sorts, or null after the last one. */
     private fun after(letter: Int): String? {
-        val next = if (letter + 1 in Character.MIN_SURROGATE.code..Character.MAX_SURROGATE.code) Character.MAX_SURROGATE.code + 1 else letter + 1
-        return if (next > Character.MAX_CODE_POINT) null else String(Character.toChars(next))
+        // A surrogate is no letter on its own.
+        val next = if (letter + 1 in 0xD800..0xDFFF) 0xE000 else letter + 1
+        return codePointString(next)
     }
 
     /** The language sets Titles have, by id: the primary languages of a Title's Versions. */
@@ -819,8 +821,8 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             reader.prepare("SELECT position, id, date, year FROM replay WHERE position IN (${chunk.joinToString(",") { "?" }})").use {
                 chunk.forEachIndexed { i, position -> it.bindLong(i + 1, position) }
                 while (it.step()) {
-                    val day = if (!it.isNull(2)) LocalDate.parse(it.getText(2)) else if (!it.isNull(3)) LocalDate.of(it.getLong(3).toInt(), 1, 1) else null
-                    replays[it.getLong(0)] = it.getLong(1) to (day?.toEpochDay()?.toInt() ?: SearchIndex.NO_DAY)
+                    val day = if (!it.isNull(2)) LocalDate.parse(it.getText(2)) else if (!it.isNull(3)) LocalDate(it.getLong(3).toInt(), 1, 1) else null
+                    replays[it.getLong(0)] = it.getLong(1) to (day?.toEpochDays()?.toInt() ?: SearchIndex.NO_DAY)
                 }
             }
         }

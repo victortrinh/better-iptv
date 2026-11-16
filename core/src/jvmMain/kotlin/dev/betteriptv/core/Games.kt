@@ -3,7 +3,7 @@ package dev.betteriptv.core
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.Moshi
 import okio.Buffer
-import java.time.Instant
+import kotlin.time.Instant
 
 /** Where a Game stands: not started, in progress, or finished. Never how far along, and never a score. */
 enum class GameState { Upcoming, Live, Over }

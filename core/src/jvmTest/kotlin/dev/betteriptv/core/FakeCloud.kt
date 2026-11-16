@@ -154,7 +154,7 @@ class FakeCloud : Closeable {
     /** The model each device token sent with its live Sign-in code, and with its sign-in once it signed in. */
     private val models = HashMap<String, String>()
     /** When each signed-in device token signed in. */
-    private val signedInAt = HashMap<String, java.time.Instant>()
+    private val signedInAt = HashMap<String, kotlin.time.Instant>()
 
     /**
      * What the phone does on the sign-in page (cloud/src/page.ts): types [code] and [email], then taps
@@ -163,7 +163,7 @@ class FakeCloud : Closeable {
     fun phoneSignsIn(code: String, email: String): Boolean = synchronized(tokens) {
         val token = signInCodes.remove(code) ?: return false
         accounts[token] = email
-        signedInAt[token] = java.time.Instant.now()
+        signedInAt[token] = kotlin.time.Clock.System.now()
         true
     }
 

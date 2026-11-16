@@ -1,14 +1,14 @@
 package dev.betteriptv.core
 
-import java.text.Normalizer
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.temporal.ChronoUnit
-import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.TimeZone
 
 /**
  * A Channel: a live broadcast as one thing, however many Listings the Provider has for it (CONTEXT.md).
@@ -99,7 +99,7 @@ enum class CategoryKind {
  */
 internal fun normalisedCategoryName(name: String): String {
     val rest = name.replace(COUNTRY_CODE, "")
-    fun plain(text: String) = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC)).replace(SPACES, " ").trim()
+    fun plain(text: String) = withoutSmallCapitals(compatibilityComposed(text)).replace(SPACES, " ").trim()
     return plain(rest.replace(SUPERSCRIPT_TAGS, " ")).ifEmpty { plain(rest) }.ifEmpty { name.trim() }
 }
 
@@ -144,7 +144,7 @@ internal fun isEventChannel(name: String, start: Instant?): Boolean = start != n
 internal fun isMarkedOn(name: String): Boolean = MARKED_ON.containsMatchIn(name)
 
 /** An Event channel counts as finished this long after the start its name gives: long enough for a match, a race or a fight card. */
-internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)
+internal val EVENT_FINISHED_AFTER: Duration = 6.hours
 
 /**
  * When the Game an Event channel carries starts, from its [name], or null for a Channel that names
@@ -156,7 +156,7 @@ internal val EVENT_FINISHED_AFTER: Duration = Duration.ofHours(6)
  * zone. A name marked `Live |` or `Next |` is on now or still to come whatever its date says, so it
  * gets none.
  */
-internal fun eventStart(name: String, now: Instant, zone: ZoneId): Instant? {
+internal fun eventStart(name: String, now: Instant, zone: TimeZone): Instant? {
     if (MARKED_ON.containsMatchIn(name)) return null
     fun at(match: MatchResult, year: Int?, month: Int, day: Int, hour: Int, minute: Int, half: String? = null): Instant? {
         val hour24 = when {
@@ -167,11 +167,11 @@ internal fun eventStart(name: String, now: Instant, zone: ZoneId): Instant? {
         }
         if (month !in 1..12 || day !in 1..31 || hour24 !in 0..23 || minute !in 0..59) return null
         val statedZone = statedZone(name, match) ?: zone
-        val today = now.atZone(statedZone).toLocalDate()
-        val date = if (year != null) runCatching { LocalDate.of(year, month, day) }.getOrNull()
-        else (today.year - 1..today.year + 1).mapNotNull { runCatching { LocalDate.of(it, month, day) }.getOrNull() }
-            .minByOrNull { kotlin.math.abs(ChronoUnit.DAYS.between(today, it)) }
-        return date?.let { LocalDateTime.of(it, java.time.LocalTime.of(hour24, minute)).atZone(statedZone).toInstant() }
+        val today = now.toLocalDateTime(statedZone).date
+        val date = if (year != null) runCatching { LocalDate(year, month, day) }.getOrNull()
+        else (today.year - 1..today.year + 1).mapNotNull { runCatching { LocalDate(it, month, day) }.getOrNull() }
+            .minByOrNull { kotlin.math.abs(today.daysUntil(it)) }
+        return date?.let { LocalDateTime(it.year, it.month, it.day, hour24, minute).toInstant(statedZone) }
     }
     YEAR_FIRST.find(name)?.let { match -> match.destructured.let { (y, m, d, h, min) -> return at(match, y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) } }
     DAY_FIRST.find(name)?.let { match -> match.destructured.let { (d, m, y, h, min) -> return at(match, y.toInt(), m.toInt(), d.toInt(), h.toInt(), min.toInt()) } }
@@ -194,15 +194,15 @@ internal fun eventStart(name: String, now: Instant, zone: ZoneId): Instant? {
  * (GMT)`, `12:30 EEST (FI)`), or right before the date, a weekday allowed between (`UK Sun 9 Feb
  * 3:00pm`). Nowhere else: a country tag at the start (`UK: …`) is the Channel's, not the time's.
  */
-private fun statedZone(name: String, match: MatchResult): ZoneId? {
+private fun statedZone(name: String, match: MatchResult): TimeZone? {
     val after = name.substring(match.range.last + 1).split("|", "//").first()
     val before = name.substring(0, match.range.first)
     val word = ZONE_WORDS.find(after)?.groupValues?.get(1) ?: ZONE_BEFORE.find(before)?.groupValues?.get(1)
-    return word?.let { ZONES[it.uppercase(Locale.ROOT)] }
+    return word?.let { ZONES[it.uppercase()] }
 }
 
 /** Whether an Event that started at [start] is finished at [now]. */
-internal fun finished(start: Instant?, now: Instant): Boolean = start != null && start.plus(EVENT_FINISHED_AFTER).isBefore(now)
+internal fun finished(start: Instant?, now: Instant): Boolean = start != null && start + EVENT_FINISHED_AFTER < now
 
 private fun month(name: String) = MONTHS.indexOf(name.take(3).lowercase()) + 1
 
@@ -230,14 +230,14 @@ private val ZONE_WORDS = Regex("""(?<![A-Za-z])$ZONE_WORD(?![A-Za-z])""")
 /** A zone word right before the date, a weekday allowed between: `UK Sun 9 Feb`, `ET Sun 9 Feb`. */
 private val ZONE_BEFORE = Regex("""(?<![A-Za-z])$ZONE_WORD\s+(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\.?\s+)?$""", RegexOption.IGNORE_CASE)
 /** Each zone word's zone: a region's, so its summer time is applied by the date. */
-private val ZONES: Map<String, ZoneId> = mapOf(
-    "GMT" to ZoneOffset.UTC, "UTC" to ZoneOffset.UTC,
-    "UK" to ZoneId.of("Europe/London"), "BST" to ZoneId.of("Europe/London"), "WET" to ZoneId.of("Europe/Lisbon"), "WEST" to ZoneId.of("Europe/Lisbon"),
-    "CET" to ZoneId.of("Europe/Paris"), "CEST" to ZoneId.of("Europe/Paris"), "EET" to ZoneId.of("Europe/Helsinki"), "EEST" to ZoneId.of("Europe/Helsinki"),
-    "ET" to ZoneId.of("America/New_York"), "EST" to ZoneId.of("America/New_York"), "EDT" to ZoneId.of("America/New_York"),
-    "CT" to ZoneId.of("America/Chicago"), "CST" to ZoneId.of("America/Chicago"), "CDT" to ZoneId.of("America/Chicago"),
-    "MT" to ZoneId.of("America/Denver"), "MST" to ZoneId.of("America/Denver"), "MDT" to ZoneId.of("America/Denver"),
-    "PT" to ZoneId.of("America/Los_Angeles"), "PST" to ZoneId.of("America/Los_Angeles"), "PDT" to ZoneId.of("America/Los_Angeles"),
+private val ZONES: Map<String, TimeZone> = mapOf(
+    "GMT" to TimeZone.UTC, "UTC" to TimeZone.UTC,
+    "UK" to TimeZone.of("Europe/London"), "BST" to TimeZone.of("Europe/London"), "WET" to TimeZone.of("Europe/Lisbon"), "WEST" to TimeZone.of("Europe/Lisbon"),
+    "CET" to TimeZone.of("Europe/Paris"), "CEST" to TimeZone.of("Europe/Paris"), "EET" to TimeZone.of("Europe/Helsinki"), "EEST" to TimeZone.of("Europe/Helsinki"),
+    "ET" to TimeZone.of("America/New_York"), "EST" to TimeZone.of("America/New_York"), "EDT" to TimeZone.of("America/New_York"),
+    "CT" to TimeZone.of("America/Chicago"), "CST" to TimeZone.of("America/Chicago"), "CDT" to TimeZone.of("America/Chicago"),
+    "MT" to TimeZone.of("America/Denver"), "MST" to TimeZone.of("America/Denver"), "MDT" to TimeZone.of("America/Denver"),
+    "PT" to TimeZone.of("America/Los_Angeles"), "PST" to TimeZone.of("America/Los_Angeles"), "PDT" to TimeZone.of("America/Los_Angeles"),
 )
 
 /**
@@ -274,14 +274,14 @@ internal class BrowserCountry(val code: String, val alias: String?, val language
  * Channels found through Search.
  */
 internal fun browserCountry(country: String, alias: (String) -> String?): BrowserCountry? {
-    val code = country.replace(SPACES, " ").trim().uppercase(Locale.ROOT)
+    val code = country.replace(SPACES, " ").trim().uppercase()
     alias(code)?.let { return BrowserCountry(code, it, null) }
     val iso = code.take(2).let { if (it == "UK") "GB" else it }
     if (iso !in ISO_COUNTRIES) return null
     return BrowserCountry(iso, null, code.substringAfter(' ', "").ifEmpty { null })
 }
 
-private val ISO_COUNTRIES = Locale.getISOCountries().toSet()
+private val ISO_COUNTRIES = isoCountries()
 
 /**
  * The browser's [countries] in order: the Viewer's [region] first, then the countries of their

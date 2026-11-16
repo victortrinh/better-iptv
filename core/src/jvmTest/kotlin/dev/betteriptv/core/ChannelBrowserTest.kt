@@ -7,9 +7,13 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaInstant
+import kotlinx.datetime.toJavaZoneId
 
 /**
  * The Channel browser through the Library after a Sync (#259): the countries the Channels row
@@ -33,7 +37,7 @@ class ChannelBrowserTest {
     }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Clock.System.now() - ago).toJavaInstant().atZone(surveyedPrefixTable().eventTimeZone.toJavaZoneId()))
 
     /** A country's Categories as "name · count". */
     private suspend fun categories(country: String) = library.browsedCategories(country).map { "${it.name} · ${it.channels}" }
@@ -200,7 +204,7 @@ class ChannelBrowserTest {
     }
 
     @Test fun `Event Categories and Clutter Categories are absent from a country's Categories`() = runBlocking {
-        val onNow = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(1))})"
+        val onNow = "Arena: Jets vs Oilers (${startedAgo(1.hours)})"
         provider.serveChannels(
             "US: ESPN" to "US| SPORTS",
             // Clutter by its name.
@@ -238,7 +242,7 @@ class ChannelBrowserTest {
     }
 
     @Test fun `a Category's Channels know whether they are Favourites, and a finished Event channel is left out`() = runBlocking {
-        val over = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(30))})"
+        val over = "Arena: Jets vs Oilers (${startedAgo(30.hours)})"
         provider.serveChannels(
             "UK: BBC ONE" to "UK| GENERAL",
             "UK: BBC TWO" to "UK| GENERAL",
