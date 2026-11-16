@@ -2420,6 +2420,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         Unit
     }
 
+    override fun registeredAs(): String? = meta(DEVICE_REGISTERED_AS)
+
+    override fun saveRegisteredAs(registration: String) = synchronized(writer) {
+        writer.prepare("INSERT OR REPLACE INTO meta VALUES (?, ?)").use {
+            it.bindText(1, DEVICE_REGISTERED_AS)
+            it.bindText(2, registration)
+            it.step()
+        }
+        Unit
+    }
+
     /**
      * The Provider table kept for the Provider whose key is [providerKey] (#431): what the cloud last
      * answered for it, as of the catalog on screen. Null when none was kept, or it was another Provider's.
@@ -2667,6 +2678,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         const val PROVIDER_TABLE = "provider_table"
         /** The token the cloud gave this device. Lost with the catalog's shape changes, the device just registers again. */
         const val DEVICE_TOKEN = "cloud_device_token"
+        /** The platform and app version this device last registered with, as sent (#570). */
+        const val DEVICE_REGISTERED_AS = "cloud_device_registered_as"
         const val ACCOUNT_EMAIL = "account_email"
         const val SIGN_IN_CARD = "sign_in_card"
         const val PROFILE_CHIP_PULSE = "profile_chip_pulse"

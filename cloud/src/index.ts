@@ -2,7 +2,7 @@ import {
   accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink, useResetPinLink,
   type DeleteOutcome, type LinkOutcome, type ResetPinOutcome, type SendOutcome,
 } from "./accounts";
-import { deviceOf, register } from "./devices";
+import { deviceOf, readRegistration, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
 import { fillGames, games, SUBREQUESTS } from "./games";
@@ -22,7 +22,9 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * The cloud's HTTP API (test seam 2). It serves data that is the same for every Viewer, and signs TVs in to Accounts by email (ADR 0015);
  * Provider logins, stream URLs and Provider requests never come here (ADR 0001).
  *
- * - `POST /v1/devices`: registers a device, `201 {"token": "…"}`.
+ * - `POST /v1/devices` `{"platform": "fire-os", "appVersion": "0.1.812"}`: registers a device, `201 {"token": "…"}`.
+ *   The platform is one of src/devices.ts's; a device that names none is taken as Android. Sent with the token the
+ *   device already has, it updates both and answers `200` with that token (#570).
  * - `POST /v1/file-reads/lookup`, with `{"provider": "<SHA-256 of the Provider's host>", "listings":
  *   [123]}`: `{"files": [{"listingId": 123, "file": {…}}]}`, what Viewers of that Provider read of
  *   those movie Listings' files. Listings nobody read are left out.
@@ -103,7 +105,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (request.method === "POST" && pathname === "/v1/devices") {
-      return json({ token: await register(env.DB) }, 201);
+      const registration = readRegistration(await request.json().catch(() => null));
+      if (typeof registration === "string") return problem(400, registration);
+      const { token, created } = await register(env.DB, request, registration);
+      return json({ token }, created ? 201 : 200);
     }
     if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
     if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);

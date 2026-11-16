@@ -3452,9 +3452,15 @@ class Library private constructor(
         /**
          * Opens the catalog at [databasePath], creating it if needed. What the cloud adds (Title facts,
          * Trending, Games, the Account) comes from [cloudAddress]; without one, the Provider's catalog stands alone.
+         * The app says what it runs on in [device], which the cloud keeps with the device's registration.
          */
-        fun open(databasePath: String, credentials: CredentialStore, cloudAddress: String? = null, http: OkHttpClient = defaultHttp()): Library =
-            open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, http)
+        fun open(
+            databasePath: String,
+            credentials: CredentialStore,
+            cloudAddress: String? = null,
+            http: OkHttpClient = defaultHttp(),
+            device: CloudDevice? = null,
+        ): Library = open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, http, device)
 
         /** [open], with each Provider's Provider table, by Provider key, from [providerTables] instead of the ones shipped with the app. */
         internal fun open(
@@ -3463,9 +3469,10 @@ class Library private constructor(
             cloudAddress: String?,
             providerTables: (providerKey: String) -> String?,
             http: OkHttpClient = defaultHttp(),
+            device: CloudDevice? = null,
         ): Library {
             val store = CatalogStore(databasePath)
-            return Library(store, credentials, http, providerTables, cloudAddress?.let { CloudClient(it, http, store) })
+            return Library(store, credentials, http, providerTables, cloudAddress?.let { CloudClient(it, http, store, device) })
         }
 
         private fun defaultHttp() = OkHttpClient.Builder()

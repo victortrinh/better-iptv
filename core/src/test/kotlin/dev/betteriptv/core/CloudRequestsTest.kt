@@ -76,6 +76,80 @@ class CloudRequestsTest {
         assertEquals(listOf("/v1/title-facts", "/v1/devices", "/v1/title-facts"), cloud.received.take(3).map { it.path })
     }
 
+    /** A Library on its own catalog, as the app on [device] opens it. */
+    private fun openLibraryOn(device: CloudDevice?) =
+        Library.open(folder.root.resolve("device.db").path, InMemoryCredentials(), cloud.url, device = device).also { libraries += it }
+
+    private val registrations get() = cloud.received.filter { it.path == "/v1/devices" }
+
+    @Test fun `a device registers with its platform and app version`() = runBlocking {
+        openLibraryOn(CloudDevice(DevicePlatform.FireOs, "0.1.812")).startSignIn()
+
+        assertEquals(listOf("""{"platform":"fire-os","appVersion":"0.1.812"}"""), registrations.map { it.body })
+        // The fixture's device, opened as a build from before #570, said neither and is taken as Android.
+        assertEquals(listOf("android" to null, "fire-os" to "0.1.812"), cloud.devices)
+    }
+
+    @Test fun `every platform is sent by the name the cloud knows it by`() {
+        assertEquals(
+            listOf("fire-os", "google-tv", "android", "ios", "macos", "windows", "linux", "tizen"),
+            DevicePlatform.entries.map { it.cloudName },
+        )
+    }
+
+    @Test fun `an updated app registers again with its token, once, and keeps the token`() = runBlocking {
+        openLibraryOn(CloudDevice(DevicePlatform.GoogleTv, "0.1.812")).apply { startSignIn() }.close()
+        val token = cloud.received.last().headers["Authorization"]
+        cloud.received.clear()
+
+        // The same version asks nothing new of the cloud.
+        openLibraryOn(CloudDevice(DevicePlatform.GoogleTv, "0.1.812")).apply { startSignIn() }.close()
+        assertEquals(emptyList<String>(), registrations.map { it.body })
+
+        val updated = openLibraryOn(CloudDevice(DevicePlatform.GoogleTv, "0.1.830"))
+        updated.startSignIn()
+        updated.startSignIn()
+        assertEquals(listOf("""{"platform":"google-tv","appVersion":"0.1.830"}"""), registrations.map { it.body })
+        assertEquals(token, registrations.single().headers["Authorization"])
+        assertTrue(cloud.received.all { it.headers["Authorization"] == token })
+        assertEquals(listOf("google-tv" to "0.1.830"), cloud.devices.drop(1))
+    }
+
+    @Test fun `a device registered by a build that sent neither says both after the update`() = runBlocking {
+        openLibraryOn(null).apply { startSignIn() }.close()
+        assertEquals(listOf(""), registrations.map { it.body })
+        cloud.received.clear()
+
+        openLibraryOn(CloudDevice(DevicePlatform.Android, "0.1.830")).startSignIn()
+        assertEquals(listOf("""{"platform":"android","appVersion":"0.1.830"}"""), registrations.map { it.body })
+    }
+
+    @Test fun `a cloud that refuses the new registration doesn't stop the device, which tries again at the next launch`() = runBlocking {
+        openLibraryOn(CloudDevice(DevicePlatform.Android, "0.1.812")).apply { startSignIn() }.close()
+        cloud.received.clear()
+        cloud.refusesRegistrations = true
+
+        val updated = openLibraryOn(CloudDevice(DevicePlatform.Android, "0.1.830"))
+        assertTrue(updated.startSignIn() != null)
+        updated.close()
+        assertEquals(1, registrations.size)
+
+        cloud.refusesRegistrations = false
+        openLibraryOn(CloudDevice(DevicePlatform.Android, "0.1.830")).startSignIn()
+        assertEquals(2, registrations.size)
+    }
+
+    @Test fun `a device the cloud forgot registers anew with its platform and app version`() = runBlocking {
+        val library = openLibraryOn(CloudDevice(DevicePlatform.FireOs, "0.1.812"))
+        library.startSignIn()
+        cloud.forgetDevices()
+        cloud.received.clear()
+
+        library.startSignIn()
+        assertEquals(listOf("/v1/sign-in", "/v1/devices", "/v1/sign-in"), cloud.received.map { it.path })
+        assertEquals("""{"platform":"fire-os","appVersion":"0.1.812"}""", registrations.single().body)
+    }
+
     @Test fun `the cloud never sees the Provider login or address`() = runBlocking {
         library.titles(0, 1000, french, "fr")
         library.title(godfather, french, "fr")
