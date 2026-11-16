@@ -276,6 +276,105 @@ class HeadStartTest {
         assertEquals(early.id, resumed.title.id)
     }
 
+    @Test fun `a Favourite made during the Head start is kept once the full catalog lands`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        val cbc = surveyedPrefixTable().channelName("CA: CBC HD").key
+
+        lateinit var saving: Thread
+        duringTheFullRead {
+            // Kept once the Sync lets go of the catalog's writer, as while any Sync runs.
+            saving = thread { runBlocking { library.setFavourite(cbc, true) } }
+        }
+        saving.join()
+
+        assertEquals(listOf(cbc), library.favourites().map { it.key })
+        assertEquals(listOf(cbc), library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().single().channels.map { it.key })
+    }
+
+    @Test fun `with the player open, a first Sync's catalog waits as a Pending catalog and lands once the player closes`() = runBlocking {
+        provider.serveMovieListings(
+            MovieListing("EN - Fresh Film (2026)", "EN - NEW RELEASE", 2),
+            MovieListing("FR - Fresh Film (2026)", "FR - ACTION", 2),
+            MovieListing("EN - Old Film (1999)", "EN - 2020 & OLD", 1),
+        )
+        val beforeSync = library.catalogChanges.value
+
+        val held = library.sync(hold = true, contentLanguages = english, playerOpen = { true })
+
+        // The Head start still shows, under the player: nothing told the screens to read again.
+        assertTrue(held is SyncStatus.Ready)
+        assertNull(held.last)
+        assertNotNull(held.channelsAt)
+        assertNotNull(held.headStartAt)
+        assertTrue(library.hasPendingCatalog)
+        assertEquals(beforeSync + 2, library.catalogChanges.value)
+        assertEquals(listOf("Fresh Film"), library.titles(0, 10, english, "en").map { it.name })
+        assertEquals(listOf("en"), library.title(freshFilm, bilingual, "en")!!.languages.map { it.language })
+        // What the player records meanwhile is kept, the Sync no longer holding the catalog's writer.
+        library.saveProgress(freshFilm, 60_000, 6_000_000)
+
+        assertTrue(library.applyPendingCatalog())
+
+        val synced = library.syncStatus.value as SyncStatus.Synced
+        assertNull(synced.headStartAt)
+        assertEquals(3, synced.last.movieListingCount)
+        assertFalse(library.hasPendingCatalog)
+        assertEquals(beforeSync + 3, library.catalogChanges.value)
+        assertEquals(setOf("Fresh Film", "Old Film"), library.titles(0, 10, english, "en").map { it.name }.toSet())
+        assertEquals(listOf("en", "fr"), library.title(freshFilm, bilingual, "en")!!.languages.map { it.language })
+        assertEquals(freshFilm, library.homeRows(english, "en").filterIsInstance<HomeRow.ContinueWatching>().single().titles.single().title.id)
+    }
+
+    @Test fun `with the player closed, a first Sync's catalog lands as soon as it is read`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+
+        val synced = library.sync(hold = true, contentLanguages = english, playerOpen = { false })
+
+        assertTrue(synced is SyncStatus.Synced)
+        assertEquals(2, library.movieListingCount())
+    }
+
+    @Test fun `a Sync started while a first Sync's catalog waits for the player reads the full catalog again, the Head start still showing`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        library.sync(hold = true, contentLanguages = english, playerOpen = { true })
+        val asked = provider.requests.size
+
+        val synced = library.sync(hold = true, contentLanguages = english, playerOpen = { false })
+
+        assertEquals(emptyList<String>(), provider.requests.drop(asked).filter { "category " in it })
+        assertTrue(synced is SyncStatus.Synced)
+        assertEquals(2, library.movieListingCount())
+    }
+
+    @Test fun `an app closed while a first Sync's catalog waits for the player reopens on the full catalog`() = runBlocking {
+        movieCategories("EN - NEW RELEASE", "EN - COMEDY")
+        library.sync(hold = true, contentLanguages = english, playerOpen = { true })
+        library.close()
+
+        library = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
+
+        assertTrue(library.syncStatus.value is SyncStatus.Synced)
+        assertEquals(2, library.movieListingCount())
+    }
+
+    @Test fun `no row comes twice once the full catalog lands, and the New row holds no Title twice`() = runBlocking {
+        provider.serveMovieListings(
+            *(1..30).map { MovieListing("EN - Fresh $it (2026)", "EN - NEW RELEASE", it.toLong()) }.toTypedArray(),
+            *(1..30).map { MovieListing("FR - Fresh $it (2026)", "FR - DERNIERS AJOUTS", it.toLong()) }.toTypedArray(),
+            *(31..60).map { MovieListing("EN - Comedy $it (2024)", "EN - COMEDY", it.toLong()) }.toTypedArray(),
+        )
+
+        val early = duringTheFullRead { library.homeRows(english, "en") }
+        val late = library.homeRows(english, "en")
+
+        val earlyNew = early.filterIsInstance<HomeRow.NewOnYourService>().single().titles.map { it.id }
+        val lateNew = late.filterIsInstance<HomeRow.NewOnYourService>().single().titles.map { it.id }
+        assertEquals(lateNew.distinct(), lateNew)
+        // The Head start's New row was the full catalog's newest already: its cards stay as they are.
+        assertEquals(earlyNew, lateNew)
+        assertEquals(late.map { it::class to (it as? HomeRow.Genre)?.name }.distinct().size, late.size)
+    }
+
     @Test fun `a Provider that refuses per-Category requests gets a normal first Sync`() = runBlocking {
         movieCategories("EN - NEW RELEASE", "EN - COMEDY")
         provider.refuseCategoryRequests = true

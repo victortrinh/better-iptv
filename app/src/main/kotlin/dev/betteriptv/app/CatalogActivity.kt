@@ -47,7 +47,8 @@ internal enum class CatalogActivity { Syncing, AddingTheRest, UpdateReady, UpToD
 internal fun catalogActivity(status: SyncStatus): CatalogActivity? = when {
     status.channelsAt == null -> null
     status is SyncStatus.Running -> if (status.last == null) CatalogActivity.AddingTheRest else CatalogActivity.Syncing
-    status is SyncStatus.Ready -> CatalogActivity.UpdateReady
+    // A first Sync's catalog held under the player lands as it closes: until then the rest is still to come.
+    status is SyncStatus.Ready -> if (status.last == null) CatalogActivity.AddingTheRest else CatalogActivity.UpdateReady
     else -> null
 }
 
