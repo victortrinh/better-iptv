@@ -428,7 +428,18 @@ class Library private constructor(
     }
 
     /** A stop, or the end of a Title: what changed is pushed to the Account in the background. */
-    internal fun stoppedPlaying() = accountSync.pushSoon()
+    internal fun stoppedPlaying() {
+        _progressChanges.update { it + 1 }
+        accountSync.pushSoon()
+    }
+
+    private val _progressChanges = MutableStateFlow(0)
+
+    /**
+     * Bumped when where the Viewer is in a Title changed by their own doing: playback stopped, or
+     * they took it out of Continue watching. A Title's page reads again ([TitlePageScreen]).
+     */
+    internal val progressChanges: StateFlow<Int> = _progressChanges.asStateFlow()
 
     /** Lands [id]'s pulled history before its page or Play reads where the Viewer stopped. */
     private fun landHistory(id: TitleId) {
@@ -934,7 +945,7 @@ class Library private constructor(
      * The languages the catalog has Versions in, as primary language subtags (`fr` for `fr-CA` too),
      * most Listings first: the choices for the Viewer's Content languages. Untagged Listings aren't counted.
      */
-    suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
+    internal suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
         val counts = HashMap<String, Int>()
         store.forEachListing { name, category ->
             prefixTable.describe(name, category).attributes.language?.value?.let { counts.merge(primaryLanguage(it), 1, Int::plus) }
@@ -983,7 +994,7 @@ class Library private constructor(
      * [prepareSearchInBackground]: a search before the first one waits for it, and one during or
      * after a Sync answers from the index built before it until the new one is.
      */
-    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
+    internal fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
         if (!searchInMemory) return@flow emit(searchStored(query, letters, contentLanguages, appLanguage))
         // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
@@ -1755,7 +1766,7 @@ class Library private constructor(
      * The devices signed in to this one's Account (#434), by when they signed in, this one marked;
      * null without a cloud, while it can't be reached, or when this device isn't signed in.
      */
-    suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
+    internal suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
         if (cloud == null || _account.value == null) return@withContext null
         try {
             cloud.accountDevices()
@@ -2073,6 +2084,7 @@ class Library private constructor(
         val at = Clock.System.now()
         store.forgetProgress(profile, id, at)
         accountSync.recordHistory(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
+        _progressChanges.update { it + 1 }
         accountSync.pushSoon()
     }
 
@@ -2083,7 +2095,7 @@ class Library private constructor(
      * a Pending catalog too), Title facts land, the device goes to another Profile or the Account's
      * history lands. An app collects while the screen shows and only redraws.
      */
-    fun <Content : Any> screen(screen: Screen<Content>): Flow<Content> = liveContent(screen)
+    fun <Content : Any> screen(screen: Screen<Content>): Flow<Content> = screen.content(this)
 
     /**
      * Home's rows ([Screen.Home]): Continue watching, then Live now (the Games of the [leagues] on that
@@ -2495,8 +2507,10 @@ class Library private constructor(
      * Rows with no Titles are left out. Like Home, the Trending feed kept on the device stands while
      * the cloud can't answer; the genre rows need no cloud. While a first Sync's Head start is all the
      * catalog holds (ADR 0019), New is the tab's one row, as on Home.
+     *
+     * An app asks for the tab as a screen ([TitlesTab], [screen]) and is handed these.
      */
-    suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
+    internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
         tabRows(kind, contentLanguages, appLanguage, Clock.System.now())
 
     internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {

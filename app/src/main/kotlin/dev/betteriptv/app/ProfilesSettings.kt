@@ -39,9 +39,11 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.AddingProfile
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.ListedProfile
 import dev.betteriptv.core.Profile
-import dev.betteriptv.core.Profiles
+import dev.betteriptv.core.ProfilesContent
 
 /** What Settings' Profiles asks of the household's Profiles (#428). */
 sealed interface ProfileChange {
@@ -56,23 +58,24 @@ sealed interface ProfileChange {
 fun Profile.shownName(): String = name ?: languageName(deviceAppLanguage())
 
 /**
- * The Profiles section, first in Settings: a row per Profile in the order they were made, the one
- * the device is on marked ✓, each opening its page ([onOpen]); then "Add a profile" ([onAdd]),
- * disabled once the household has [Library.MAX_PROFILES], and left out when it [canAdd] none (on a
- * Kids profile). [rows] focuses each Profile's row by id, [addRow] the last row.
+ * The Profiles section, first in Settings, as the Core lists it ([ProfilesContent]): a row per
+ * Profile in the order they were made, the one the device is on marked ✓, each asking [onOpen];
+ * then "Add a profile" ([onAdd]), disabled once the household has [Library.MAX_PROFILES], and left
+ * out where none is added (on a Kids profile). [rows] focuses each Profile's row by id, [addRow]
+ * the last row.
  */
-fun LazyListScope.profilesSection(profiles: Profiles, rows: (Long) -> FocusRequester, addRow: FocusRequester, onOpen: (Profile) -> Unit, onAdd: () -> Unit, canAdd: Boolean = true) {
+fun LazyListScope.profilesSection(list: ProfilesContent, rows: (Long) -> FocusRequester, addRow: FocusRequester, onOpen: (ListedProfile) -> Unit, onAdd: () -> Unit) {
     item { SettingsHeading(R.string.settings_profiles) }
-    items(profiles.all, key = { "profile:${it.id}" }) { profile ->
+    items(list.profiles, key = { "profile:${it.profile.id}" }) { listed ->
         SettingRow(
-            profile.shownName(),
-            if (profile.id == profiles.currentId) CHOSEN else "",
-            onClick = { onOpen(profile) },
-            Modifier.focusRequester(rows(profile.id)).testTag("profile:${profile.id}"),
+            listed.profile.shownName(),
+            if (listed.current) CHOSEN else "",
+            onClick = { onOpen(listed) },
+            Modifier.focusRequester(rows(listed.profile.id)).testTag("profile:${listed.profile.id}"),
         )
     }
-    if (canAdd) item(key = "profile:add") {
-        val full = profiles.all.size >= Library.MAX_PROFILES
+    if (list.adding != AddingProfile.NotOffered) item(key = "profile:add") {
+        val full = list.adding == AddingProfile.Full
         SettingRow(
             stringResource(R.string.profile_add),
             "",

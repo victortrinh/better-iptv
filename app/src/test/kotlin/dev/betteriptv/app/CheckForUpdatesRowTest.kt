@@ -28,6 +28,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /** Settings' App version row checks for a newer build when none is on offer, and says how the check went. */
 @RunWith(RobolectricTestRunner::class)
@@ -63,7 +65,7 @@ class CheckForUpdatesRowTest {
             profiles = Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID),
             onProfile = {},
             pin = FakePin(),
-            catalogLanguages = { listOf("en") },
+            contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
             catalog = {},
             checkingUpdates = checking,
             onCheckUpdates = { checks++ },

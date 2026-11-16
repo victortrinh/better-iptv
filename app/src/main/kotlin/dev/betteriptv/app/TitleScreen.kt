@@ -58,10 +58,14 @@ import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Episode
 import dev.betteriptv.core.EpisodeNumber
+import dev.betteriptv.core.EpisodeStart
+import dev.betteriptv.core.NothingToPlay
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.QualityCap
-import dev.betteriptv.core.TitleDetails
-import dev.betteriptv.core.ShowEpisodes
+import dev.betteriptv.core.TitleAction
+import dev.betteriptv.core.TitlePageContent
+import dev.betteriptv.core.TitlePageScreen
+import dev.betteriptv.core.TitleVersions
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.Version
@@ -76,6 +80,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import dev.betteriptv.app.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -106,8 +111,12 @@ import kotlinx.coroutines.withContext
  * A Show's Play plays the Episode to watch next, naming it ("Continue S1 E6", or "Play S1 E1" when
  * not started), and the header names that Episode; with nothing to play, focus goes to the Episodes action.
  *
- * The page arrives whole ([TitlePage]): it gathers the details, the plan and a Show's Episodes before
- * its content fades in.
+ * The page arrives whole ([TitlePage]): its content fades in once it has the details, the plan and a
+ * Show's Episodes.
+ *
+ * What is on the page and behind its actions is the Core's ([TitlePageScreen]): which actions there
+ * are and what each starts, the Version the badges tell of, the Versions and the Episodes. This
+ * screen asks for it while it shows, words it and draws it.
  */
 @Composable
 fun TitleScreen(
@@ -124,45 +133,28 @@ fun TitleScreen(
     onSection: (TitleSection) -> Unit = {},
     onCloseSection: () -> Unit = {},
 ) {
-    // Each Header read that Confirms something reloads the details and the plan, in place.
-    var reads by remember(id) { mutableIntStateOf(0) }
-    // Removing it from Continue watching reloads the plan too, which then starts from the beginning.
-    var removals by remember(id) { mutableIntStateOf(0) }
-    // Whether the Header reads still have Versions to read, so the page can say so (#457).
-    var checking by remember(id) { mutableStateOf(false) }
-    // Whether the page's Versions are read as far as they can be, so it names their quality (#546):
-    // known with the details, or once the Header reads end, however they end.
-    var checked by remember(id) { mutableStateOf(false) }
-    var readsEnded by remember(id, contentLanguages, preferOriginalAudio) { mutableStateOf(false) }
-    // The plan comes with the details, so first focus lands once, on Play or on the first Version.
-    val loaded by produceState<Pair<TitleDetails, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, qualityCap, reads, removals) {
-        val details = library.title(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
-        // Set with the details, so a page that arrives checked never shows itself without its badges.
-        if (id.kind != TitleKind.Show) checked = readsEnded || library.versionsChecked(id, contentLanguages, preferOriginalAudio)
-        value = details to library.playPlan(id, contentLanguages, withContext(Dispatchers.Default) { deviceProfile() }, qualityCap, preferOriginalAudio)
+    val readDevice by rememberUpdatedState(deviceProfile)
+    val screen = remember(id, contentLanguages, appLanguage, qualityCap, preferOriginalAudio) {
+        TitlePageScreen(id, contentLanguages, appLanguage, qualityCap, preferOriginalAudio) { readDevice() }
     }
-    // A Show's Play plays the Episode to watch next, so it comes with the Episodes.
-    val show by produceState<Pair<ShowEpisodes, PlayPlan?>?>(null, id, contentLanguages, preferOriginalAudio, appLanguage, qualityCap, reads) {
-        if (id.kind != TitleKind.Show) return@produceState
-        val episodes = library.episodes(id, contentLanguages, appLanguage, preferOriginalAudio) ?: return@produceState
-        val device = withContext(Dispatchers.Default) { deviceProfile() }
-        checked = readsEnded || library.versionsChecked(id, contentLanguages, preferOriginalAudio)
-        value = episodes to episodes.next?.let { library.episodePlayPlan(id, it, contentLanguages, device, qualityCap, preferOriginalAudio) }
-    }
-    // A Show's reads need its show details, so they start once its Episodes are in.
-    val readable = id.kind == TitleKind.Movie || show != null
-    // Only while the app shows: a Show's reads can take minutes, each holding the Viewer's one stream (#503).
+    // The page as the Core hands it, and again each time it changes: a Header read that Confirms
+    // something, playback that stopped, the Title taken out of Continue watching.
+    var content by remember(library, screen) { mutableStateOf<TitlePageContent?>(null) }
+    // Only while the app shows: an open page has its Versions read, and a Show's reads can take
+    // minutes, each holding the Viewer's one stream (#503).
     val onScreen = rememberOnScreen()
-    LaunchedEffect(id, contentLanguages, preferOriginalAudio, readable) {
-        if (!readable) return@LaunchedEffect
-        onScreen.whileTrue { library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking = left > 0 }) { reads++ } }
-        // Refused or not, what they couldn't read stays a guess: the page shows it now.
-        readsEnded = true
-        checked = true
+    LaunchedEffect(library, screen) {
+        onScreen.collectLatest { on ->
+            if (!on) return@collectLatest
+            library.screen(screen).collect { handed ->
+                // Asked again on coming back to the app, the page it has stands while a Show's Episodes are read again.
+                if (!(handed.waitingForEpisodes && content?.waitingForEpisodes == false)) content = handed
+            }
+        }
     }
     val scope = rememberCoroutineScope()
     // What the player shows while it starts: this page's own poster, already in memory.
-    val start = { plan: PlayPlan, name: String -> onPlay(plan, name, StartingArt.Title(loaded?.first?.posters.orEmpty())) }
+    val start = { plan: PlayPlan, name: String -> onPlay(plan, name, StartingArt.Title(content?.title?.posters.orEmpty())) }
     // Play lets the Header read in flight finish and plays what that settles, from where this plan starts (Restart's start included).
     val play = { plan: PlayPlan, name: String ->
         scope.launch {
@@ -173,22 +165,17 @@ fun TitleScreen(
         Unit
     }
     TitlePage(
-        id, loaded, show,
+        id, content,
         onPlay = play,
-        checking = checking,
-        checked = checked,
-        kids = library.kids,
-        contentLanguages = contentLanguages,
         section = section,
         returnedFrom = returnedFrom,
         onSection = onSection,
         onCloseSection = onCloseSection,
-        onRemove = { scope.launch { library.removeFromContinueWatching(id); removals++ } },
+        onRemove = { scope.launch { library.removeFromContinueWatching(id) } },
         onChoose = { version, name ->
             scope.launch {
-                // A Show's Versions are those of the Episode its Play starts (versionsOf), else of its next Episode.
-                val episode = show?.second?.episode ?: show?.first?.next
-                val plan = if (id.kind == TitleKind.Show) episode?.let { library.chosenEpisodePlayPlan(id, it, version.listingId, contentLanguages, preferOriginalAudio) }
+                // A Show's Versions are those of an Episode, which the Versions screen's content names.
+                val plan = if (id.kind == TitleKind.Show) content?.versions?.episode?.let { library.chosenEpisodePlayPlan(id, it, version.listingId, contentLanguages, preferOriginalAudio) }
                 else library.chosenPlayPlan(id, version.listingId, contentLanguages, preferOriginalAudio)
                 plan?.let { start(it, name) }
             }
@@ -203,9 +190,8 @@ fun TitleScreen(
 }
 
 /**
- * [TitleScreen]'s page, with what it reads from the Library stood in: the details and their plan
- * ([loaded]), and on a Show its Episodes and their plan ([show]), each null until read. Screen tests
- * drive it.
+ * [TitleScreen]'s page, drawn from the [content] the Core hands it ([TitlePageContent]), null until
+ * the first is read. Screen tests drive it.
  *
  * It arrives whole (DESIGN.md, Motion): the header and actions wait for the details, the plan and a
  * Show's Episodes, up to [Motion.pageArrivalMillis], then fade in together. Details that take
@@ -216,19 +202,18 @@ fun TitleScreen(
  * With a [section] open, the page gives way to that screen, and coming back ([returnedFrom]) puts
  * focus on the action that opened it.
  *
- * On a Kids profile ([kids]) the page has no Trailer row (YouTube's end screen shows what it likes)
- * and no Versions action: Play picks the Best playable Version, as on any profile.
+ * A Kids profile's page comes with no Trailer and no Versions action: Play picks the Best playable
+ * Version, as on any profile.
  *
- * While the Header reads are [checking] Versions, the page says so under its actions and the Versions
+ * While the Header reads are checking Versions, the page says so under its actions and the Versions
  * screen beside its legend ([CheckingVersions], #457); a Kids page doesn't. Until its Versions are
- * [checked], and while they're [checking], the page names no quality, neither in its badges, the
+ * checked ([TitlePageContent.checked]), the page names no quality, neither in its badges, the
  * Versions value nor the Versions screen's rows, so it never shows a guess the reads then correct (#546).
  */
 @Composable
 internal fun TitlePage(
     id: TitleId,
-    loaded: Pair<TitleDetails, PlayPlan?>?,
-    show: Pair<ShowEpisodes, PlayPlan?>?,
+    content: TitlePageContent?,
     onPlay: (PlayPlan, String) -> Unit,
     section: TitleSection? = null,
     returnedFrom: TitleSection? = null,
@@ -237,21 +222,14 @@ internal fun TitlePage(
     onRemove: () -> Unit = {},
     onChoose: (Version, String) -> Unit = { _, _ -> },
     onEpisode: (Episode, String) -> Unit = { _, _ -> },
-    contentLanguages: List<String> = emptyList(),
-    kids: Boolean = false,
-    checking: Boolean = false,
-    checked: Boolean = true,
 ) {
-    val title = loaded?.first
-    // Never while a Header read is under way, as what it Confirms would change them.
-    val named = checked && !checking
     var waited by remember(id) { mutableStateOf(false) }
     // Details still to come after the page arrival time (a Provider slow to answer) are waited for
     // with the dot, centred, which fades in and then crossfades out as the page fades in, as on the
     // rows screens (DESIGN.md, Motion). A page that arrives within the time shows no dot.
     var waiting by remember(id) { mutableStateOf(false) }
     val waitingFade = remember(id) { Fade(0f) }
-    val hasDetails by rememberUpdatedState(title != null)
+    val hasDetails by rememberUpdatedState(content != null)
     LaunchedEffect(id) {
         delay(Motion.pageArrivalMillis.toLong())
         waited = true
@@ -260,31 +238,28 @@ internal fun TitlePage(
         waitingFade.fadeIn(Motion.screenFadeMillis)
     }
     // Neither the details nor the Episodes go back to unread once read, so once arrived it stays.
-    val arrived = title != null && (id.kind != TitleKind.Show || show != null || waited)
+    val arrived = content != null && (!content.waitingForEpisodes || waited)
     val fade = remember(id) { Animatable(0f) }
     LaunchedEffect(arrived) { if (arrived) fade.animateTo(1f, tween(Motion.screenFadeMillis)) }
     val arriving by remember(id) { derivedStateOf { fade.value < 1f } }
     Box(Modifier.fillMaxSize().background(Colors.ground)) {
         if (waiting && arriving) WaitingDot { waitingFade.value * (1f - fade.value) }
         if (arrived) {
-            val plan = loaded.second ?: show?.second
-            checkNotNull(title)
-            val versions = if (kids) null else versionsOf(title, plan, show?.first, contentLanguages)
+            checkNotNull(content)
+            val title = content.title
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 when (section) {
-                    TitleSection.Versions -> if (versions != null) VersionsContent(versions, title.cast, title.directors, onChoose = { onChoose(it, title.name) }, checking = checking, checked = named)
-                    TitleSection.Trailer -> title.trailer?.takeUnless { kids }?.let { TrailerContent(it, title.name, StartingArt.Title(title.posters), onClose = onCloseSection) }
-                    TitleSection.Episodes -> show?.first?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
+                    TitleSection.Versions -> content.versions?.let { versions ->
+                        VersionsContent(versions.listed(title.name), title.cast, title.directors, onChoose = { onChoose(it, title.name) }, checking = content.checking, checked = content.checked)
+                    }
+                    TitleSection.Trailer -> title.trailer?.let { TrailerContent(it, title.name, StartingArt.Title(title.posters), onClose = onCloseSection) }
+                    TitleSection.Episodes -> content.episodes?.let { EpisodesContent(title.name, it, onEpisode = { episode -> onEpisode(episode, title.name) }) }
                     null -> TitleContent(
-                        if (kids) title.copy(trailer = null) else title, plan, show?.first,
-                        versions = versions,
+                        content,
                         returnedFrom = returnedFrom,
                         onPlay = { onPlay(it, title.name) },
                         onRemove = onRemove,
                         onSection = onSection,
-                        kids = kids,
-                        checking = checking,
-                        checked = named,
                     )
                 }
             }
@@ -299,37 +274,30 @@ internal fun TitlePage(
 enum class TitleSection { Versions, Episodes, Trailer }
 
 /**
- * What [title]'s Versions screen lists: a Movie's Versions, or on a Show those of the Episode [plan]
- * starts, named after it, else of its next Episode ([ShowEpisodes.next]). Null on a Show whose
- * Episodes aren't read yet, or that has none to play.
+ * These Versions as the Versions screen lists them, under what they're Versions of: the Title
+ * ([title] is its name), or the Show and its Episode ("Breaking Bad · S1 E6").
  */
 @Composable
-private fun versionsOf(title: TitleDetails, plan: PlayPlan?, episodes: ShowEpisodes?, contentLanguages: List<String>): VersionsList? {
-    // The details name the original language only when Prefer original audio acts on the Title.
-    val original = title.originalLanguage
-    if (title.id.kind != TitleKind.Show) return VersionsList(title.name, title.languages, title.otherLanguages, contentLanguages, original)
-    val number = plan?.episode ?: episodes?.next ?: return null
-    val episode = episodes?.seasons?.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } ?: return null
-    val named = episode.name?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
+private fun TitleVersions.listed(title: String): VersionsList {
+    val number = episode ?: return VersionsList(title, languages, otherLanguages, contentLanguages, originalLanguage)
+    val named = episodeName?.let { stringResource(R.string.details_episode_named, number.season, number.number, it) }
         ?: stringResource(R.string.details_episode, number.season, number.number)
-    return VersionsList("${title.name} · $named", episode.languages, episode.otherLanguages, contentLanguages, original)
+    return VersionsList("$title · $named", languages, otherLanguages, contentLanguages, originalLanguage)
 }
 
 @Composable
 private fun TitleContent(
-    title: TitleDetails,
-    plan: PlayPlan?,
-    episodes: ShowEpisodes?,
-    versions: VersionsList?,
+    content: TitlePageContent,
     returnedFrom: TitleSection?,
     onPlay: (PlayPlan) -> Unit,
     onRemove: () -> Unit,
     onSection: (TitleSection) -> Unit,
-    kids: Boolean = false,
-    checking: Boolean = false,
-    checked: Boolean = true,
 ) {
     val context = LocalContext.current
+    val title = content.title
+    val playing = content.play
+    val plan = playing.plan
+    val episodes = content.episodes
     // The poster its card and the hero show, at the same size: from memory when they drew it.
     val image = rememberPoster(title.posters)
     val play = remember { FocusRequester() }
@@ -338,8 +306,7 @@ private fun TitleContent(
     val trailerAction = remember { FocusRequester() }
     val isShow = title.id.kind == TitleKind.Show
     val next = episodes?.next
-    // A Show's Episodes action is there from the first frame, disabled while they're read, and left out of a Show with none.
-    val showEpisodes = isShow && (episodes == null || next != null)
+    val hasVersionsAction = content.actions.any { it is TitleAction.Versions }
     // Play takes first focus. On a Movie with nothing to start, Versions takes it, the way to see why.
     // A Show's Play is there from the first frame, disabled while its Episodes are read, and enables
     // where it is once they are, so focus never jumps to it; with no Episode to play, the Episodes
@@ -347,15 +314,15 @@ private fun TitleContent(
     var playFocused by remember { mutableStateOf(false) }
     LaunchedEffect(title.id) {
         when {
-            returnedFrom == TitleSection.Versions && versions != null -> versionsAction
+            returnedFrom == TitleSection.Versions && content.versions != null -> versionsAction
             returnedFrom == TitleSection.Episodes && next != null -> episodesAction
             returnedFrom == TitleSection.Trailer && title.trailer != null -> trailerAction
-            plan != null || isShow || kids -> play
+            plan != null || isShow || !hasVersionsAction -> play
             else -> versionsAction
         }.requestFocus()
     }
     // Removing it from Continue watching takes its row away, so focus goes back to Play.
-    val resumable = plan != null && plan.from > 0
+    val resumable = content.actions.any { it is TitleAction.Restart }
     var wasResumable by remember(title.id) { mutableStateOf(resumable) }
     LaunchedEffect(resumable) {
         if (wasResumable && !resumable) play.requestFocus()
@@ -367,14 +334,6 @@ private fun TitleContent(
         withFrameNanos {}
         episodesAction.requestFocus()
     }
-    val episode = next?.let { number -> episodes.seasons.firstOrNull { it.number == number.season }?.episodes?.firstOrNull { it.id == number } }
-    // The badges name the Version Play starts, as the Versions value does, so the two agree (#515):
-    // a better one the TV can't display or the Quality cap leaves out, or a Show's Listing, would
-    // name a picture Play never gives. Only with nothing to play do they name the best Version, and
-    // with no Version in the Viewer's languages, the other languages are all there is to show.
-    val best = plan?.version ?: title.languages.ifEmpty { title.otherLanguages }.firstOrNull()?.versions?.firstOrNull()
-    // A Show's Versions action waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
-    val showVersions = !kids && (versions != null || (isShow && episodes == null))
 
     Row(Modifier.fillMaxSize().padding(horizontal = Spacing.screenX, vertical = Spacing.screenY).padding(top = Spacing.xl, bottom = Spacing.xl)) {
         Column(Modifier.width(470.dp)) {
@@ -396,17 +355,16 @@ private fun TitleContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 // Until the Versions are checked, the guessed badges keep their place unseen, so the actions don't move when the real ones show (#546).
-                val badges = best?.attributes?.pageBadges().orEmpty()
-                BadgeRow(badges, if (checked) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
+                val badges = content.best?.attributes?.pageBadges().orEmpty()
+                BadgeRow(badges, if (content.checked) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
             }
             // A Show's header names the Episode its Play starts; its line is kept while the Episodes are read.
-            if (isShow && (plan?.episode != null || episodes == null)) {
-                val number = plan?.episode
+            if (playing is TitleAction.PlayEpisode || content.waitingForEpisodes) {
                 Text(
                     when {
-                        number == null -> ""
-                        episode?.name != null && episode.id == number -> stringResource(R.string.details_episode_named, number.season, number.number, episode.name!!)
-                        else -> stringResource(R.string.details_episode, number.season, number.number)
+                        playing !is TitleAction.PlayEpisode -> ""
+                        playing.name != null -> stringResource(R.string.details_episode_named, playing.episode.season, playing.episode.number, playing.name!!)
+                        else -> stringResource(R.string.details_episode, playing.episode.season, playing.episode.number)
                     },
                     style = Type.title,
                     color = Colors.ink,
@@ -420,71 +378,73 @@ private fun TitleContent(
                 Spacer(Modifier.height(Spacing.s))
                 Text(it, style = Type.body, color = Colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            // Play is there from the first frame, on a Show too, where it waits disabled for the Episodes.
             Spacer(Modifier.height(Spacing.l))
-            val number = plan?.episode
-            // Having played any of the Show, the Viewer continues it.
-            val started = episodes?.seasons.orEmpty().any { season -> season.episodes.any { it.progress != null } }
-            val text = when {
-                number != null && (started || resumable) -> stringResource(R.string.play_continue_episode, number.season, number.number)
-                number != null -> stringResource(R.string.play_episode, number.season, number.number)
-                resumable -> stringResource(R.string.play_continue, clock(plan!!.from))
-                else -> stringResource(R.string.play)
-            }
-            val showRemove = resumable && !isShow
+            // The actions are the Core's, in its order; how each is worded and drawn is the page's.
             Column(Modifier.width(ACTIONS_WIDTH), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                PrimaryAction(
-                    text,
-                    Icons.Filled.PlayArrow,
-                    onClick = { plan?.let(onPlay) },
-                    modifier = Modifier.testTag("play").focusRequester(play).onFocusChanged { playFocused = it.isFocused },
-                    progress = plan?.progress,
-                    enabled = plan != null,
-                )
-                if (resumable) {
-                    ActionRow(stringResource(R.string.play_restart), Icons.Filled.Refresh, onClick = { plan?.let { onPlay(it.fromStart()) } })
-                    // Continue watching holds Movies: an Episode's place is kept with the Show.
-                    if (showRemove) ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
-                }
-                if (showEpisodes) {
-                    // Its value says where the Viewer is in the Show ("Season 2 · E4").
-                    ActionRow(
-                        stringResource(R.string.episodes_title),
-                        Icons.Filled.Menu,
-                        onClick = { onSection(TitleSection.Episodes) },
-                        modifier = Modifier.testTag("episodes action").focusRequester(episodesAction),
-                        value = episodes?.let { context.episodesValue(it) } ?: "",
-                        enabled = next != null,
-                    )
-                }
-                // Plays inside Zugig, so Back comes back here (ADR 0012); left out when the Title has no trailer.
-                if (title.trailer != null) {
-                    ActionRow(
-                        stringResource(R.string.title_trailer),
-                        NuageIcons.Movie,
-                        onClick = { onSection(TitleSection.Trailer) },
-                        modifier = Modifier.testTag("trailer action").focusRequester(trailerAction),
-                    )
-                }
-                if (showVersions) {
-                    // Its value says what Play starts, and how many Versions there are to choose from instead.
-                    ActionRow(
-                        stringResource(R.string.versions_title),
-                        Icons.AutoMirrored.Filled.List,
-                        onClick = { onSection(TitleSection.Versions) },
-                        modifier = Modifier.testTag("versions action").focusRequester(versionsAction),
-                        value = versions?.let { context.versionsValue(plan?.version?.takeIf { checked }, it.count) } ?: "",
-                        enabled = versions != null,
-                    )
+                content.actions.forEach { action ->
+                    when (action) {
+                        // Play is there from the first frame, on a Show too, where it waits disabled for the Episodes.
+                        is TitleAction.Play -> PrimaryAction(
+                            when (action) {
+                                is TitleAction.PlayEpisode -> stringResource(
+                                    if (action.start == EpisodeStart.First) R.string.play_episode else R.string.play_continue_episode,
+                                    action.episode.season, action.episode.number,
+                                )
+                                is TitleAction.Continue -> stringResource(R.string.play_continue, clock(action.plan.from))
+                                is TitleAction.PlayFromStart -> stringResource(R.string.play)
+                            },
+                            Icons.Filled.PlayArrow,
+                            onClick = { action.plan?.let(onPlay) },
+                            modifier = Modifier.testTag("play").focusRequester(play).onFocusChanged { playFocused = it.isFocused },
+                            progress = action.plan?.progress,
+                            enabled = action.plan != null,
+                        )
+                        is TitleAction.Restart -> ActionRow(stringResource(R.string.play_restart), Icons.Filled.Refresh, onClick = { onPlay(action.plan) })
+                        TitleAction.RemoveFromContinueWatching -> ActionRow(stringResource(R.string.continue_watching_remove), Icons.Filled.Close, onClick = onRemove)
+                        // Its value says where the Viewer is in the Show ("Season 2 · E4"); disabled while the Episodes are read.
+                        is TitleAction.Episodes -> ActionRow(
+                            stringResource(R.string.episodes_title),
+                            Icons.Filled.Menu,
+                            onClick = { onSection(TitleSection.Episodes) },
+                            modifier = Modifier.testTag("episodes action").focusRequester(episodesAction),
+                            value = action.place?.let { context.episodesValue(it) } ?: "",
+                            enabled = action.place != null,
+                        )
+                        // Plays inside Zugig, so Back comes back here (ADR 0012).
+                        is TitleAction.Trailer -> ActionRow(
+                            stringResource(R.string.title_trailer),
+                            NuageIcons.Movie,
+                            onClick = { onSection(TitleSection.Trailer) },
+                            modifier = Modifier.testTag("trailer action").focusRequester(trailerAction),
+                        )
+                        // Its value says what Play starts, and how many Versions there are to choose from instead;
+                        // a Show's waits, disabled, while its Episodes are read, so the list doesn't grow under focus.
+                        is TitleAction.Versions -> ActionRow(
+                            stringResource(R.string.versions_title),
+                            Icons.AutoMirrored.Filled.List,
+                            onClick = { onSection(TitleSection.Versions) },
+                            modifier = Modifier.testTag("versions action").focusRequester(versionsAction),
+                            value = action.count?.let { context.versionsValue(action.playing, it) } ?: "",
+                            enabled = action.count != null,
+                        )
+                    }
                 }
             }
-            // Nothing to play says why under the actions; once a Show's Episodes are read, as their wait is no reason.
-            if (plan == null && !(isShow && episodes == null)) {
+            // Nothing to play says why under the actions.
+            content.nothingToPlay?.let { why ->
                 Spacer(Modifier.height(Spacing.s))
-                PlayLabel(episodes.note(context) ?: stringResource(R.string.play_nothing))
+                PlayLabel(
+                    stringResource(
+                        when (why) {
+                            NothingToPlay.NoVersion -> R.string.play_nothing
+                            NothingToPlay.EpisodesUnreachable -> R.string.episodes_unreachable
+                            NothingToPlay.NoEpisodes -> R.string.episodes_none
+                        },
+                    ),
+                )
             }
             // What the Header reads Confirm changes the badges and the Versions value in place; this says why (#457).
-            if (showVersions) CheckingVersions(checking, Modifier.padding(top = Spacing.s).testTag("checking versions"))
+            if (hasVersionsAction) CheckingVersions(content.checking, Modifier.padding(top = Spacing.s).testTag("checking versions"))
         }
         Spacer(Modifier.weight(1f))
         if (image != null) {
@@ -500,13 +460,6 @@ private fun TitleContent(
 
 /** The poster at the right of a Title page's header. */
 internal const val HEADER_POSTER = "header poster"
-
-/** Why a Show whose Episodes are read has none to offer, or null when it has some. */
-private fun ShowEpisodes?.note(context: Context): String? = when {
-    this == null || seasons.isNotEmpty() -> null
-    unreadVersions > 0 -> context.getString(R.string.episodes_unreachable)
-    else -> context.getString(R.string.episodes_none)
-}
 
 /** The action list's width: rows of one width, sized for "Remove from Continue watching" and a progress bar beside "Reprendre à 1:02:13". */
 private val ACTIONS_WIDTH = 360.dp

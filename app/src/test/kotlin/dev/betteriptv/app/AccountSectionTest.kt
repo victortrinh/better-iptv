@@ -28,6 +28,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Settings' Account section (#434): signed in, "Signed in as …" offers Sign out and "Devices" opens
@@ -64,7 +66,7 @@ class AccountSectionTest {
             profiles = Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID),
             onProfile = {},
             pin = FakePin(),
-            catalogLanguages = { listOf("en") },
+            contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
             catalog = {},
             account = { open, accountRow, devicesRow -> AccountRows(email, open, accountRow, devicesRow) },
             accountPage = { page, _ -> Text("Page: $page") },

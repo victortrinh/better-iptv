@@ -18,12 +18,17 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.AccountDevice
+import dev.betteriptv.core.AccountDevicesContent
+import dev.betteriptv.core.AccountDevicesScreen
 import dev.betteriptv.core.Library
 import kotlinx.coroutines.launch
 import kotlin.time.Instant
@@ -97,28 +102,24 @@ fun AccountPageContent(library: Library, page: AccountPage, onDone: () -> Unit) 
     }
 }
 
-/** What the device list shows while it is asked of the cloud, once it answered, or when it can't. */
-private sealed interface DeviceList {
-    data object Asking : DeviceList
-    data object Unavailable : DeviceList
-    data class Listed(val devices: List<AccountDevice>) : DeviceList
-}
-
 /**
  * Settings → Account → Devices (#434): each TV signed in to the Account by its model and sign-in
- * date, this one marked "This TV", in the order they signed in. OK on one asks before signing it out
+ * date, this one marked "This TV", in the order they signed in, as the Core lists them
+ * ([AccountDevicesContent]); "Asking…" until it has. OK on one asks before signing it out
  * ([SignOutPage]); this one goes anonymous at once and Settings returns, another at its next cloud
  * contact while the list asks the cloud again. The first row takes first focus.
  */
 @Composable
 private fun DevicesPage(library: Library, onDone: () -> Unit) {
     var asked by remember { mutableStateOf(0) }
-    var list by remember { mutableStateOf<DeviceList>(DeviceList.Asking) }
+    // Null while the cloud is asked the first time; a list asked again stays until its answer.
+    var list by remember { mutableStateOf<AccountDevicesContent?>(null) }
     var picked by remember { mutableStateOf<AccountDevice?>(null) }
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(asked) {
-        list = library.accountDevices()?.let { DeviceList.Listed(it) } ?: DeviceList.Unavailable
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(library, asked, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { library.screen(AccountDevicesScreen).collect { list = it } }
     }
     val device = picked
     if (device != null) {
@@ -149,12 +150,12 @@ private fun DevicesPage(library: Library, onDone: () -> Unit) {
         item { SettingsHeading(R.string.account_devices) }
         if (failed) item { Text(stringResource(R.string.account_unavailable), style = Type.body, color = Colors.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
         when (val shown = list) {
-            DeviceList.Asking -> item { Text(stringResource(R.string.account_devices_asking), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
-            DeviceList.Unavailable -> {
+            null -> item { Text(stringResource(R.string.account_devices_asking), style = Type.body, color = Colors.inkMuted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
+            AccountDevicesContent.Unavailable -> {
                 item { Text(stringResource(R.string.account_unavailable), style = Type.body, color = Colors.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
                 item { SettingRow(stringResource(R.string.account_try_again), "", onClick = { asked++ }, Modifier.focusRequester(first)) }
             }
-            is DeviceList.Listed -> shown.devices.forEachIndexed { index, it ->
+            is AccountDevicesContent.Listed -> shown.devices.forEachIndexed { index, it ->
                 item(key = it.id) {
                     SettingRow(
                         deviceName(it),
@@ -167,7 +168,7 @@ private fun DevicesPage(library: Library, onDone: () -> Unit) {
             }
         }
     }
-    LaunchedEffect(list) { if (list != DeviceList.Asking) runCatching { first.requestFocus() } }
+    LaunchedEffect(list) { if (list != null) runCatching { first.requestFocus() } }
 }
 
 /** The question before signing a TV out: [title] and [detail], then Cancel, which takes first focus, and Sign out. */

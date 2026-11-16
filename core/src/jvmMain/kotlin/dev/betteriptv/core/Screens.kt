@@ -33,6 +33,12 @@ sealed class Screen<Content : Any> {
     internal open fun readAgainAfter(content: Content): Duration? = null
 
     /**
+     * The content as live state, as [Library.screen] hands it: read and read again as every screen's
+     * is ([liveContent]), unless the screen does work of its own while it shows.
+     */
+    internal open fun content(library: Library): Flow<Content> = library.liveContent(this)
+
+    /**
      * Home ([HomeContent]), for a Viewer who reads the [contentLanguages], with the app in the
      * [appLanguage], in the [region], following the [leagues].
      */
@@ -89,11 +95,12 @@ internal fun <Content : Any> Library.liveContent(
 /**
  * Changes when what a screen shows may have: a catalog landed (a Head start's and a Pending catalog
  * too), Matches regrouped its Titles, Title facts or the Account's history landed, fresh Games
- * arrived ([Library.catalogChanges]), or the device went to another Profile, or the one it is on
- * became a Kids profile or stopped being one ([Library.profiles]).
+ * arrived ([Library.catalogChanges]), or the device went to another Profile, or the household's
+ * Profiles changed: one was added, renamed or deleted, or became a Kids profile or stopped being
+ * one ([Library.profiles]).
  */
-private fun Library.contentChanges(): Flow<Any> =
-    combine(catalogChanges, profiles) { catalog, profiles -> catalog to profiles.current }.distinctUntilChanged()
+internal fun Library.contentChanges(): Flow<Any> =
+    combine(catalogChanges, profiles) { catalog, profiles -> catalog to profiles }.distinctUntilChanged()
 
 /** How often Home asks for the Games again while Live now shows (docs/roadmap.md, M3): the cloud reads a League's day every 5 minutes. */
 internal val GAMES_READ_AGAIN_AFTER: Duration = 2.minutes
