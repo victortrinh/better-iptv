@@ -400,6 +400,9 @@ internal fun RowsLayout(
     // The row focus is in, while it is in the rows (not up on the tabs): the one row a reading mustn't change.
     var inRows by remember { mutableStateOf(false) }
     val focusRow by remember(state) { derivedStateOf { if (inRows) state.focused?.row else null } }
+    // What the rows showing were read for: until they are those of [reading], the screen is behind it
+    // and tells its tabs so ([LocalRowsBehind]), for the Catalog pill.
+    var readFor by remember(state) { mutableStateOf<Any?>(null) }
     LaunchedEffect(state, reading) {
         // The screen reads its rows from here on: they are no longer read ahead for it.
         state.preReadFor = null
@@ -440,6 +443,7 @@ internal fun RowsLayout(
         } else {
             state.rows = fresh
         }
+        readFor = reading
         val first = !checked
         checked = true
         // The next entry's hero, read now with its poster so it shows at once then.
@@ -521,7 +525,7 @@ internal fun RowsLayout(
                     focused = true
                 }
             },
-        ) { header(tab) }
+        ) { CompositionLocalProvider(LocalRowsBehind provides (readFor != reading)) { header(tab) } }
         if (placeholder != null) return@Column placeholder()
         if (rows == null) {
             if (waiting) WaitingDot { waitingFade.value }

@@ -136,6 +136,15 @@ class SearchTest {
         assertEquals(godfather, search("the godf").movies.first().id)
     }
 
+    @Test fun `a query under two letters is too short to search, whatever else is typed around it`() {
+        assertTrue(tooShortToSearch(""))
+        assertTrue(tooShortToSearch("q"))
+        assertTrue(tooShortToSearch(" q -"))
+        assertFalse(tooShortToSearch("qx"))
+        assertFalse(tooShortToSearch("q x"))
+        assertFalse(tooShortToSearch("é1"))
+    }
+
     @Test fun `exact matches rank before typo matches`() = runBlocking {
         syncMovies("EN - Hear Me (2009)" to 1, "EN - Heat (1995)" to 949)
 
