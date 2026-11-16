@@ -1,0 +1,27 @@
+[
+  {
+    "category_id": "1",
+    "category_name": "EN - ANIMATION",
+    "parent_id": 0
+  },
+  {
+    "category_id": "2",
+    "category_name": "EN - KIDS",
+    "parent_id": 0
+  },
+  {
+    "category_id": "3",
+    "category_name": "EN - SCIENCE FICTION",
+    "parent_id": 0
+  },
+  {
+    "category_id": "4",
+    "category_name": "EN - CLASSICS",
+    "parent_id": 0
+  },
+  {
+    "category_id": "5",
+    "category_name": "EN - MOVIES 4K",
+    "parent_id": 0
+  }
+]

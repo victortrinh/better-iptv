@@ -104,3 +104,37 @@ Once `0023_drop_tmdb.sql` has deployed (#481), delete the TMDB key from the Work
 ### Provider tables
 
 Hand lines live in `provider-tables/`, one file per Provider named `<SHA-256 of its host, lowercase hex>.txt`, in the Base table's format; no Provider's host is written anywhere. `npm run deploy` (and so CI's deploy) loads them into D1's `provider_table` after the migrations, with `scripts/provider-tables.mjs`: each file's row is replaced in place, then the rows of files no longer in the repo are deleted, so a device asking mid-deploy never gets an empty table for a file that stays. `npm run provider-tables` loads them into a local Worker's D1 (`npm run dev`). Devices pick a change up at their next Sync. A Hand line can also mark a Category as fresh, for a name the Base table's words miss: `DRENIER AJOUTEE | fresh` under `[category hints]` has a first Sync read `FR - LE DRENIER AJOUTEE` as part of its Head start (ADR 0019), ahead of the first Category in the language; it is served with the rest of the file. The Gradle tests check that every file parses as a Provider table, and the app still ships them as the table a device uses until the cloud has answered once.
+
+## Demo Provider
+
+The Worker also answers as a small Provider of its own (CONTEXT.md, ADR 0021), so store reviewers, store screenshots and each platform's tests have a Provider to sign in to. It speaks the Xtream API the Core reads, at the Worker's own address: `GET /player_api.php?username=…&password=…[&action=…]`, with no device token. In the app, the Provider address is the Cloud's address and the login is `DEMO_PROVIDER_LOGIN` in `src/demo-provider.ts`. A wrong login gets `{"user_info":{"auth":0}}`, as an Xtream panel answers one.
+
+It answers the account, `get_vod_categories`, `get_vod_streams`, `get_series_categories`, `get_series`, `get_series_info`, `get_live_categories` and `get_live_streams` (the three lists also by `category_id`). Nothing plays yet (#575): no stream address is served, a movie has no details and no Channel has a guide.
+
+The catalog is the files in `demo-provider/`, named as a survey names a Provider's answers. The Core's `DemoProviderTest` Syncs those same files, so a Listing renamed here that Match can no longer read fails a build. Listings carry no poster yet.
+
+### What it lists, and why each may be shown
+
+Every item is either under a Creative Commons licence that allows showing it in a paid app (attribution, or attribution and share-alike; nothing "NonCommercial" or "NoDerivatives"), in the public domain because its authors died more than 70 years ago, or a work of the US government. Title numbers and licences were checked against Wikidata on 2026-11-15. The licence covers the work; which file of it #575 links must be checked again there, since a restoration, a new score or translated intertitles of a silent film can carry rights of their own.
+
+| Listing | Title number | Source | Licence |
+| --- | --- | --- | --- |
+| Big Buck Bunny (2008), HD and 4K | movie 10378 | Blender Foundation, peach.blender.org | CC BY 3.0 |
+| Sintel (2010), HD and 4K | movie 45745 | Blender Foundation, durian.blender.org | CC BY 3.0 |
+| Tears of Steel (2012), HD and 4K | movie 133701 | Blender Foundation, mango.blender.org | CC BY 3.0 |
+| Elephants Dream (2006) | movie 9761 | Blender Foundation, orange.blender.org | CC BY 2.5 |
+| Cosmos Laundromat (2015) | movie 358332 | Blender Institute, studio.blender.org | CC BY (3.0 on Wikidata, 4.0 on Blender Studio) |
+| Spring (2019) | movie 593048 | Blender Studio, studio.blender.org | CC BY 4.0 |
+| Hero (2018) | movie 615324 | Blender Studio, studio.blender.org | CC BY 3.0 |
+| A Trip to the Moon (1902) | movie 775 | Georges Méliès (died 1938) | Public domain |
+| The Great Train Robbery (1903) | movie 5698 | Edwin S. Porter (died 1941) | Public domain |
+| The Cabinet of Dr. Caligari (1920) | movie 234 | Robert Wiene (died 1938); written by Carl Mayer (died 1944) and Hans Janowitz (died 1954) | Public domain (since 2025 where the term is life plus 70) |
+| Battleship Potemkin (1925) | movie 643 | Sergei Eisenstein (died 1948) | Public domain |
+| Man with a Movie Camera (1929) | movie 26317 | Dziga Vertov (died 1954) | Public domain (since 2025 where the term is life plus 70) |
+| BBS: The Documentary (2005), 8 Episodes | show 84836 | Jason Scott, bbsdocumentary.com and the Internet Archive | CC BY-SA |
+| Caminandes (2013 to 2016), 3 Episodes | none: listed as three films | Blender Foundation, caminandes.com | CC BY |
+| Les Vampires (1915), 10 Episodes | none: listed as one film | Louis Feuillade (died 1925), Gaumont | Public domain |
+| NASA TV | | NASA's public channel (NASA+) | US government work, public domain |
+| NASA ISS Live | | NASA's live views from the International Space Station | US government work, public domain |
+
+Left out because the licence wasn't sure enough: Nosferatu (Wikidata records it as still copyrighted in Germany), Night of the Living Dead and The General (public domain in the United States only), Intolerance (a title writer died in 1981), Pioneer One and Democracy Now! (NonCommercial), Agent 327 (NoDerivatives), Sprite Fright and Charge (no licence recorded on Wikidata), the 1950s US television series whose public-domain status is per Episode, and news channels with a free live stream but no licence to re-show it (DW, France 24, Al Jazeera English).

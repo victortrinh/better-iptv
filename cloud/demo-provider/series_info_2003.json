@@ -1,0 +1,129 @@
+{
+  "seasons": [
+    {
+      "name": "Season 1",
+      "episode_count": "10",
+      "air_date": "1915-11-13",
+      "season_number": 1
+    }
+  ],
+  "info": {
+    "name": "FR - Les Vampires (1915)",
+    "tmdb": "",
+    "last_modified": "1763164800"
+  },
+  "episodes": {
+    "1": [
+      {
+        "id": "30001",
+        "episode_num": 1,
+        "title": "FR - Les Vampires (1915) - S01E01 - La Tête coupée",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30002",
+        "episode_num": 2,
+        "title": "FR - Les Vampires (1915) - S01E02 - La Bague qui tue",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30003",
+        "episode_num": 3,
+        "title": "FR - Les Vampires (1915) - S01E03 - Le Cryptogramme rouge",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30004",
+        "episode_num": 4,
+        "title": "FR - Les Vampires (1915) - S01E04 - Le Spectre",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30005",
+        "episode_num": 5,
+        "title": "FR - Les Vampires (1915) - S01E05 - L'Évasion du mort",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30006",
+        "episode_num": 6,
+        "title": "FR - Les Vampires (1915) - S01E06 - Les Yeux qui fascinent",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30007",
+        "episode_num": 7,
+        "title": "FR - Les Vampires (1915) - S01E07 - Satanas",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30008",
+        "episode_num": 8,
+        "title": "FR - Les Vampires (1915) - S01E08 - Le Maître de la foudre",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30009",
+        "episode_num": 9,
+        "title": "FR - Les Vampires (1915) - S01E09 - L'Homme des poisons",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      },
+      {
+        "id": "30010",
+        "episode_num": 10,
+        "title": "FR - Les Vampires (1915) - S01E10 - Les Noces sanglantes",
+        "container_extension": "mp4",
+        "info": [],
+        "custom_sid": null,
+        "added": "1763164800",
+        "season": 1,
+        "direct_source": ""
+      }
+    ]
+  }
+}
