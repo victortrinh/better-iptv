@@ -10,8 +10,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 import java.time.ZoneId
 
 /** What a Channel's now-and-next line says (#261), beside its row and under its Favourite. */
@@ -21,8 +23,8 @@ class GuideLabelsTest {
     // A Sunday evening in Toronto (standard time: 01:30 UTC is 8:30 PM).
     private val now = Instant.parse("2026-11-02T01:30:00Z")
     private val toronto = ZoneId.of("America/Toronto")
-    private val national = Programme("The National", now - Duration.ofMinutes(30), now + Duration.ofMinutes(30))
-    private val dragons = Programme("Dragons' Den", now + Duration.ofMinutes(30), now + Duration.ofMinutes(90))
+    private val national = Programme("The National", now - 30.minutes, now + 30.minutes)
+    private val dragons = Programme("Dragons' Den", now + 30.minutes, now + 90.minutes)
 
     private fun label(guide: NowNext) = context.nowNextLabel(guide, now, toronto)
 
@@ -43,7 +45,7 @@ class GuideLabelsTest {
 
     @Test
     fun aNextProgrammeTomorrowCarriesItsWeekday() {
-        val late = Programme("Late show", now + Duration.ofHours(5), now + Duration.ofHours(6))
+        val late = Programme("Late show", now + 5.hours, now + 6.hours)
         assertEquals("The National · Next Mon 1:30 AM", label(NowNext(national, late)))
     }
 

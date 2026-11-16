@@ -11,9 +11,11 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.hours
 
 /** The Movies and Shows tabs' rows, seen through the Library after a Sync, with metadata and Trending from the fake Cloud. */
 class TabRowsTest {
@@ -69,7 +71,7 @@ class TabRowsTest {
     private fun under(name: String, ids: Iterable<Long>) = ids.associateWith { name }
 
     private suspend fun rows(kind: TitleKind = TitleKind.Movie, contentLanguages: List<String> = english) =
-        library.tabRows(kind, contentLanguages, appLanguage = "en", now = Instant.now())
+        library.tabRows(kind, contentLanguages, appLanguage = "en", now = Clock.System.now())
 
     /**
      * Puts [ids] in Trending, most viewed first: each one's English Wikipedia article in its Title
@@ -253,7 +255,7 @@ class TabRowsTest {
         try {
             assertTrue(downloading.await(10, TimeUnit.SECONDS))
             // Over an hour later, so the kept feed is asked again.
-            val rows = withTimeout(5_000) { library.tabRows(TitleKind.Movie, english, "en", Instant.now().plusSeconds(2 * 3600)) }
+            val rows = withTimeout(5_000) { library.tabRows(TitleKind.Movie, english, "en", Clock.System.now() + 2.hours) }
             assertEquals(listOf("en", "en"), cloud.trendingAsked)
             assertEquals(listOf("First", "Second", "Third"), rows.trendingNames())
             assertEquals(listOf("Fourth"), rows.newNames())

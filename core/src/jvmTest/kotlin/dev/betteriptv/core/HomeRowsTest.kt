@@ -15,11 +15,17 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.toJavaInstant
+import kotlinx.datetime.toJavaZoneId
 
 /** The home screen's rows, seen through the Library after a Sync, with metadata from the fake Cloud. */
 class HomeRowsTest {
@@ -63,7 +69,7 @@ class HomeRowsTest {
     /** Files each of [ids] under the Category [name], for [syncMovies]. */
     private fun under(name: String, ids: Iterable<Long>) = ids.associateWith { name }
 
-    private suspend fun rows(contentLanguages: List<String> = english, region: String = "CA", now: Instant = Instant.now(), leagues: List<League> = emptyList()) =
+    private suspend fun rows(contentLanguages: List<String> = english, region: String = "CA", now: Instant = Clock.System.now(), leagues: List<League> = emptyList()) =
         library.homeRows(contentLanguages, appLanguage = "en", region = region, leagues = leagues, now = now)
 
     /** Serves these show Listings at the next Sync, numbered from 1, each a Title of its own Title number, the first changed at [newest] and each after it a second earlier. */
@@ -169,7 +175,7 @@ class HomeRowsTest {
             filed = under("FR - COMÉDIE", 1L..2L) + under("ES - COMEDIA", 3L..4L),
         )
 
-        val rows = library.homeRows(languages, appLanguage = "fr", region = "CA", leagues = emptyList(), now = Instant.now())
+        val rows = library.homeRows(languages, appLanguage = "fr", region = "CA", leagues = emptyList(), now = Clock.System.now())
         assertEquals(listOf("Comédie"), rows.filterIsInstance<HomeRow.Genre>().map { it.name })
         assertEquals(setOf("Le Dîner de cons", "Les Visiteurs", "Torrente", "Ocho apellidos vascos", "Stromberg"), rows.genre("Comédie").toSet())
     }
@@ -186,7 +192,7 @@ class HomeRowsTest {
         // What the Viewer started shows whatever its language.
         assertEquals(listOf("Second", "Foreign", "First"), resumes.map { it.title.name })
         assertEquals(listOf(0.5f, null, 0.25f), resumes.map { it.progress })
-        assertEquals(listOf(Duration.ofMinutes(60), null, Duration.ofMinutes(90)), resumes.map { it.left })
+        assertEquals(listOf(60.minutes, null, 90.minutes), resumes.map { it.left })
         assertTrue(rows().first() is HomeRow.ContinueWatching)
 
         library.finished(movie(2))
@@ -298,10 +304,10 @@ class HomeRowsTest {
     // Live now (#256)
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style. */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Clock.System.now() - ago).toJavaInstant().atZone(surveyedPrefixTable().eventTimeZone.toJavaZoneId()))
 
     /** The Event channel carrying tonight's Game, started two hours ago (named once, so the clock ticking over a second doesn't rename it). */
-    private val eventChannel by lazy { "NHL: Canadiens vs Maple Leafs (${startedAgo(Duration.ofHours(2))})" }
+    private val eventChannel by lazy { "NHL: Canadiens vs Maple Leafs (${startedAgo(2.hours)})" }
 
     /** Every other Home row, with a Game started two hours ago among the NHL's (the NFL's slate empty) and, unless [withEvent] is off, its Event channel on the Provider. */
     private suspend fun serveHomeWithGames(gameState: String = "live", withEvent: Boolean = true) {
@@ -309,7 +315,7 @@ class HomeRowsTest {
         serveShows("EN - Show 1 (2025)" to 501, "EN - Show 2 (2025)" to 502, "EN - Show 3 (2025)" to 503)
         trending(movie(6), movie(7), movie(8))
         syncMovies(*(newest() + (1L..8L).map { "EN - Film $it (2025)" to it }).toTypedArray(), filed = under("EN - DRAMA", 1L..8L))
-        cloud.games("nhl", game("1", (Instant.now() - Duration.ofHours(2)).toString(), state = gameState, home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
+        cloud.games("nhl", game("1", (Clock.System.now() - 2.hours).toString(), state = gameState, home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
         cloud.games("nfl")
         library.setFavourite(library.search("ESPN", english, "en").last().channels.single().key, true)
         library.saveProgress(movie(1), position = 30 * 60_000L, duration = 120 * 60_000L)
@@ -348,10 +354,10 @@ class HomeRowsTest {
         assertEquals(1, cloud.gamesAsked.size)
 
         // The Game and its Event channel two hours ahead instead.
-        cloud.games("nhl", game("2", (Instant.now() + Duration.ofHours(2)).toString(), home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
-        provider.serveChannels("US: ESPN HD" to "US| SPORT", "NHL: Canadiens vs Maple Leafs (${startedAgo(Duration.ofHours(-2))})" to "US| ESPN+ PPV")
+        cloud.games("nhl", game("2", (Clock.System.now() + 2.hours).toString(), home = "Toronto Maple Leafs", away = "Montreal Canadiens"))
+        provider.serveChannels("US: ESPN HD" to "US| SPORT", "NHL: Canadiens vs Maple Leafs (${startedAgo((-2).hours)})" to "US| ESPN+ PPV")
         library.sync()
-        val later = Instant.now() + Duration.ofMinutes(2)
+        val later = Clock.System.now() + 2.minutes
         withGamesLanded { rows(now = later, leagues = listOf(League.Nhl)) }
         assertEquals(withoutLiveNow, rows(now = later, leagues = listOf(League.Nhl)).names())
     }
@@ -370,7 +376,7 @@ class HomeRowsTest {
         assertEquals(1, cloud.gamesAsked.size)
 
         // A minute on, the Champions League is asked for again.
-        withGamesLanded { rows(now = Instant.now() + Duration.ofSeconds(61), leagues = leagues) }
+        withGamesLanded { rows(now = Clock.System.now() + 61.seconds, leagues = leagues) }
         assertEquals(2, cloud.gamesAsked.size)
     }
 
@@ -380,7 +386,7 @@ class HomeRowsTest {
         assertEquals(withoutLiveNow, rows(leagues = listOf(League.Nhl)).names())
 
         cloud.down = true
-        val rows = rows(now = Instant.now() + Duration.ofMinutes(2), leagues = listOf(League.Nhl))
+        val rows = rows(now = Clock.System.now() + 2.minutes, leagues = listOf(League.Nhl))
         assertEquals(withoutLiveNow, rows.names())
         assertEquals(listOf("Film 1"), rows.filterIsInstance<HomeRow.ContinueWatching>().single().titles.map { it.title.name })
     }
@@ -407,9 +413,9 @@ class HomeRowsTest {
 
         cloud.down = true
         // Two minutes on, the copy is due again: the cloud is asked behind the read and fails, and the copy stands.
-        assertEquals(withLiveNow, rows(now = Instant.now() + Duration.ofMinutes(2), leagues = listOf(League.Nhl)).names())
+        assertEquals(withLiveNow, rows(now = Clock.System.now() + 2.minutes, leagues = listOf(League.Nhl)).names())
         withTimeout(10_000) { while (cloud.gamesAsked.size < 2) delay(50) }
-        assertEquals(withLiveNow, rows(now = Instant.now() + Duration.ofMinutes(3), leagues = listOf(League.Nhl)).names())
+        assertEquals(withLiveNow, rows(now = Clock.System.now() + 3.minutes, leagues = listOf(League.Nhl)).names())
     }
 
     @Test fun `Home reads what's stored while a Sync downloads, though its Trending feed is asked again`() = runBlocking {
@@ -429,7 +435,7 @@ class HomeRowsTest {
         try {
             assertTrue(downloading.await(10, TimeUnit.SECONDS))
             // Over an hour later, so the kept feed is asked again.
-            val later = Instant.now() + Duration.ofHours(2)
+            val later = Clock.System.now() + 2.hours
             val rows = withTimeout(5_000) { rows(now = later) }
             assertEquals(listOf("en", "en"), cloud.trendingAsked)
             assertEquals(listOf("First", "Second", "Third"), rows.trending())
@@ -442,7 +448,7 @@ class HomeRowsTest {
             sync.join()
         }
         provider.onRequest = null
-        rows(now = Instant.now() + Duration.ofHours(2))
+        rows(now = Clock.System.now() + 2.hours)
         assertEquals(listOf("en", "en"), cloud.trendingAsked)
     }
 }

@@ -22,9 +22,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Instant
 
 /**
  * A build newer than the installed one, as the update manifest CI publishes beside it describes it
@@ -117,7 +117,7 @@ class AppUpdates(
     private val downloads: File,
     private val installer: ApkInstaller,
     private val http: HttpClient = updatesHttp(),
-    private val clock: Clock = Clock.systemUTC(),
+    private val clock: Clock = Clock.System,
 ) {
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Unknown)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
@@ -147,14 +147,14 @@ class AppUpdates(
      */
     suspend fun checkIfStale(after: Duration): Boolean = busy.withLock {
         val last = lastChecked
-        if (last != null && Duration.between(last, clock.instant()) < after) return@withLock false
+        if (last != null && (clock.now() - last) < after) return@withLock false
         if (_state.value is UpdateState.Downloading || _state.value is UpdateState.Installing || _state.value == UpdateState.Finishing) return@withLock false
         checkLocked()
         true
     }
 
     private suspend fun checkLocked() {
-        lastChecked = clock.instant()
+        lastChecked = clock.now()
         _checking.value = true
         try {
             readManifestLocked()

@@ -22,7 +22,8 @@ import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
 import kotlinx.coroutines.delay
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * The Live tab, the sports hub's home (M3), in rows like Home's ([RowsScreen]): Live now, Today and
@@ -94,7 +95,7 @@ internal fun gamesRefreshes(state: RowsState): Int {
     LaunchedEffect(gamesShown) {
         if (!gamesShown) return@LaunchedEffect
         while (true) {
-            delay(GAMES_REFRESH.toMillis())
+            delay(GAMES_REFRESH.inWholeMilliseconds)
             refreshes++
         }
     }
@@ -105,4 +106,4 @@ internal fun gamesRefreshes(state: RowsState): Int {
 private val HomeRow.hasGames: Boolean get() = this is HomeRow.LiveNow || this is HomeRow.Today || this is HomeRow.LeagueGames || this is HomeRow.MoreLiveEvents
 
 /** How often the Games are asked for again while a Games row shows (docs/roadmap.md, M3): the cloud reads a League's day every 5 minutes. */
-internal val GAMES_REFRESH: Duration = Duration.ofMinutes(2)
+internal val GAMES_REFRESH: Duration = 2.minutes

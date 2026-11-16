@@ -1,7 +1,5 @@
 package dev.betteriptv.core
 
-import java.text.Normalizer
-import java.util.Locale
 
 /**
  * What a search found, best first in each list: the [titles] whose names match, Movies and Shows
@@ -331,20 +329,20 @@ internal class SearchIndex private constructor(
         fun words(text: String): List<String> {
             // By hand rather than by regexes: the search index splits millions of names, and the
             // stick spent its time collecting their garbage (#106). Most names are plain ASCII.
-            val folded = if (text.all { it < '\u0080' }) text else withoutMarks(Normalizer.normalize(text, Normalizer.Form.NFD))
-            val lower = folded.lowercase(Locale.ROOT)
+            val folded = if (text.all { it < '\u0080' }) text else withoutMarks(canonicallyDecomposed(text))
+            val lower = folded.lowercase()
             val words = ArrayList<String>(4)
             var start = -1
             var i = 0
             while (i <= lower.length) {
-                val point = if (i < lower.length) lower.codePointAt(i) else ' '.code
+                val point = if (i < lower.length) codePointAt(lower, i) else ' '.code
                 if (isWordPart(point)) {
                     if (start < 0) start = i
                 } else if (start >= 0) {
                     words += lower.substring(start, i)
                     start = -1
                 }
-                i += Character.charCount(point)
+                i += charCount(point)
             }
             return words
         }
@@ -353,12 +351,10 @@ internal class SearchIndex private constructor(
             val kept = StringBuilder(text.length)
             var i = 0
             while (i < text.length) {
-                val point = text.codePointAt(i)
-                when (Character.getType(point).toByte()) {
-                    Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> Unit
-                    else -> kept.appendCodePoint(point)
-                }
-                i += Character.charCount(point)
+                val point = codePointAt(text, i)
+                val next = i + charCount(point)
+                if (!isMark(point)) kept.appendRange(text, i, next)
+                i = next
             }
             return kept.toString()
         }
@@ -366,10 +362,7 @@ internal class SearchIndex private constructor(
         /** A letter or a number, in any script. */
         private fun isWordPart(point: Int): Boolean = when {
             point < 0x80 -> point in 'a'.code..'z'.code || point in 'A'.code..'Z'.code || point in '0'.code..'9'.code
-            else -> Character.isLetter(point) || when (Character.getType(point).toByte()) {
-                Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER -> true
-                else -> false
-            }
+            else -> isLetter(point) || isNumber(point)
         }
 
         /**
@@ -433,7 +426,7 @@ internal fun buildSearchIndex(store: CatalogStore, prefixTable: PrefixTable, pha
     val builder = SearchIndex.Builder()
     store.forEachChannel(builder::channel)
     lap("channels")
-    store.forEachReplay { id, name, day -> builder.replay(id, ReplayNames.body(name), day?.toEpochDay()?.toInt() ?: SearchIndex.NO_DAY) }
+    store.forEachReplay { id, name, day -> builder.replay(id, ReplayNames.body(name), day?.toEpochDays()?.toInt() ?: SearchIndex.NO_DAY) }
     lap("replays")
     // A Category's genres are worked out once, not once per Listing filed under it.
     val categoryGenres = HashMap<String, List<String>>()

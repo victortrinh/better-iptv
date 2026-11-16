@@ -13,8 +13,10 @@ import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.GameState
 import dev.betteriptv.core.League
 import kotlinx.coroutines.delay
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * [entry]'s card: both teams' logos, "Live" or the start time in the device's clock, and the short
@@ -36,8 +38,8 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
         value = context.gameCaption(game)
         if (game.state == GameState.Live) return@produceState
         while (true) {
-            delay(CAPTION_REFRESH.toMillis())
-            value = context.gameCaption(game, Instant.now())
+            delay(CAPTION_REFRESH.inWholeMilliseconds)
+            value = context.gameCaption(game, Clock.System.now())
         }
     }
     val disabled = if (entry.best == null) stringResource(R.string.game_no_stream) else null
@@ -88,4 +90,4 @@ fun GameCard(entry: GameFeeds, onOpen: (GameFeeds) -> Unit, modifier: Modifier =
     )
 }
 
-private val CAPTION_REFRESH: Duration = Duration.ofMinutes(1)
+private val CAPTION_REFRESH: Duration = 1.minutes

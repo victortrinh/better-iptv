@@ -21,8 +21,11 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 
 class BetterIptvApp : Application(), SingletonImageLoader.Factory {
@@ -190,7 +193,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         val status = library.syncStatus.value
         if (status is SyncStatus.Ready) return false
         val last = status.last
-        if (last != null && Duration.between(last.finishedAt, Instant.now()) <= STALE_AFTER) return false
+        if (last != null && (Clock.System.now() - last.finishedAt) <= STALE_AFTER) return false
         sync()
         return true
     }
@@ -208,7 +211,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             when (val status = keepingAlive { library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages, playerOpen = { playerOpen }) }) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
-                    "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.mismatches} Mismatches kept apart",
+                    "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.inWholeMilliseconds} ms, ${status.last.mismatches} Mismatches kept apart",
                 )
                 is SyncStatus.Ready -> {
                     Log.i(TAG, "Synced; the catalog waits to be applied")
@@ -233,9 +236,9 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     private companion object {
         const val TAG = "Sync"
-        val STALE_AFTER: Duration = Duration.ofHours(6)
+        val STALE_AFTER: Duration = 6.hours
         // CI releases within minutes of a merge, and the manifest is one small read.
-        val RECHECK_UPDATES_AFTER: Duration = Duration.ofMinutes(15)
+        val RECHECK_UPDATES_AFTER: Duration = 15.minutes
         const val SEARCH_INDEX_AFTER = 5_000L
         // After Home's cold start and the search index have had the stick to themselves.
         const val VLC_FONTS_AFTER = 20_000L

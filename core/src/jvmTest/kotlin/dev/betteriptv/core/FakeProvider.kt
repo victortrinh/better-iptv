@@ -11,9 +11,11 @@ import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.URLDecoder
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -24,6 +26,7 @@ import java.util.zip.GZIPOutputStream
 import okio.Buffer
 import okio.buffer
 import okio.source
+import kotlin.time.toJavaInstant
 
 /**
  * A local Xtream Codes Provider that replays the sanitized fixture cut by scripts/cut_fixture.py.
@@ -192,7 +195,7 @@ class FakeProvider : Closeable {
     private val guide = ConcurrentHashMap<Long, List<GuideProgramme>>()
 
     /** The moment the guide answers for: which programme is flagged on now, and what the short guide leaves out. */
-    @Volatile var guideNow: () -> Instant = Instant::now
+    @Volatile var guideNow: () -> Instant = Clock.System::now
 
     /** Answers every guide call with this HTTP status, as a Provider refusing them would. Null answers them. */
     @Volatile var refuseGuideWith: Int? = null
@@ -367,10 +370,10 @@ class FakeProvider : Closeable {
         val now = guideNow()
         return programmes.withIndex().joinToString(",", """{"epg_listings":[""", "]}") { (i, programme) ->
             val title = Base64.getEncoder().encodeToString(programme.title.toByteArray())
-            fun stamp(at: Instant) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(at.atZone(ZoneOffset.UTC))
-            val on = !programme.start.isAfter(now) && programme.end.isAfter(now)
+            fun stamp(at: Instant) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(at.toJavaInstant().atZone(java.time.ZoneOffset.UTC))
+            val on = programme.start <= now && programme.end > now
             """{"id":"${streamId * 100 + i}","epg_id":"1","title":"$title","lang":"","start":"${stamp(programme.start)}","end":"${stamp(programme.end)}",""" +
-                """"description":"$title","channel_id":"guide.$streamId","start_timestamp":"${programme.start.epochSecond}","stop_timestamp":"${programme.end.epochSecond}",""" +
+                """"description":"$title","channel_id":"guide.$streamId","start_timestamp":"${programme.start.epochSeconds}","stop_timestamp":"${programme.end.epochSeconds}",""" +
                 """"now_playing":${if (on) 1 else 0},"has_archive":0}"""
         }
     }
@@ -437,7 +440,7 @@ class FakeProvider : Closeable {
                 refuseGuideWith?.let { return exchange.sendResponseHeaders(it, -1) }
                 val programmes = guide[id].orEmpty().let { all ->
                     if (query["action"] == "get_simple_data_table") all
-                    else all.filter { it.end.isAfter(guideNow() + Duration.ofHours(1)) }.take(4)
+                    else all.filter { it.end > guideNow() + 1.hours }.take(4)
                 }
                 respond(exchange) { it.write(guideJson(id, programmes).toByteArray()) }
             }
@@ -461,8 +464,8 @@ class FakeProvider : Closeable {
     }
 
     private fun account(): String {
-        val status = if (expiresOn.isAfter(Instant.now())) "Active" else "Expired"
-        return """{"user_info":{"username":"$username","auth":1,"status":"$status","exp_date":"${expiresOn.epochSecond}",""" +
+        val status = if (expiresOn > Clock.System.now()) "Active" else "Expired"
+        return """{"user_info":{"username":"$username","auth":1,"status":"$status","exp_date":"${expiresOn.epochSeconds}",""" +
             """"is_trial":"0","active_cons":"${openStreams.get()}","max_connections":"1"},"server_info":{"timezone":"UTC"}}"""
     }
 

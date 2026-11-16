@@ -10,8 +10,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.FixedOffsetTimeZone
+import kotlinx.datetime.UtcOffset
 
 /** The Prefix table as the Base table with a Provider's Provider table merged into it (ADR 0014). */
 class ProviderTableTest {
@@ -60,7 +61,7 @@ class ProviderTableTest {
         // and of one Listing per line the table had, against what the table made of them before. IR and
         // ES name no audio since #545: their reads split, so only their listed language is named.
         assertEquals(resource("/snapshots/fixture-descriptions.txt"), FixtureDescriptions.render(surveyedPrefixTable()))
-        assertEquals(ZoneId.of("America/Toronto"), surveyedPrefixTable().eventTimeZone)
+        assertEquals(TimeZone.of("America/Toronto"), surveyedPrefixTable().eventTimeZone)
     }
 
     @Test fun `the bundled hand file is found by the Provider's host hash`() {
@@ -76,7 +77,7 @@ class ProviderTableTest {
         assertTrue(UnknownPrefix("CD", 1, "CD - Der Pate (1972)") in synced.last.unknownPrefixes)
         assertNull(library.movie(1).language)
         assertEquals("de", library.movie(2).language?.value)
-        assertEquals(ZoneOffset.UTC, PrefixTable.base().eventTimeZone.normalized())
+        assertEquals(TimeZone.UTC, PrefixTable.base().eventTimeZone.normalized())
     }
 
     @Test fun `the Base table holds none of the surveyed Provider's typos and own codes`() {
@@ -114,8 +115,8 @@ class ProviderTableTest {
     }
 
     @Test fun `a Provider's event time zone replaces the Base table's`() {
-        assertEquals(ZoneId.of("Asia/Tokyo"), PrefixTable.withProviderTable("[event time zone]\nAsia/Tokyo\n").eventTimeZone)
-        assertEquals(ZoneOffset.UTC, PrefixTable.withProviderTable("[prefixes]\nXB | language=de\n").eventTimeZone.normalized())
+        assertEquals(TimeZone.of("Asia/Tokyo"), PrefixTable.withProviderTable("[event time zone]\nAsia/Tokyo\n").eventTimeZone)
+        assertEquals(TimeZone.UTC, PrefixTable.withProviderTable("[prefixes]\nXB | language=de\n").eventTimeZone.normalized())
     }
 
     @Test fun `Clutter names from both tables apply`() = runBlocking {
@@ -176,4 +177,7 @@ class ProviderTableTest {
         assertThrows(IllegalArgumentException::class.java) { PrefixTable.withProviderTable("[prefixes]\nXB | language=de\nXB | language=fr\n") }
         assertFalse(PrefixTable.withProviderTable("[prefixes]\nEN | language=fr\n").describe("EN - Heat", "MOVIES").attributes.language?.value == "en")
     }
+
+    /** UTC under any of its names (`UTC`, `Z`, `GMT`) as [TimeZone.UTC], as `ZoneId.normalized()` gave the one offset. */
+    private fun TimeZone.normalized(): TimeZone = if (this is FixedOffsetTimeZone && offset == UtcOffset.ZERO) TimeZone.UTC else this
 }

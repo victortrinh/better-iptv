@@ -30,7 +30,7 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Instant
+import kotlin.time.Instant
 
 /**
  * The player's Feed list, which the menu key opens while a Game's Feed plays: every Feed as the Game
