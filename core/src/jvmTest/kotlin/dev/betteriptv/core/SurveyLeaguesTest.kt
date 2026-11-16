@@ -19,7 +19,7 @@ import java.time.ZoneId
  * also matches that cloud's Games to the survey and prints each Game's Feeds. Skipped unless run
  * with `-Psurvey=<path to .survey/raw>` (#375):
  *
- * `./gradlew :core:test --tests '*SurveyLeaguesTest' -Psurvey=$PWD/.survey/raw -i`
+ * `./gradlew :core:jvmTest --tests '*SurveyLeaguesTest' -Psurvey=$PWD/.survey/raw -i`
  */
 class SurveyLeaguesTest {
     @get:Rule val folder = TemporaryFolder()

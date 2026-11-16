@@ -5,7 +5,7 @@ name: Unknown Prefixes
 # Prefixes whose file reads split under the bar, the learned lines that contradict the Base table, and
 # the candidate Tier tags Syncs reported in the last 30 days (#439). The curator writes hand lines from
 # it, in the Provider's hand file in cloud/provider-tables/, or adds a Prefix most Providers share to the
-# Base table (core/src/main/resources/dev/betteriptv/core/prefix-table.txt). A Prefix or Tier tag with a
+# Base table (core/src/commonMain/resources/dev/betteriptv/core/prefix-table.txt). A Prefix or Tier tag with a
 # hand line drops off the list the next week; with nothing left, the issue is closed. The body is built by
 # cloud/scripts/weekly-issue.mjs (tested in cloud/test/weekly-issue.test.ts); nothing is applied by itself.
 

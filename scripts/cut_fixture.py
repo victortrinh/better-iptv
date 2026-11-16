@@ -2,7 +2,7 @@
 """Cut a small, sanitized test fixture from the survey's catalog snapshot.
 
 Reads the git-ignored .survey/raw/ written by scripts/survey.py and writes the
-fake Provider's fixture to core/src/test/resources/fixture/. The fixture keeps
+fake Provider's fixture to core/src/jvmTest/resources/fixture/. The fixture keeps
 real Listing names and Categories (the groups the spec's tests rely on) but
 strips image hosts, direct sources and trailers, renumbers every Provider id,
 so nothing identifies the Provider or the Viewer. (The fake Provider makes up
@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / ".survey" / "raw"
-OUT = ROOT / "core" / "src" / "test" / "resources" / "fixture"
+OUT = ROOT / "core" / "src" / "jvmTest" / "resources" / "fixture"
 
 # Groups the spec's fixture must cover, matched on Listing name or Category name.
 GROUPS = [
