@@ -22,6 +22,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.Shadows.shadowOf
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /** Settings' App section names where the Title facts and Trending come from (#480), in both App languages. */
 @RunWith(RobolectricTestRunner::class)
@@ -52,7 +54,7 @@ class DataSourcesLineTest {
             profiles = Profiles(listOf(Profile(Profile.FIRST_ID, name = null)), Profile.FIRST_ID),
             onProfile = {},
             pin = FakePin(),
-            catalogLanguages = { listOf("en") },
+            contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
             catalog = {},
             account = { _, _, _ -> },
             accountPage = { _, _ -> },

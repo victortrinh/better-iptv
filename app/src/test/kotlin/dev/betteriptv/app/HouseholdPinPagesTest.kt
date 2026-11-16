@@ -41,6 +41,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * The Household PIN on screen (#437): the digit pad and its dots, chosen twice with the first Kids
@@ -97,7 +99,7 @@ class HouseholdPinPagesTest {
             profiles = profiles,
             onProfile = ::change,
             pin = pin,
-            catalogLanguages = { listOf("en") },
+            contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
             catalog = {},
         )
     }
@@ -110,7 +112,7 @@ class HouseholdPinPagesTest {
                     SettingsContent(
                         ViewerSettings(listOf("en"), appLanguage = "en", region = "CA", qualityCap = QualityCap.UHD),
                         UpdateState.Unknown, onChange = {}, onUpdate = {}, focusTab = false, onTab = {},
-                        profiles = profiles, onProfile = ::change, pin = pin, catalogLanguages = { listOf("en") }, catalog = {},
+                        profiles = profiles, onProfile = ::change, pin = pin, contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) }, catalog = {},
                     )
                 }
             }

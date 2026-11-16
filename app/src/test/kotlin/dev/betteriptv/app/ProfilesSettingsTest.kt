@@ -34,6 +34,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Settings' Profiles section (#428): the household's Profiles first in Settings, each opening its
@@ -89,7 +91,7 @@ class ProfilesSettingsTest {
             profiles = profiles,
             onProfile = ::change,
             pin = pin,
-            catalogLanguages = { listOf("en") },
+            contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
             catalog = {},
         )
     }

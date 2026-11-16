@@ -44,6 +44,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import dev.betteriptv.core.ContentLanguagesContent
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * The profile chip and "Who's watching?" (#432): no chip with one Profile, the chip after the
@@ -115,7 +117,7 @@ class ProfileChipTest {
                         profiles = profiles,
                         onProfile = {},
                         pin = FakePin(),
-                        catalogLanguages = { listOf("en") },
+                        contentLanguages = { flowOf(ContentLanguagesContent(listOf("en"))) },
                         catalog = {},
                         addProfile = adding,
                         onAddProfileShown = { adding = false },
