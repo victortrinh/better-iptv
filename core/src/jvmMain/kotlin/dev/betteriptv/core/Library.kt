@@ -66,6 +66,10 @@ class Library private constructor(
      */
     private val providerTables: (providerKey: String) -> String?,
     private val cloud: CloudClient?,
+    /** Keeps the app running through a Sync or Matching the Viewer left for another app. */
+    private val background: BackgroundWork,
+    /** The device's own settings, kept in the platform's [SettingsStore]: they never leave the device. */
+    val deviceSettings: KeptDeviceSettings,
 ) : Closeable, KeptSettings {
     /**
      * The Prefix table for the Provider logged in to: the Base table with that Provider's Provider
@@ -498,10 +502,10 @@ class Library private constructor(
      * from this status: the Sync itself is finished, and another may start meanwhile. This returns once
      * that is done too.
      */
-    suspend fun sync(hold: Boolean = false, contentLanguages: List<String> = emptyList(), playerOpen: () -> Boolean = { false }): SyncStatus {
+    suspend fun sync(hold: Boolean = false, contentLanguages: List<String> = emptyList(), playerOpen: () -> Boolean = { false }): SyncStatus = background.keepAlive {
         val landed = syncLock.withLock { withContext(Dispatchers.IO) { syncUnderLock(hold, contentLanguages, playerOpen) } }
         if (landed is SyncStatus.Synced) afterCatalogLanded(hold)
-        return _syncStatus.value
+        _syncStatus.value
     }
 
     private fun syncUnderLock(hold: Boolean, contentLanguages: List<String>, playerOpen: () -> Boolean): SyncStatus {
@@ -748,7 +752,9 @@ class Library private constructor(
      * its catalog lands. Returns false at once, without waiting, when none is held or a Sync is
      * running: the next screen entry asks again.
      */
-    suspend fun applyPendingCatalog(): Boolean {
+    suspend fun applyPendingCatalog(): Boolean = background.keepAlive { applyPending() }
+
+    private suspend fun applyPending(): Boolean {
         if (!syncLock.tryLock()) return false
         val applied = try {
             withContext(Dispatchers.IO) {
@@ -823,9 +829,11 @@ class Library private constructor(
      * answer), without waiting for the next Sync, to land between screens. Asks nothing when every
      * Title has its answer.
      */
-    suspend fun resumeTitleFacts() = landedLock.withLock {
-        withContext(Dispatchers.IO) {
-            if (store.lastSync() != null) fetchTitleFacts(land = false)
+    suspend fun resumeTitleFacts() = background.keepAlive {
+        landedLock.withLock {
+            withContext(Dispatchers.IO) {
+                if (store.lastSync() != null) fetchTitleFacts(land = false)
+            }
         }
     }
 
@@ -3460,30 +3468,33 @@ class Library private constructor(
         /** How many of a Channel's variants watching it tries (each as TS then HLS) before giving up. */
         private const val CHAIN_VARIANTS = 3
 
+        /** The name the catalog's database is asked of the platform's [DatabasePlace] by. */
+        private const val CATALOG_DATABASE = "catalog.db"
+
         /**
-         * Opens the catalog at [databasePath], creating it if needed. What the cloud adds (Title facts,
-         * Trending, Games, the Account) comes from [cloudAddress]; without one, the Provider's catalog stands alone.
-         * The app says what it runs on in [device], which the cloud keeps with the device's registration.
+         * Opens the catalog with what the [platform] supplies (ADR 0020), creating its database if needed.
+         * What the cloud adds (Title facts, Trending, Games, the Account) comes from [cloudAddress];
+         * without one, the Provider's catalog stands alone. The app says what it runs on in [device],
+         * which the cloud keeps with the device's registration.
          */
         fun open(
-            databasePath: String,
-            credentials: CredentialStore,
+            platform: Platform,
             cloudAddress: String? = null,
             http: OkHttpClient = defaultHttp(),
             device: CloudDevice? = null,
-        ): Library = open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, http, device)
+        ): Library = open(platform, cloudAddress, PrefixTable::bundledProviderTable, http, device)
 
         /** [open], with each Provider's Provider table, by Provider key, from [providerTables] instead of the ones shipped with the app. */
         internal fun open(
-            databasePath: String,
-            credentials: CredentialStore,
+            platform: Platform,
             cloudAddress: String?,
             providerTables: (providerKey: String) -> String?,
             http: OkHttpClient = defaultHttp(),
             device: CloudDevice? = null,
         ): Library {
-            val store = CatalogStore(databasePath)
-            return Library(store, credentials, http, providerTables, cloudAddress?.let { CloudClient(it, http, store, device) })
+            val store = CatalogStore(platform.database.path(CATALOG_DATABASE))
+            val cloud = cloudAddress?.let { CloudClient(it, http, store, device) }
+            return Library(store, platform.credentials, http, providerTables, cloud, platform.background, KeptDeviceSettings(platform.settings))
         }
 
         private fun defaultHttp() = OkHttpClient.Builder()

@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import dev.betteriptv.core.SubtitleStyle
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow

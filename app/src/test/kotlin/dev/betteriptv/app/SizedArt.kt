@@ -5,8 +5,8 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.TextUnit
-import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.TypeScale
+import dev.betteriptv.core.TextSize
 
 /**
  * Artwork of one [color] that says it is [width] × [height], as a decoded picture does: a 1280 × 720
