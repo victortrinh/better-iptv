@@ -1,0 +1,6 @@
+# What packaging for a TV leaves in app/: the signed package and its signatures, which hold the owner's certificate.
+*.wgt
+app/author-signature.xml
+app/signature1.xml
+app/.manifest.tmp
+app/.buildResult
