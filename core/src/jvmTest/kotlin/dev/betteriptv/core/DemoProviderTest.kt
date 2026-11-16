@@ -43,7 +43,7 @@ class DemoProviderTest {
     }
 
     @Test fun `every Listing lands, and the Base table knows every Prefix`() {
-        assertEquals(7, synced.last.movieListingCount)
+        assertEquals(8, synced.last.movieListingCount)
         assertEquals(2, synced.last.showListingCount)
         assertEquals(1, synced.last.channelListingCount)
         assertEquals(emptyList<UnknownPrefix>(), synced.last.unknownPrefixes)
@@ -65,11 +65,12 @@ class DemoProviderTest {
         )
     }
 
-    @Test fun `Big Buck Bunny is one Title with one English Version`() = runBlocking {
+    @Test fun `Big Buck Bunny is one Title with two Versions, English in 4K and in the Provider's plain copy`() = runBlocking {
         val versions = versions(TitleId.Numbered(TitleKind.Movie, 10378))
 
-        assertEquals(listOf("EN - Big Buck Bunny (2008)"), versions.map { it.name })
-        assertEquals(listOf("en"), versions.map { it.attributes.language?.value })
+        assertEquals(setOf("4K-EN - Big Buck Bunny (2008)", "EN - Big Buck Bunny (2008)"), versions.map { it.name }.toSet())
+        assertEquals(listOf("en", "en"), versions.map { it.attributes.language?.value })
+        assertEquals(setOf(Quality.UHD, null), versions.map { it.attributes.quality?.value }.toSet())
     }
 
     @Test fun `the Shows land with their Episodes, one with a Title number and one without`() = runBlocking {

@@ -2,10 +2,21 @@
   {
     "kind": "movie",
     "id": 1001,
-    "title": "Big Buck Bunny (2008)",
+    "title": "Big Buck Bunny (2008), HD",
     "url": "https://archive.org/download/BigBuckBunnyFULLHD60FPS/Big%20Buck%20Bunny%20-%20FULL%20HD%2060FPS.mp4",
     "host": "Internet Archive",
     "page": "https://archive.org/details/BigBuckBunnyFULLHD60FPS",
+    "licence": "CC BY 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "credit": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+  },
+  {
+    "kind": "movie",
+    "id": 1002,
+    "title": "Big Buck Bunny (2008), 4K",
+    "url": "https://archive.org/download/youtube-aqz-KE-bpKQ/aqz-KE-bpKQ.mkv",
+    "host": "Internet Archive",
+    "page": "https://archive.org/details/youtube-aqz-KE-bpKQ",
     "licence": "CC BY 3.0",
     "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
     "credit": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"

@@ -123,7 +123,7 @@ Every item is under a Creative Commons licence that allows showing it in a paid 
 
 | Listing | Title number | File | Licence, as its page states it |
 | --- | --- | --- | --- |
-| Big Buck Bunny (2008) | movie 10378 | Internet Archive, `BigBuckBunnyFULLHD60FPS` | CC BY 3.0 |
+| Big Buck Bunny (2008), HD and 4K | movie 10378 | Internet Archive, `BigBuckBunnyFULLHD60FPS` and `youtube-aqz-KE-bpKQ` (Blender's own 4K upload to YouTube, kept by the Archive) | CC BY 3.0 |
 | Sintel (2010) | movie 45745 | Internet Archive, `Sintel` | CC BY 3.0 |
 | Tears of Steel (2012) | movie 133701 | Internet Archive, `Tears-of-Steel` | CC BY 3.0 |
 | Elephants Dream (2006) | movie 9761 | Internet Archive, `ElephantsDream` | CC BY 2.5 (the film's own; the item says 3.0 US) |
@@ -138,6 +138,6 @@ The two hosts: the Internet Archive documents `https://archive.org/download/<ide
 
 The films' licences ask for a credit, and the app shows none yet beyond each film's own credits: the credit lines are in `stream_addresses.json` for the screen that will.
 
-Left out because no file of it could be linked: A Trip to the Moon, The Cabinet of Dr. Caligari, Battleship Potemkin and Man with a Movie Camera (the files found are copies of recent restorations or name no source, some with a later score), Les Vampires (the files found carry a 1990s distributor's English intertitles), the NASA ISS Live Channel (NASA shows it on YouTube only), and The Great Train Robbery and the 4K copies of Big Buck Bunny, Sintel and Tears of Steel, whose clean files are on Wikimedia Commons, which refuses the app's requests: its player sends its HTTP library's stock User-Agent, and Wikimedia's policy asks for one that names the app.
+Left out because no file of it could be linked: A Trip to the Moon, The Cabinet of Dr. Caligari, Battleship Potemkin and Man with a Movie Camera (the files found are copies of recent restorations or name no source, some with a later score), Les Vampires (the files found carry a 1990s distributor's English intertitles), the NASA ISS Live Channel (NASA shows it on YouTube only), and The Great Train Robbery and the 4K copies of Sintel and Tears of Steel, whose clean files are on Wikimedia Commons, which refuses the app's requests: its player sends its HTTP library's stock User-Agent, and Wikimedia's policy asks for one that names the app.
 
 Left out earlier because the licence wasn't sure enough: Nosferatu (Wikidata records it as still copyrighted in Germany), Night of the Living Dead and The General (public domain in the United States only), Intolerance (a title writer died in 1981), Pioneer One and Democracy Now! (NonCommercial), Agent 327 (NoDerivatives), Sprite Fright and Charge (no licence recorded on Wikidata), the 1950s US television series whose public-domain status is per Episode, and news channels with a free live stream but no licence to re-show it (DW, France 24, Al Jazeera English).

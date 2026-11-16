@@ -78,7 +78,7 @@ describe("the Demo Provider's movies", () => {
   it("lists its movie Categories", async () => {
     const categories = await answer<Category[]>({ action: "get_vod_categories" });
 
-    expect(categories.map((category) => category.category_name)).toEqual(["EN - ANIMATION", "EN - KIDS", "EN - SCIENCE FICTION"]);
+    expect(categories.map((category) => category.category_name)).toEqual(["EN - ANIMATION", "EN - KIDS", "EN - SCIENCE FICTION", "EN - MOVIES 4K"]);
     expect(new Set(categories.map((category) => category.category_id)).size).toBe(categories.length);
   });
 
@@ -86,16 +86,22 @@ describe("the Demo Provider's movies", () => {
     const categories = await answer<Category[]>({ action: "get_vod_categories" });
     const movies = await answer<Listing[]>({ action: "get_vod_streams" });
 
-    expect(movies).toHaveLength(7);
+    expect(movies).toHaveLength(8);
     expect(new Set(movies.map((movie) => movie.stream_id)).size).toBe(movies.length);
     for (const movie of movies) {
-      expect(movie.name).toMatch(/^EN - .+ \(20\d\d\)$/);
+      expect(movie.name).toMatch(/^(EN|4K-EN) - .+ \(20\d\d\)$/);
       expect(Number(movie.tmdb)).toBeGreaterThan(0);
       expect(movie.stream_type).toBe("movie");
       expect(categories.map((category) => category.category_id)).toContain(movie.category_id);
     }
-    // One Listing a film: no host that may be linked, and that the app can read, has a second copy of one.
+    // Seven films, one of them in two qualities.
     expect(new Set(movies.map((movie) => movie.tmdb)).size).toBe(7);
+  });
+
+  it("lists Big Buck Bunny twice under one Title number, in HD and in 4K, so Match makes one Title with two Versions", async () => {
+    const movies = await answer<Listing[]>({ action: "get_vod_streams" });
+
+    expect(movies.filter((movie) => movie.tmdb === "10378").map((movie) => movie.name)).toEqual(["EN - Big Buck Bunny (2008)", "4K-EN - Big Buck Bunny (2008)"]);
   });
 
   it("lists one Category's movie Listings when asked for it, as a Head start asks", async () => {
@@ -113,7 +119,7 @@ describe("the Demo Provider's movies", () => {
     expect(details.movie_data).toMatchObject({ stream_id: 1003, name: "EN - Sintel (2010)", container_extension: "mp4", category_id: "1" });
   });
 
-  it("gives every movie Listing details", async () => {
+  it("gives every movie Listing details, the same for both qualities of one film", async () => {
     const movies = await answer<Listing[]>({ action: "get_vod_streams" });
     for (const movie of movies) {
       const details = await answer<MovieDetails>({ action: "get_vod_info", vod_id: String(movie.stream_id) });
@@ -121,6 +127,8 @@ describe("the Demo Provider's movies", () => {
       expect(details.info.duration_secs, movie.name).toBeGreaterThan(0);
       expect(details.movie_data.stream_id).toBe(movie.stream_id);
     }
+    const [hd, uhd] = await Promise.all(["1001", "1002"].map((id) => answer<MovieDetails>({ action: "get_vod_info", vod_id: id })));
+    expect(hd.info).toEqual(uhd.info);
   });
 
   it("answers a movie it doesn't have as a Provider does: no details", async () => {
@@ -203,6 +211,13 @@ describe("the Demo Provider's stream addresses", () => {
     expect(await response.text()).toBe("");
   });
 
+  it("sends the 4K Listing of the same film to another file", async () => {
+    const response = await stream(`/movie/${username}/${password}/1002.mkv`);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("https://archive.org/download/youtube-aqz-KE-bpKQ/aqz-KE-bpKQ.mkv");
+  });
+
   it("sends an Episode to its file", async () => {
     const response = await stream(`/series/${username}/${password}/10001.mp4`);
 
@@ -242,7 +257,7 @@ describe("the Demo Provider's stream addresses", () => {
     }
     for (const channel of await answer<Listing[]>({ action: "get_live_streams" })) listed.push(["live", channel.stream_id!, "m3u8"]);
 
-    expect(listed).toHaveLength(19);
+    expect(listed).toHaveLength(20);
     for (const [kind, id, container] of listed) {
       const response = await stream(`/${kind}/${username}/${password}/${id}.${container}`);
       expect(response.status, `${kind} ${id}`).toBe(302);
