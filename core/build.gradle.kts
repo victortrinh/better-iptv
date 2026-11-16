@@ -50,6 +50,8 @@ kotlin {
         jvmTest.dependencies {
             implementation(libs.junit)
             implementation(libs.coroutines.test)
+            // The engine the fake Provider and Cloud answer in, with no socket (#580).
+            implementation(libs.ktor.client.mock)
         }
     }
 }
@@ -67,14 +69,20 @@ tasks.named<Test>("jvmTest") {
     // Small on purpose: Sync must stream the catalog, never hold a whole JSON document in memory.
     maxHeapSize = "128m"
     // Four test JVMs, each with that heap: these tests were CI's critical path, seven minutes in one
-    // JVM, most of it real waits (delays and timeouts) rather than work. The fakes bind ephemeral
-    // ports and each test gets its own TemporaryFolder, so they don't meet.
+    // JVM, most of it real waits (delays and timeouts) rather than work. The fakes answer inside the
+    // HTTP client (the few on a socket bind ephemeral ports) and each test gets its own TemporaryFolder,
+    // so they don't meet.
     maxParallelForks = 4
+    // Lets NoSockets.kt refuse sockets to the tests that aren't marked as needing real ones (#580). Its
+    // hook is the security manager, which Java 24 removed: there the JVM wouldn't start with this set.
+    if (javaVersion < JavaVersion.VERSION_24) systemProperty("java.security.manager", "allow")
     // ./gradlew :core:jvmTest --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     providers.gradleProperty("surveyCloud").orNull?.let { systemProperty("surveyCloud", it) }
     // ./gradlew :core:jvmTest --tests '*RealUpdatesTest' -PrealUpdates reads the real update manifest from GitHub.
     providers.gradleProperty("realUpdates").orNull?.let { systemProperty("realUpdates", "true") }
+    // ./gradlew :core:jvmTest --tests '*ServedProviderTest' -PserveProvider=/path/to/movie.mp4 serves the fake Provider to an emulator.
+    providers.gradleProperty("serveProvider").orNull?.let { systemProperty("serveProvider", it) }
     // ./gradlew :core:jvmTest --tests '*SearchIndexBenchmark' -Pbenchmark
     // Its made-up catalog has more names than the real one (up to 40 translations a Title), so more heap.
     providers.gradleProperty("benchmark").orNull?.let {

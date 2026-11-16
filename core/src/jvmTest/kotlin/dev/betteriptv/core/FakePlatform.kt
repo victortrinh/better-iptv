@@ -39,7 +39,8 @@ fun fakePlatform(
 
 /**
  * Opens a Library on a platform of fakes ([fakePlatform]) whose database is at [databasePath], as the
- * tests written before the Core named its platform (#583) open theirs.
+ * tests written before the Core named its platform (#583) open theirs. It reaches the fake Provider and
+ * Cloud inside its HTTP client ([InProcess]) unless given the [network] of another [FakeTransport].
  */
 internal fun Library.Companion.open(
     databasePath: String,
@@ -47,7 +48,8 @@ internal fun Library.Companion.open(
     cloudAddress: String? = null,
     providerTables: ((providerKey: String) -> String?)? = null,
     device: CloudDevice? = null,
+    network: CoreNetwork = InProcess.network(),
 ): Library {
     val platform = fakePlatform(databasePath, credentials)
-    return if (providerTables == null) open(platform, cloudAddress, device = device) else open(platform, cloudAddress, providerTables, device = device)
+    return if (providerTables == null) open(platform, cloudAddress, network, device) else open(platform, cloudAddress, providerTables, network, device)
 }
