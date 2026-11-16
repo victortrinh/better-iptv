@@ -2407,11 +2407,10 @@ class Library private constructor(
 
     /**
      * A finished [game]'s Replay: the Sports replay naming both its teams ([replayOf]) and dated its
-     * day in the device's zone, or, failing one, the day after (a Provider's clock ahead of the
+     * day in the device's [zone], or, failing one, the day after (a Provider's clock ahead of the
      * Viewer's), the last added when several. Null for a Game not over, and until the Provider has one.
+     * An app is handed it with the Game's page ([GamePage]).
      */
-    suspend fun gameReplay(game: Game): Replay? = gameReplay(game, TimeZone.currentSystemDefault())
-
     internal suspend fun gameReplay(game: Game, zone: TimeZone): Replay? = withContext(Dispatchers.IO) {
         if (game.state != GameState.Over) return@withContext null
         val day = game.start.dayIn(zone)
@@ -2445,9 +2444,16 @@ class Library private constructor(
         store.dropFeed(profile, entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
         accountSync.record(profile, SyncEntry.NOT_THIS_GAME, "${entry.key}|${feed.channel.key}", ON, now, perProvider = true)
         accountSync.pushSoon()
+        // The Game's page and the rows it is on read again.
+        changed()
         // Matched again, so the League network joins once every named Feed is dropped.
         matchedFeeds(listOf(entry.game), contentLanguages, region, now).all.firstOrNull()
             ?: entry.copy(feeds = rankedFeeds(entry.feeds.map { if (it.channel.key == feed.channel.key) it.copy(dropped = true) else it }, contentLanguages))
+    }
+
+    /** [game] with its Feeds from the catalog ([matchedFeeds]), ranked for the [contentLanguages] and [region]: what its page lists ([GamePage]). */
+    internal suspend fun gameFeeds(game: Game, contentLanguages: List<String>, region: String, now: Instant): GameFeeds = withContext(Dispatchers.IO) {
+        matchedFeeds(listOf(game), contentLanguages, region, now).all.firstOrNull() ?: GameFeeds(game, emptyList())
     }
 
     /**
