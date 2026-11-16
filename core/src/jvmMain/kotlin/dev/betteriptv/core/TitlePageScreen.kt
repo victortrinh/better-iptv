@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A Title's page and the screens its actions open, the Versions screen and a Show's Episode picker
@@ -52,11 +53,14 @@ data class TitlePageScreen(
         // Its first value is what there is now: the first reading.
         launch { combine(library.contentChanges(), library.progressChanges) { content, progress -> content to progress }.collect { changed.send(Unit) } }
         var headerReads: Job? = null
+        val ended = AtomicBoolean(false)
         val readHeaders = {
             headerReads = launch {
                 // Each read that Confirms something has the page read again, in place.
                 library.readHeaders(id, contentLanguages, preferOriginalAudio, checking = { left -> checking.value = left > 0 }) { changed.send(Unit) }
-                readsEnded.value = true
+                // Told with the reading after them, so the page never shows itself checked with what the last read Confirmed still unread.
+                ended.set(true)
+                changed.send(Unit)
             }
         }
         // A Show's reads need its show details, so they start once its Episodes are in.
@@ -64,10 +68,13 @@ data class TitlePageScreen(
         var first = true
         while (true) {
             changed.receive()
+            // Whether this reading is taken after the Header reads ended: only then is it checked as far as they could check it.
+            val afterReads = ended.get()
             // Only the first reading shows the page before its Episodes: once read, they never go back to unread.
             val read = reading(library, beforeEpisodes = if (first) { early -> reading.value = early } else null) ?: continue
             first = false
             reading.value = read
+            if (afterReads) readsEnded.value = true
             if (headerReads == null && read.episodes != null) readHeaders()
         }
     }.distinctUntilChanged()
