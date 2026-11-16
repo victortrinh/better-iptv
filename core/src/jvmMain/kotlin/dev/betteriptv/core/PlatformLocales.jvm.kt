@@ -17,4 +17,6 @@ internal actual fun iso3Language(language: String): String? = runCatching { Loca
 
 internal actual fun displayLanguage(language: String, into: String): String = Locale.forLanguageTag(language).getDisplayLanguage(Locale.forLanguageTag(into))
 
+internal actual fun lowercaseIn(text: String, language: String): String = text.lowercase(Locale.forLanguageTag(language))
+
 internal actual fun displayCountry(country: String, into: String): String = Locale.Builder().setRegion(country).build().getDisplayCountry(Locale.forLanguageTag(into))

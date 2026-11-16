@@ -31,9 +31,6 @@ internal val BEST_FIRST: Comparator<Candidate> =
         .thenByDescending { it.listing.added }
         .thenBy { it.listing.id }
 
-/** `fr-CA` is French: a Content language matches every regional variant of it. */
-internal fun primaryLanguage(tag: String): String = tag.substringBefore('-').lowercase()
-
 private val Candidate.primaryLanguage get() = attributes.language?.value?.let(::primaryLanguage)
 
 /** [candidates] best first, those in the Viewer's [contentLanguages] ahead of the rest. */

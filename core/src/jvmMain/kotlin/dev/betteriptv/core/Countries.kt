@@ -11,6 +11,9 @@ fun languageCountries(tag: String): List<String> {
     return (listOf(tagCountry(tag)) + (LANGUAGE_COUNTRIES[language] ?: localeCountries(language))).filter { it.isNotEmpty() }.distinct()
 }
 
+/** `fr-CA` is French: a Content language matches every regional variant of it. */
+internal fun primaryLanguage(tag: String): String = tag.substringBefore('-').lowercase()
+
 /** The main countries of the languages Viewers are likeliest to pick, most populous first. */
 private val LANGUAGE_COUNTRIES = mapOf(
     "en" to listOf("US", "GB", "CA", "AU", "IE", "NZ"),

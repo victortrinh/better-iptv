@@ -7,7 +7,9 @@ plugins {
 
 // ADR 0020's first step (#577): the Core is a Kotlin Multiplatform module whose only target is the
 // JVM Android uses. src/commonMain holds what compiles without the JVM; src/jvmMain holds what still
-// needs it (java.time, OkHttp, Moshi, java.text...), until those are swapped one at a time.
+// needs it (OkHttp, Moshi, the SQLite driver, java.io...), until those are swapped one at a time. Dates
+// are kotlinx-datetime's and text goes through PlatformText and PlatformLocales since #578, so neither
+// holds a file there any more.
 // With one target Gradle never compiles commonMain on its own, so a JVM call there still builds. To
 // check a file belongs in commonMain, add a second target for a moment (macosArm64() below jvm) and
 // run ./gradlew :core:compileCommonMainKotlinMetadata.

@@ -13,7 +13,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Closeable
 import java.io.IOException
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -366,13 +365,12 @@ data class Track(val language: String?, val mimeType: String? = null, val channe
  * "CC" never pass for one.
  */
 internal fun languageInName(name: String): String? =
-    name.lowercase(Locale.ROOT).split(Regex("[^\\p{L}]+")).filter { it.length >= 4 }.firstNotNullOfOrNull { LANGUAGES_BY_ANY_NAME[it] }
+    name.lowercase().split(Regex("[^\\p{L}]+")).filter { it.length >= 4 }.firstNotNullOfOrNull { LANGUAGES_BY_ANY_NAME[it] }
 
 /** ISO 639-1 codes by their languages' English names and their own, lower case. */
 private val LANGUAGES_BY_ANY_NAME: Map<String, String> by lazy {
-    Locale.getISOLanguages().flatMap { code ->
-        val locale = Locale.forLanguageTag(code)
-        listOf(locale.getDisplayLanguage(locale), locale.getDisplayLanguage(Locale.ENGLISH)).map { it.lowercase(locale) to code }
+    isoLanguages().flatMap { code ->
+        listOf(displayLanguage(code, code), displayLanguage(code, "en")).map { lowercaseIn(it, code) to code }
     }.filter { (name, code) -> name.isNotEmpty() && name != code }.reversed().toMap()
 }
 
@@ -532,7 +530,7 @@ internal class ConnectionGate(private val releaseGrace: Duration = PROVIDER_RELE
 
 /** ISO 639-1 codes by ISO 639-2 code, both the terminology (`fra`) and bibliographic (`fre`) forms. */
 private val ISO_639_1: Map<String, String> by lazy {
-    Locale.getISOLanguages().associateBy { Locale.forLanguageTag(it).isO3Language } + mapOf(
+    isoLanguages().mapNotNull { code -> iso3Language(code)?.let { it to code } }.toMap() + mapOf(
         "alb" to "sq", "arm" to "hy", "baq" to "eu", "bur" to "my", "chi" to "zh", "cze" to "cs", "dut" to "nl", "fre" to "fr",
         "geo" to "ka", "ger" to "de", "gre" to "el", "ice" to "is", "mac" to "mk", "mao" to "mi", "may" to "ms", "per" to "fa",
         "rum" to "ro", "slo" to "sk", "tib" to "bo", "wel" to "cy",
@@ -549,7 +547,7 @@ private fun trackLanguage(tag: String): String = primaryLanguage(tag).let { ISO_
  */
 fun vlcNamedTrack(name: String): Track? {
     VLC_CLOSED_CAPTIONS.matchEntire(name)?.let { return if (it.groupValues[1] == "1") Track(null, CEA_608) else null }
-    val language = VLC_LANGUAGE.find(name)?.groupValues?.get(1)?.let { LANGUAGES_BY_NAME[it.lowercase(Locale.ROOT)] }
+    val language = VLC_LANGUAGE.find(name)?.groupValues?.get(1)?.let { LANGUAGES_BY_NAME[it.lowercase()] }
     return Track(language)
 }
 
@@ -560,5 +558,5 @@ private val VLC_LANGUAGE = Regex("""\[([^\]]+)]\s*$""")
 
 /** ISO 639-1 codes by their languages' English names, lower case, as VLC names them. */
 private val LANGUAGES_BY_NAME: Map<String, String> by lazy {
-    Locale.getISOLanguages().associateBy { Locale.forLanguageTag(it).getDisplayLanguage(Locale.ENGLISH).lowercase(Locale.ROOT) }
+    isoLanguages().associateBy { displayLanguage(it, "en").lowercase() }
 }

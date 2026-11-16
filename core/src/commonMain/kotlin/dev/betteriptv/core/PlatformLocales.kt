@@ -25,5 +25,8 @@ internal expect fun iso3Language(language: String): String?
 /** What [language] is called in the language [into], or [language] itself when the platform can't say. */
 internal expect fun displayLanguage(language: String, into: String): String
 
+/** [text] in lower case by the rules of [language] (a Turkish `I` is `ı`), for a name written in that language. */
+internal expect fun lowercaseIn(text: String, language: String): String
+
 /** What the country [country] is called in the language [into], or [country] itself when the platform can't say. */
 internal expect fun displayCountry(country: String, into: String): String
