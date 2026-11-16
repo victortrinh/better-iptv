@@ -422,7 +422,18 @@ class Library private constructor(
     }
 
     /** A stop, or the end of a Title: what changed is pushed to the Account in the background. */
-    internal fun stoppedPlaying() = accountSync.pushSoon()
+    internal fun stoppedPlaying() {
+        _progressChanges.update { it + 1 }
+        accountSync.pushSoon()
+    }
+
+    private val _progressChanges = MutableStateFlow(0)
+
+    /**
+     * Bumped when where the Viewer is in a Title changed by their own doing: playback stopped, or
+     * they took it out of Continue watching. A Title's page reads again ([TitlePageScreen]).
+     */
+    internal val progressChanges: StateFlow<Int> = _progressChanges.asStateFlow()
 
     /** Lands [id]'s pulled history before its page or Play reads where the Viewer stopped. */
     private fun landHistory(id: TitleId) {
@@ -2067,6 +2078,7 @@ class Library private constructor(
         val at = Clock.System.now()
         store.forgetProgress(profile, id, at)
         accountSync.recordHistory(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
+        _progressChanges.update { it + 1 }
         accountSync.pushSoon()
     }
 
@@ -2077,7 +2089,7 @@ class Library private constructor(
      * a Pending catalog too), Title facts land, the device goes to another Profile or the Account's
      * history lands. An app collects while the screen shows and only redraws.
      */
-    fun <Content : Any> screen(screen: Screen<Content>): Flow<Content> = liveContent(screen)
+    fun <Content : Any> screen(screen: Screen<Content>): Flow<Content> = screen.content(this)
 
     /**
      * Home's rows ([Screen.Home]): Continue watching, then Live now (the Games of the [leagues] on that

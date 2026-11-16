@@ -47,6 +47,7 @@ import dev.betteriptv.app.ui.theme.Corners
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Episode
+import dev.betteriptv.core.EpisodesPlace
 import dev.betteriptv.core.Season
 import dev.betteriptv.core.ShowEpisodes
 
@@ -175,12 +176,9 @@ internal fun Context.seasonName(number: Int): String =
  * Episode to watch next), or, when they never played the Show, the season it starts in and its
  * Episode count ("Season 1 · 14 Episodes").
  */
-internal fun Context.episodesValue(episodes: ShowEpisodes): String? {
-    val next = episodes.next ?: return null
-    val season = episodes.seasons.firstOrNull { it.number == next.season } ?: return null
-    val started = episodes.seasons.any { s -> s.episodes.any { it.progress != null } }
-    return if (started) getString(R.string.episodes_at, seasonName(next.season), next.number)
-    else "${seasonName(next.season)} · ${resources.getQuantityString(R.plurals.episodes_count, season.episodes.size, season.episodes.size)}"
+internal fun Context.episodesValue(place: EpisodesPlace): String = when (place) {
+    is EpisodesPlace.At -> getString(R.string.episodes_at, seasonName(place.episode.season), place.episode.number)
+    is EpisodesPlace.NotStarted -> "${seasonName(place.season)} · ${resources.getQuantityString(R.plurals.episodes_count, place.episodes, place.episodes)}"
 }
 
 /**
