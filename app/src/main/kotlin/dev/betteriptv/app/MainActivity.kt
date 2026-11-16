@@ -39,6 +39,7 @@ import dev.betteriptv.core.Feed
 import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.LiveCountry
+import dev.betteriptv.core.LiveTab
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.Replay
 import dev.betteriptv.core.Screen
@@ -484,7 +485,7 @@ private fun PreReadOtherTabs(
             Browse.Home to PreReadTab(home, { library.screen(Screen.Home(languages, appLanguage, settings.region, leagues)).first().rows }, featured(FeaturedScreen.Home)),
             Browse.Movies to PreReadTab(movies.rows, { library.screen(TitlesTab(TitleKind.Movie, languages, appLanguage)).first().rows }, featured(FeaturedScreen.Movies)),
             Browse.Shows to PreReadTab(shows.rows, { library.screen(TitlesTab(TitleKind.Show, languages, appLanguage)).first().rows }, featured(FeaturedScreen.Shows)),
-            Browse.Live to PreReadTab(live, { library.liveRows(leagues, settings.region, languages) }),
+            Browse.Live to PreReadTab(live, { library.screen(LiveTab(leagues, settings.region, languages)).first().rows }),
         ).filter { it.first != tab }.map { it.second }
         preReadTabs(
             tabs, readingFor,

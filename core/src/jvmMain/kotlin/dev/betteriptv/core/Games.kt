@@ -64,6 +64,8 @@ data class GameFight(val name: String, val shortName: String, val mainCard: Inst
  * schedule says carry it. A Game [dayOnly] has only its day known yet (a golf round before its tee
  * times are out): [start] is noon US Eastern that day. Its Feeds are found among the catalog's
  * Channels by the teams', the event's or the fighters' aliases and the Broadcasters' names.
+ * Two readings of the same Game are equal, so a screen's content holding it is told apart from the
+ * last only when something of it changed ([Library.screen]).
  */
 data class Game(
     val league: String,
