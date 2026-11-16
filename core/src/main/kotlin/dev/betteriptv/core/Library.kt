@@ -461,7 +461,8 @@ class Library private constructor(
      *
      * A first Sync swaps each stage in as it lands, so Live and Home open on the Channels within
      * seconds while the Titles are still read. Between the two it lands a Head start (ADR 0019): the
-     * fresh Categories of the Viewer's [contentLanguages] ([headStartCategories]), each read with a
+     * fresh Categories of the Viewer's [contentLanguages], or enough of a language with none to
+     * fill a row ([readHeadStart]), each read with a
      * request of its own, one at a time, and landed as Titles to play while the full lists are read;
      * the Titles stage then replaces them whole. With no Content languages, or when a Category can't
      * be read, there is none, and no error either. A first Sync stopped past its Head start (the app
@@ -649,7 +650,7 @@ class Library private constructor(
     }
 
     /**
-     * Reads and lands a first Sync's Head start (ADR 0019): the Categories [headStartCategories]
+     * Reads and lands a first Sync's Head start (ADR 0019): the Categories [readHeadStart]
      * picks for the [contentLanguages], the movies' then the shows', each with a request of its own,
      * one at a time, described with [table] and Matched as the Titles stage does. Returns when it
      * landed, having told the screens to read again, or null when there is none: no Category
@@ -661,25 +662,34 @@ class Library private constructor(
         return try {
             val at = Instant.now()
             val landed = store.landHeadStart(at) { staging ->
-                fun categories(kind: TitleKind, read: ((String, String) -> Unit) -> Unit): Map<String, String> {
+                /** Reads [kind]'s Head start: [listings] reads one Category's Listings and answers how many of them show. */
+                fun read(kind: TitleKind, categories: ((String, String) -> Unit) -> Unit, listings: (category: String, categoryName: String) -> Int) {
                     val names = LinkedHashMap<String, String>()
-                    read { id, name -> names[id] = name }
-                    val picked = headStartCategories(table, names.toList(), contentLanguages)
-                    picked.forEach { staging.category(kind, it, names.getValue(it)) }
-                    return picked.associateWith(names::getValue)
-                }
-                categories(TitleKind.Movie, client::movieCategories).forEach { (category, categoryName) ->
-                    client.movieListings(category) { id, name, _, added, titleNumber, image, container, rating ->
-                        val hidden = table.describe(name, categoryName).hidden != null
-                        staging.listing(TitleKind.Movie, id, name, category, added, image, hidden, titleNumber, table.cleanName(name).year, container, rating, null)
+                    categories { id, name -> names[id] = name }
+                    readHeadStart(table, names.toList(), contentLanguages) { category ->
+                        val categoryName = names.getValue(category)
+                        staging.category(kind, category, categoryName)
+                        listings(category, categoryName)
                     }
                 }
-                categories(TitleKind.Show, client::showCategories).forEach { (category, categoryName) ->
+                read(TitleKind.Movie, client::movieCategories) { category, categoryName ->
+                    var shown = 0
+                    client.movieListings(category) { id, name, _, added, titleNumber, image, container, rating ->
+                        val hidden = table.describe(name, categoryName).hidden != null
+                        if (!hidden) shown++
+                        staging.listing(TitleKind.Movie, id, name, category, added, image, hidden, titleNumber, table.cleanName(name).year, container, rating, null)
+                    }
+                    shown
+                }
+                read(TitleKind.Show, client::showCategories) { category, categoryName ->
+                    var shown = 0
                     client.showListings(category) { show ->
                         val hidden = table.describe(show.name, categoryName).hidden != null
+                        if (!hidden) shown++
                         val year = table.cleanName(show.name).year ?: releaseYear(show.details.releaseDate)
                         staging.listing(TitleKind.Show, show.id, show.name, category, show.modified, show.image, hidden, show.titleNumber, year, null, show.details.rating, show.details)
                     }
+                    shown
                 }
             }
             if (!landed) return null

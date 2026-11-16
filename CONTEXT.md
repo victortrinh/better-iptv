@@ -63,7 +63,7 @@ One of a Sync's two halves: the Channels (live Categories and Listings), then th
 _Avoid_: Phase, half, pass
 
 **Head start**:
-The fresh Categories a first Sync lands right after the Channels, so there are Movies and Shows to play within seconds while the rest is read: per Content language, the Categories the Prefix table says hold new releases, else the first in the Provider's order. It is not a Stage: the Titles Stage replaces it whole, and a later Sync has none. Until then a Title in it has only the Versions its Head start Listings give it.
+The fresh Categories a first Sync lands right after the Channels, so there are Movies and Shows to play within seconds while the rest is read: per Content language, up to two movie and two show Categories the Prefix table says hold new releases; a language with none of a kind is read from its first Category on, in the Provider's order, until a row's worth of Listings that show are read (40) or three Categories are. It is not a Stage: the Titles Stage replaces it whole, and a later Sync has none. Until then a Title in it has only the Versions its Head start Listings give it.
 _Avoid_: Slice, preview, first look, fast lane
 
 **Step**:

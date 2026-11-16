@@ -55,8 +55,19 @@ class HeadStartTest {
         provider.serveMovieListings(*names.mapIndexed { i, name -> MovieListing("${name.substringBefore(' ')} - Movie $i (2024)", name, 100L + i) }.toTypedArray())
 
     /** Serves one show Listing per Category name, in this order: Category 1 is the first name. */
-    private fun showCategories(vararg names: String) =
-        provider.serveShows(*names.mapIndexed { i, name -> ShowListing("EN - Show $i (2024)", name, 200L + i) }.toTypedArray())
+    private fun showCategories(vararg names: String) = showCategories(*names.map { it to 1 }.toTypedArray())
+
+    /** Serves each Category name's count of movie Listings, each a Title of its own, in this order: Category 1 is the first name. */
+    private fun movieCategories(vararg sizes: Pair<String, Int>) {
+        val categories = sizes.flatMap { (name, size) -> List(size) { name } }
+        provider.serveMovieListings(*categories.mapIndexed { i, name -> MovieListing("${name.substringBefore(' ')} - Movie $i (2024)", name, 100L + i) }.toTypedArray())
+    }
+
+    /** Serves each Category name's count of show Listings, each a Title of its own, in this order: Category 1 is the first name. */
+    private fun showCategories(vararg sizes: Pair<String, Int>) {
+        val categories = sizes.flatMap { (name, size) -> List(size) { name } }
+        provider.serveShows(*categories.mapIndexed { i, name -> ShowListing("EN - Show $i (2024)", name, 10_000L + i) }.toTypedArray())
+    }
 
     /** The per-Category Listing requests the Provider got, in order. */
     private val categoryRequests get() = provider.requests.filter { "category" in it }
@@ -109,13 +120,55 @@ class HeadStartTest {
         )
     }
 
-    @Test fun `with no Category named as fresh, the first one in the Content language is read`() = runBlocking {
-        movieCategories("FR - ACTION", "EN - COMEDY", "EN - DRAMA")
-        showCategories("NETFLIX SERIES", "FRANCE SÉRIES", "ENGLISH SERIES", "ENGLISH KIDS")
+    @Test fun `with no Category named as fresh, a first Category that fills a row is the only one read`() = runBlocking {
+        movieCategories("FR - ACTION" to 3, "EN - COMEDY" to 40, "EN - DRAMA" to 40)
+        showCategories("NETFLIX SERIES" to 50, "FRANCE SÉRIES" to 50, "ENGLISH SERIES" to 40, "ENGLISH KIDS" to 40)
 
         library.sync(contentLanguages = english)
 
         assertEquals(listOf("get_vod_streams category 2", "get_series category 3"), categoryRequests)
+    }
+
+    @Test fun `with no Category named as fresh, a tiny first Category is followed by the next ones until a row is filled`() = runBlocking {
+        // The surveyed Provider's English show Categories open on two quality variants of one and nine shows.
+        showCategories("ENGLISH SERIES ⁴ᴷ ³⁸⁴⁰ᴾ" to 1, "FRANCE SÉRIES" to 50, "ENGLISH SERIES ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ" to 9, "ENGLISH SERIES" to 30, "ENGLISH KIDS" to 40)
+        movieCategories("EN - WESTERN" to 5, "EN - COMEDY" to 35, "EN - DRAMA" to 40)
+
+        duringTheFullRead {
+            assertEquals(listOf("get_vod_streams category 1", "get_vod_streams category 2", "get_series category 1", "get_series category 3", "get_series category 4"), categoryRequests)
+            assertEquals(40, library.titles(0, 100, english, "en", TitleKind.Movie).size)
+            assertEquals(40, library.titles(0, 100, english, "en", TitleKind.Show).size)
+        }
+        assertEquals(1, provider.mostRequestsAtOnce)
+    }
+
+    @Test fun `with no Category named as fresh, no more than three Categories are read for a row that won't fill`() = runBlocking {
+        movieCategories("EN - WESTERN" to 1, "EN - COMEDY" to 2, "EN - DRAMA" to 3, "EN - ACTION" to 40)
+        showCategories("ENGLISH SERIES" to 1, "ENGLISH KIDS" to 1)
+
+        library.sync(contentLanguages = english)
+
+        assertEquals(
+            listOf("get_vod_streams category 1", "get_vod_streams category 2", "get_vod_streams category 3", "get_series category 1", "get_series category 2"),
+            categoryRequests,
+        )
+        assertEquals(1, provider.mostRequestsAtOnce)
+    }
+
+    @Test fun `a row is filled for each Content language and each kind apart`() = runBlocking {
+        movieCategories("EN - COMEDY" to 40, "FR - ACTION" to 2, "EN - DRAMA" to 40, "FR - COMÉDIE" to 40, "FR - DRAME" to 40)
+
+        library.sync(contentLanguages = bilingual)
+
+        assertEquals(listOf("get_vod_streams category 1", "get_vod_streams category 2", "get_vod_streams category 4"), categoryRequests)
+    }
+
+    @Test fun `a Content language with a Category named as fresh reads it alone, however few Listings it holds`() = runBlocking {
+        movieCategories("EN - COMEDY" to 40, "EN - NEW RELEASE" to 1, "EN - DRAMA" to 40, "FR - ACTION" to 1, "FR - DRAME" to 40)
+
+        library.sync(contentLanguages = bilingual)
+
+        assertEquals(listOf("get_vod_streams category 2", "get_vod_streams category 4", "get_vod_streams category 5"), categoryRequests)
     }
 
     @Test fun `a Hand line the cloud serves marks a Category fresh, and it is read ahead of the first in the language`() = runBlocking {
@@ -127,12 +180,13 @@ class HeadStartTest {
         assertEquals(listOf("get_vod_streams category 2"), categoryRequests)
     }
 
-    @Test fun `without the Hand line, a misspelt fresh Category is passed over for the first in the language`() = runBlocking {
+    @Test fun `without the Hand line, a misspelt fresh Category is read as any other in the language`() = runBlocking {
         movieCategories("FR - ACTION", "FR - LE DRENIER AJOUTEE", "EN - COMEDY")
 
         library.sync(contentLanguages = listOf("fr"))
 
-        assertEquals(listOf("get_vod_streams category 1"), categoryRequests)
+        // Neither is named as fresh, so both are read towards a row, in the Provider's order.
+        assertEquals(listOf("get_vod_streams category 1", "get_vod_streams category 2"), categoryRequests)
     }
 
     @Test fun `the surveyed Provider's Hand lines mark its fresh Categories that the Base table's words miss`() = runBlocking {

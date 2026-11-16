@@ -26,7 +26,7 @@ The wait is the device's own work, not the Provider's. Measured on 2026-11-15 ag
 
 No Step dominates: a show Listing costs 4.4 times a movie Listing (its plot, cast and backdrops), and Saving is spread over five statements. Nothing cheap makes the whole Sync quick. The Provider does serve one Category alone when asked: `EN - NEW RELEASE`, 6,670 movies, in 1.3 s.
 
-So a first Sync, right after its Channels, reads a **Head start**: per Content language, at most two movie and two show Categories that the Prefix table says hold new releases (words the Base table ships, plus Hand lines for names such as `FR - LE DRENIER AJOUTEE`), else the first in the Provider's order. It lands them as real, playable Titles, and Home's and the tabs' "New" rows and the featured Title fill from them. The full catalog is then read as before and replaces the Head start whole, at once, the focused card and its row staying where they are. The checklist shows only until the Channels land; after that the Catalog pill says the rest is still being added, and Search says so under an empty result.
+So a first Sync, right after its Channels, reads a **Head start**: per Content language, at most two movie and two show Categories that the Prefix table says hold new releases (words the Base table ships, plus Hand lines for names such as `FR - LE DRENIER AJOUTEE`). A language with no such Category of a kind is read from its first Category on, in the Provider's order, until 40 Listings that show are read or three Categories are. The Category list carries no counts, and the first Category in a language can be a quality variant holding one Listing: the surveyed Provider's English shows open on `ENGLISH SERIES ⁴ᴷ ³⁸⁴⁰ᴾ` (1 Listing) and `ENGLISH SERIES ᴰᴼᴸᴮʸ ᴬᵁᴰᴵᴼ` (9) before `ENGLISH SERIES` (3,316), so the first alone made a Shows tab of a single card. It lands them as real, playable Titles, and Home's and the tabs' "New" rows and the featured Title fill from them. The full catalog is then read as before and replaces the Head start whole, at once, the focused card and its row staying where they are. The checklist shows only until the Channels land; after that the Catalog pill says the rest is still being added, and Search says so under an empty result.
 
 ## Considered
 
@@ -36,7 +36,7 @@ So a first Sync, right after its Channels, reads a **Head start**: per Content l
 
 ## Consequences
 
-- A first Sync makes a handful of extra Provider requests, one at a time, before the three big ones.
+- A first Sync makes a handful of extra Provider requests, one at a time, before the three big ones: per Content language and kind, two at most for fresh Categories, three at most without one.
 - Until the full catalog lands, a Head start Title has only the Versions its Head start Listings give it, Search and the genre rows know only the Head start, and Trending isn't shown.
 - A Head start that can't be read (a Provider that refuses a per-Category request) is skipped without an error; the first Sync then behaves as ADR 0011 describes.
 - An app closed between the Head start and the full catalog reopens on the Head start, and the Sync starts again from the full read.
