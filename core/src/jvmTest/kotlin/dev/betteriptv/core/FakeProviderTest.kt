@@ -6,8 +6,9 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /** The fake must hold the real Provider's Connection limit, or tests could pass against a laxer Provider. */
-class FakeProviderTest {
-    private val provider = FakeProvider()
+open class FakeProviderTest {
+    protected open val transport: FakeTransport get() = InProcess
+    private val provider = FakeProvider(transport)
 
     @After fun tearDown() = provider.close()
 

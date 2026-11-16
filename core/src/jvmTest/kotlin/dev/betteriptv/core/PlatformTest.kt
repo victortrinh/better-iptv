@@ -25,7 +25,7 @@ class PlatformTest {
         folder.root.resolve(name).path
     }
 
-    private fun openLibrary() = Library.open(platform()).also { libraries += it }
+    private fun openLibrary() = Library.open(platform(), network = InProcess.network()).also { libraries += it }
 
     @After fun tearDown() {
         libraries.forEach { it.close() }

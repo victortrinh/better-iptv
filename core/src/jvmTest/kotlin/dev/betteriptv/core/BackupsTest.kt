@@ -20,15 +20,22 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
-/** A Playback session's Versions: falling back to Backups, the buffering suggestion, and switching Version partway through. */
-class BackupsTest {
+/**
+ * A Playback session's Versions: falling back to Backups, the buffering suggestion, and switching Version partway through.
+ * VLC plays through a relay: a fake one here, and Android's own, on real sockets, in [BackupsOverSocketsTest],
+ * which runs these same tests on the JVM.
+ */
+open class BackupsTest {
+    /** How the Provider is reached, and the relay with it. */
+    protected open val transport: FakeTransport get() = InProcess
+
     @get:Rule val folder = TemporaryFolder()
-    private val provider = FakeProvider()
+    private val provider = FakeProvider(transport)
     private val player = ScriptedPlayer(provider)
     private lateinit var library: Library
 
     @Before fun logIn() = runBlocking {
-        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials())
+        library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), network = transport.network())
         library.logIn(provider.login)
         Unit
     }

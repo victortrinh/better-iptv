@@ -1,16 +1,14 @@
 package dev.betteriptv.core
 
 import com.squareup.moshi.JsonReader
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runInterruptible
 import java.io.Closeable
 import java.io.File
+import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
-import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.URI
-import java.net.URLDecoder
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Clock
@@ -20,22 +18,21 @@ import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.zip.GZIPOutputStream
 import okio.Buffer
 import okio.buffer
 import okio.source
 import kotlin.time.toJavaInstant
 
 /**
- * A local Xtream Codes Provider that replays the sanitized fixture cut by scripts/cut_fixture.py.
+ * An Xtream Codes Provider that replays the sanitized fixture cut by scripts/cut_fixture.py. It answers
+ * inside the Core's HTTP client ([InProcess]) unless a JVM test asks for a real local server (`OverSockets`).
  *
  * Like the surveyed Provider, it allows one stream at a time: a second concurrent stream is refused.
  * Tests script it to be down, expired, or to cut the movie list off midway. Show details are
  * served from the fixture's `series_info_<id>.json` files; any other Show has no Episodes.
  */
-class FakeProvider : Closeable {
+class FakeProvider(private val transport: FakeTransport = InProcess) : FakeHost, Closeable {
     val username = "viewer"
     val password = "s3cret-Pa55"
 
@@ -105,7 +102,7 @@ class FakeProvider : Closeable {
 
     /** Answers movie file requests with their headers and then sends nothing, until closed: a stalled Provider (#505). */
     @Volatile var stalledFiles = false
-    private val stalls = java.util.concurrent.CountDownLatch(1)
+    private val stalls = CompletableDeferred<Unit>()
 
     /** Movie details by Provider stream id (`get_vod_info`), as JSON, served instead of an empty answer; [serveMovieDetails] writes one. */
     val movieDetails = ConcurrentHashMap<Long, String>()
@@ -269,7 +266,7 @@ class FakeProvider : Closeable {
     /** Serves the catalog from this directory (a survey's `.survey/raw`) instead of the fixture. */
     @Volatile var catalogDirectory: File? = null
 
-    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private val listening = transport.listen(this)
     private val openStreams = AtomicInteger()
     private val _streamRequests = AtomicInteger()
     private val _refusedStreams = AtomicInteger()
@@ -292,31 +289,30 @@ class FakeProvider : Closeable {
     val openStreamCount get() = openStreams.get()
     val requestsWithoutGzip get() = _requestsWithoutGzip.get()
 
-    val url: String get() = "http://127.0.0.1:${server.address.port}"
+    val url: String get() = listening.url
     val login get() = ProviderLogin(url, username, password)
 
-    init {
-        server.executor = Executors.newCachedThreadPool()
-        server.createContext("/player_api.php") { exchange -> try { api(exchange) } finally { exchange.close() } }
-        server.createContext("/movie/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
-        server.createContext("/series/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
-        server.createContext("/live/") { exchange -> try { stream(exchange) } finally { exchange.close() } }
-        server.start()
-    }
-
     /** Opens a movie stream the way the player would; close it to end playback. */
-    fun openStream(streamId: Long): InputStream {
-        val connection = URI("$url/movie/$username/$password/$streamId.mkv").toURL().openConnection() as HttpURLConnection
-        if (connection.responseCode != 200) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
-        return connection.inputStream
+    fun openStream(streamId: Long): InputStream = play("$url/movie/$username/$password/$streamId.mkv")
+
+    /**
+     * Plays the stream at [location], as the player engine would, from the start or a [range] of it;
+     * close it to end playback. The location is the Provider's own or a relay's.
+     */
+    fun play(location: String, range: String? = null): InputStream {
+        val request = request(location, range)
+        val played = if (range == null) request.status == 200 else request.status in 200..299
+        if (!played) {
+            request.close()
+            throw IllegalStateException("stream refused: HTTP ${request.status}")
+        }
+        return object : FilterInputStream(request.bytes) {
+            override fun close() = request.close()
+        }
     }
 
-    /** Plays the stream at [location], as the player engine would; close it to end playback. */
-    fun play(location: String): InputStream {
-        val connection = URI(location).toURL().openConnection() as HttpURLConnection
-        if (connection.responseCode != 200) throw IllegalStateException("stream refused: HTTP ${connection.responseCode}")
-        return connection.inputStream
-    }
+    /** Asks for the file at [location] as a player engine does, whatever the answer; close it to let go of the file. */
+    fun request(location: String, range: String? = null): EngineRequest = transport.request(location, range)
 
     /**
      * Serves these Listings of one Movie (Title number 1) as the whole movie list: names with their
@@ -384,82 +380,99 @@ class FakeProvider : Closeable {
     private fun json(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     override fun close() {
-        stalls.countDown()
-        server.stop(0)
+        stalls.complete(Unit)
+        listening.close()
     }
 
-    private fun api(exchange: HttpExchange) {
-        if (down) return exchange.sendResponseHeaders(503, -1)
-        val query = query(exchange)
+    override suspend fun answer(request: FakeRequest): FakeAnswer = when {
+        request.path.startsWith("/player_api.php") -> api(request)
+        STREAMS.any { request.path.startsWith(it) } -> stream(request)
+        else -> FakeAnswer(404)
+    }
+
+    private suspend fun api(request: FakeRequest): FakeAnswer {
+        if (down) return FakeAnswer(503)
+        val query = request.query
         if (query["username"] != username || query["password"] != password) {
-            wrongLoginStatus?.let { return exchange.sendResponseHeaders(it, -1) }
-            return respond(exchange) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
+            wrongLoginStatus?.let { return FakeAnswer(it) }
+            return respond(request) { it.write("""{"user_info":{"auth":0}}""".toByteArray()) }
         }
         _mostRequestsAtOnce.accumulateAndGet(requestsNow.incrementAndGet(), ::maxOf)
-        try {
-            answer(exchange, query)
-        } finally {
+        // A request is being answered until the last of its answer is sent.
+        val answer = try {
+            answer(request, query)
+        } catch (e: Throwable) {
             requestsNow.decrementAndGet()
+            throw e
+        }
+        val send = answer.body ?: return answer.also { requestsNow.decrementAndGet() }
+        return FakeAnswer(answer.status, answer.headers, answer.length, answer.gzip) { body ->
+            try {
+                send(body)
+            } finally {
+                requestsNow.decrementAndGet()
+            }
         }
     }
 
-    private fun answer(exchange: HttpExchange, query: Map<String, String>) {
-        onRequest?.invoke(query["action"])
+    private suspend fun answer(request: FakeRequest, query: Map<String, String>): FakeAnswer {
+        // A test's callback may wait; a request the Core gave up on stops waiting with it.
+        onRequest?.let { called -> runInterruptible { called(query["action"]) } }
         val category = query["category_id"]
         _requests += listOfNotNull(query["action"] ?: "account", query["vod_id"] ?: query["series_id"] ?: query["stream_id"], category?.let { "category $it" }).joinToString(" ")
         if (query["action"] in LISTS) {
             if (category != null) {
-                if (refuseCategoryRequests) return exchange.sendResponseHeaders(503, -1)
+                if (refuseCategoryRequests) return FakeAnswer(503)
                 val file = if (query["action"] == "get_vod_streams") "vod_streams.json" else "series_streams.json"
                 val override = if (query["action"] == "get_vod_streams") movieListOverride else showListOverride
-                return respond(exchange) { body -> categoryList(category, file, override, body) }
+                return respond(request) { body -> categoryList(category, file, override, body) }
             }
-            fullListPause?.also { fullListPause = null }?.hold()
+            fullListPause?.also { fullListPause = null }?.let { pause -> runInterruptible { pause.hold() } }
         }
-        when (query["action"]) {
-            null -> respond(exchange) { it.write(account().toByteArray()) }
-            "get_vod_categories" -> respond(exchange) { body ->
+        return when (query["action"]) {
+            null -> respond(request) { it.write(account().toByteArray()) }
+            "get_vod_categories" -> respond(request) { body ->
                 if (!catalogFile("vod_categories.json", body)) body.write(movieCategoriesOverride?.toByteArray() ?: fixture("vod_categories.json"))
             }
-            "get_vod_streams" -> respond(exchange) { body -> movieList(body) }
-            "get_series_categories" -> respond(exchange) { body ->
+            "get_vod_streams" -> respond(request) { body -> movieList(body) }
+            "get_series_categories" -> respond(request) { body ->
                 if (!catalogFile("series_categories.json", body)) body.write(showCategoriesOverride?.toByteArray() ?: fixture("series_categories.json"))
             }
-            "get_series" -> respond(exchange) { body ->
+            "get_series" -> respond(request) { body ->
                 if (!catalogFile("series_streams.json", body)) body.write(showListOverride?.toByteArray() ?: fixture("series_streams.json"))
             }
-            "get_live_categories" -> respond(exchange) { body ->
+            "get_live_categories" -> respond(request) { body ->
                 if (!catalogFile("live_categories.json", body)) body.write((liveCategoriesOverride ?: "[]").toByteArray())
             }
-            "get_live_streams" -> respond(exchange) { body ->
+            "get_live_streams" -> respond(request) { body ->
                 if (!catalogFile("live_streams.json", body)) body.write((liveListOverride ?: "[]").toByteArray())
             }
             "get_short_epg", "get_simple_data_table" -> {
                 val id = query["stream_id"]?.toLongOrNull() ?: -1
                 _guideRequests += id
-                refuseGuideWith?.let { return exchange.sendResponseHeaders(it, -1) }
+                refuseGuideWith?.let { return FakeAnswer(it) }
                 val programmes = guide[id].orEmpty().let { all ->
                     if (query["action"] == "get_simple_data_table") all
                     else all.filter { it.end > guideNow() + 1.hours }.take(4)
                 }
-                respond(exchange) { it.write(guideJson(id, programmes).toByteArray()) }
+                respond(request) { it.write(guideJson(id, programmes).toByteArray()) }
             }
-            "get_vod_info" -> respond(exchange) { body ->
-                if (movieDetailsDelayMillis > 0) Thread.sleep(movieDetailsDelayMillis)
+            "get_vod_info" -> respond(request) { body ->
+                if (movieDetailsDelayMillis > 0) delay(movieDetailsDelayMillis)
                 body.write((movieDetails[query["vod_id"]?.toLongOrNull()] ?: """{"info":[],"movie_data":{}}""").toByteArray())
             }
             "get_series_info" -> {
                 val id = query["series_id"]?.toLongOrNull() ?: -1
                 _showDetailsRequests += id
-                if (id in brokenShowDetails) return exchange.sendResponseHeaders(503, -1)
-                respond(exchange) { body ->
+                if (id in brokenShowDetails) return FakeAnswer(503)
+                respond(request) { body ->
                     if (!catalogFile("series_info_$id.json", body)) {
                         // What the surveyed Provider answers for a series it has no Episodes for.
                         body.write(showDetailsOverride[id]?.toByteArray() ?: fixtureOrNull("series_info_$id.json") ?: NO_EPISODES.toByteArray())
                     }
                 }
             }
-            else -> respond(exchange) { it.write("[]".toByteArray()) }
+            else -> respond(request) { it.write("[]".toByteArray()) }
         }
     }
 
@@ -469,7 +482,7 @@ class FakeProvider : Closeable {
             """"is_trial":"0","active_cons":"${openStreams.get()}","max_connections":"1"},"server_info":{"timezone":"UTC"}}"""
     }
 
-    private fun movieList(body: OutputStream) {
+    private suspend fun movieList(body: FakeBody) {
         val generated = generatedMovies
         val override = movieListOverride
         when {
@@ -479,7 +492,7 @@ class FakeProvider : Closeable {
             cutMovieListMidway -> {
                 val bytes = fixture("vod_streams.json")
                 body.write(bytes, 0, bytes.size / 2)
-                body.flush()
+                // The answer ends here, unfinished, so the client sees a truncated body.
                 throw CutOff()
             }
             else -> body.write(fixture("vod_streams.json"))
@@ -491,31 +504,33 @@ class FakeProvider : Closeable {
      * fixture's) filed under Category [category], as the Provider answers a per-Category request:
      * read one Listing at a time, so a survey's 59 MB list never sits in memory.
      */
-    private fun categoryList(category: String, file: String, override: String?, body: OutputStream) {
+    private suspend fun categoryList(category: String, file: String, override: String?, body: FakeBody) {
         val source = catalogDirectory?.resolve(file)?.takeIf { it.isFile }?.source()?.buffer()
             ?: Buffer().write(override?.toByteArray() ?: fixture(file))
+        val pieces = Pieces(body)
         JsonReader.of(source).use { json ->
-            body.write('['.code)
+            pieces.write("[")
             var first = true
             json.beginArray()
             while (json.hasNext()) {
                 val listing = json.nextSource().readUtf8()
                 if (CATEGORY_ID.find(listing)?.groupValues?.get(1) != category) continue
-                if (!first) body.write(','.code)
+                if (!first) pieces.write(",")
                 first = false
-                body.write(listing.toByteArray())
+                pieces.write(listing)
             }
-            body.write(']'.code)
+            pieces.write("]")
         }
+        pieces.flush()
     }
 
-    private fun generateMovies(body: OutputStream, count: Int) {
-        val writer = body.bufferedWriter()
-        writer.write("[")
+    private suspend fun generateMovies(body: FakeBody, count: Int) {
+        val pieces = Pieces(body)
+        pieces.write("[")
         for (i in 1..count) {
-            if (i > 1) writer.write(",")
+            if (i > 1) pieces.write(",")
             // Shaped like the real list: about 400 bytes per Listing, which makes the full catalog ~56 MB.
-            writer.write(
+            pieces.write(
                 """{"num":$i,"name":"EN - Generated Movie $i (2020)","stream_type":"movie","stream_id":$i,""" +
                     """"stream_icon":"","rating":"6.5","rating_5based":3.3,"tmdb":"$i","trailer":"",""" +
                     """"added":"${1_700_000_000 + i}","is_adult":0,"category_id":"1","category_ids":[1],""" +
@@ -523,107 +538,117 @@ class FakeProvider : Closeable {
                     """"padding":"${"x".repeat(150)}"}""",
             )
         }
-        writer.write("]")
-        writer.flush()
+        pieces.write("]")
+        pieces.flush()
     }
 
-    private fun stream(exchange: HttpExchange) {
+    /** Text written a little at a time, sent on in pieces of a few kilobytes, as a buffered writer sends it. */
+    private class Pieces(private val body: FakeBody) {
+        private val text = StringBuilder()
+
+        suspend fun write(more: String) {
+            text.append(more)
+            if (text.length >= 8 * 1024) flush()
+        }
+
+        suspend fun flush() {
+            if (text.isEmpty()) return
+            body.write(text.toString().toByteArray())
+            text.clear()
+        }
+    }
+
+    private fun stream(request: FakeRequest): FakeAnswer {
         _streamRequests.incrementAndGet()
-        val parts = exchange.requestURI.path.split("/")
-        if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return exchange.sendResponseHeaders(401, -1)
+        val parts = request.path.split("/")
+        if (parts.getOrNull(2) != username || parts.getOrNull(3) != password) return FakeAnswer(401)
         val id = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()
-        if (id in deadStreams) return exchange.sendResponseHeaders(deadStatus, -1)
-        if (parts[1] == "live" && parts.getOrNull(4)?.substringAfter('.') in deadLiveFormats) return exchange.sendResponseHeaders(404, -1)
-        // Closed by the caller without a status line.
-        if (unansweredFiles) return
+        if (id in deadStreams) return FakeAnswer(deadStatus)
+        if (parts[1] == "live" && parts.getOrNull(4)?.substringAfter('.') in deadLiveFormats) return FakeAnswer(404)
+        // Closed without a status line.
+        if (unansweredFiles) throw IOException("the Provider closed the connection without answering")
+        val range = request.header("Range")
         val limit = refuseRangesAfter
-        if (limit != null && exchange.requestHeaders.getFirst("Range") != null && _ranges.size >= limit) return exchange.sendResponseHeaders(429, -1)
+        if (limit != null && range != null && _ranges.size >= limit) return FakeAnswer(429)
         if (openStreams.incrementAndGet() > 1) {
             openStreams.decrementAndGet()
             _refusedStreams.incrementAndGet()
-            return exchange.sendResponseHeaders(403, -1)
+            return FakeAnswer(403)
         }
-        try {
-            if (stalledFiles) {
-                exchange.sendResponseHeaders(206, 256L * 1024)
-                stalls.await()
-                return
-            }
-            val files = if (parts.getOrNull(1) == "series") episodeFiles else movieFiles
-            val file = parts.getOrNull(4)?.substringBefore('.')?.toLongOrNull()?.let { files[it] }
-            if (file != null) return sendFile(exchange, parts[4].substringBefore('.').toLong(), file)
-            exchange.sendResponseHeaders(200, 0)
-            if (id in slowStreams) Thread.sleep(slowStreamDelayMillis)
+        if (stalledFiles) return holdingAStream(206, length = 256L * 1024) { stalls.await() }
+        val files = if (parts.getOrNull(1) == "series") episodeFiles else movieFiles
+        val file = id?.let { files[it] }
+        if (file != null) return sendFile(id, file, range)
+        return holdingAStream(200) { body ->
+            if (id in slowStreams) delay(slowStreamDelayMillis)
             val chunk = ByteArray(16 * 1024)
             // Keeps "playing" until the client goes away.
             while (true) {
-                exchange.responseBody.write(chunk)
-                exchange.responseBody.flush()
-                Thread.sleep(20)
+                body.write(chunk)
+                delay(20)
             }
-        } catch (_: Exception) {
-        } finally {
-            openStreams.decrementAndGet()
         }
     }
 
-    /** Sends [file], or the range of it asked for. */
-    private fun sendFile(exchange: HttpExchange, id: Long, file: ByteArray) {
-        val range = exchange.requestHeaders.getFirst("Range")
+    /** An answer that counts against the Connection limit until the last of it is sent, or its client goes away. */
+    private fun holdingAStream(status: Int, headers: Map<String, String> = emptyMap(), length: Long? = null, send: suspend (FakeBody) -> Unit) =
+        FakeAnswer(status, headers, length) { body ->
+            try {
+                send(body)
+            } finally {
+                openStreams.decrementAndGet()
+            }
+        }
+
+    /** Sends [file], or the [range] of it asked for. */
+    private fun sendFile(id: Long, file: ByteArray, range: String?): FakeAnswer {
         if (range != null) _ranges += "$id:$range"
         val asked = range?.let { Regex("""bytes=(\d+)-(\d*)""").matchEntire(it) }
         val from = asked?.groupValues?.get(1)?.toInt() ?: 0
         val to = asked?.groupValues?.get(2)?.takeIf { it.isNotEmpty() }?.toInt()?.coerceAtMost(file.size - 1) ?: (file.size - 1)
-        if (asked != null) exchange.responseHeaders.add("Content-Range", "bytes $from-$to/${file.size}")
-        exchange.sendResponseHeaders(if (asked != null) 206 else 200, (to - from + 1).toLong())
-        val step = if (slowFiles) slowFileStep else 64 * 1024
-        var at = from
-        while (at <= to) {
-            val end = minOf(at + step, to + 1)
-            exchange.responseBody.write(file, at, end - at)
-            exchange.responseBody.flush()
-            at = end
-            if (slowFiles) Thread.sleep(20)
+        val headers = if (asked != null) mapOf("Content-Range" to "bytes $from-$to/${file.size}") else emptyMap()
+        return holdingAStream(if (asked != null) 206 else 200, headers, (to - from + 1).toLong()) { body ->
+            val step = if (slowFiles) slowFileStep else 64 * 1024
+            var at = from
+            while (at <= to) {
+                val end = minOf(at + step, to + 1)
+                body.write(file, at, end - at)
+                at = end
+                if (slowFiles) delay(20)
+            }
         }
     }
 
-    private fun respond(exchange: HttpExchange, write: (OutputStream) -> Unit) {
-        val gzip = exchange.requestHeaders["Accept-Encoding"].orEmpty().any { "gzip" in it }
-        if (!gzip) _requestsWithoutGzip.incrementAndGet()
-        exchange.responseHeaders.add("Content-Type", "application/json")
-        if (gzip) exchange.responseHeaders.add("Content-Encoding", "gzip")
-        exchange.sendResponseHeaders(200, 0)
-        val body = if (gzip) GZIPOutputStream(exchange.responseBody, 64 * 1024) else exchange.responseBody
-        try {
-            write(body)
-            body.close()
-        } catch (_: CutOff) {
-            // Leave the gzip stream unfinished so the client sees a truncated body.
-        }
+    /** A catalog answer: JSON, sent gzipped to a client that asks for it, as the surveyed Provider sends its own. */
+    private fun respond(request: FakeRequest, write: suspend (FakeBody) -> Unit): FakeAnswer {
+        if (request.headers["Accept-encoding"].orEmpty().none { "gzip" in it }) _requestsWithoutGzip.incrementAndGet()
+        return FakeAnswer(200, mapOf("Content-Type" to "application/json"), gzip = true, body = write)
     }
 
-    private class CutOff : Exception()
+    private class CutOff : IOException("the Provider cut its answer off")
 
     private companion object {
         val LISTS = setOf("get_vod_streams", "get_series")
+        val STREAMS = listOf("/movie/", "/series/", "/live/")
         val CATEGORY_ID = Regex(""""category_id"\s*:\s*"?([^",}\s]*)""")
         const val NO_EPISODES = """{"seasons":[],"info":[],"episodes":[]}"""
     }
-
-    private fun query(exchange: HttpExchange): Map<String, String> =
-        exchange.requestURI.rawQuery.orEmpty().split("&").filter { "=" in it }.associate {
-            val (key, value) = it.split("=", limit = 2)
-            URLDecoder.decode(key, Charsets.UTF_8) to URLDecoder.decode(value, Charsets.UTF_8)
-        }
 
     private fun fixture(name: String): ByteArray = fixtureOrNull(name)!!
 
     private fun fixtureOrNull(name: String): ByteArray? =
         javaClass.getResourceAsStream("/fixture/$name")?.use { it.readBytes() }
 
-    private fun catalogFile(name: String, body: OutputStream): Boolean {
+    private suspend fun catalogFile(name: String, body: FakeBody): Boolean {
         val file = catalogDirectory?.resolve(name)?.takeIf { it.isFile } ?: return false
-        file.inputStream().use { it.copyTo(body) }
+        file.inputStream().use { bytes ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = bytes.read(buffer)
+                if (read < 0) break
+                body.write(buffer, 0, read)
+            }
+        }
         return true
     }
 }

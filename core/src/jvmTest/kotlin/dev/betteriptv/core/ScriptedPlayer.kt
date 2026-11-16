@@ -7,8 +7,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
@@ -85,7 +83,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         override val duration get() = this@ScriptedPlayer.duration
         @Volatile private var events: ((PlayerEvent) -> Unit)? = null
         override val overlapsRequests = engine == Engine.Vlc && vlcReads > 0
-        private val requests = CopyOnWriteArrayList<HttpURLConnection>()
+        private val requests = CopyOnWriteArrayList<EngineRequest>()
         @Volatile private var released = false
         @Volatile override var seen: FileContents? = null
         @Volatile override var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
@@ -113,14 +111,13 @@ class ScriptedPlayer(private val provider: FakeProvider) {
                     for (read in 0 until reads) {
                         if (read > 0 && !overlapsRequests) {
                             // Media3 closes a request before it opens the next, and the Provider sees it go.
-                            requests.forEach(HttpURLConnection::disconnect)
+                            requests.forEach(EngineRequest::close)
                             while (provider.openStreamCount > 0) Thread.sleep(10)
                         }
-                        val request = URI(location).toURL().openConnection() as HttpURLConnection
-                        if (read > 0) request.setRequestProperty("Range", "bytes=${read * 1_000_000}-")
+                        val request = provider.request(location, if (read > 0) "bytes=${read * 1_000_000}-" else null)
                         requests += request
-                        if (released) return@thread request.disconnect()
-                        if (request.responseCode !in 200..299 || request.inputStream.read() < 0) throw IOException("the stream is dead")
+                        if (released) return@thread request.close()
+                        if (request.status !in 200..299 || request.bytes.read() < 0) throw IOException("the stream is dead")
                         answeredAt = TimeSource.Monotonic.markNow()
                     }
                     opened.complete(Unit)
@@ -148,7 +145,7 @@ class ScriptedPlayer(private val provider: FakeProvider) {
         override suspend fun release() {
             released = true
             if (current == this) current = null
-            withContext(Dispatchers.IO) { requests.forEach(HttpURLConnection::disconnect) }
+            withContext(Dispatchers.IO) { requests.forEach(EngineRequest::close) }
             // The stick's engines return once their request is closed; wait until the Provider has seen it go.
             withTimeout(5_000) { while (provider.openStreamCount > 0) delay(10) }
         }

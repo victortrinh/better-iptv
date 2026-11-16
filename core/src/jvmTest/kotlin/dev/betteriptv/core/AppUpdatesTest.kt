@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -12,7 +11,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.net.InetSocketAddress
 import java.security.MessageDigest
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -28,26 +26,17 @@ class AppUpdatesTest {
     /** The release host: serves [files] by path, and redirects `/latest/…` to `/build-95/…` as GitHub does. */
     private val files = HashMap<String, ByteArray>()
     private val requested = CopyOnWriteArrayList<String>()
-    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
-        createContext("/") { exchange ->
-            val path = exchange.requestURI.path
-            requested += path
-            if (path.startsWith("/latest/")) {
-                exchange.responseHeaders.add("Location", path.replace("/latest/", "/build-95/"))
-                exchange.sendResponseHeaders(302, -1)
-            } else {
-                val body = files[path]
-                if (body == null) exchange.sendResponseHeaders(404, -1)
-                else {
-                    exchange.sendResponseHeaders(200, body.size.toLong())
-                    exchange.responseBody.write(body)
-                }
-            }
-            exchange.close()
+    private val server = InProcess.listen { request ->
+        val path = request.path
+        requested += path
+        val body = files[path]
+        when {
+            path.startsWith("/latest/") -> FakeAnswer(302, mapOf("Location" to path.replace("/latest/", "/build-95/")))
+            body == null -> FakeAnswer(404)
+            else -> FakeAnswer(200, length = body.size.toLong()) { it.write(body) }
         }
-        start()
     }
-    private val host = "http://127.0.0.1:${server.address.port}"
+    private val host = server.url
 
     private val installer = object : ApkInstaller {
         var allowed = true
@@ -79,7 +68,7 @@ class AppUpdatesTest {
         override fun now() = now
     }
 
-    private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer, clock = clock)
+    private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer, InProcess.client(), clock)
 
     private val apk = ByteArray(300_000) { (it * 31).toByte() }
     private val dm = ByteArray(20_000) { (it * 7).toByte() }
@@ -101,7 +90,7 @@ class AppUpdatesTest {
         """.trimIndent().toByteArray()
     }
 
-    @After fun tearDown() = server.stop(0)
+    @After fun tearDown() = server.close()
 
     @Test fun `a newer build is offered, with its APK beside the manifest it was redirected to`() = runBlocking {
         publish()

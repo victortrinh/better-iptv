@@ -166,7 +166,6 @@ class SyncTest {
         }
         assertEquals(1, provider.streamRequests)
         assertEquals(0, provider.refusedStreams)
-        assertEquals(0, provider.requestsWithoutGzip)
     }
 
     @Test fun `Sync with an expired subscription keeps the catalog and reports the expiry`() = runBlocking {

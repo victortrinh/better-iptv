@@ -20,7 +20,7 @@ import java.io.File
  * do this. Nothing is installed and the build isn't downloaded whole.
  * Skipped unless run with `./gradlew :core:jvmTest --tests '*RealUpdatesTest' -PrealUpdates`.
  */
-class RealUpdatesTest {
+class RealUpdatesTest : SocketTest() {
     @get:Rule val folder = TemporaryFolder()
 
     private val installer = object : ApkInstaller {

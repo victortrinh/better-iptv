@@ -2,23 +2,21 @@ package dev.betteriptv.core
 
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.Moshi
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.runInterruptible
 import okio.buffer
 import okio.source
 import java.io.Closeable
-import java.net.InetSocketAddress
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 
 /**
- * A local stand-in for the app's cloud (cloud/src/index.ts), serving Title facts from Wikidata ([titleFacts]), Trending's feed ([trending]) and Games, and signing devices in to Accounts ([phoneSignsIn]).
+ * A stand-in for the app's cloud (cloud/src/index.ts), serving Title facts from Wikidata ([titleFacts]), Trending's feed ([trending]) and Games, and signing devices in to Accounts ([phoneSignsIn]).
  * It hands out device tokens like the real one and refuses requests without one. Every request it
- * gets is recorded, so tests can check what the device sends.
+ * gets is recorded, so tests can check what the device sends. It answers inside the Core's HTTP client
+ * ([InProcess]) unless a JVM test asks for a real local server (`OverSockets`).
  */
-class FakeCloud : Closeable {
+class FakeCloud(transport: FakeTransport = InProcess) : FakeHost, Closeable {
     /** One request as it arrived: path, headers and body. */
     class Received(val path: String, val headers: Map<String, List<String>>, val body: String)
 
@@ -100,15 +98,9 @@ class FakeCloud : Closeable {
     /** The file reads devices shared, by `<provider key>/<listing id>`. */
     val fileReads = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private val tokens = HashSet<String>()
-    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private val listening = transport.listen(this)
 
-    val url: String get() = "http://127.0.0.1:${server.address.port}"
-
-    init {
-        server.executor = Executors.newCachedThreadPool()
-        server.createContext("/") { exchange -> try { handle(exchange) } finally { exchange.close() } }
-        server.start()
-    }
+    val url: String get() = listening.url
 
     /** A downloadable subtitle file, as the cloud's subtitle search finds it. */
     class Subtitle(val kind: String, val titleNumber: Long, val season: Int?, val episode: Int?, val language: String, val release: String, val text: String) {
@@ -248,18 +240,19 @@ class FakeCloud : Closeable {
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
-    override fun close() = server.stop(0)
+    override fun close() = listening.close()
 
-    private fun handle(exchange: HttpExchange) {
-        val body = exchange.requestBody.readBytes().decodeToString()
-        received += Received(exchange.requestURI.path, exchange.requestHeaders.toMap(), body)
-        if (down) return exchange.sendResponseHeaders(503, -1)
+    override suspend fun answer(request: FakeRequest): FakeAnswer {
+        val body = request.body
+        received += Received(request.path, request.headers, body)
+        if (down) return FakeAnswer(503)
         // Like the real cloud, every answer to a registered device says whether it is signed in.
-        val caller = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-        synchronized(tokens) { if (caller in tokens) exchange.responseHeaders.add("Zugig-Account", if (caller in accounts) "signed-in" else "none") }
-        when (exchange.requestURI.path) {
+        val headers = LinkedHashMap<String, String>()
+        val caller = request.header("Authorization")?.removePrefix("Bearer ")
+        synchronized(tokens) { if (caller in tokens) headers["Zugig-Account"] = if (caller in accounts) "signed-in" else "none" }
+        return when (request.path) {
             "/v1/devices" -> {
-                if (refusesRegistrations) return respond(exchange, 400, mapOf("error" to "platform must be one the cloud knows."))
+                if (refusesRegistrations) return respond(headers, 400, mapOf("error" to "platform must be one the cloud knows."))
                 // A device that names no platform is taken as Android; one that sends its token keeps it.
                 val said = body.takeIf { it.isNotBlank() }?.let { read(it) as Map<*, *> }.orEmpty()
                 val device = (said["platform"] as String? ?: "android") to said["appVersion"] as String?
@@ -269,68 +262,68 @@ class FakeCloud : Closeable {
                     tokens += token
                     registered[token] = device
                 }
-                respond(exchange, if (known == null) 201 else 200, mapOf("token" to token))
+                respond(headers, if (known == null) 201 else 200, mapOf("token" to token))
             }
             "/v1/file-reads", "/v1/file-reads/lookup" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 val asked = read(body) as Map<*, *>
                 val provider = asked["provider"] as String
-                if (exchange.requestURI.path == "/v1/file-reads") {
+                if (request.path == "/v1/file-reads") {
                     (asked["files"] as List<*>).forEach { (it as Map<*, *>).let { file -> fileReads["$provider/${(file["listingId"] as Number).toLong()}"] = file["file"]!! } }
-                    return exchange.sendResponseHeaders(204, -1)
+                    return FakeAnswer(204, headers)
                 }
-                hangingFileReadLookUps?.await()
+                hangingFileReadLookUps?.let { runInterruptible { it.await() } }
                 val files = (asked["listings"] as List<*>).mapNotNull { id ->
                     val listing = (id as Number).toLong()
                     fileReads["$provider/$listing"]?.let { mapOf("listingId" to listing, "file" to it) }
                 }
-                respond(exchange, 200, mapOf("files" to files))
+                respond(headers, 200, mapOf("files" to files))
             }
             "/v1/trending" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 val language = (read(body) as Map<*, *>)["language"] as String
                 val wikis = listOf("en", language).distinct()
                 val days = synchronized(trendingDays) { trendingDays.toMap() }
-                respond(exchange, 200, mapOf("wikis" to wikis.map { wiki ->
+                respond(headers, 200, mapOf("wikis" to wikis.map { wiki ->
                     mapOf("wiki" to wiki, "days" to days.filterKeys { it.startsWith("$wiki/") }.toSortedMap(reverseOrder()).map { (key, articles) ->
                         mapOf("day" to key.substringAfter('/'), "articles" to articles.map { (name, views) -> mapOf("name" to name, "views" to views) })
                     })
                 }))
             }
             "/v1/games" -> {
-                hangingGames?.await()
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                hangingGames?.let { runInterruptible { it.await() } }
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 val asked = (read(body) as Map<*, *>)["leagues"] as List<*>
                 val leagues = asked.mapNotNull { league -> synchronized(games) { games[league] }?.let { mapOf("league" to league, "games" to it) } }
-                respond(exchange, 200, mapOf("leagues" to leagues))
+                respond(headers, 200, mapOf("leagues" to leagues))
             }
             "/v1/sign-in", "/v1/account", "/v1/account/devices", "/v1/account/sign-out" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 token!!
-                if (exchange.requestURI.path == "/v1/account") return respond(exchange, 200, mapOf("email" to synchronized(tokens) { accounts[token] }))
-                if (exchange.requestURI.path == "/v1/account/devices") {
+                if (request.path == "/v1/account") return respond(headers, 200, mapOf("email" to synchronized(tokens) { accounts[token] }))
+                if (request.path == "/v1/account/devices") {
                     val listed = synchronized(tokens) {
                         val email = accounts[token]
                         accounts.filter { email != null && it.value == email }.keys.sortedBy { signedInAt[it] }.map {
                             mapOf("id" to deviceId(it), "model" to models[it], "signedInAt" to signedInAt.getValue(it).toString(), "thisDevice" to (it == token))
                         }
                     }
-                    return respond(exchange, 200, mapOf("devices" to listed))
+                    return respond(headers, 200, mapOf("devices" to listed))
                 }
-                if (exchange.requestURI.path == "/v1/account/sign-out") {
+                if (request.path == "/v1/account/sign-out") {
                     val id = (read(body) as Map<*, *>)["device"] as String?
                     val out = synchronized(tokens) {
                         val email = accounts[token]
                         val target = if (id == null) token else accounts.keys.find { accounts[it] == email && deviceId(it) == id }
                         if (email == null || target == null) false else true.also { unbind(target) }
                     }
-                    if (!out) return respond(exchange, 404, mapOf("error" to "No such device on this Account."))
-                    if (id == null) exchange.responseHeaders.set("Zugig-Account", "none")
-                    return exchange.sendResponseHeaders(204, -1)
+                    if (!out) return respond(headers, 404, mapOf("error" to "No such device on this Account."))
+                    if (id == null) headers["Zugig-Account"] = "none"
+                    return FakeAnswer(204, headers)
                 }
                 val model = (read(body.ifEmpty { "{}" }) as Map<*, *>)["model"] as String?
                 val code = (1..6).map { "23456789ABCDEFGHJKLMNPQRSTUVWXYZ".random() }.joinToString("")
@@ -339,12 +332,12 @@ class FakeCloud : Closeable {
                     signInCodes[code] = token
                     if (model != null) models[token] = model else models.remove(token)
                 }
-                respond(exchange, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
+                respond(headers, 200, mapOf("code" to code, "url" to "$url/sign-in?code=$code", "expiresIn" to 600))
             }
             "/v1/sync" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                val email = synchronized(tokens) { accounts[token] } ?: return respond(exchange, 403, mapOf("error" to "This device isn't signed in to an Account."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
+                val email = synchronized(tokens) { accounts[token] } ?: return respond(headers, 403, mapOf("error" to "This device isn't signed in to an Account."))
                 val asked = read(body) as Map<*, *>
                 val provider = asked["provider"] as String?
                 synchronized(tokens) { currentProfiles[token!!] = asked["current"] as String? }
@@ -394,16 +387,16 @@ class FakeCloud : Closeable {
                         "entries" to sinceEntries.values.sortedBy { it.first }.map { it.second },
                     )
                 }
-                respond(exchange, 200, answer)
+                respond(headers, 200, answer)
             }
-            "/v1/unknown-prefixes" -> exchange.sendResponseHeaders(if (failingPrefixReports) 503 else 204, -1)
+            "/v1/unknown-prefixes" -> FakeAnswer(if (failingPrefixReports) 503 else 204, headers)
             "/v1/title-facts" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
-                onTitleFacts?.invoke()
-                if (synchronized(this) { (failingTitleFacts > 0).also { if (it) failingTitleFacts-- } }) return exchange.sendResponseHeaders(503, -1)
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
+                onTitleFacts?.let { called -> runInterruptible { called() } }
+                if (synchronized(this) { (failingTitleFacts > 0).also { if (it) failingTitleFacts-- } }) return FakeAnswer(503, headers)
                 val asked = (read(body) as Map<*, *>)["titles"] as List<*>
-                if (asked.size > 300) return respond(exchange, 400, mapOf("error" to "titles must be a list of at most 300 Titles."))
+                if (asked.size > 300) return respond(headers, 400, mapOf("error" to "titles must be a list of at most 300 Titles."))
                 val keys = asked.map { (it as Map<*, *>).let { t -> "${t["kind"]}/${(t["tmdbId"] as Number).toLong()}" } }.distinct()
                 val (found, notFound) = synchronized(titleFacts) {
                     keys.filter { it in titleFacts }.partition { titleFacts[it] != null }.let { (found, none) ->
@@ -411,23 +404,22 @@ class FakeCloud : Closeable {
                     }
                 }
                 val unavailable = keys.filter { synchronized(titleFacts) { it !in titleFacts } }.map { mapOf("kind" to it.substringBefore('/'), "tmdbId" to it.substringAfter('/').toLong()) }
-                respond(exchange, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to unavailable))
+                respond(headers, 200, mapOf("titles" to found, "notFound" to notFound, "unavailable" to unavailable))
             }
             "/v1/provider-table" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 val text = providerTables[(read(body) as Map<*, *>)["provider"] as String].orEmpty().toByteArray()
-                exchange.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
-                exchange.sendResponseHeaders(200, if (text.isEmpty()) -1 else text.size.toLong())
-                if (text.isNotEmpty()) exchange.responseBody.write(text)
+                headers["Content-Type"] = "text/plain; charset=utf-8"
+                if (text.isEmpty()) FakeAnswer(200, headers) else FakeAnswer(200, headers, text.size.toLong()) { it.write(text) }
             }
             "/v1/subtitles", "/v1/subtitles/download" -> {
-                val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")
-                if (synchronized(tokens) { token !in tokens }) return respond(exchange, 401, mapOf("error" to "A registered device token is required."))
+                val token = request.header("Authorization")?.removePrefix("Bearer ")
+                if (synchronized(tokens) { token !in tokens }) return respond(headers, 401, mapOf("error" to "A registered device token is required."))
                 val asked = read(body) as Map<*, *>
-                if (exchange.requestURI.path == "/v1/subtitles/download") {
-                    val file = subtitles.find { it.id == asked["id"] } ?: return respond(exchange, 404, mapOf("error" to "The service no longer has that subtitle."))
-                    return respond(exchange, 200, mapOf("format" to "srt", "text" to file.text))
+                if (request.path == "/v1/subtitles/download") {
+                    val file = subtitles.find { it.id == asked["id"] } ?: return respond(headers, 404, mapOf("error" to "The service no longer has that subtitle."))
+                    return respond(headers, 200, mapOf("format" to "srt", "text" to file.text))
                 }
                 val languages = asked["languages"] as List<*>
                 val found = languages.flatMap { language ->
@@ -436,20 +428,18 @@ class FakeCloud : Closeable {
                             it.season == (asked["season"] as Number?)?.toInt() && it.episode == (asked["episode"] as Number?)?.toInt()
                     }
                 }
-                respond(exchange, 200, mapOf(
+                respond(headers, 200, mapOf(
                     "subtitles" to found.map { mapOf("id" to it.id, "language" to it.language, "source" to "opensubtitles", "release" to it.release, "hearingImpaired" to false, "downloads" to 1) },
                     "unavailable" to emptyList<String>(),
                 ))
             }
-            else -> respond(exchange, 404, mapOf("error" to "No such endpoint."))
+            else -> respond(headers, 404, mapOf("error" to "No such endpoint."))
         }
     }
 
-    private fun respond(exchange: HttpExchange, status: Int, body: Any) {
+    private fun respond(headers: Map<String, String>, status: Int, body: Any): FakeAnswer {
         val bytes = json.toJson(body).toByteArray()
-        exchange.responseHeaders.add("Content-Type", "application/json")
-        exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.write(bytes)
+        return FakeAnswer(status, headers + ("Content-Type" to "application/json"), bytes.size.toLong()) { it.write(bytes) }
     }
 
     private fun read(text: String): Any? = JsonReader.of(text.byteInputStream().source().buffer()).use { it.readJsonValue() }
