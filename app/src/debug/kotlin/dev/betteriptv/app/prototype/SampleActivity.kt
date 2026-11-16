@@ -20,10 +20,10 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import dev.betteriptv.app.Media3Picture
 import dev.betteriptv.app.Playing
-import dev.betteriptv.app.SubtitlePosition
-import dev.betteriptv.app.SubtitleStyle
 import dev.betteriptv.app.buildPlayer
 import dev.betteriptv.app.readDeviceProfile
+import dev.betteriptv.core.SubtitlePosition
+import dev.betteriptv.core.SubtitleStyle
 
 /**
  * Plays a sample file with the app's player, in debug builds only, to check a format on the stick

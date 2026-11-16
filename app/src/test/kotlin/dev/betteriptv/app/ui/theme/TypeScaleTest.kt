@@ -2,6 +2,7 @@ package dev.betteriptv.app.ui.theme
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import dev.betteriptv.core.TextSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

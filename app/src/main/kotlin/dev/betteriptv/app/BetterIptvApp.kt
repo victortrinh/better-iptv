@@ -7,16 +7,12 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import dev.betteriptv.core.AppUpdates
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.Platform
 import dev.betteriptv.core.SyncStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.getAndUpdate
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
@@ -38,19 +34,24 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     /** Outlives screens, so a Sync keeps going in the background while the Viewer browses. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val _catalogJobs = MutableStateFlow(0)
-
-    /** How many Syncs and Matchings are running: [CatalogWorkService] keeps the process alive while any is. */
-    val catalogJobs: StateFlow<Int> = _catalogJobs.asStateFlow()
+    /** Keeps the process alive while a Sync or Matching runs, for the Core ([Library.open]) and [CatalogWorkService]. */
+    lateinit var background: AndroidBackgroundWork
+        private set
 
     /** Whether this launch has asked for the Title facts a closed app left unasked ([Library.resumeTitleFacts]). */
     private val titleFactsResumed = AtomicBoolean()
 
     override fun onCreate() {
         super.onCreate()
+        background = AndroidBackgroundWork(this)
+        // What the Core requires of a platform (ADR 0020). The updater below isn't among it.
         library = Library.open(
-            getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path,
-            KeystoreCredentialStore(this),
+            Platform(
+                credentials = KeystoreCredentialStore(this),
+                settings = AndroidSettingsStore(this),
+                background = background,
+                database = { name -> getDatabasePath(name).apply { parentFile?.mkdirs() }.path },
+            ),
             cloudAddress = BuildConfig.CLOUD_URL,
             device = cloudDevice(this),
         )
@@ -60,7 +61,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         // stick has been checked (#585): `adb shell setprop debug.betteriptv.search memory`, then start the app again.
         scope.launch(Dispatchers.IO) { if (debugProperty(SEARCH_SWITCH) == Library.SEARCH_IN_MEMORY) library.searchInMemory = true }
         // On the Profile the device was last on: nobody is asked on launch. Its settings follow it.
-        settings = ViewerSettingsStore(this, library, scope)
+        settings = ViewerSettingsStore(this, library, library.deviceSettings, scope)
         // The first launch after the release that dropped the cloud's metadata clears the image cache, once (#480).
         scope.launch(Dispatchers.IO) { library.clearImagesOnce { clearCachedArtwork(SingletonImageLoader.get(this@BetterIptvApp)) } }
         // A Sync stores the search index with its catalog (#584), so this has work only on a database kept from before that, once,
@@ -150,7 +151,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         when {
             library.hasPendingCatalog -> applyPendingCatalog()
             syncIfStale() -> Unit
-            titleFactsResumed.compareAndSet(false, true) -> scope.launch { keepingAlive { library.resumeTitleFacts() } }
+            titleFactsResumed.compareAndSet(false, true) -> scope.launch { library.resumeTitleFacts() }
         }
     }
 
@@ -164,7 +165,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         scope.launch { library.applyPendingHistory() }
         scope.launch { library.applyPendingTitleFacts() }
         if (!library.hasPendingCatalog) return
-        scope.launch { keepingAlive { library.applyPendingCatalog() } }
+        scope.launch { library.applyPendingCatalog() }
     }
 
     /**
@@ -175,7 +176,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
      */
     fun onPlayerClosed() {
         if (!library.hasPendingFirstCatalog) return
-        scope.launch { keepingAlive { library.applyPendingCatalog() } }
+        scope.launch { library.applyPendingCatalog() }
     }
 
     /**
@@ -201,7 +202,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
             // A first Sync's Head start is read for the Content languages as they are now (ADR 0019).
-            when (val status = keepingAlive { library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages, playerOpen = { playerOpen }) }) {
+            when (val status = library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages, playerOpen = { playerOpen })) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
                     "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.inWholeMilliseconds} ms, ${status.last.mismatches} Mismatches kept apart",
@@ -214,16 +215,6 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed at ${status.step}: ${status.problem}")
                 else -> Unit
             }
-        }
-    }
-
-    /** Runs [work] with [CatalogWorkService] keeping the process alive, so switching apps doesn't end it. */
-    private suspend fun <T> keepingAlive(work: suspend () -> T): T {
-        if (_catalogJobs.getAndUpdate { it + 1 } == 0) CatalogWorkService.start(this)
-        try {
-            return work()
-        } finally {
-            _catalogJobs.update { it - 1 }
         }
     }
 

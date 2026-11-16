@@ -18,6 +18,7 @@ import androidx.media3.extractor.text.webvtt.WebvttParser
 import androidx.media3.ui.SubtitleView
 import dev.betteriptv.core.DownloadedSubtitle
 import dev.betteriptv.core.SubtitleOffer
+import dev.betteriptv.core.SubtitleStyle
 import kotlinx.coroutines.delay
 
 /**

@@ -10,6 +10,7 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import dev.betteriptv.core.SubtitleStyle
 import io.github.peerless2012.ass.media.kt.withAssSupport
 
 /**
