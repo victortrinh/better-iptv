@@ -61,7 +61,7 @@ class SearchIndexBenchmark {
         // The same catalog's index as a Sync stores it (#584), built here as a database kept from before it builds it once.
         repeat(3) { run ->
             val started = System.nanoTime()
-            store.search.rebuild(SearchSources(prefixTable))
+            store.search.rebuild(SearchSources(prefixTable), evenIfReady = true)
             println("Stored search index build ${run + 1}: ${(System.nanoTime() - started) / 1_000_000} ms, catalog.db ${folder.root.resolve("catalog.db").length() / (1024 * 1024)} MB")
         }
         // What a keystroke costs each index: finding the query's Titles, people, genres, Channels and Replays, before ranking. Best of 5.

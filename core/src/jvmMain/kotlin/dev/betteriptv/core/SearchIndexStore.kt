@@ -165,14 +165,15 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
      * Builds the index of the catalog on screen: what a database kept from before the index does once,
      * so its Search works without a new Sync. The catalog is read a page at a time and written a page
      * at a time, so neither other reads nor other writes wait for the whole of it. A Sync landing its
-     * own catalog and index meanwhile stops it. Returns whether the index is [ready] afterwards.
+     * own catalog and index meanwhile stops it, and one that is [ready] is left as it is unless
+     * [evenIfReady]. Returns whether the index is [ready] afterwards.
      */
-    fun rebuild(sources: SearchSources): Boolean {
+    fun rebuild(sources: SearchSources, evenIfReady: Boolean = false): Boolean {
         val token = java.lang.Long.toHexString(System.nanoTime())
         val landed = synchronized(writer) {
             transaction {
                 // A Sync that held the writer until now may have landed its own.
-                if (meta(TITLES) == VERSION && meta(CHANNELS) == VERSION) return@transaction true
+                if (!evenIfReady && meta(TITLES) == VERSION && meta(CHANNELS) == VERSION) return@transaction true
                 (CATALOG_TABLES + CHANNEL_TABLES).forEach { (name, shape) ->
                     writer.execSQL("DROP TABLE IF EXISTS $name")
                     writer.execSQL(shape.format(name))
