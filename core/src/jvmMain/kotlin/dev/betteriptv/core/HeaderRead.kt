@@ -3,17 +3,14 @@ package dev.betteriptv.core
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okio.Buffer
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentLength
+import io.ktor.utils.io.readAvailable
 import java.io.IOException
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -76,7 +73,7 @@ internal val HEADER_READABLE = setOf("mkv", "webm", "mp4", "m4v", "mov")
  * MP4's start, plus its end when the track index sits there. Cancelling stops the request at once,
  * which frees the Viewer's connection.
  */
-internal class HeaderReader(private val http: OkHttpClient) {
+internal class HeaderReader(private val http: HttpClient) {
     /** How long a read may take in all ([HEADER_READ_BOUND]); tests shorten it. */
     @Volatile var bound: Duration = HEADER_READ_BOUND
 
@@ -113,32 +110,26 @@ internal class HeaderReader(private val http: OkHttpClient) {
     private class Part(val bytes: ByteArray, val size: Long?)
 
     /** Up to [length] bytes of the file from [from], and the whole file's size when the Provider says; null when the file is dead. */
-    private suspend fun fetch(location: String, from: Long, length: Long): Part? = suspendCancellableCoroutine { continuation ->
-        val call = http.newCall(Request.Builder().url(location).header("Range", "bytes=$from-${from + length - 1}").build())
-        continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) = continuation.resumeWithException(e)
-
-            override fun onResponse(call: Call, response: Response) {
-                try {
-                    response.use {
-                        if (response.code.isDead()) return continuation.resume(null)
-                        // Never the location in a message: it holds the login.
-                        if (response.code != 200 && response.code != 206) throw HeaderReadRefused(response.code)
-                        val size = if (response.code == 206) response.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
-                        else response.body!!.contentLength().takeIf { it >= 0 }
-                        // A Provider that ignores the range sends the whole file: the start is all that's read of it.
-                        val source = response.body!!.source()
-                        val buffer = Buffer()
-                        while (buffer.size < length && source.read(buffer, length - buffer.size) != -1L) Unit
-                        continuation.resume(Part(buffer.readByteArray(minOf(buffer.size, length)), size))
-                    }
-                } catch (e: IOException) {
-                    continuation.resumeWithException(e)
-                }
+    private suspend fun fetch(location: String, from: Long, length: Long): Part? =
+        // The answer is read as it arrives, and leaving closes the request: so does cancelling.
+        http.prepareGet(location) { header("Range", "bytes=$from-${from + length - 1}") }.execute { response ->
+            val status = response.status.value
+            if (status.isDead()) return@execute null
+            // Never the location in a message: it holds the login.
+            if (status != 200 && status != 206) throw HeaderReadRefused(status)
+            val size = if (status == 206) response.headers["Content-Range"]?.substringAfter('/')?.toLongOrNull()
+            else response.contentLength()?.takeIf { it >= 0 }
+            // A Provider that ignores the range sends the whole file: the start is all that's read of it.
+            val body = response.bodyAsChannel()
+            val bytes = ByteArray(length.toInt())
+            var read = 0
+            while (read < bytes.size) {
+                val more = body.readAvailable(bytes, read, bytes.size - read)
+                if (more < 0) break
+                read += more
             }
-        })
-    }
+            Part(if (read == bytes.size) bytes else bytes.copyOf(read), size)
+        }
 
     private companion object {
         const val START_BYTES = 256L * 1024

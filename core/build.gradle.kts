@@ -30,9 +30,13 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(libs.coroutines.core)
+            // The HTTP client the Core reads the Provider and the Cloud with (#579); each platform gives it an engine.
+            api(libs.ktor.client.core)
         }
         jvmMain.dependencies {
-            implementation(libs.okhttp)
+            // Android's engine: OkHttp, which the app's player and artwork read with too (OkHttpNetwork.kt).
+            api(libs.okhttp)
+            implementation(libs.ktor.client.okhttp)
             implementation(libs.moshi)
             implementation(libs.sqlite.bundled)
         }

@@ -3,12 +3,20 @@ package dev.betteriptv.core
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.Moshi
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.setBody
+import io.ktor.client.request.url
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.appendPathSegments
+import io.ktor.http.content.TextContent
+import io.ktor.http.isSuccess
+import io.ktor.http.withCharset
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.Duration
@@ -20,8 +28,8 @@ import java.time.LocalDate
  * it registers for on first use; no Provider login, address or stream URL is ever sent. File reads
  * are shared under a hash of the Provider's host ([providerKey]), which doesn't reveal it.
  */
-internal class CloudClient(address: String, private val http: OkHttpClient, private val tokens: DeviceTokenStore, private val device: CloudDevice? = null) {
-    private val base: HttpUrl = address.toHttpUrl()
+internal class CloudClient(address: String, private val http: HttpClient, private val tokens: DeviceTokenStore, private val device: CloudDevice? = null) {
+    private val base: Url = Url(address)
 
     /**
      * What Wikidata knows of [ids] (#476), at most [MAX_FACTS_BATCH] at a time: each found Title's
@@ -328,27 +336,28 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
 
     /** POSTs [body] to [path] and reads the answer as JSON, or with [text] as text. */
     private fun post(path: String, body: String, token: String?, callTimeout: Duration? = null, text: Boolean = false): Any? {
-        val request = Request.Builder()
-            .url(base.newBuilder().addPathSegments(path).build())
-            .post(body.toRequestBody(JSON))
-            .apply { if (token != null) header("Authorization", "Bearer $token") }
-            .build()
-        // A client with a call timeout shares the pool and dispatcher of the one it is built from.
-        val client = if (callTimeout == null) http else http.newBuilder().callTimeout(callTimeout).build()
         val sentAt = System.nanoTime()
         try {
-            client.newCall(request).execute().use { response ->
-                if (response.code == 401) throw Unauthorized()
-                when (response.header(ACCOUNT_HEADER)) {
+            return http.blocking({
+                method = HttpMethod.Post
+                url(URLBuilder(base).appendPathSegments(path.split('/')).build())
+                setBody(TextContent(body, JSON))
+                if (token != null) header("Authorization", "Bearer $token")
+                // From the request to the last of its answer, as a call's timeout was.
+                if (callTimeout != null) timeout { requestTimeoutMillis = callTimeout.toMillis() }
+            }) { response ->
+                val status = response.status.value
+                if (status == 401) throw Unauthorized()
+                when (response.headers[ACCOUNT_HEADER]) {
                     "signed-in" -> onAccountHeard?.invoke(true, sentAt)
                     "none" -> onAccountHeard?.invoke(false, sentAt)
                 }
-                if (response.code == 404) throw NotFound()
-                if (response.code == 403) throw NotSignedIn()
-                if (!response.isSuccessful) throw CloudException("The cloud answered HTTP ${response.code}.")
-                if (response.code == 204) return null
-                if (text) return response.body!!.string()
-                return JsonReader.of(response.body!!.source()).use { it.readJsonValue() }
+                if (status == 404) throw NotFound()
+                if (status == 403) throw NotSignedIn()
+                if (!response.status.isSuccess()) throw CloudException("The cloud answered HTTP $status.")
+                if (status == 204) null
+                else if (text) response.bodyAsText(Charsets.UTF_8)
+                else JsonReader.of(response.source()).use { it.readJsonValue() }
             }
         } catch (e: IOException) {
             throw e as? CloudException ?: CloudException("Couldn't reach the cloud: ${e.message ?: e.javaClass.simpleName}")
@@ -390,7 +399,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         const val MAX_TIER_TAG_BATCH = 50
         /** The answer header saying whether the cloud has this device signed in: `signed-in` or `none`. */
         private const val ACCOUNT_HEADER = "Zugig-Account"
-        private val JSON = "application/json".toMediaType()
+        private val JSON = ContentType.Application.Json.withCharset(Charsets.UTF_8)
         private val json = Moshi.Builder().build().adapter(Any::class.java)
 
         private fun kindName(kind: TitleKind) = when (kind) {

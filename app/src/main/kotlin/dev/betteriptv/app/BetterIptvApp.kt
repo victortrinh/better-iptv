@@ -8,6 +8,8 @@ import coil3.SingletonImageLoader
 import dev.betteriptv.core.AppUpdates
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.okHttpNetwork
+import dev.betteriptv.core.providerOkHttp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,6 +28,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     lateinit var library: Library
         private set
+
+    /**
+     * The one HTTP client the app reads the Provider with: the Core's client runs on it and VLC's relay
+     * reads with it ([okHttpNetwork]), and Media3 reads its files with it too, so a device whose own
+     * HTTP stack the Provider won't answer still plays what it can list.
+     */
+    val providerHttp: OkHttpClient by lazy { providerOkHttp() }
     lateinit var settings: ViewerSettingsStore
         private set
 
@@ -49,6 +59,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path,
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
+            network = okHttpNetwork(providerHttp),
             device = cloudDevice(this),
         )
         // A debug build logs where each Sync's time went (#566): `adb logcat -s SyncTiming`. A release build times nothing.

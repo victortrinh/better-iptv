@@ -14,22 +14,23 @@ import kotlin.concurrent.thread
 import kotlin.time.TimeSource
 
 /**
- * Serves a Version's file to a player engine on this device through one Provider stream at a time.
+ * Android's [StreamRelay], on a local socket and OkHttp: it is no part of the Core other platforms
+ * share (ADR 0020), and the app makes it for the engines that read through it ([okHttpNetwork]).
  * VLC opens a new request for the file before closing the one it has (to read the index at its end,
  * and to seek), and a one-stream Provider refuses the second; the relay closes the earlier request
  * to the Provider first. Its [location] holds no login, so the engine can't log one.
  */
-internal class StreamRelay(private val upstream: String, private val http: OkHttpClient) : Closeable {
+class LocalStreamRelay(private val upstream: String, private val http: OkHttpClient) : StreamRelay, Closeable {
     // Not getLoopbackAddress(): on Android that is IPv6 (::1), where an engine given 127.0.0.1 can't connect.
     private val server = ServerSocket(0, 8, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
-    val location = "http://127.0.0.1:${server.localPort}/file"
+    override val location = "http://127.0.0.1:${server.localPort}/file"
 
     /**
      * When the Provider last started sending the file's bytes for one of the engine's requests, or null
      * before it first did: VLC reads several parts of a file before its picture starts, and each is a
      * sign the file is alive.
      */
-    @Volatile var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
+    @Volatile override var answeredAt: TimeSource.Monotonic.ValueTimeMark? = null
         private set
 
     /** The request to the Provider in use; a new one closes it first. */

@@ -22,7 +22,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.OkHttpClient
+import io.ktor.client.HttpClient
 import java.io.Closeable
 import java.io.IOException
 import java.time.Clock
@@ -51,7 +51,7 @@ import kotlin.concurrent.thread
 class Library private constructor(
     private val store: CatalogStore,
     private val credentials: CredentialStore,
-    private val http: OkHttpClient,
+    private val network: CoreNetwork,
     /**
      * The Provider table shipped with the app for a Provider key ([providerKey]), as text, or null for a
      * Provider with none: it stands in until the cloud has answered for that Provider once.
@@ -59,6 +59,9 @@ class Library private constructor(
     private val providerTables: (providerKey: String) -> String?,
     private val cloud: CloudClient?,
 ) : Closeable, KeptSettings {
+    /** The client everything is read from the Provider with: the catalog, details and Header reads. */
+    private val http: HttpClient = network.http
+
     /**
      * The Prefix table for the Provider logged in to: the Base table with that Provider's Provider
      * table merged in, or the Base table alone before a login and for a Provider with no table. It
@@ -3078,15 +3081,8 @@ class Library private constructor(
     internal fun playback(plan: PlayPlan, engines: (Engine) -> PlayerEngine, startTimeout: kotlin.time.Duration) =
         PlaybackSession(this, plan, engines, startTimeout)
 
-    /**
-     * The HTTP client everything is read from the Provider with (the catalog, Header reads, the relay),
-     * for the player engine to read its files with too: a device whose own HTTP stack the Provider
-     * won't answer still plays what it can list.
-     */
-    val providerHttp: OkHttpClient get() = http
-
-    /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time. */
-    internal fun relay(location: String) = StreamRelay(location, http)
+    /** A relay on this device for the file at a [Connection]'s [location], one Provider stream at a time: the platform's. */
+    internal fun relay(location: String): StreamRelay = network.relay(location)
 
     /**
      * What a Title shows: its [best] Version, the Listing [naming] it, that name and year, the Listing
@@ -3458,9 +3454,9 @@ class Library private constructor(
             databasePath: String,
             credentials: CredentialStore,
             cloudAddress: String? = null,
-            http: OkHttpClient = defaultHttp(),
+            network: CoreNetwork = okHttpNetwork(),
             device: CloudDevice? = null,
-        ): Library = open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, http, device)
+        ): Library = open(databasePath, credentials, cloudAddress, PrefixTable::bundledProviderTable, network, device)
 
         /** [open], with each Provider's Provider table, by Provider key, from [providerTables] instead of the ones shipped with the app. */
         internal fun open(
@@ -3468,16 +3464,11 @@ class Library private constructor(
             credentials: CredentialStore,
             cloudAddress: String?,
             providerTables: (providerKey: String) -> String?,
-            http: OkHttpClient = defaultHttp(),
+            network: CoreNetwork = okHttpNetwork(),
             device: CloudDevice? = null,
         ): Library {
             val store = CatalogStore(databasePath)
-            return Library(store, credentials, http, providerTables, cloudAddress?.let { CloudClient(it, http, store, device) })
+            return Library(store, credentials, network, providerTables, cloudAddress?.let { CloudClient(it, network.http, store, device) })
         }
-
-        private fun defaultHttp() = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build()
     }
 }
