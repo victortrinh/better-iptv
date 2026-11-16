@@ -2895,7 +2895,8 @@ class Library private constructor(
      * comes before the one its card shows. A dead file is kept as unreadable and passed
      * over; a Provider answering with another error stops it until the next day, and one not
      * answering pauses it for a quarter of an hour. Each read that Confirms a card's Version is
-     * announced in [confirmations]. With [preferOriginalAudio], a Title released outside the Content
+     * announced in [confirmations]. Nothing is read until a first Sync's full catalog has landed: its
+     * Head start alone is not read from (ADR 0019). With [preferOriginalAudio], a Title released outside the Content
      * languages is read in its details page's order ([readOrder]) until a Version is Confirmed to
      * carry Original audio, so it is ready before the Viewer opens it.
      */
@@ -2908,6 +2909,8 @@ class Library private constructor(
             delay(pace.gap)
             val day = ReadingDay.of(store.readingDay(), LocalDate.now(clock))
             if (day.refused || day.reads >= pace.perDay || clock.instant().isBefore(pausedUntil) || detailsReading.get() > 0) continue
+            // A first Sync's Head start is no catalog to read from yet: Background reading waits for the full one (ADR 0019).
+            if (store.lastSync() == null) continue
             val login = credentials.load() ?: continue
             val next = nextBackgroundRead(contentLanguages, preferOriginalAudio) ?: continue
             if (!reads.tryLock()) continue

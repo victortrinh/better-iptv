@@ -6,7 +6,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,8 +21,11 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.time.Clock
+import java.time.Duration
 import java.time.Year
 import kotlin.concurrent.thread
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * A first Sync's Head start (ADR 0019): right after its Channels it reads a few fresh Categories,
@@ -84,6 +91,25 @@ class HeadStartTest {
                 pause.resume()
                 sync.await()
             }
+        }
+    }
+
+    @Test fun `Background reading waits for the full catalog, and reads once it has landed`() = runBlocking {
+        movieCategories("EN - COMEDY", "EN - NEW RELEASE")
+        provider.movieFiles[2] = matroskaFile(listOf(FileTrack("audio", "eng", "A_AAC")), width = 3840, height = 2160)
+        val reading = CoroutineScope(Dispatchers.Default).launch {
+            library.readInBackground(english, BackgroundPace(gap = 20.milliseconds, perDay = 100), Clock.systemDefaultZone(), offlinePause = Duration.ofMinutes(15))
+        }
+        try {
+            duringTheFullRead {
+                // The Head start's film is there to read, and the connection is the Viewer's: one stream is all a Provider may allow.
+                assertTrue(library.titles(0, 10, english, "en", TitleKind.Movie).isNotEmpty())
+                delay(400)
+                assertEquals(emptyList<String>(), provider.ranges)
+            }
+            withTimeout(10_000) { while (provider.ranges.isEmpty()) delay(10) }
+        } finally {
+            reading.cancelAndJoin()
         }
     }
 
