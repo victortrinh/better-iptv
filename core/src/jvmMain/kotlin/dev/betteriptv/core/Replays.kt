@@ -1,7 +1,7 @@
 package dev.betteriptv.core
 
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /**
  * A Sports replay (CONTEXT.md): a Listing of a past game in the Provider's VOD catalog, kept out of
@@ -27,7 +27,7 @@ data class Replay(
     val heading: String get() = ReplayNames.body(name)
 
     /** When the game was, for sorting newest first: the date, else the first day of the year, else null. */
-    internal val on: LocalDate? get() = date ?: year?.let { LocalDate.of(it, 1, 1) }
+    internal val on: LocalDate? get() = date ?: year?.let { LocalDate(it, 1, 1) }
 }
 
 /** A [replay] of a [league]'s game, its two teams found among the League's ([away] at [home]), with their logos. */
@@ -74,7 +74,7 @@ internal object ReplayNames {
     /** [name] without its Prefix (`SOC - `, `SC - `, `Wresling: `), trimmed. One Prefix only: in `SOC - LAFC - LA Galaxy`, LAFC is a team. */
     fun body(name: String): String = (PREFIX.find(name)?.let { name.substring(it.range.last + 1) } ?: name).trim()
 
-    private fun date(year: Int, month: Int, day: Int): LocalDate? = runCatching { LocalDate.of(year, month, day) }.getOrNull()
+    private fun date(year: Int, month: Int, day: Int): LocalDate? = runCatching { LocalDate(year, month, day) }.getOrNull()
 
     /** `PREFIX - `, as the Prefix table reads it, or a word and a colon (`Wresling: `, `F1: `). */
     private val PREFIX = Regex("""^\s*(?:(?=[A-Z0-9+=-]*[A-Z])[A-Z0-9+]+(?:[-=][A-Z0-9+]+)*(?:\s+-\s*|-\s+|\s+\.\s+)|[A-Za-z0-9]{1,12}:\s+)""")

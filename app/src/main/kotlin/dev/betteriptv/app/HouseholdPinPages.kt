@@ -31,7 +31,7 @@ import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.PinCheck
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.time.Duration
+import kotlin.time.Duration
 
 /**
  * Asks for the Household PIN (#437) under [title] and [detail], and calls [onRight] once it's
@@ -192,7 +192,7 @@ fun PinPage(content: @Composable () -> Unit) {
     Column(Modifier.padding(horizontal = Spacing.screenX, vertical = 20.dp).width(SETTINGS_WIDTH)) { content() }
 }
 
-private fun wholeSeconds(duration: Duration): Long = (duration.toMillis() + 999) / 1_000
+private fun wholeSeconds(duration: Duration): Long = (duration.inWholeMilliseconds + 999) / 1_000
 
 internal const val PIN_PAGE_TAG = "pin page"
 

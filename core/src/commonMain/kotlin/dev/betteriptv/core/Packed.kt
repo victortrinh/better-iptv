@@ -24,7 +24,7 @@ internal class StringTable {
 
     fun end(number: Int): Int = ends[number]
 
-    operator fun get(number: Int): String = String(chars, start(number), end(number) - start(number))
+    operator fun get(number: Int): String = chars.concatToString(start(number), end(number))
 
     /** [text]'s number, adding it when it is new. */
     fun add(text: String): Int {
@@ -68,9 +68,9 @@ internal class StringTable {
 
         override fun get(index: Int): Char = chars[start + index]
 
-        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = String(chars, start + startIndex, endIndex - startIndex)
+        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = chars.concatToString(start + startIndex, start + endIndex)
 
-        override fun toString(): String = String(chars, start, length)
+        override fun toString(): String = chars.concatToString(start, start + length)
     }
 
     private fun sameAs(number: Int, text: String): Boolean {

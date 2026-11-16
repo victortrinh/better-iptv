@@ -2,7 +2,8 @@ package dev.betteriptv.app
 
 import android.content.Context
 import dev.betteriptv.core.NowNext
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.ZoneId
 
 /**
@@ -12,7 +13,7 @@ import java.time.ZoneId
  * "Next 10:00 PM · Dragons' Den" when nothing is on now. Beside a Channel's row in the Channels
  * screen and under a focused Favourite; the player's top scrim names the programme on now alone.
  */
-fun Context.nowNextLabel(guide: NowNext, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String {
+fun Context.nowNextLabel(guide: NowNext, now: Instant = Clock.System.now(), zone: ZoneId = ZoneId.systemDefault()): String {
     val on = guide.now
     val next = guide.next
     return when {

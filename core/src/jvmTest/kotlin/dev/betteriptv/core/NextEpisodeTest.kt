@@ -10,7 +10,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Which Episode a Show's details open on, how far the Viewer got in each, and that a Show lists
@@ -139,7 +140,7 @@ class NextEpisodeTest {
         assertEquals(bureau, show.title.id)
         assertEquals(NextEpisode(EpisodeNumber(1, 1), name = null, started = true), show.episode)
         assertEquals(0.4f, show.progress)
-        assertEquals(Duration.ofMinutes(30), show.left)
+        assertEquals(30.minutes, show.left)
 
         // Watched, the next one waits to be started.
         play(1, 1, minutes = 49)

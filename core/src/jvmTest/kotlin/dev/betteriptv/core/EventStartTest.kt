@@ -4,8 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * Reading when an Event channel's Game starts from the ways the surveyed Provider writes it (#19's
@@ -14,7 +14,7 @@ import java.time.ZoneId
  */
 class EventStartTest {
     private val now = Instant.parse("2026-10-28T12:00:00Z")
-    private val toronto = ZoneId.of("America/Toronto")
+    private val toronto = TimeZone.of("America/Toronto")
 
     private fun start(name: String) = eventStart(name, now, toronto)
 

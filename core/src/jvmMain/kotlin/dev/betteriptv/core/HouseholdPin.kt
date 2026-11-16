@@ -7,9 +7,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import java.util.Base64
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -53,7 +54,7 @@ interface HouseholdPin {
         const val TRIES = 5
 
         /** How long it stays locked. */
-        val LOCK: Duration = Duration.ofSeconds(30)
+        val LOCK: Duration = 30.seconds
 
         /** How many digits a PIN has. */
         const val LENGTH = 4
@@ -69,7 +70,7 @@ interface HouseholdPin {
  */
 internal class KeptHouseholdPin(private val store: PinStore, private val onSet: (hash: String, at: Instant) -> Unit = { _, _ -> }) : HouseholdPin {
     /** Tests move it. */
-    @Volatile var clock: Clock = Clock.systemUTC()
+    @Volatile var clock: Clock = Clock.System
 
     private val _isSet = MutableStateFlow(store.householdPin() != null)
 
@@ -78,7 +79,7 @@ internal class KeptHouseholdPin(private val store: PinStore, private val onSet: 
     override suspend fun set(pin: String) = withContext(Dispatchers.Default) {
         require(HouseholdPin.isPin(pin)) { "A Household PIN is four digits" }
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
-        val now = clock.instant()
+        val now = clock.now()
         val hash = "$SCHEME:$ITERATIONS:${encode(salt)}:${encode(hash(pin, salt, ITERATIONS))}"
         synchronized(this@KeptHouseholdPin) {
             store.saveHouseholdPin(StoredPin(hash, failures = 0, lockedUntil = null, changedAt = now))
@@ -96,7 +97,7 @@ internal class KeptHouseholdPin(private val store: PinStore, private val onSet: 
      */
     fun adopt(hash: String?, at: Instant): Boolean = synchronized(this) {
         val kept = store.householdPin()
-        if (kept != null && !at.isAfter(kept.changedAt)) return false
+        if (kept != null && at <= kept.changedAt) return false
         if (hash == null) {
             if (kept == null) return false
             store.forgetHouseholdPin()
@@ -116,9 +117,9 @@ internal class KeptHouseholdPin(private val store: PinStore, private val onSet: 
 
     override suspend fun check(pin: String): PinCheck = withContext(Dispatchers.Default) {
         synchronized(this@KeptHouseholdPin) {
-            val now = clock.instant()
+            val now = clock.now()
             val kept = store.householdPin() ?: return@withContext PinCheck.Wrong(HouseholdPin.TRIES)
-            kept.lockedUntil?.takeIf { now.isBefore(it) }?.let { return@withContext PinCheck.Locked(it) }
+            kept.lockedUntil?.takeIf { now < it }?.let { return@withContext PinCheck.Locked(it) }
             // A lock that ran out leaves the tries at none.
             val failures = if (kept.lockedUntil != null) 0 else kept.failures
             when {
@@ -140,8 +141,8 @@ internal class KeptHouseholdPin(private val store: PinStore, private val onSet: 
     }
 
     override fun lockedFor(): Duration? = synchronized(this) {
-        val now = clock.instant()
-        store.householdPin()?.lockedUntil?.takeIf { now.isBefore(it) }?.let { Duration.between(now, it) }
+        val now = clock.now()
+        store.householdPin()?.lockedUntil?.takeIf { now < it }?.let { (it - now) }
     }
 
     private fun matches(pin: String, kept: String): Boolean {
@@ -167,7 +168,7 @@ internal class KeptHouseholdPin(private val store: PinStore, private val onSet: 
 }
 
 /** The Household PIN as kept: its [hash], the wrong tries in a row and, once they lock it, until when. */
-internal data class StoredPin(val hash: String, val failures: Int, val lockedUntil: Instant?, val changedAt: Instant = Instant.ofEpochMilli(1))
+internal data class StoredPin(val hash: String, val failures: Int, val lockedUntil: Instant?, val changedAt: Instant = Instant.fromEpochMilliseconds(1))
 
 internal interface PinStore {
     fun householdPin(): StoredPin?

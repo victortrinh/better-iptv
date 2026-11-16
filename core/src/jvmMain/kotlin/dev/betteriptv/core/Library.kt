@@ -25,11 +25,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.Closeable
 import java.io.IOException
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
+import kotlinx.datetime.TimeZone
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.ConcurrentHashMap
@@ -94,14 +102,14 @@ class Library private constructor(
         val text = try {
             cloud.providerTable(providerKey, PROVIDER_TABLE_CALL_TIMEOUT)
         } catch (_: CloudException) {
-            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+            cloudRetryAt = Clock.System.now() + CLOUD_RETRY_AFTER
             return null
         }
         return readProviderTable(text)?.let { text to it }
     }
 
     /** After the cloud fails, it isn't asked again until then, so pages don't each wait out a timeout. */
-    @Volatile private var cloudRetryAt = Instant.MIN
+    @Volatile private var cloudRetryAt = Instant.DISTANT_PAST
 
     private val syncLock = Mutex()
     private val searchLock = Any()
@@ -170,7 +178,10 @@ class Library private constructor(
     /** Bumped each time a guide call lands: screens showing what is on read [guide] again. */
     val guideChanges: StateFlow<Int> = _guideChanges.asStateFlow()
     /** The guide's clock: today, for the day a refusal stops it, and now, for the programme on. Tests move it. */
-    @Volatile internal var guideClock: Clock = Clock.systemDefaultZone()
+    @Volatile internal var guideClock: Clock = Clock.System
+
+    /** The zone the guide's day is told in: the device's, except in tests. */
+    @Volatile internal var guideZone: TimeZone = TimeZone.currentSystemDefault()
     /** Trending's feeds asked of the cloud and not saved yet, by App language. */
     private val unsavedTrending = ConcurrentHashMap<String, StoredTrending>()
     private val trendingAsks = Any()
@@ -248,7 +259,7 @@ class Library private constructor(
         require(name.isNotBlank()) { "A Profile needs a name" }
         synchronized(_profiles) {
             if (_profiles.value.all.size >= MAX_PROFILES) return@withContext null
-            val at = Instant.now()
+            val at = Clock.System.now()
             val id = store.addProfile(name.trim(), kids, at)
             _profiles.value = readProfiles()
             accountSync.uidOf(id)?.let { accountSync.recordProfile(it, name.trim(), kids, deleted = false, at) }
@@ -279,7 +290,7 @@ class Library private constructor(
     suspend fun renameProfile(id: Long, name: String) = withContext(Dispatchers.IO) {
         require(name.isNotBlank()) { "A Profile needs a name" }
         synchronized(_profiles) {
-            val at = Instant.now()
+            val at = Clock.System.now()
             store.renameProfile(id, name.trim(), at)
             _profiles.value = readProfiles()
             val renamed = _profiles.value.all.find { it.id == id } ?: return@withContext
@@ -293,7 +304,7 @@ class Library private constructor(
         synchronized(_profiles) {
             require(_profiles.value.all.any { it.id == id }) { "No Profile $id" }
             if (id == profile) return@withContext
-            store.useProfile(id, Instant.now())
+            store.useProfile(id, Clock.System.now())
             forgetProfileCaches()
             _profiles.value = readProfiles()
             readSettings()
@@ -313,7 +324,7 @@ class Library private constructor(
             val uid = accountSync.uidOf(id)
             store.deleteProfile(id)
             // Everywhere: the Account's other TVs delete it too, with its history.
-            uid?.let { accountSync.recordProfile(it, null, false, deleted = true, Instant.now()) }
+            uid?.let { accountSync.recordProfile(it, null, false, deleted = true, Clock.System.now()) }
             if (current) forgetProfileCaches()
             _profiles.value = readProfiles()
             readSettings()
@@ -412,7 +423,7 @@ class Library private constructor(
         if (changed.isEmpty()) return
         require(changed.keys.all { it in ProfileSetting.ALL }) { "Not a Profile's setting: ${changed.keys - ProfileSetting.ALL}" }
         synchronized(_profiles) {
-            val at = Instant.now()
+            val at = Clock.System.now()
             changed.forEach { (key, value) ->
                 store.saveProfileSetting(profile, key, value, at)
                 accountSync.record(profile, SyncEntry.SETTING, key, value, at)
@@ -423,7 +434,7 @@ class Library private constructor(
     }
 
     override fun saveRegion(region: String) {
-        val at = Instant.now()
+        val at = Clock.System.now()
         store.saveHousehold(SyncEntry.REGION, region, at)
         accountSync.record(SyncEntry(SyncEntry.HOUSEHOLD, null, SyncEntry.REGION, region, at))
         _region.value = region
@@ -433,7 +444,7 @@ class Library private constructor(
     override fun importSettings(profile: Long, values: Map<String, String>, region: String?) {
         // A deleted Profile's file may have outlived it.
         if (_profiles.value.all.any { it.id == profile }) store.importProfileSettings(profile, values.filterKeys { it in ProfileSetting.ALL })
-        if (region != null) store.saveHousehold(SyncEntry.REGION, region, Instant.ofEpochMilli(1), unlessKept = true)
+        if (region != null) store.saveHousehold(SyncEntry.REGION, region, Instant.fromEpochMilliseconds(1), unlessKept = true)
         synchronized(_profiles) { readSettings() }
     }
 
@@ -456,7 +467,7 @@ class Library private constructor(
     @Volatile var onSyncTimed: ((SyncTiming) -> Unit)? = null
 
     /** The clock a resumed first Sync tells its Channels' age by. Tests move it. */
-    @Volatile internal var syncClock: Clock = Clock.systemUTC()
+    @Volatile internal var syncClock: Clock = Clock.System
 
     /**
      * Downloads the Provider's catalog and replaces the device's copy, in two stages. The Channels
@@ -498,7 +509,7 @@ class Library private constructor(
         var channelsAt = _syncStatus.value.channelsAt
         var headStartAt = _syncStatus.value.headStartAt
         // A first Sync resumed (a reopened app, a Retry) keeps the Channels it landed within the day: its Channels Step is done.
-        val channelsKept = last == null && channelsAt?.let { Duration.between(it, syncClock.instant()) < CHANNELS_KEPT_FOR } == true
+        val channelsKept = last == null && channelsAt?.let { (syncClock.now() - it) < CHANNELS_KEPT_FOR } == true
         var step = if (channelsKept) SyncStep.Movies else SyncStep.Channels
         var entriesRead = 0
         val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead, headStartAt) }
@@ -524,7 +535,7 @@ class Library private constructor(
                 } else store.stageChannels { staging ->
                     val liveCategories = LinkedHashMap<String, String>()
                     client.liveCategories { id, name -> liveCategories[id] = name }
-                    val now = Instant.now()
+                    val now = Clock.System.now()
                     // Per Category, how many Listings it has and how many are Event channels or empty Event slots.
                     val tallies = HashMap<String?, IntArray>()
                     client.liveListings { id, name, categoryId, image, guideId ->
@@ -557,7 +568,7 @@ class Library private constructor(
                     prefixTable = table
                 } else if (last == null) {
                     // The first stage shows at once: Live and Home have their Channels while the Titles are read.
-                    val at = Instant.now()
+                    val at = Clock.System.now()
                     store.swapChannels(at)
                     prefixTable = table
                     channelsAt = at
@@ -627,8 +638,8 @@ class Library private constructor(
                     },
                     completed = { movieCount, showCount, mismatches ->
                         CompletedSync(
-                            Instant.now(),
-                            Duration.ofNanos(System.nanoTime() - started),
+                            Clock.System.now(),
+                            (System.nanoTime() - started).nanoseconds,
                             movieCount,
                             unknownPrefixes.values.sortedWith(compareByDescending<UnknownPrefix> { it.listingCount }.thenBy { it.prefix }),
                             mismatches,
@@ -681,7 +692,7 @@ class Library private constructor(
      */
     private fun landHeadStart(client: XtreamClient, table: PrefixTable, contentLanguages: List<String>): Instant? {
         return try {
-            val at = Instant.now()
+            val at = Clock.System.now()
             val landed = store.landHeadStart(at) { staging ->
                 /** Reads [kind]'s Head start: [listings] reads one Category's Listings and answers how many of them show. */
                 fun read(kind: TitleKind, categories: ((String, String) -> Unit) -> Unit, listings: (category: String, categoryName: String) -> Int) {
@@ -834,11 +845,11 @@ class Library private constructor(
             for (batch in store.titlesWithoutFacts().chunked(CloudClient.MAX_FACTS_BATCH)) {
                 try {
                     val answer = cloud.titleFacts(batch)
-                    store.stageTitleFacts(answer.found, answer.notFound, Instant.now())
+                    store.stageTitleFacts(answer.found, answer.notFound, Clock.System.now())
                     failedInARow = 0
                 } catch (e: CloudException) {
                     if (++failedInARow == CLOUD_FAILURES_IN_A_ROW) {
-                        cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+                        cloudRetryAt = Clock.System.now() + CLOUD_RETRY_AFTER
                         break
                     }
                 }
@@ -866,11 +877,11 @@ class Library private constructor(
                 sync.candidateTierTags.take(CloudClient.MAX_TIER_TAG_BATCH),
             )
         } catch (e: CloudException) {
-            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+            cloudRetryAt = Clock.System.now() + CLOUD_RETRY_AFTER
         }
     }
 
-    private fun canAskCloud() = cloud != null && !Instant.now().isBefore(cloudRetryAt)
+    private fun canAskCloud() = cloud != null && Clock.System.now() >= cloudRetryAt
 
     /** How many Listings the movie list holds (Clutter and Sports replays aren't in it). */
     fun movieListingCount(): Int = store.movieListingCount()
@@ -932,7 +943,7 @@ class Library private constructor(
     fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
         // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
-        val forKids = if (kids) KidsSearch(kidsCatalog().values.flatten().toHashSet(), kidsChannels(Instant.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
+        val forKids = if (kids) KidsSearch(kidsCatalog().values.flatten().toHashSet(), kidsChannels(Clock.System.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
         val inCatalog: (SearchIndex, Int) -> Boolean = if (forKids == null) { _, _ -> true } else { index, position -> index.titleId(position) in forKids.titles }
         if (letters == 0) return@flow emit(SearchResults.NONE.copy(completions = genreShortcuts(searchIndex(), contentLanguages, appLanguage, inCatalog)))
         if (letters < SearchIndex.MIN_LETTERS) return@flow emit(SearchResults.NONE)
@@ -959,7 +970,7 @@ class Library private constructor(
     private fun foundChannels(index: SearchIndex, query: String, only: Set<String>? = null): List<Channel> {
         val hits = index.findChannels(query).sortedWith(compareBy<SearchIndex.Hit>({ it.distance }, { it.index })).let { if (only == null) it.take(CHANNELS_FOUND * 4) else it }
         // Finished Event channels drop out, so a few more are read than are shown.
-        val on = store.channels(profile, hits.map { index.channels[it.index] }, Instant.now() - EVENT_FINISHED_AFTER)
+        val on = store.channels(profile, hits.map { index.channels[it.index] }, Clock.System.now() - EVENT_FINISHED_AFTER)
         return hits.mapNotNull { hit -> on[index.channels[hit.index]]?.takeIf { only == null || it.key in only }?.let { hit to it } }
             .sortedWith(compareBy({ it.first.distance }, { !it.second.favourite }, { it.first.index }))
             .map { it.second }
@@ -967,11 +978,11 @@ class Library private constructor(
     }
 
     /** The Viewer's Favourites that are on, in the order they were added. */
-    suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER) }
+    suspend fun favourites(): List<Channel> = withContext(Dispatchers.IO) { store.favourites(profile, Clock.System.now() - EVENT_FINISHED_AFTER) }
 
     /** Saves the Channel keyed [channel] ([Channel.key]) as a Favourite, or removes it when [favourite] is false. */
     suspend fun setFavourite(channel: String, favourite: Boolean) = withContext(Dispatchers.IO) {
-        val at = Instant.now()
+        val at = Clock.System.now()
         store.setFavourite(profile, channel, favourite, at)
         // Kept per Provider: a Channel key means nothing on another.
         accountSync.record(profile, SyncEntry.FAVOURITE, channel, if (favourite) ON else null, at, perProvider = true)
@@ -989,7 +1000,7 @@ class Library private constructor(
      * country code or one that is neither a country nor aliased, add none ([browserCountry]).
      */
     suspend fun liveCountries(region: String, contentLanguages: List<String>): List<LiveCountry> = withContext(Dispatchers.IO) {
-        orderedCountries(store.liveCountries(Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry), region, contentLanguages)
+        orderedCountries(store.liveCountries(Clock.System.now() - EVENT_FINISHED_AFTER, ::browserCountry), region, contentLanguages)
     }
 
     private fun browserCountry(country: String) = browserCountry(country, prefixTable::countryAlias)
@@ -1003,7 +1014,7 @@ class Library private constructor(
      * Channel count; ties keep the Provider's order.
      */
     suspend fun browsedCategories(country: String): List<BrowsedCategory> = withContext(Dispatchers.IO) {
-        val categories = store.browsedCategories(country, Instant.now() - EVENT_FINISHED_AFTER, ::browserCountry)
+        val categories = store.browsedCategories(country, Clock.System.now() - EVENT_FINISHED_AFTER, ::browserCountry)
         val genres = categories.associateWith { prefixTable.genreRank(it.name) }
         categories.sortedWith(compareBy<BrowsedCategory, Int?>(nullsLast()) { genres[it] }.thenByDescending { if (genres[it] == null) it.channels else 0 })
     }
@@ -1014,7 +1025,7 @@ class Library private constructor(
      * are left out, as everywhere.
      */
     suspend fun categoryChannels(category: BrowsedCategory): List<Channel> = withContext(Dispatchers.IO) {
-        store.categoryChannels(profile, category.categoryIds, Instant.now() - EVENT_FINISHED_AFTER)
+        store.categoryChannels(profile, category.categoryIds, Clock.System.now() - EVENT_FINISHED_AFTER)
     }
 
     /**
@@ -1046,8 +1057,8 @@ class Library private constructor(
      * whenever [guideChanges] moves.
      */
     fun guide(channel: Channel): NowNext? {
-        val now = guideClock.instant()
-        return guideCache[channel.key]?.takeIf { it.until.isAfter(now) }?.at(now)?.takeUnless { it.isEmpty }
+        val now = guideClock.now()
+        return guideCache[channel.key]?.takeIf { it.until > now }?.at(now)?.takeUnless { it.isEmpty }
     }
 
     /**
@@ -1081,8 +1092,8 @@ class Library private constructor(
     /** One round of guide calls, on the guide thread: every Channel wanted and not cached, in order, until none is left or the Provider refuses. */
     private fun fetchGuides() {
         while (true) {
-            val now = guideClock.instant()
-            val day = ReadingDay.of(store.guideDay(), LocalDate.now(guideClock))
+            val now = guideClock.now()
+            val day = ReadingDay.of(store.guideDay(), guideClock.today(guideZone))
             if (day.refused) return
             val login = credentials.load() ?: return
             val wanted = (guideOnScreen + guideFavourites).distinctBy { it.key }
@@ -1090,7 +1101,7 @@ class Library private constructor(
             val variant = next.variants.first { it.guideId.isNotEmpty() }
             try {
                 val programmes = XtreamClient(login, http).guide(variant.id, now, GUIDE_PROGRAMMES)
-                val until = programmes.maxOfOrNull { it.end }?.takeIf { it.isAfter(now) } ?: now + GUIDE_EMPTY_KEPT_FOR
+                val until = programmes.maxOfOrNull { it.end }?.takeIf { it > now } ?: now + GUIDE_EMPTY_KEPT_FOR
                 guideCache[next.key] = GuideEntry(programmes, until)
                 guideUnanswered.remove(next.key)
                 store.saveGuideDay(day.copy(reads = day.reads + 1).kept())
@@ -1108,9 +1119,9 @@ class Library private constructor(
     /** Whether [channel]'s guide is to be asked for at [now]: the guide covers it, nothing cached stands, and no unanswered call is still fresh. */
     private fun guideWanted(channel: Channel, now: Instant): Boolean {
         if (channel.guideId.isEmpty()) return false
-        if (guideCache[channel.key]?.until?.isAfter(now) == true) return false
+        if (guideCache[channel.key]?.until?.let { it > now } == true) return false
         val unanswered = guideUnanswered[channel.key] ?: return true
-        return !now.isBefore(unanswered + GUIDE_RETRY_AFTER)
+        return now >= unanswered + GUIDE_RETRY_AFTER
     }
 
     /** A person search found: how close their name was, and their Titles, as positions in the search index. */
@@ -1299,7 +1310,7 @@ class Library private constructor(
             fileReadLookUps.submit { lookUpFileReads(providerKey(login), title.listings.map { it.id }) }
         }
         try {
-            shared?.get((SHARED_READS_WAIT.toNanos() - (System.nanoTime() - asked)).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+            shared?.get((SHARED_READS_WAIT.inWholeNanoseconds - (System.nanoTime() - asked)).coerceAtLeast(0), TimeUnit.NANOSECONDS)
         } catch (e: TimeoutException) {
             // Kept once it comes: the page shows it the next time it reads its details.
         } catch (e: ExecutionException) {
@@ -1310,7 +1321,7 @@ class Library private constructor(
         var shown = shown(candidates, contentLanguages, appLanguage, originalLanguage)
         // A Provider slow to answer never holds the page: past this it opens from what is kept, and
         // has the details once they come (the page's reads tell it, [readMovieDetails]).
-        val detailsBy = System.nanoTime() + providerDetailsWait.toNanos()
+        val detailsBy = System.nanoTime() + providerDetailsWait.inWholeNanoseconds
         var kept = if (id.kind == TitleKind.Movie) movieDetailsForPage(title, shown.best.listing, detailsBy) else emptyMap()
         if (kept[shown.best.listing.id]?.bitrate != null) {
             // The details just read Confirm the bitrate: the page arrives with it, as with the shared reads.
@@ -1365,7 +1376,7 @@ class Library private constructor(
                 movieDetailsReads.submit(java.util.concurrent.Callable<StoredMovieDetails?> {
                     try {
                         val read = XtreamClient(login, http).movieDetails(id)
-                        val now = Instant.now()
+                        val now = Clock.System.now()
                         val keep = {
                             store.saveMovieDetails(id, read, listing.added, now)
                             detailsGeneration.incrementAndGet()
@@ -1475,12 +1486,12 @@ class Library private constructor(
         if (id.kind != TitleKind.Show) return@withContext null
         val title = store.title(id) ?: return@withContext null
         val kept = store.showDetails(title.listings.map { it.id })
-        val now = Instant.now()
+        val now = Clock.System.now()
         val read = kept.mapValuesTo(HashMap()) { it.value.episodes }
         // A Show the Provider gives no change time for is asked again daily.
         val stale = title.listings.filter { listing ->
             val details = kept[listing.id]
-            details == null || details.modified != listing.added || (listing.added == null && details.fetchedAt.isBefore(now - SHOW_DETAILS_FRESH_FOR))
+            details == null || details.modified != listing.added || (listing.added == null && details.fetchedAt < now - SHOW_DETAILS_FRESH_FOR)
         }
         val login = credentials.load()
         if (stale.isNotEmpty() && login != null) {
@@ -1838,7 +1849,7 @@ class Library private constructor(
     /** Keeps what the Viewer picked in the player, and sends it to the Account's other TVs. */
     private fun rememberTrack(kind: String, value: String) {
         store.rememberTrack(profile, kind, value)
-        accountSync.record(profile, SyncEntry.SETTING, SyncEntry.TRACK + kind, value, Instant.now())
+        accountSync.record(profile, SyncEntry.SETTING, SyncEntry.TRACK + kind, value, Clock.System.now())
         accountSync.pushSoon()
     }
 
@@ -1851,7 +1862,7 @@ class Library private constructor(
      */
     suspend fun saveChoices(plan: PlayPlan, choices: TitleChoices) = withContext(Dispatchers.IO) {
         val id = plan.titleId ?: return@withContext
-        val at = Instant.now()
+        val at = Clock.System.now()
         val body = choices.toJson()
         store.saveTitleChoices(profile, id, body, at)
         accountSync.record(profile, SyncEntry.TITLE_CHOICES, historyKey(id), body, at, perProvider = id is TitleId.Unmatched)
@@ -1921,7 +1932,7 @@ class Library private constructor(
 
     /** Keeps where the Viewer is in [id] (an [episode] of it, for a Show), and queues it for the Account. */
     private fun record(id: TitleId, episode: EpisodeNumber?, position: Long, duration: Long?, watched: Boolean) {
-        val at = Instant.now()
+        val at = Clock.System.now()
         if (episode == null) store.saveProgress(profile, id, position, duration, watched, at)
         else store.saveEpisodeProgress(profile, id, episode, position, duration, watched, at)
         accountSync.recordHistory(profile, HistoryChange(id, episode, position, duration, watched, removed = false, at))
@@ -1951,7 +1962,7 @@ class Library private constructor(
      * over: on every TV of the Account too, unless one of them plays it later.
      */
     suspend fun removeFromContinueWatching(id: TitleId) = withContext(Dispatchers.IO) {
-        val at = Instant.now()
+        val at = Clock.System.now()
         store.forgetProgress(profile, id, at)
         accountSync.recordHistory(profile, HistoryChange(id, null, 0, null, watched = false, removed = true, at))
         accountSync.pushSoon()
@@ -1974,7 +1985,7 @@ class Library private constructor(
      * with no Titles are left out.
      */
     suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String = DEFAULT_REGION, leagues: List<League> = emptyList()): List<HomeRow> =
-        homeRows(contentLanguages, appLanguage, region, leagues, Instant.now())
+        homeRows(contentLanguages, appLanguage, region, leagues, Clock.System.now())
 
     internal suspend fun homeRows(contentLanguages: List<String>, appLanguage: String, region: String, leagues: List<League>, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsHomeRows(contentLanguages, appLanguage)
@@ -1982,7 +1993,7 @@ class Library private constructor(
         // Live tab's, but its first rows never wait on the cloud: the kept Games stand, and the rows are read again once fresh ones land.
         val liveNow = matchedGames(leagues, contentLanguages, region, now, waitForCloud = false).current.filter { it.game.state == GameState.Live && it.best != null }
         val resumes = continueWatching(contentLanguages)
-        val favourites = store.favourites(profile, Instant.now() - EVENT_FINISHED_AFTER)
+        val favourites = store.favourites(profile, Clock.System.now() - EVENT_FINISHED_AFTER)
         val movies = store.titles(TitleKind.Movie, 0, HOME_MOVIES)
         val shows = store.titles(TitleKind.Show, 0, HOME_SHOWS)
         // A first Sync's Head start has no Trending and no genre rows: they would change a minute later (ADR 0019).
@@ -2024,7 +2035,7 @@ class Library private constructor(
                 }
                 val duration = played?.second?.takeIf { it > 0 }
                 val fraction = duration?.let { (played.first.toFloat() / it).coerceIn(0f, 1f) }
-                val left = duration?.let { Duration.ofMillis((it - played.first).coerceAtLeast(0)) }
+                val left = duration?.let { (it - played.first).coerceAtLeast(0).milliseconds }
                 val summary = card(title)
                 InProgress(summary, fraction, left, (at as? ShowInProgress)?.next)
             },
@@ -2066,7 +2077,7 @@ class Library private constructor(
         qualityCap: QualityCap = QualityCap.UHD,
         preferOriginalAudio: Boolean = true,
         readDetails: Boolean = true,
-    ): FeaturedTitle? = featured(screen, contentLanguages, appLanguage, Instant.now(), device, qualityCap, preferOriginalAudio, readDetails)
+    ): FeaturedTitle? = featured(screen, contentLanguages, appLanguage, Clock.System.now(), device, qualityCap, preferOriginalAudio, readDetails)
 
     internal suspend fun featured(
         screen: FeaturedScreen,
@@ -2219,9 +2230,9 @@ class Library private constructor(
      * them ([matchReplays]), at most [REPLAYS_ROW]; left out when none matches.
      */
     suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
-        liveRows(leagues, region, contentLanguages, Instant.now(), ZoneId.systemDefault())
+        liveRows(leagues, region, contentLanguages, Clock.System.now(), TimeZone.currentSystemDefault())
 
-    internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: ZoneId): List<HomeRow> = withContext(Dispatchers.IO) {
+    internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: TimeZone): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsLiveRows(region, contentLanguages, now)
         val favourites = store.favourites(profile, now - EVENT_FINISHED_AFTER)
         val countries = liveCountries(region, contentLanguages)
@@ -2231,7 +2242,7 @@ class Library private constructor(
         val matchedEventChannels = matchedGames.all.flatMapTo(HashSet()) { entry -> entry.feeds.filter { it.kind == FeedKind.EventChannel }.map { it.channel.key } }
         val moreLiveEvents = matchedGames.events
             .mapNotNull { listing -> listing.start?.let { UnmatchedEventChannel(listing.channel, it) } }
-            .filter { it.channel.key !in matchedEventChannels && Duration.between(now, it.start).abs() <= MORE_LIVE_EVENTS_WITHIN }
+            .filter { it.channel.key !in matchedEventChannels && (it.start - now).absoluteValue <= MORE_LIVE_EVENTS_WITHIN }
             .sortedBy { it.start }
         val schedule = matchedGames.all.map { it.game }
         val replays = if (schedule.isEmpty()) emptyList() else {
@@ -2241,13 +2252,13 @@ class Library private constructor(
             matchedReplays?.takeIf { it.key == key }?.replays
                 ?: matchReplays(store.replays(withTeams = true), teams).take(REPLAYS_ROW).also { matchedReplays = MatchedReplays(key, it) }
         }
-        val today = now.atZone(zone).toLocalDate()
+        val today = now.dayIn(zone)
         val weekAhead = now + WEEK_AHEAD
         val shown = HashSet<String>()
         // A Game shows in the highest row it fits.
         fun row(fits: (GameFeeds) -> Boolean): List<GameFeeds> = matched.filter { it.key !in shown && fits(it) }.also { taken -> taken.forEach { shown += it.key } }
         val liveNow = row { it.game.state == GameState.Live && it.best != null }
-        val todayRow = row { it.game.state == GameState.Upcoming && it.game.start.atZone(zone).toLocalDate() == today }
+        val todayRow = row { it.game.state == GameState.Upcoming && it.game.start.dayIn(zone) == today }
         val perLeague = leagues.mapNotNull { league ->
             row { it.game.league == league.key && it.game.state == GameState.Upcoming && it.game.start < weekAhead }.takeIf { it.isNotEmpty() }?.let { HomeRow.LeagueGames(league, it) }
         }
@@ -2279,13 +2290,13 @@ class Library private constructor(
      * day in the device's zone, or, failing one, the day after (a Provider's clock ahead of the
      * Viewer's), the last added when several. Null for a Game not over, and until the Provider has one.
      */
-    suspend fun gameReplay(game: Game): Replay? = gameReplay(game, ZoneId.systemDefault())
+    suspend fun gameReplay(game: Game): Replay? = gameReplay(game, TimeZone.currentSystemDefault())
 
-    internal suspend fun gameReplay(game: Game, zone: ZoneId): Replay? = withContext(Dispatchers.IO) {
+    internal suspend fun gameReplay(game: Game, zone: TimeZone): Replay? = withContext(Dispatchers.IO) {
         if (game.state != GameState.Over) return@withContext null
-        val day = game.start.atZone(zone).toLocalDate()
-        val dated = store.replaysDated(day, day.plusDays(1)).filter { replayOf(it, game) }
-        listOf(day, day.plusDays(1)).firstNotNullOfOrNull { on ->
+        val day = game.start.dayIn(zone)
+        val dated = store.replaysDated(day, day.plus(1, DateTimeUnit.DAY)).filter { replayOf(it, game) }
+        listOf(day, day.plus(1, DateTimeUnit.DAY)).firstNotNullOfOrNull { on ->
             dated.filter { it.date == on }.maxWithOrNull(compareBy<Replay>({ it.added }, { it.listingId }))
         }
     }
@@ -2310,7 +2321,7 @@ class Library private constructor(
      * of the Channel, and is forgotten once the Game is long over ([DROPPED_KEPT_FOR]). Once every
      * named Feed is dropped, the League network joins, as it does for a Game with none.
      */
-    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Instant.now()): GameFeeds = withContext(Dispatchers.IO) {
+    suspend fun notThisGame(entry: GameFeeds, feed: Feed, contentLanguages: List<String>, region: String = DEFAULT_REGION, now: Instant = Clock.System.now()): GameFeeds = withContext(Dispatchers.IO) {
         store.dropFeed(profile, entry.key, feed.channel.key, now, now - DROPPED_KEPT_FOR)
         accountSync.record(profile, SyncEntry.NOT_THIS_GAME, "${entry.key}|${feed.channel.key}", ON, now, perProvider = true)
         accountSync.pushSoon()
@@ -2365,7 +2376,7 @@ class Library private constructor(
      * catalog holds (ADR 0019), New is the tab's one row, as on Home.
      */
     suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
-        tabRows(kind, contentLanguages, appLanguage, Instant.now())
+        tabRows(kind, contentLanguages, appLanguage, Clock.System.now())
 
     internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsTabRows(kind, contentLanguages, appLanguage)
@@ -2808,12 +2819,12 @@ class Library private constructor(
                     connection.whileFree {
                         val contents = headerReader.read(location, container)
                         // Kept before the connection is let go, so a plan made as Play finishes this read names what it Confirmed.
-                        store.saveFileRead(listingId, contents?.toJson(), Instant.now(), shared = false)
+                        store.saveFileRead(listingId, contents?.toJson(), Clock.System.now(), shared = false)
                         Read(contents)
                     }
                 } catch (e: IOException) {
                     // The Provider refused: no more reads for now, nor Background reading today.
-                    if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), LocalDate.now()).copy(refused = true).kept())
+                    if (e is HeaderReadRefused) store.saveReadingDay(ReadingDay.of(store.readingDay(), Clock.System.today()).copy(refused = true).kept())
                     null
                 } finally {
                     reads.unlock()
@@ -2881,7 +2892,7 @@ class Library private constructor(
                 }
             }.awaitAll()
         }.filterNotNull()
-        val now = Instant.now()
+        val now = Clock.System.now()
         read.forEach { (listing, details) -> store.saveMovieDetails(listing.id, details, listing.added, now) }
         if (read.isNotEmpty()) detailsGeneration.incrementAndGet()
         // Whatever they say: a page that opened before a slow Provider answered shows its details now.
@@ -2913,14 +2924,14 @@ class Library private constructor(
      * carry Original audio, so it is ready before the Viewer opens it.
      */
     suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, preferOriginalAudio: Boolean = true) =
-        readInBackground(contentLanguages, pace, Clock.systemDefaultZone(), OFFLINE_PAUSE, preferOriginalAudio)
+        readInBackground(contentLanguages, pace, Clock.System, OFFLINE_PAUSE, preferOriginalAudio)
 
-    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration, preferOriginalAudio: Boolean = true) = withContext(Dispatchers.IO) {
-        var pausedUntil = Instant.MIN
+    internal suspend fun readInBackground(contentLanguages: List<String>, pace: BackgroundPace, clock: Clock, offlinePause: Duration, preferOriginalAudio: Boolean = true, zone: TimeZone = TimeZone.currentSystemDefault()) = withContext(Dispatchers.IO) {
+        var pausedUntil = Instant.DISTANT_PAST
         while (true) {
             delay(pace.gap)
-            val day = ReadingDay.of(store.readingDay(), LocalDate.now(clock))
-            if (day.refused || day.reads >= pace.perDay || clock.instant().isBefore(pausedUntil) || detailsReading.get() > 0) continue
+            val day = ReadingDay.of(store.readingDay(), clock.today(zone))
+            if (day.refused || day.reads >= pace.perDay || clock.now() < pausedUntil || detailsReading.get() > 0) continue
             // A first Sync's Head start is no catalog to read from yet: Background reading waits for the full one (ADR 0019).
             if (store.lastSync() == null) continue
             val login = credentials.load() ?: continue
@@ -2934,14 +2945,14 @@ class Library private constructor(
             val read = try {
                 connection.whileFree {
                     val contents = headerReader.read(XtreamClient(login, http).movieLocation(next.listingId, next.container), next.container)
-                    store.saveFileRead(next.listingId, contents?.toJson(), Instant.now(), shared = false)
+                    store.saveFileRead(next.listingId, contents?.toJson(), Clock.System.now(), shared = false)
                     Read(contents)
                 }
             } catch (e: HeaderReadRefused) {
                 store.saveReadingDay(day.copy(refused = true).kept())
                 continue
             } catch (e: IOException) {
-                pausedUntil = clock.instant() + offlinePause
+                pausedUntil = clock.now() + offlinePause
                 continue
             } finally {
                 reads.unlock()
@@ -3019,18 +3030,18 @@ class Library private constructor(
 
     /** Keeps what the cloud has of [listingIds]' file reads that the device lacks; whether there were any. */
     private fun lookUpFileReads(provider: String, listingIds: List<Long>): Boolean {
-        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return false
+        if (cloud == null || Clock.System.now() < cloudRetryAt) return false
         val kept = store.fileReads(listingIds).keys
         var found = false
         try {
             listingIds.filter { it !in kept }.chunked(CloudClient.MAX_BATCH).forEach { batch ->
                 cloud.fileReads(provider, batch).forEach { (id, body) ->
-                    store.saveFileRead(id, body, Instant.now(), shared = true)
+                    store.saveFileRead(id, body, Clock.System.now(), shared = true)
                     found = true
                 }
             }
         } catch (e: CloudException) {
-            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+            cloudRetryAt = Clock.System.now() + CLOUD_RETRY_AFTER
         }
         return found
     }
@@ -3041,7 +3052,7 @@ class Library private constructor(
      * shared next time.
      */
     private fun shareFileReads(provider: String) {
-        if (cloud == null || Instant.now().isBefore(cloudRetryAt)) return
+        if (cloud == null || Clock.System.now() < cloudRetryAt) return
         try {
             val table = prefixTable
             store.unsharedFileReads().entries.chunked(CloudClient.MAX_BATCH).forEach { batch ->
@@ -3054,7 +3065,7 @@ class Library private constructor(
                 store.markFileReadsShared(files.map { it.listingId })
             }
         } catch (e: CloudException) {
-            cloudRetryAt = Instant.now() + CLOUD_RETRY_AFTER
+            cloudRetryAt = Clock.System.now() + CLOUD_RETRY_AFTER
         }
     }
 
@@ -3065,7 +3076,7 @@ class Library private constructor(
     internal fun confirm(version: Version, seen: FileContents) {
         val before = store.fileReads(listOf(version.listingId))[version.listingId]
         val file = seen.copy(hdr = seen.hdr ?: before?.hdr, bitrate = seen.bitrate ?: before?.bitrate)
-        store.saveFileRead(version.listingId, file.toJson(), Instant.now(), shared = false)
+        store.saveFileRead(version.listingId, file.toJson(), Clock.System.now(), shared = false)
     }
 
     /**
@@ -3183,8 +3194,8 @@ class Library private constructor(
     private fun trendingViews(appLanguage: String, now: Instant): Map<String, Map<String, Long>> = synchronized(trendingAsks) {
         val language = primaryLanguage(appLanguage)
         val kept = unsavedTrending[language] ?: store.trending(language)
-        if (kept != null && kept.fetchedAt.isAfter(now - TRENDING_FRESH_FOR)) return kept.views
-        if (cloud != null && now.isAfter(cloudRetryAt)) {
+        if (kept != null && kept.fetchedAt > now - TRENDING_FRESH_FOR) return kept.views
+        if (cloud != null && now > cloudRetryAt) {
             try {
                 val views = cloud.trending(language)
                 val asked = StoredTrending(views, now)
@@ -3210,7 +3221,7 @@ class Library private constructor(
      * answers with the kept copies at once and asks the cloud behind it; once fresh copies land,
      * [catalogChanges] tells the screen to read again. The cloud is given [GAMES_CALL_TIMEOUT].
      */
-    suspend fun games(leagues: List<String>, now: Instant = Instant.now(), waitForCloud: Boolean = true): List<Game> = withContext(Dispatchers.IO) {
+    suspend fun games(leagues: List<String>, now: Instant = Clock.System.now(), waitForCloud: Boolean = true): List<Game> = withContext(Dispatchers.IO) {
         val asked = leagues.distinct()
         if (asked.isEmpty()) return@withContext emptyList()
         val stored = store.games(asked)
@@ -3218,8 +3229,8 @@ class Library private constructor(
         var copies = kept
         // A League the cloud left out of its last answer isn't due again before one it listed: asking at
         // once would land the others again, and Home would read its rows again for them, without end (#307).
-        val due = asked.any { league -> listOfNotNull(kept[league]?.fetchedAt, gamesAnsweredAt[league]).none { it.isAfter(now - GAMES_FRESH_FOR) } }
-        if (cloud != null && now.isAfter(cloudRetryAt) && due) {
+        val due = asked.any { league -> listOfNotNull(kept[league]?.fetchedAt, gamesAnsweredAt[league]).none { it > now - GAMES_FRESH_FOR } }
+        if (cloud != null && now > cloudRetryAt && due) {
             if (waitForCloud) {
                 copies = kept + fetchGames(cloud, asked, now).orEmpty()
             } else if (gamesFetching.compareAndSet(false, true)) {
@@ -3331,12 +3342,12 @@ class Library private constructor(
         private const val PULSE_PENDING = "pending"
         private const val PULSE_DONE = "done"
 
-        private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
+        private val CLOUD_RETRY_AFTER: Duration = 1.minutes
         /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
-        private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
+        private val OFFLINE_PAUSE: Duration = 15.minutes
 
         /** How long a first Sync's Channels are kept for the Sync that resumes it; older ones are read again. */
-        internal val CHANNELS_KEPT_FOR: Duration = Duration.ofDays(1)
+        internal val CHANNELS_KEPT_FOR: Duration = 1.days
         /** Batches failing this many times in a row mean the cloud is down: the rest wait for the next Sync. */
         private const val CLOUD_FAILURES_IN_A_ROW = 3
 
@@ -3345,7 +3356,7 @@ class Library private constructor(
         private const val SUBTITLES = "subtitles"
         private const val SUBTITLES_OFF = "off"
         private const val CLOSED_CAPTIONS = "closed-captions"
-        private val SHOW_DETAILS_FRESH_FOR: Duration = Duration.ofDays(1)
+        private val SHOW_DETAILS_FRESH_FOR: Duration = 1.days
         /** How many show details are asked of the Provider at once: GoT alone has 21 Versions. */
         /** Provider details calls in flight at once, a page's Episodes or its Versions' movie details. */
         private const val SHOW_DETAILS_AT_ONCE = 4
@@ -3400,33 +3411,33 @@ class Library private constructor(
         private const val GENRE_PAGES = 5
 
         /** A League row shows the week ahead: the cloud answers today and the next seven days. */
-        private val WEEK_AHEAD: Duration = Duration.ofDays(7)
+        private val WEEK_AHEAD: Duration = 7.days
         /** The Event channels read for matching: a day behind now (a live Game named for yesterday evening, in a zone ahead) and past the week ahead. */
-        private val EVENT_WINDOW_BEHIND: Duration = Duration.ofDays(1)
+        private val EVENT_WINDOW_BEHIND: Duration = 1.days
 
         /** How far from now an unmatched Event channel's start may be for More live events (docs/roadmap.md, M3): an evening's events, not a wall of stale or far-off ones. */
-        internal val MORE_LIVE_EVENTS_WITHIN: Duration = Duration.ofHours(6)
-        private val EVENT_WINDOW_AHEAD: Duration = Duration.ofDays(9)
+        internal val MORE_LIVE_EVENTS_WITHIN: Duration = 6.hours
+        private val EVENT_WINDOW_AHEAD: Duration = 9.days
         /** A "Not this game" mark is forgotten this long after it was made: its Game is long over, and the rows ask for a week ahead at most. */
-        private val DROPPED_KEPT_FOR: Duration = Duration.ofDays(14)
+        private val DROPPED_KEPT_FOR: Duration = 14.days
         /** The cloud reads Wikipedia's lists once a day; the device asks Trending's feed again after this, at most once an hour. */
-        private val TRENDING_FRESH_FOR: Duration = Duration.ofHours(1)
+        private val TRENDING_FRESH_FOR: Duration = 1.hours
         /** The cloud reads a League's current day every 5 minutes; a screen asking every couple of minutes gets a new answer each time. */
-        private val GAMES_FRESH_FOR: Duration = Duration.ofMinutes(1)
+        private val GAMES_FRESH_FOR: Duration = 1.minutes
         /** How long a Movie's details wait for the cloud's file reads of its Versions: the page-arrival time (DESIGN.md, Motion). */
-        private val SHARED_READS_WAIT: Duration = Duration.ofMillis(300)
+        private val SHARED_READS_WAIT: Duration = 300.milliseconds
         /** How long a Movie's page waits for the Provider's details: several times what the Provider takes when well, far under the HTTP client's minute. */
-        private val PROVIDER_DETAILS_WAIT: Duration = Duration.ofSeconds(3)
+        private val PROVIDER_DETAILS_WAIT: Duration = 3.seconds
         /** How long a Games request may take in all: Home's row must not hang on a slow network, and the kept copy stands meanwhile. */
-        private val GAMES_CALL_TIMEOUT: Duration = Duration.ofSeconds(3)
+        private val GAMES_CALL_TIMEOUT: Duration = 3.seconds
         /** How long a Sync waits for the Provider table before going on with the one kept. */
-        private val PROVIDER_TABLE_CALL_TIMEOUT: Duration = Duration.ofSeconds(10)
+        private val PROVIDER_TABLE_CALL_TIMEOUT: Duration = 10.seconds
         /** How many programmes of a guide call are kept: the one on now and the next, with two more so the Channel isn't asked again as soon as the next one starts. */
         private const val GUIDE_PROGRAMMES = 4
         /** How long a Channel the guide listed nothing for stays unasked: the guide covers 15% of Channels, and a listed one rarely goes blank for long. */
-        private val GUIDE_EMPTY_KEPT_FOR: Duration = Duration.ofHours(1)
+        private val GUIDE_EMPTY_KEPT_FOR: Duration = 1.hours
         /** How long a Channel whose guide call got no answer waits before being asked again: the Wi-Fi may be down, as Background reading assumes. */
-        private val GUIDE_RETRY_AFTER: Duration = Duration.ofMinutes(5)
+        private val GUIDE_RETRY_AFTER: Duration = 5.minutes
         /** How long closing waits for the answers still to be saved. */
         private const val SAVES_ON_CLOSE_SECONDS = 5L
         /** How often a read waiting on a save checks that no Sync has taken the writer. */

@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import java.time.Instant
+import kotlin.time.Instant
 import java.time.ZoneId
 
 /** How a Game is named on its card, its page and under its rail: "Live" or its start, the teams, never a score. */

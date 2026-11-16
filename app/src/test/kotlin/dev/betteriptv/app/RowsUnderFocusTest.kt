@@ -57,7 +57,7 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Instant
+import kotlin.time.Instant
 
 /**
  * No row moves under focus (#342), on the rows Home, Movies, Shows and Live share ([RowsLayout]),

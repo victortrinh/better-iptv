@@ -3,7 +3,7 @@ package dev.betteriptv.app
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
+import kotlin.time.Instant
 import java.util.Locale
 
 /** How the device list names a TV and its sign-in date (#434). */

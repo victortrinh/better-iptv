@@ -1,6 +1,5 @@
 package dev.betteriptv.core
 
-import java.util.Locale
 import java.util.SortedMap
 
 /**
@@ -142,20 +141,20 @@ internal fun quality(width: Int?, height: Int?): Quality? {
 
 /**
  * A language code as a primary BCP 47 subtag: `ger`, `deu` and `de` are all `de`. Null when it
- * names no language (`und`, `mul`, empty) or none Java knows.
+ * names no language (`und`, `mul`, empty) or none the platform knows.
  */
 fun iso639(code: String?): String? {
-    val folded = code?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() && it !in NO_LANGUAGE } ?: return null
+    val folded = code?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it !in NO_LANGUAGE } ?: return null
     if (folded.length == 2) return folded.takeIf { it in TWO_LETTER }
     return THREE_LETTER[BIBLIOGRAPHIC[folded] ?: folded]
 }
 
 internal val NO_LANGUAGE = setOf("und", "mul", "zxx", "mis", "qaa")
-private val TWO_LETTER: Set<String> = Locale.getISOLanguages().toSet()
+private val TWO_LETTER: Set<String> = isoLanguages()
 private val THREE_LETTER: Map<String, String> =
-    Locale.getISOLanguages().mapNotNull { language -> runCatching { Locale(language).isO3Language }.getOrNull()?.let { it to language } }.toMap()
+    isoLanguages().mapNotNull { language -> iso3Language(language)?.let { it to language } }.toMap()
 
-/** ISO 639-2's bibliographic codes, which files often carry, and the terminology codes Java knows them by. */
+/** ISO 639-2's bibliographic codes, which files often carry, and the terminology codes the platform knows them by. */
 private val BIBLIOGRAPHIC = mapOf(
     "alb" to "sqi", "arm" to "hye", "baq" to "eus", "bur" to "mya", "chi" to "zho", "cze" to "ces", "dut" to "nld",
     "fre" to "fra", "geo" to "kat", "ger" to "deu", "gre" to "ell", "ice" to "isl", "mac" to "mkd", "mao" to "mri",
