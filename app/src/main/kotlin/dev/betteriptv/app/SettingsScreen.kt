@@ -53,13 +53,14 @@ import dev.betteriptv.app.ui.components.FocusWeight
 import dev.betteriptv.app.ui.components.SettingRow
 import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
-import dev.betteriptv.app.ui.theme.TextSize
 import dev.betteriptv.app.ui.theme.Type
+import dev.betteriptv.core.BackgroundReading
 import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Profiles
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.SyncStatus
+import dev.betteriptv.core.TextSize
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.UpdateState
 import dev.betteriptv.core.offered

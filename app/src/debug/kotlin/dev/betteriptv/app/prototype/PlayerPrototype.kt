@@ -30,10 +30,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import dev.betteriptv.app.PlayerControls
-import dev.betteriptv.app.SubtitleStyle
 import dev.betteriptv.app.TrackCards
 import dev.betteriptv.app.TrackOption
 import dev.betteriptv.app.audioName
+import dev.betteriptv.core.SubtitleStyle
 import dev.betteriptv.core.Track
 import dev.betteriptv.app.R
 import dev.betteriptv.app.ui.components.BadgeRow

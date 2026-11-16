@@ -35,6 +35,8 @@ import dev.betteriptv.core.PlayerEngine
 import dev.betteriptv.core.PlayerEvent
 import dev.betteriptv.core.Quality
 import dev.betteriptv.core.RememberedTracks
+import dev.betteriptv.core.SubtitleBackground
+import dev.betteriptv.core.SubtitleStyle
 import dev.betteriptv.core.TitleChoices
 import dev.betteriptv.core.Track
 import dev.betteriptv.core.TrackChoice

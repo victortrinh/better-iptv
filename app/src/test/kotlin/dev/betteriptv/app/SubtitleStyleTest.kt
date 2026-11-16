@@ -1,6 +1,9 @@
 package dev.betteriptv.app
 
 import dev.betteriptv.core.Quality
+import dev.betteriptv.core.SubtitlePosition
+import dev.betteriptv.core.SubtitleSize
+import dev.betteriptv.core.SubtitleStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

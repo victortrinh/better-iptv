@@ -1,11 +1,15 @@
 package dev.betteriptv.app
 
 import android.content.Context
-import dev.betteriptv.app.ui.theme.TextSize
+import dev.betteriptv.core.BackgroundReading
+import dev.betteriptv.core.KeptDeviceSettings
 import dev.betteriptv.core.KeptSettings
 import dev.betteriptv.core.League
 import dev.betteriptv.core.ProfileSetting
 import dev.betteriptv.core.QualityCap
+import dev.betteriptv.core.SubtitleSize
+import dev.betteriptv.core.SubtitleStyle
+import dev.betteriptv.core.TextSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -64,7 +68,8 @@ class ViewerSettingsStoreTest {
         }
     }
 
-    private fun store() = ViewerSettingsStore(context, kept, scope)
+    /** As the app opens it: the device's half kept by the Core in Android's settings store. */
+    private fun store() = ViewerSettingsStore(context, kept, KeptDeviceSettings(AndroidSettingsStore(context)), scope)
 
     @Test
     fun textSizeIsMediumUntilChanged() {
