@@ -202,6 +202,12 @@ class Library private constructor(
 
     /** The zone the guide's day is told in: the device's, except in tests. */
     @Volatile internal var guideZone: TimeZone = TimeZone.currentSystemDefault()
+    /** The clock a screen whose content moves with the time is read by ([Screen], the Live tab's Games). Tests move it. */
+    @Volatile internal var screenClock: Clock = Clock.System
+
+    /** The zone such a screen's day is told in, null for the device's, read each time. Tests set it. */
+    @Volatile internal var screenZone: TimeZone? = null
+
     /** Trending's feeds asked of the cloud and not saved yet, by App language. */
     private val unsavedTrending = ConcurrentHashMap<String, StoredTrending>()
     private val trendingAsks = Any()
@@ -2336,8 +2342,9 @@ class Library private constructor(
      * Sports replays whose two teams are teams of the Leagues on (the teams the Leagues' Games name,
      * finished ones included), newest first by the date in the name, then by when the Provider added
      * them ([matchReplays]), at most [REPLAYS_ROW]; left out when none matches.
+     * An app asks for them as the Live tab's content ([LiveTab]).
      */
-    suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
+    internal suspend fun liveRows(leagues: List<League> = emptyList(), region: String = DEFAULT_REGION, contentLanguages: List<String> = emptyList()): List<HomeRow> =
         liveRows(leagues, region, contentLanguages, Clock.System.now(), TimeZone.currentSystemDefault())
 
     internal suspend fun liveRows(leagues: List<League>, region: String, contentLanguages: List<String>, now: Instant, zone: TimeZone): List<HomeRow> = withContext(Dispatchers.IO) {

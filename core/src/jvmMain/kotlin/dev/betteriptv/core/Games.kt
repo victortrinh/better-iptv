@@ -14,7 +14,7 @@ enum class GameState { Upcoming, Live, Over }
  * nickname, no two alike), and its [logo] URL when the schedule has one. Its [color] and
  * [alternateColor] are the schedule's, as opaque ARGB (0xFF00205B), each null when it has none (#349).
  */
-class GameTeam(
+data class GameTeam(
     val name: String,
     val shortName: String,
     val abbreviation: String,
@@ -39,14 +39,14 @@ enum class GameSession(val round: Boolean = false) {
  * its [session], the names an Event channel may call it by in [aliases] (São Paulo, Brazil), and the
  * League's [logo].
  */
-class GameEvent(val name: String, val shortName: String, val session: GameSession, val aliases: List<String>, val logo: String?)
+data class GameEvent(val name: String, val shortName: String, val session: GameSession, val aliases: List<String>, val logo: String?)
 
 /**
  * One of a fight card's main-event fighters: their [name] (Waldo Cortes Acosta), their [shortName]
  * (the surname the card's name gives, Cortes Acosta), the names an Event channel may call them by in
  * [aliases], and their [headshot] URL when the schedule has one (it may not exist).
  */
-class GameFighter(val name: String, val shortName: String, val aliases: List<String>, val headshot: String?)
+data class GameFighter(val name: String, val shortName: String, val aliases: List<String>, val headshot: String?)
 
 /**
  * A fight-card League's Game ([League.fights]) in place of two teams: the card's [name] (UFC 334:
@@ -54,7 +54,7 @@ class GameFighter(val name: String, val shortName: String, val aliases: List<Str
  * (the Game's start is the prelims'), and its main event's two [fighters], in the name's order.
  * Never another bout, a result or a record.
  */
-class GameFight(val name: String, val shortName: String, val mainCard: Instant?, val fighters: List<GameFighter>)
+data class GameFight(val name: String, val shortName: String, val mainCard: Instant?, val fighters: List<GameFighter>)
 
 /**
  * A scheduled contest of a [league] (CONTEXT.md: Game), as the cloud's schedule gives it
@@ -64,8 +64,10 @@ class GameFight(val name: String, val shortName: String, val mainCard: Instant?,
  * schedule says carry it. A Game [dayOnly] has only its day known yet (a golf round before its tee
  * times are out): [start] is noon US Eastern that day. Its Feeds are found among the catalog's
  * Channels by the teams', the event's or the fighters' aliases and the Broadcasters' names.
+ * Two readings of the same Game are equal, so a screen's content holding it is told apart from the
+ * last only when something of it changed ([Library.screen]).
  */
-class Game(
+data class Game(
     val league: String,
     val id: String,
     val start: Instant,
