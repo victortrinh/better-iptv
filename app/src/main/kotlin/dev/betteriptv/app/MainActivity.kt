@@ -188,6 +188,8 @@ private fun BoxScope.Root(app: BetterIptvApp) {
         val now = playing
         val country = browsing
         SideEffect { app.playerOpen = now != null }
+        // A first Sync's catalog that finished under the player lands as it closes (#563).
+        LaunchedEffect(now == null) { if (now == null) app.onPlayerClosed() }
         // Entering a top-level screen (a tab, or back from the player, a Title, a Game or a country) lands a held
         // Sync's catalog, so rows change between screens, never under focus; leaving Settings after Sync now too.
         val topLevel = now == null && opened == null && openedGame == null && country == null

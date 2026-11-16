@@ -538,9 +538,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val at = meta(PENDING_SYNC_AT) ?: return null
         // A Head start staged and not landed is no Sync's catalog ([landHeadStart]).
         if (meta(PENDING_HEAD_START) != null) return null
-        val staged = listOf("staging_kept_listing", "staging_title", "staging_replay", "staging_channel", "staging_live_category")
-        if (staged.all { tableExists(it) }) Instant.parse(at) else null
+        val titles = listOf("staging_kept_listing", "staging_title", "staging_replay")
+        if (titles.all { tableExists(it) } && (hasStagedChannels() || firstSyncChannelsLanded())) Instant.parse(at) else null
     }
+
+    private fun hasStagedChannels() = tableExists("staging_channel") && tableExists("staging_live_category")
+
+    /** Whether a first Sync has landed its Channels and not its Titles: its pending catalog is the Titles stage alone. */
+    private fun firstSyncChannelsLanded() = meta(LAST_SYNC_AT) == null && meta(CHANNELS_SYNCED_AT) != null
 
     /** Drops whatever a Sync staged and didn't land, so it takes no room beside the catalog. */
     fun discardPending() = synchronized(writer) {
@@ -589,14 +594,17 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         lastSync()!!
     }
 
-    /** Swaps a pending catalog in, Channels and Titles together, or returns null without one. */
+    /**
+     * Swaps a pending catalog in, Channels and Titles together, or returns null without one. A first
+     * Sync's, whose Channels landed ahead of it ([swapChannels]), is its Titles alone.
+     */
     internal fun applyPending(timer: SyncTimer? = null): CompletedSync? = synchronized(writer) {
         if (pendingAt() == null) return null
         val started = System.nanoTime()
         writer.execSQL("BEGIN IMMEDIATE")
         try {
             val at = Instant.now()
-            swapChannelsIn(at)
+            if (hasStagedChannels()) swapChannelsIn(at)
             timer?.mark("Channel swap")
             swapTitlesIn(started, at, timer)
             writer.execSQL("COMMIT")

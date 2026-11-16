@@ -160,6 +160,17 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
     }
 
     /**
+     * The player closed: a first Sync's catalog that finished under it lands now, on whatever screen
+     * the Viewer comes back to, as it would have had the player been closed (ADR 0019). The screens
+     * keep the focused card and its row where they are ([RowsLayout]). A later Sync's waits for the
+     * next top-level screen, as ever ([applyPendingCatalog]).
+     */
+    fun onPlayerClosed() {
+        if (!library.hasPendingFirstCatalog) return
+        scope.launch { keepingAlive { library.applyPendingCatalog() } }
+    }
+
+    /**
      * Starts a Sync unless one finished recently or waits to be applied, and says whether it did. The
      * catalog on screen stays until the new one lands.
      */
@@ -174,19 +185,24 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
 
     /**
      * Starts a Sync unless one is running. A later Sync's catalog is held for [applyPendingCatalog],
-     * so rows never move under focus; what the cloud is asked after a Sync doesn't hold the next one up.
+     * so rows never move under focus, and a first Sync's while the player is open, for [onPlayerClosed];
+     * what the cloud is asked after a Sync doesn't hold the next one up.
      */
     fun sync() {
         if (library.syncStatus.value is SyncStatus.Running) return
         scope.launch {
             // Only counts and timings: the login and stream locations never reach the log.
             // A first Sync's Head start is read for the Content languages as they are now (ADR 0019).
-            when (val status = keepingAlive { library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages) }) {
+            when (val status = keepingAlive { library.sync(hold = true, contentLanguages = settings.settings.value.contentLanguages, playerOpen = { playerOpen }) }) {
                 is SyncStatus.Synced -> Log.i(
                     TAG,
                     "Synced ${status.last.movieListingCount} movie and ${status.last.showListingCount} show Listings in ${status.last.duration.toMillis()} ms, ${status.last.mismatches} Mismatches kept apart",
                 )
-                is SyncStatus.Ready -> Log.i(TAG, "Synced; the catalog waits to be applied")
+                is SyncStatus.Ready -> {
+                    Log.i(TAG, "Synced; the catalog waits to be applied")
+                    // The player closed in the moment a first Sync's catalog was held for it.
+                    if (!playerOpen) onPlayerClosed()
+                }
                 is SyncStatus.Failed -> Log.w(TAG, "Sync failed at ${status.step}: ${status.problem}")
                 else -> Unit
             }

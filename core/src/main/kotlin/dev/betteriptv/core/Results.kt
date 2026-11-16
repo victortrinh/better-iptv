@@ -440,9 +440,18 @@ sealed interface SyncStatus {
         }
     }
 
-    /** A later Sync finished computing its catalog at [computedAt]; [last]'s shows until the app applies it. */
-    data class Ready(override val last: CompletedSync, val computedAt: Instant) : SyncStatus {
-        override val channelsAt: Instant get() = last.finishedAt
+    /**
+     * A Sync finished computing its catalog at [computedAt], and it waits as a Pending catalog:
+     * [last]'s shows until the app applies it. A first Sync's waits only while the player is open
+     * (ADR 0019): [last] is then null, and what shows is what landed by [landedChannelsAt] and [headStartAt].
+     */
+    data class Ready(
+        override val last: CompletedSync?,
+        val computedAt: Instant,
+        val landedChannelsAt: Instant? = null,
+        override val headStartAt: Instant? = null,
+    ) : SyncStatus {
+        override val channelsAt: Instant? get() = last?.finishedAt ?: landedChannelsAt
     }
 
     data class Synced(override val last: CompletedSync) : SyncStatus {

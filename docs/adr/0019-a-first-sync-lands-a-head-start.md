@@ -40,5 +40,7 @@ So a first Sync, right after its Channels, reads a **Head start**: per Content l
 - Until the full catalog lands, a Head start Title has only the Versions its Head start Listings give it, Search and the genre rows know only the Head start, and Trending isn't shown.
 - A Head start that can't be read (a Provider that refuses a per-Category request) is skipped without an error; the first Sync then behaves as ADR 0011 describes.
 - An app closed between the Head start and the full catalog reopens on the Head start, and the Sync starts again from the full read.
+- The full catalog never lands under the player: one that is ready while a Head start Title (or a Channel) plays waits as a Pending catalog and lands as the player closes, on whatever screen the Viewer comes back to. An app closed meanwhile reopens on the full catalog.
+- What the Viewer did during the Head start is kept: a Title keeps its identity, so where they stopped stays with it, and a Favourite is a Channel's, which the Head start never touches.
 - A later Sync has no Head start: it still lands between screens (ADR 0011). A catalog dropped by a schema change is a first Sync again.
 - Title facts and Background reading wait for the full catalog, as before.
