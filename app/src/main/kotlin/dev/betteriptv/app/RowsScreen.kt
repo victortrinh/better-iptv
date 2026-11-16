@@ -411,7 +411,8 @@ internal fun RowsLayout(
         // fades in as it comes.
         // A screen whose catalog is still landing ([heroMayArrive]) had no Title to feature as it was
         // entered: it asks again when its rows are read again, so the hero arrives with a Head start.
-        val arrivingLate = checked && heroMayArrive && state.featured == null
+        // So does one entered again with none read for it last time (a tab first opened under the checklist).
+        val arrivingLate = (checked || entering) && heroMayArrive && state.featured == null
         val choose = (!checked && entering && !state.upNextRead) || arrivingLate
         val feature = featurer
         val chosen = if (choose && feature != null) async { feature(true) } else null
@@ -423,6 +424,9 @@ internal fun RowsLayout(
         if (chosen != null) state.featured = if (late) null else chosen.await()
         // It shows from the top, unless the Viewer is on a row: rows never move under focus, and Up finds it.
         if (arrivingLate && state.featured != null && !inRows) state.list.requestScrollToItem(0)
+        // Rows arriving where there were none (a Head start's, on a tab bare till then) show from the
+        // top: the list would else keep what it held, [trailing], in place under them, out of sight.
+        if (before?.isEmpty() == true && fresh.isNotEmpty()) state.list.requestScrollToItem(0)
         if (!checked && restoreFocus != null && restoreFocus.row != HERO_ROW && before != null) {
             state.rows = fresh
             val restored = restoredCard(restoreFocus, before.cards, fresh.cards)

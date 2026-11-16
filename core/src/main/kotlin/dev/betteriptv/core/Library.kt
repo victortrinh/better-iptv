@@ -2330,20 +2330,23 @@ class Library private constructor(
      * [MIN_TRENDING_SIZE] and a genre none under [MIN_GENRE_SIZE]. The tab shows a Title once, in the
      * highest row it fits ([ScreenRows]), on its own: a Title in Home's Trending is in the tab's too.
      * Rows with no Titles are left out. Like Home, the Trending feed kept on the device stands while
-     * the cloud can't answer; the genre rows need no cloud.
+     * the cloud can't answer; the genre rows need no cloud. While a first Sync's Head start is all the
+     * catalog holds (ADR 0019), New is the tab's one row, as on Home.
      */
     suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String): List<HomeRow> =
         tabRows(kind, contentLanguages, appLanguage, Instant.now())
 
     internal suspend fun tabRows(kind: TitleKind, contentLanguages: List<String>, appLanguage: String, now: Instant): List<HomeRow> = withContext(Dispatchers.IO) {
         if (kids) return@withContext kidsTabRows(kind, contentLanguages, appLanguage)
-        val trends = trendingTitles(appLanguage, now).filter { it.id.kind == kind }
+        // A first Sync's Head start has no Trending and no genre rows, as on Home: they would change a minute later (ADR 0019).
+        val whole = store.lastSync() != null
+        val trends = if (whole) trendingTitles(appLanguage, now).filter { it.id.kind == kind } else emptyList()
         val newest = store.titles(kind, 0, TAB_NEW)
         val screen = ScreenRows()
         val trending = screen.row(watchable(trends, contentLanguages), ROW_SIZE, MIN_TRENDING_SIZE)
         val new = screen.row(watchable(newest, contentLanguages).sortedWith(newestFirst), ROW_SIZE)
         // The genre rows go after New, through the same [screen], so they skip what's shown above.
-        val genres = genreRows(listOf(kind), contentLanguages, appLanguage, screen, TAB_GENRE_ROWS)
+        val genres = if (whole) genreRows(listOf(kind), contentLanguages, appLanguage, screen, TAB_GENRE_ROWS) else emptyList()
         val onScreen = trending + new + genres.flatMap { it.second }
         val kept = keptMovieDetails(onScreen)
         val originals = originalLanguages(onScreen.map { it.id })
@@ -2429,7 +2432,7 @@ class Library private constructor(
         val screen = ScreenRows()
         val new = screen.row(browsable.take(TAB_NEW).sortedWith(newestFirst), ROW_SIZE)
         val ofKind = screen.row(browsable, ROW_SIZE)
-        val genres = kidsGenres(listOf(kind), catalog, contentLanguages, appLanguage, screen)
+        val genres = if (store.lastSync() != null) kidsGenres(listOf(kind), catalog, contentLanguages, appLanguage, screen) else emptyList()
         fun cards(of: List<StoredTitle>) = of.map { rowCard(it, contentLanguages, appLanguage) }
         return buildList {
             if (new.isNotEmpty()) add(HomeRow.NewForKids(cards(new), kind))

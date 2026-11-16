@@ -42,6 +42,7 @@
     <string name="guide_now_next">%1$s · Next %2$s</string>
     <string name="guide_next">Next %1$s · %2$s</string>
     <string name="home_empty">Your rows show up once your catalog is synced.</string>
+    <string name="titles_on_their_way">Your movies and shows are on their way.</string>
     <string name="movies_title">Movies</string>
     <string name="shows_title">Shows</string>
     <string name="live_title">Live</string>

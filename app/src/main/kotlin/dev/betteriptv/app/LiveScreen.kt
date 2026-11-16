@@ -21,7 +21,6 @@ import dev.betteriptv.core.League
 import dev.betteriptv.core.LeagueReplay
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.LiveCountry
-import dev.betteriptv.core.SyncStep
 import kotlinx.coroutines.delay
 import java.time.Duration
 
@@ -57,7 +56,7 @@ fun LiveScreen(
 ) {
     val status by library.syncStatus.collectAsStateWithLifecycle()
     // Until a first Sync lands the Channels, its checklist shows where the rows will be, as on Home.
-    val noChannels = status.channelsAt == null
+    val noChannels = showsChecklist(status)
     val refreshes = gamesRefreshes(state)
     // Read again when a Sync lands Channels or a held catalog is applied, not only when Games land.
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
@@ -73,7 +72,7 @@ fun LiveScreen(
         onOpenCountry = onOpenCountry,
         onPlayReplay = onPlayReplay,
         placeholder = if (noChannels) {
-            { SyncChecklist(status, SyncStep.Channels, onRetry) }
+            { SyncChecklist(status, onRetry) }
         } else null,
     ) { tab ->
         BrowseTabs(Browse.Live, onTab, Modifier.padding(start = Spacing.screenX, end = Spacing.screenX, top = Spacing.screenY, bottom = 16.dp), selectedFocus = tab, library = library)

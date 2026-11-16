@@ -238,6 +238,21 @@ class HeadStartTest {
         assertTrue(library.homeRows(english, "en").any { it is HomeRow.Genre })
     }
 
+    @Test fun `Movies and Shows show their New row and a featured Title from the Head start, and no genre row until the full catalog lands`() = runBlocking {
+        provider.serveMovieListings(*(1..30).map { MovieListing("EN - Comedy $it (2024)", "EN - COMEDY", it.toLong()) }.toTypedArray())
+        (1L..30L).forEach { provider.serveMovieDetails(it, name = "Comedy $it", plot = "About Comedy $it.", genre = "Comedy", durationMinutes = 90) }
+        provider.serveShows(ShowListing("EN - Fresh Show (2026)", "EN - NEW RELEASE", 40))
+
+        duringTheFullRead {
+            assertEquals(listOf(HomeRow.NewOnYourService::class), library.tabRows(TitleKind.Movie, english, "en").map { it::class })
+            assertEquals(listOf(HomeRow.NewOnYourService::class), library.tabRows(TitleKind.Show, english, "en").map { it::class })
+            assertEquals("Comedy 1", library.featured(FeaturedScreen.Movies, english, "en", tv)?.name)
+            assertEquals("Fresh Show", library.featured(FeaturedScreen.Shows, english, "en", tv)?.name)
+        }
+
+        assertTrue(library.tabRows(TitleKind.Movie, english, "en").any { it is HomeRow.Genre })
+    }
+
     @Test fun `the full catalog replaces the Head start whole, and a Head start Title keeps its identity and gains its other Versions`() = runBlocking {
         provider.serveMovieListings(
             MovieListing("EN - Fresh Film (2026)", "EN - NEW RELEASE", 2),

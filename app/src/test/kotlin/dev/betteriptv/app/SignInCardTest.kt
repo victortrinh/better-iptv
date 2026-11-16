@@ -66,7 +66,7 @@ class SignInCardTest {
                 check = { signedInAs },
                 onDismiss = { dismissals++ },
             )
-            SyncChecklist(status, SyncStep.Channels, onRetry = {}, card = signIn?.let { { SignInCard(it) } })
+            SyncChecklist(status, onRetry = {}, card = signIn?.let { { SignInCard(it) } })
         }
     }
 
