@@ -5,8 +5,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.lang.management.ManagementFactory
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.random.Random
 
 /**
@@ -76,7 +77,7 @@ class SearchIndexBenchmark {
                 staging.channel(it + 1L, "$country: $channel $quality", null, null, null, "", "$country: $channel".uppercase(), channel, country, Quality.HD, false)
             }
         }
-        store.swapChannels(Instant.now())
+        store.swapChannels(Clock.System.now())
         store.stageTitles(
             fill = { staging ->
                 staging.category(TitleKind.Movie, "1", "EN | MOVIES")
@@ -99,10 +100,10 @@ class SearchIndexBenchmark {
                 }
             },
             onFilled = {},
-            completed = { movies, shows, _ -> CompletedSync(Instant.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
+            completed = { movies, shows, _ -> CompletedSync(Clock.System.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
         )
         store.swapTitles()
         // As if every Movie's page had been opened: its details kept with their cast and genres.
-        movieListings.forEach { store.saveMovieDetails(it, ProviderMovieDetails(null, details()), it, Instant.now()) }
+        movieListings.forEach { store.saveMovieDetails(it, ProviderMovieDetails(null, details()), it, Clock.System.now()) }
     }
 }

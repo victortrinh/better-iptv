@@ -14,7 +14,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -44,7 +45,7 @@ class SignInTest {
         val signIn = library.startSignIn()!!
         assertTrue(signIn.code, Regex("[2-9A-HJ-NP-Z]{6}").matches(signIn.code))
         assertEquals("${cloud.url}/sign-in?code=${signIn.code}", signIn.url)
-        assertEquals(Duration.ofMinutes(10), signIn.expiresIn)
+        assertEquals(10.minutes, signIn.expiresIn)
         assertNotEquals(signIn.code, library.startSignIn()!!.code)
     }
 

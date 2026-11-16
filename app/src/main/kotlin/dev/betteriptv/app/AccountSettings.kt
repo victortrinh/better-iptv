@@ -26,11 +26,12 @@ import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.AccountDevice
 import dev.betteriptv.core.Library
 import kotlinx.coroutines.launch
-import java.time.Instant
+import kotlin.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlin.time.toJavaInstant
 
 /** What the Account section opens in place of the Settings column (#429, #434). */
 enum class AccountPage {
@@ -188,7 +189,7 @@ private fun deviceName(device: AccountDevice) = device.model ?: stringResource(R
 
 /** When a device signed in, as a long date in the App language: "November 3, 2026". */
 internal fun signInDate(at: Instant, locale: Locale): String =
-    DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale).withZone(ZoneId.systemDefault()).format(at)
+    DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale).withZone(ZoneId.systemDefault()).format(at.toJavaInstant())
 
 /** This device's model as the device list names it, sent with the Sign-in code and nowhere else. */
 fun deviceModel(): String = deviceModelName(Build.MANUFACTURER, Build.MODEL)

@@ -12,15 +12,19 @@ import dev.betteriptv.core.SyncProblem
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.SyncStep
 import java.text.NumberFormat
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.util.Locale
 
 /** The Sync status line in Settings: how the Sync is going, or how long ago the last one finished. */
 internal fun Context.describe(status: SyncStatus): String = when (status) {
     is SyncStatus.NeverSynced -> getString(R.string.sync_never)
     is SyncStatus.Running -> running(status)
-    is SyncStatus.Ready -> getString(R.string.sync_ready, ago(status.computedAt, Instant.now()))
+    is SyncStatus.Ready -> getString(R.string.sync_ready, ago(status.computedAt, Clock.System.now()))
     is SyncStatus.Synced -> synced(status.last)
     is SyncStatus.Failed -> status.last?.let { getString(R.string.sync_failed, describe(status.problem), ago(it)) }
         ?: getString(R.string.sync_failed_empty, describe(status.problem))
@@ -46,7 +50,7 @@ private fun SyncStep.label() = when (this) {
 }
 
 private fun Context.synced(last: CompletedSync): String =
-    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.toMillis() / 1000.0))
+    getString(R.string.sync_done, ago(last), String.format(Locale.getDefault(), "%.1f", last.duration.inWholeMilliseconds / 1000.0))
 
 private fun Context.count(n: Int): String = NumberFormat.getIntegerInstance(resources.configuration.locales[0]).format(n)
 
@@ -55,22 +59,22 @@ internal fun Context.describe(problem: SyncProblem): String = when (problem) {
     is CatalogNotSaved -> getString(R.string.catalog_not_saved, problem.detail)
 }
 
-private fun Context.ago(sync: CompletedSync): String = ago(sync.finishedAt, Instant.now())
+private fun Context.ago(sync: CompletedSync): String = ago(sync.finishedAt, Clock.System.now())
 
 /**
  * How long ago a Sync finished, worded to sit mid-sentence: "il y a 5 minutes", not the
  * capitalised "Il y a 5 minutes" DateUtils gives for the start of one.
  */
 internal fun Context.ago(then: Instant, now: Instant): String {
-    val elapsed = Duration.between(then, now)
+    val elapsed = (now - then)
     val (amount, unit) = when {
-        elapsed < Duration.ofMinutes(1) -> return getString(R.string.sync_just_now)
-        elapsed < Duration.ofHours(1) -> elapsed.toMinutes() to RelativeUnit.MINUTES
-        elapsed < Duration.ofDays(1) -> elapsed.toHours() to RelativeUnit.HOURS
-        elapsed < Duration.ofDays(7) -> elapsed.toDays() to RelativeUnit.DAYS
-        elapsed < Duration.ofDays(30) -> elapsed.toDays() / 7 to RelativeUnit.WEEKS
-        elapsed < Duration.ofDays(365) -> elapsed.toDays() / 30 to RelativeUnit.MONTHS
-        else -> elapsed.toDays() / 365 to RelativeUnit.YEARS
+        elapsed < 1.minutes -> return getString(R.string.sync_just_now)
+        elapsed < 1.hours -> elapsed.inWholeMinutes to RelativeUnit.MINUTES
+        elapsed < 1.days -> elapsed.inWholeHours to RelativeUnit.HOURS
+        elapsed < 7.days -> elapsed.inWholeDays to RelativeUnit.DAYS
+        elapsed < 30.days -> elapsed.inWholeDays / 7 to RelativeUnit.WEEKS
+        elapsed < 365.days -> elapsed.inWholeDays / 30 to RelativeUnit.MONTHS
+        else -> elapsed.inWholeDays / 365 to RelativeUnit.YEARS
     }
     val formatter = RelativeDateTimeFormatter.getInstance(
         ULocale.forLocale(resources.configuration.locales[0]), null,

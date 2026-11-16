@@ -57,7 +57,8 @@ import dev.betteriptv.core.LiveCountry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * What the Channels screen keeps while the player shows over it: the Category the Viewer picked and
@@ -97,7 +98,7 @@ fun ChannelsScreen(library: Library, country: LiveCountry, appLanguage: String, 
     val guideChanges by library.guideChanges.collectAsStateWithLifecycle()
     val minute by produceState(0) {
         while (true) {
-            delay(GUIDE_REFRESH.toMillis())
+            delay(GUIDE_REFRESH.inWholeMilliseconds)
             value++
         }
     }
@@ -311,6 +312,6 @@ private fun ChannelRow(channel: Channel, onWatch: () -> Unit, onFavourite: () ->
 /** The column of Categories: Search's keyboard column's width. */
 private val COLUMN_WIDTH = 290.dp
 /** How often the rows read the guide again without a call landing, so the next programme becomes the one on. */
-private val GUIDE_REFRESH: Duration = Duration.ofMinutes(1)
+private val GUIDE_REFRESH: Duration = 1.minutes
 private val LOGO_WIDTH = 64.dp
 private val PROGRAMME_WIDTH = 260.dp

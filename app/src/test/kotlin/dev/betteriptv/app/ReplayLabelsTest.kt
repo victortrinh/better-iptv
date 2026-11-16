@@ -12,6 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import java.time.LocalDate
+import kotlinx.datetime.toKotlinLocalDate
 
 /** How a Sports replay is named on its card and under its rail: the date in its name, and the teams as a Game's. */
 @RunWith(RobolectricTestRunner::class)
@@ -20,7 +21,7 @@ class ReplayLabelsTest {
 
     private fun team(name: String, short: String) = GameTeam(name, short, short.take(3).uppercase(), listOf(name, short), null)
     private fun replay(name: String, date: LocalDate?, year: Int? = date?.year) =
-        Replay(77, name, "SOCCER HOCKEY", null, "Boston Bruins", "Toronto Maple Leafs", date, year)
+        Replay(77, name, "SOCCER HOCKEY", null, "Boston Bruins", "Toronto Maple Leafs", date?.toKotlinLocalDate(), year)
 
     @Test fun theCaptionIsTheDateShortWithTheYearWhenItIsntThisYears() {
         val replay = replay("SOC - Boston Bruins at Toronto Maple Leafs 09.11.25", LocalDate.of(2025, 11, 9))

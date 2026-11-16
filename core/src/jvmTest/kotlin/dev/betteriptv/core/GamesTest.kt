@@ -9,8 +9,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /** The Games of the Leagues on, seen through the Library, with the schedule from the fake Cloud. */
 class GamesTest {
@@ -70,10 +72,10 @@ class GamesTest {
         assertEquals(listOf(listOf("nhl", "nfl")), cloud.gamesAsked)
 
         // Asked again within the minute, the kept copies answer without the cloud.
-        assertEquals(3, library.games(listOf("nhl", "nfl"), now + Duration.ofSeconds(30)).size)
+        assertEquals(3, library.games(listOf("nhl", "nfl"), now + 30.seconds).size)
         assertEquals(1, cloud.gamesAsked.size)
         // A minute on, the cloud is asked again.
-        library.games(listOf("nhl", "nfl"), now + Duration.ofSeconds(61))
+        library.games(listOf("nhl", "nfl"), now + 61.seconds)
         assertEquals(2, cloud.gamesAsked.size)
     }
 
@@ -184,12 +186,12 @@ class GamesTest {
         library.games(listOf("nhl"), now)
 
         cloud.down = true
-        val later = library.games(listOf("nhl", "nfl"), now + Duration.ofMinutes(10))
+        val later = library.games(listOf("nhl", "nfl"), now + 10.minutes)
         assertEquals(2, cloud.gamesAsked.size)
         assertEquals(listOf("1", "2"), later.map { it.id })
         assertTrue(later.all { it.league == "nhl" })
         // Nothing kept of the MLB and the cloud down: no Games, rather than a failure.
-        assertEquals(emptyList<Game>(), library.games(listOf("mlb"), now + Duration.ofMinutes(20)))
+        assertEquals(emptyList<Game>(), library.games(listOf("mlb"), now + 20.minutes))
     }
 
     @Test fun `a League the cloud has no copy of yet keeps what the device has, and the Leagues asked for are the caller's`() = runBlocking {
@@ -200,9 +202,9 @@ class GamesTest {
         cloud.games("nhl", game("1", "2026-11-01T19:00:00Z"), game("2", "2026-11-02T00:00:00Z"))
         cloud.forgetGames("nfl")
 
-        val later = library.games(listOf("nhl", "nfl"), now + Duration.ofMinutes(2))
+        val later = library.games(listOf("nhl", "nfl"), now + 2.minutes)
         assertEquals(listOf("nhl/1", "nfl/100", "nhl/2"), later.map { "${it.league}/${it.id}" })
-        assertEquals(emptyList<Game>(), library.games(emptyList(), now + Duration.ofMinutes(3)))
+        assertEquals(emptyList<Game>(), library.games(emptyList(), now + 3.minutes))
         assertEquals(listOf(listOf("nhl", "nfl"), listOf("nhl", "nfl")), cloud.gamesAsked)
     }
 }

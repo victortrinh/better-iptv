@@ -2,7 +2,7 @@ import {
   accountOf, devicesOf, isDeviceId, isMagicToken, modelName, requestDeletion, sendMagicLink, signOut, startSignIn, useDeleteLink, useMagicLink, useResetPinLink,
   type DeleteOutcome, type LinkOutcome, type ResetPinOutcome, type SendOutcome,
 } from "./accounts";
-import { DEMO_PROVIDER_PATH, demoProvider } from "./demo-provider";
+import { DEMO_PROVIDER_PATH, demoProvider, demoStream, isDemoProviderKey, isDemoStreamPath } from "./demo-provider";
 import { deviceOf, readRegistration, register } from "./devices";
 import type { Env } from "./env";
 import { fileReads, type FileRead, isFile, isListingId, isProviderKey, isReportedHints, isReportedPrefix, MAX_FILE_BATCH, saveFileReads } from "./files";
@@ -103,7 +103,9 @@ import { accountIdOf, readSyncRequest, sync } from "./sync";
  * same four under `/reset-pin`: the button clears the Account's PIN on every TV. See src/accounts.ts.
  *
  * And the Demo Provider, for store reviewers, screenshots and tests: `GET /player_api.php`, the Xtream API a
- * Provider answers, with its own login and no device token. See src/demo-provider.ts.
+ * Provider answers, with its own login and no device token, and its stream addresses (`GET /movie/…`,
+ * `/series/…`, `/live/…`), which redirect to where each file or channel is hosted. A device's reports of the
+ * Demo Provider (file reads, unknown Prefixes) are taken and not kept. See src/demo-provider.ts.
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -115,6 +117,7 @@ export default {
       return json({ token }, created ? 201 : 200);
     }
     if (pathname === DEMO_PROVIDER_PATH) return demoProvider(request);
+    if (isDemoStreamPath(pathname)) return demoStream(request);
     if (pathname === "/" && request.method === "GET") return new Response(null, { status: 302, headers: { Location: "/sign-in" } });
     if (pathname === "/sign-in" || pathname === "/sign-in/link") return signInPages(request, env, pathname);
     if (pathname === "/delete-account" || pathname === "/delete-account/link") return deletePages(request, env, pathname);
@@ -172,15 +175,15 @@ async function api(request: Request, env: Env, pathname: string, device: string)
   if (request.method === "POST" && pathname === "/v1/file-reads") {
     const asked = await fileReadsRequest(request, "files");
     if (typeof asked === "string") return problem(400, asked);
-    // A test host's reads aren't a real Provider's files (#545): taken, but not kept.
-    if (!isTestHostKey(asked.provider)) await saveFileReads(env.DB, asked.provider, asked.files);
+    // A test host's reads aren't a real Provider's files (#545), nor are the Demo Provider's a household's (#575): taken, but not kept.
+    if (!isTestHostKey(asked.provider) && !(await isDemoProviderKey(request, env.SITE_URL, asked.provider))) await saveFileReads(env.DB, asked.provider, asked.files);
     return new Response(null, { status: 204 });
   }
   if (request.method === "POST" && pathname === "/v1/unknown-prefixes") {
     const asked = await unknownPrefixesRequest(request);
     if (typeof asked === "string") return problem(400, asked);
-    // A test host's catalog isn't a real Provider's (#545): taken, but not kept for the weekly issue.
-    if (!isTestHostKey(asked.provider)) {
+    // A test host's catalog isn't a real Provider's (#545), nor is the Demo Provider's (#575): taken, but not kept for the weekly issue.
+    if (!isTestHostKey(asked.provider) && !(await isDemoProviderKey(request, env.SITE_URL, asked.provider))) {
       await saveUnknownPrefixes(env.DB, asked.provider, asked.prefixes);
       await saveCandidateTierTags(env.DB, asked.provider, asked.tierTags);
     }

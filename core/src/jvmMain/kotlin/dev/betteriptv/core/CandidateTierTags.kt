@@ -28,7 +28,7 @@ internal class CandidateTierTags(private val table: PrefixTable) {
             // A word merges here when its removal meets a Listing without it: one with no word, or another word.
             if (key !in bare && words.size < 2) continue
             for ((word, name) in listings) {
-                found.merge(word, CandidateTierTag(word, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
+                found[word] = found[word]?.let { seen -> seen.copy(listingCount = seen.listingCount + 1) } ?: CandidateTierTag(word, 1, name)
             }
         }
         return found.values.sortedWith(compareByDescending<CandidateTierTag> { it.listingCount }.thenBy { it.word })

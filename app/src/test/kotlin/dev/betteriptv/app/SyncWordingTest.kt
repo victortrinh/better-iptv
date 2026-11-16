@@ -11,22 +11,24 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** Settings › Catalog's Sync row and Checking titles row, as worded for each status. */
 @RunWith(RobolectricTestRunner::class)
 class SyncWordingTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
-    private val synced = CompletedSync(Instant.now(), Duration.ofMillis(239_700), 150, emptyList(), showListingCount = 45, channelListingCount = 5)
+    private val synced = CompletedSync(Clock.System.now(), 239_700.milliseconds, 150, emptyList(), showListingCount = 45, channelListingCount = 5)
 
     @Test
     fun thePillSaysWhatTheCatalogIsDoing() {
         val line = { status: SyncStatus -> catalogActivity(status)?.let { context.getString(it.label()) } }
-        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, headStartAt = Instant.now())))
-        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Instant.now(), SyncStep.Shows)))
+        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Clock.System.now(), SyncStep.Movies, headStartAt = Clock.System.now())))
+        assertEquals("Adding the rest of your catalog…", line(SyncStatus.Running(null, Clock.System.now(), SyncStep.Shows)))
         assertEquals("Syncing…", line(SyncStatus.Running(synced, synced.finishedAt, SyncStep.Movies)))
-        assertEquals("Update ready · shows when you switch tabs", line(SyncStatus.Ready(synced, Instant.now())))
+        assertEquals("Update ready · shows when you switch tabs", line(SyncStatus.Ready(synced, Clock.System.now())))
         assertEquals(null, line(SyncStatus.Synced(synced)))
         assertEquals("Up to date", context.getString(afterword(CatalogActivity.AddingTheRest, SyncStatus.Synced(synced))!!.label()))
     }
@@ -34,8 +36,8 @@ class SyncWordingTest {
     @Test
     fun namesAFirstSyncsStepAndCountsItsEntries() {
         assertEquals("Syncing… Channels", context.describe(SyncStatus.Running(null, null, SyncStep.Channels)))
-        assertEquals("Syncing… Movies · 12,345 entries", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))
-        assertEquals("Syncing… Saving · 1 entry", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Saving, 1)))
+        assertEquals("Syncing… Movies · 12,345 entries", context.describe(SyncStatus.Running(null, Clock.System.now(), SyncStep.Movies, 12_345)))
+        assertEquals("Syncing… Saving · 1 entry", context.describe(SyncStatus.Running(null, Clock.System.now(), SyncStep.Saving, 1)))
     }
 
     @Test
@@ -45,7 +47,7 @@ class SyncWordingTest {
 
     @Test
     fun saysAHeldCatalogShowsOnComingBack() {
-        assertEquals("Synced just now. It shows when you come back.", context.describe(SyncStatus.Ready(synced, Instant.now())))
+        assertEquals("Synced just now. It shows when you come back.", context.describe(SyncStatus.Ready(synced, Clock.System.now())))
     }
 
     @Test
@@ -61,8 +63,8 @@ class SyncWordingTest {
     @Test
     @Config(qualifiers = "fr")
     fun saysItInFrench() {
-        assertEquals("Synchronisation… Films · 12\u202f345 entrées", context.describe(SyncStatus.Running(null, Instant.now(), SyncStep.Movies, 12_345)))
+        assertEquals("Synchronisation… Films · 12\u202f345 entrées", context.describe(SyncStatus.Running(null, Clock.System.now(), SyncStep.Movies, 12_345)))
         assertEquals("Synchronisé à l'instant en 239,7 s.", context.describe(SyncStatus.Synced(synced)))
-        assertEquals("Synchronisé à l'instant. Il s'affichera à votre retour.", context.describe(SyncStatus.Ready(synced, Instant.now())))
+        assertEquals("Synchronisé à l'instant. Il s'affichera à votre retour.", context.describe(SyncStatus.Ready(synced, Clock.System.now())))
     }
 }

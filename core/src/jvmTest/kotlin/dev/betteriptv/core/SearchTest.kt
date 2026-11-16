@@ -367,7 +367,7 @@ class SearchTest {
         val movie = TitleSummary(TitleId.Numbered(TitleKind.Movie, 1), "The Drama", null, null, VersionAttributes())
         val show = TitleSummary(TitleId.Numbered(TitleKind.Show, 2), "Drama Club", null, null, VersionAttributes())
         val brooklyn = TitleSummary(TitleId.Numbered(TitleKind.Movie, 3), "Brooklyn", null, null, VersionAttributes())
-        val replay = Replay(9, "SOC - Drama FC - Comedy United 01.11.2025", "SOCCER FOOTBALL", null, "Comedy United", "Drama FC", java.time.LocalDate.of(2025, 11, 1), 2025)
+        val replay = Replay(9, "SOC - Drama FC - Comedy United 01.11.2025", "SOCCER FOOTBALL", null, "Comedy United", "Drama FC", kotlinx.datetime.LocalDate(2025, 11, 1), 2025)
         val results = SearchResults(
             movies = listOf(movie),
             shows = listOf(show),

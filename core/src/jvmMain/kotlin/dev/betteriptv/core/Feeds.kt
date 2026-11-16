@@ -1,7 +1,8 @@
 package dev.betteriptv.core
 
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /** What kind of Channel a Feed is, in the order Feeds of one language rank (CONTEXT.md: Feed). */
 enum class FeedKind {
@@ -165,7 +166,7 @@ internal fun matchFeeds(
     }
     // How many Games each Event channel names both teams of.
     val pairings = HashMap<Int, Int>()
-    teamMatches.forEach { match -> match?.both?.forEach { pairings.merge(it, 1, Int::plus) } }
+    teamMatches.forEach { match -> match?.both?.forEach { pairings[it] = (pairings[it] ?: 0) + 1 } }
     return games.mapIndexed { gameIndex, game ->
         val thisLeague = League.byKey(game.league)
         val league = thisLeague?.let { byLeague[it] }.orEmpty()
@@ -328,8 +329,8 @@ internal fun containsPhrase(words: List<String>, phrase: List<String>): Boolean 
  * Game that is on, or starts within [EVENT_FINISHED_AFTER].
  */
 internal fun sameEvent(game: Game, start: Instant?, now: Instant): Boolean {
-    if (start == null) return game.state == GameState.Live || Duration.between(now, game.start).abs() <= EVENT_FINISHED_AFTER
-    return Duration.between(start, game.start).abs() <= SAME_EVENT_WITHIN
+    if (start == null) return game.state == GameState.Live || (game.start - now).absoluteValue <= EVENT_FINISHED_AFTER
+    return (game.start - start).absoluteValue <= SAME_EVENT_WITHIN
 }
 
 /**
@@ -367,7 +368,7 @@ internal fun languageOf(tag: String?): String? {
 }
 
 /** How far a start read in the wrong zone can be from the true one: zones run from UTC−12 to UTC+14. */
-private val SAME_EVENT_WITHIN: Duration = Duration.ofHours(14)
+private val SAME_EVENT_WITHIN: Duration = 14.hours
 
 private val LANGUAGE_WORDS = mapOf("EN" to "en", "FR" to "fr", "ES" to "es", "PT" to "pt", "DE" to "de", "IT" to "it", "NL" to "nl", "AR" to "ar")
 

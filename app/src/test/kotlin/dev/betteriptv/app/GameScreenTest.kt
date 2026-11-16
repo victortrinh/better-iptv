@@ -56,8 +56,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /** The Game page: Play focused first and naming the best Feed, which it plays; the Feeds listed with their variants. [Library] is stood in for by [planFor]. */
 @RunWith(RobolectricTestRunner::class)
@@ -172,7 +172,7 @@ class GameScreenTest {
 
     @Test fun aFinishedGamesReplayShowsAsARowNamedAndDatedWhichPlaysItsListingsVersion() {
         val over = Game("nhl", "1", Instant.parse("2025-11-10T00:00:00Z"), GameState.Over, home = game.home, away = game.away, broadcasters = emptyList())
-        val replay = Replay(77, "SOC - Canadiens at Toronto Maple Leafs 09.11.25", "SOCCER HOCKEY", null, "Canadiens", "Toronto Maple Leafs", LocalDate.of(2025, 11, 9), 2025)
+        val replay = Replay(77, "SOC - Canadiens at Toronto Maple Leafs 09.11.25", "SOCCER HOCKEY", null, "Canadiens", "Toronto Maple Leafs", LocalDate(2025, 11, 9), 2025)
         val version = Version(77, replay.name, VersionAttributes())
         val plan = PlayPlan(TitleId.Unmatched(TitleKind.Movie, 77), version, listOf("en"), listOf(version))
         var played: Pair<PlayPlan, String>? = null

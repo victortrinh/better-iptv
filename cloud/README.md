@@ -109,32 +109,35 @@ Hand lines live in `provider-tables/`, one file per Provider named `<SHA-256 of 
 
 The Worker also answers as a small Provider of its own (CONTEXT.md, ADR 0021), so store reviewers, store screenshots and each platform's tests have a Provider to sign in to. It speaks the Xtream API the Core reads, at the Worker's own address: `GET /player_api.php?username=…&password=…[&action=…]`, with no device token. In the app, the Provider address is the Cloud's address and the login is `DEMO_PROVIDER_LOGIN` in `src/demo-provider.ts`. A wrong login gets `{"user_info":{"auth":0}}`, as an Xtream panel answers one.
 
-It answers the account, `get_vod_categories`, `get_vod_streams`, `get_series_categories`, `get_series`, `get_series_info`, `get_live_categories` and `get_live_streams` (the three lists also by `category_id`). Nothing plays yet (#575): no stream address is served, a movie has no details and no Channel has a guide.
+It answers the account, `get_vod_categories`, `get_vod_streams`, `get_vod_info`, `get_series_categories`, `get_series`, `get_series_info`, `get_live_categories` and `get_live_streams` (the three lists also by `category_id`). No Channel has a guide.
 
-The catalog is the files in `demo-provider/`, named as a survey names a Provider's answers. The Core's `DemoProviderTest` Syncs those same files, so a Listing renamed here that Match can no longer read fails a build. Listings carry no poster yet.
+It serves no video. A stream address, as the Core builds one (`GET /movie/<username>/<password>/<id>.<container>`, `/series/…`, `/live/…`), answers `302` to where the file or channel is hosted; a wrong login gets `403`, a stream it doesn't list `404`. A Channel is HLS only: `/live/…/<id>.m3u8` leads to the broadcaster's playlist, and `.ts` isn't found, so the app goes on to its HLS Backup.
+
+What a device reports of the Demo Provider is taken and not kept: its file reads aren't shared with other devices and teach no Learned line, and its unknown Prefixes and candidate Tier tags don't reach the weekly issue. The Cloud knows the Demo Provider's key because the Demo Provider's host is its own: the host the report came to, or `SITE_URL`'s. A device that reaches the Demo Provider at one of the Cloud's hosts and reports to another isn't recognised.
+
+The catalog is the files in `demo-provider/`, named as a survey names a Provider's answers, with two of its own: `vod_info.json`, what it says of each film by Title number, and `stream_addresses.json`, where each stream is hosted. The Core's `DemoProviderTest` Syncs those same files, so a Listing renamed here that Match can no longer read fails a build. Listings carry no poster yet.
 
 ### What it lists, and why each may be shown
 
-Every item is either under a Creative Commons licence that allows showing it in a paid app (attribution, or attribution and share-alike; nothing "NonCommercial" or "NoDerivatives"), in the public domain because its authors died more than 70 years ago, or a work of the US government. Title numbers and licences were checked against Wikidata on 2026-11-15. The licence covers the work; which file of it #575 links must be checked again there, since a restoration, a new score or translated intertitles of a silent film can carry rights of their own.
+Every item is under a Creative Commons licence that allows showing it in a paid app (attribution, or attribution and share-alike; nothing "NonCommercial" or "NoDerivatives") or is a work of the US government. `demo-provider/stream_addresses.json` is the record: for each stream its address, its host, the page that states the file's licence, the licence and the credit the licence asks for. A test fails a Listing without an address, an address without a Listing, and a host that isn't one of the two below. Checked on 2026-11-15.
 
-| Listing | Title number | Source | Licence |
+| Listing | Title number | File | Licence, as its page states it |
 | --- | --- | --- | --- |
-| Big Buck Bunny (2008), HD and 4K | movie 10378 | Blender Foundation, peach.blender.org | CC BY 3.0 |
-| Sintel (2010), HD and 4K | movie 45745 | Blender Foundation, durian.blender.org | CC BY 3.0 |
-| Tears of Steel (2012), HD and 4K | movie 133701 | Blender Foundation, mango.blender.org | CC BY 3.0 |
-| Elephants Dream (2006) | movie 9761 | Blender Foundation, orange.blender.org | CC BY 2.5 |
-| Cosmos Laundromat (2015) | movie 358332 | Blender Institute, studio.blender.org | CC BY (3.0 on Wikidata, 4.0 on Blender Studio) |
-| Spring (2019) | movie 593048 | Blender Studio, studio.blender.org | CC BY 4.0 |
-| Hero (2018) | movie 615324 | Blender Studio, studio.blender.org | CC BY 3.0 |
-| A Trip to the Moon (1902) | movie 775 | Georges Méliès (died 1938) | Public domain |
-| The Great Train Robbery (1903) | movie 5698 | Edwin S. Porter (died 1941) | Public domain |
-| The Cabinet of Dr. Caligari (1920) | movie 234 | Robert Wiene (died 1938); written by Carl Mayer (died 1944) and Hans Janowitz (died 1954) | Public domain (since 2025 where the term is life plus 70) |
-| Battleship Potemkin (1925) | movie 643 | Sergei Eisenstein (died 1948) | Public domain |
-| Man with a Movie Camera (1929) | movie 26317 | Dziga Vertov (died 1954) | Public domain (since 2025 where the term is life plus 70) |
-| BBS: The Documentary (2005), 8 Episodes | show 84836 | Jason Scott, bbsdocumentary.com and the Internet Archive | CC BY-SA |
-| Caminandes (2013 to 2016), 3 Episodes | none: listed as three films | Blender Foundation, caminandes.com | CC BY |
-| Les Vampires (1915), 10 Episodes | none: listed as one film | Louis Feuillade (died 1925), Gaumont | Public domain |
-| NASA TV | | NASA's public channel (NASA+) | US government work, public domain |
-| NASA ISS Live | | NASA's live views from the International Space Station | US government work, public domain |
+| Big Buck Bunny (2008), HD and 4K | movie 10378 | Internet Archive, `BigBuckBunnyFULLHD60FPS` and `youtube-aqz-KE-bpKQ` (Blender's own 4K upload to YouTube, kept by the Archive) | CC BY 3.0 |
+| Sintel (2010) | movie 45745 | Internet Archive, `Sintel` | CC BY 3.0 |
+| Tears of Steel (2012) | movie 133701 | Internet Archive, `Tears-of-Steel` | CC BY 3.0 |
+| Elephants Dream (2006) | movie 9761 | Internet Archive, `ElephantsDream` | CC BY 2.5 (the film's own; the item says 3.0 US) |
+| Cosmos Laundromat (2015) | movie 358332 | Internet Archive, `CosmosLaundromatFirstCycle` | CC BY 4.0 |
+| Spring (2019) | movie 593048 | Internet Archive, `springopenmovie` | CC BY 4.0 |
+| Hero (2018) | movie 615324 | Internet Archive, `hero_20260106` | CC BY 4.0 |
+| BBS: The Documentary (2005), 8 Episodes | show 84836 | Internet Archive, `BBS.The.Documentary` | CC BY-SA 3.0 US |
+| Caminandes (2013 to 2016), 3 Episodes | none: listed as three films | Internet Archive, `Caminandes1LlamaDrama`, `Caminandes2GranDillama`, `CaminandesLlamigos` | CC BY 3.0 |
+| NASA TV | | NASA+'s live channel, at the address NASA's own `plus.nasa.gov/wp-json/nasaplus/v1/live-streams` gives | US government work, public domain |
 
-Left out because the licence wasn't sure enough: Nosferatu (Wikidata records it as still copyrighted in Germany), Night of the Living Dead and The General (public domain in the United States only), Intolerance (a title writer died in 1981), Pioneer One and Democracy Now! (NonCommercial), Agent 327 (NoDerivatives), Sprite Fright and Charge (no licence recorded on Wikidata), the 1950s US television series whose public-domain status is per Episode, and news channels with a free live stream but no licence to re-show it (DW, France 24, Al Jazeera English).
+The two hosts: the Internet Archive documents `https://archive.org/download/<identifier>/<filename>` as the address a file "can always be downloaded from", and NASA's content is not subject to copyright in the United States and its sites may be linked without permission, so long as no endorsement is implied.
+
+The films' licences ask for a credit, and the app shows none yet beyond each film's own credits: the credit lines are in `stream_addresses.json` for the screen that will.
+
+Left out because no file of it could be linked: A Trip to the Moon, The Cabinet of Dr. Caligari, Battleship Potemkin and Man with a Movie Camera (the files found are copies of recent restorations or name no source, some with a later score), Les Vampires (the files found carry a 1990s distributor's English intertitles), the NASA ISS Live Channel (NASA shows it on YouTube only), and The Great Train Robbery and the 4K copies of Sintel and Tears of Steel, whose clean files are on Wikimedia Commons, which refuses the app's requests: its player sends its HTTP library's stock User-Agent, and Wikimedia's policy asks for one that names the app.
+
+Left out earlier because the licence wasn't sure enough: Nosferatu (Wikidata records it as still copyrighted in Germany), Night of the Living Dead and The General (public domain in the United States only), Intolerance (a title writer died in 1981), Pioneer One and Democracy Now! (NonCommercial), Agent 327 (NoDerivatives), Sprite Fright and Charge (no licence recorded on Wikidata), the 1950s US television series whose public-domain status is per Episode, and news channels with a free live stream but no licence to re-show it (DW, France 24, Al Jazeera English).

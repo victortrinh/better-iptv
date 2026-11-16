@@ -19,7 +19,10 @@
         "episode_num": 1,
         "title": "EN - BBS: The Documentary (2005) - S01E01 - Baud",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2360,
+          "duration": "00:39:20"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -30,7 +33,10 @@
         "episode_num": 2,
         "title": "EN - BBS: The Documentary (2005) - S01E02 - Sysops and Users",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2688,
+          "duration": "00:44:48"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -41,7 +47,10 @@
         "episode_num": 3,
         "title": "EN - BBS: The Documentary (2005) - S01E03 - Make It Pay",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2815,
+          "duration": "00:46:55"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -52,7 +61,10 @@
         "episode_num": 4,
         "title": "EN - BBS: The Documentary (2005) - S01E04 - FidoNet",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2640,
+          "duration": "00:44:00"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -63,7 +75,10 @@
         "episode_num": 5,
         "title": "EN - BBS: The Documentary (2005) - S01E05 - Artscene",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2565,
+          "duration": "00:42:45"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -74,7 +89,10 @@
         "episode_num": 6,
         "title": "EN - BBS: The Documentary (2005) - S01E06 - HPAC",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 2308,
+          "duration": "00:38:28"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -85,7 +103,10 @@
         "episode_num": 7,
         "title": "EN - BBS: The Documentary (2005) - S01E07 - Compression",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 1296,
+          "duration": "00:21:36"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,
@@ -96,7 +117,10 @@
         "episode_num": 8,
         "title": "EN - BBS: The Documentary (2005) - S01E08 - No Carrier",
         "container_extension": "mp4",
-        "info": [],
+        "info": {
+          "duration_secs": 1247,
+          "duration": "00:20:47"
+        },
         "custom_sid": null,
         "added": "1763164800",
         "season": 1,

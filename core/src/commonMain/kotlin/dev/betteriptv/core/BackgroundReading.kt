@@ -1,6 +1,6 @@
 package dev.betteriptv.core
 
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 

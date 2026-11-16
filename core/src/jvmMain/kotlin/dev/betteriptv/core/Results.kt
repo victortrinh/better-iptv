@@ -1,8 +1,8 @@
 package dev.betteriptv.core
 
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Duration
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /** One movie Listing, as the Provider names and files it, with what its Prefix and Category say about it. */
 data class MovieListing(val id: Long, val name: String, val category: String, val attributes: VersionAttributes)

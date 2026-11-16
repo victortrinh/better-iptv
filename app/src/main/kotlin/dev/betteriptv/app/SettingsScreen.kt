@@ -70,7 +70,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * The Viewer's settings, in a single column: App language, Content languages, Region and Leagues under
@@ -548,7 +549,7 @@ private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
     }
     val minute by produceState(0, status) {
         while (true) {
-            delay(AGO_REFRESH.toMillis())
+            delay(AGO_REFRESH.inWholeMilliseconds)
             value++
         }
     }
@@ -567,7 +568,7 @@ private fun SyncRow(library: Library, onSyncNow: () -> Unit) {
 }
 
 /** How often the Sync row's "ago" is worded again while Settings is open. */
-private val AGO_REFRESH: Duration = Duration.ofMinutes(1)
+private val AGO_REFRESH: Duration = 1.minutes
 
 private enum class Picker {
     ContentLanguages, Region, Leagues,
