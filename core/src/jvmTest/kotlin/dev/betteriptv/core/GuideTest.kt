@@ -10,11 +10,13 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * Now and next through the Library (#261): the Provider's per-Channel guide call is made for the
@@ -41,7 +43,7 @@ class GuideTest {
         provider.close()
     }
 
-    private fun open() = Library.open(folder.root.resolve("catalog.db").path, credentials).also { it.guideClock = clock }
+    private fun open() = Library.open(folder.root.resolve("catalog.db").path, credentials).also { it.guideClock = clock; it.guideZone = TimeZone.UTC }
 
     private fun programme(title: String, from: Duration, to: Duration) = FakeProvider.GuideProgramme(title, now + from, now + to)
 
@@ -73,8 +75,8 @@ class GuideTest {
         syncLineup()
         provider.serveGuide(
             1,
-            programme("The National", Duration.ofMinutes(-30), Duration.ofMinutes(30)),
-            programme("Dragons' Den", Duration.ofMinutes(30), Duration.ofMinutes(90)),
+            programme("The National", (-30).minutes, 30.minutes),
+            programme("Dragons' Den", 30.minutes, 90.minutes),
         )
         val cbc = channel("CA: CBC")
         val ctv = channel("CA: CTV")
@@ -84,7 +86,7 @@ class GuideTest {
         val onCbc = awaitGuide(cbc)
         assertEquals("The National", onCbc.now?.title)
         assertEquals("Dragons' Den", onCbc.next?.title)
-        assertEquals(now + Duration.ofMinutes(30), onCbc.next?.start)
+        assertEquals(now + 30.minutes, onCbc.next?.start)
         settle()
         // CTV has no guide id: never asked about, nothing to show.
         assertEquals(listOf(1L), provider.guideRequests)
@@ -97,10 +99,10 @@ class GuideTest {
         // ending in 13 minutes, which the short guide leaves out.
         provider.serveGuide(
             1,
-            programme("Storage Wars", Duration.ofMinutes(-47), Duration.ofMinutes(-17)),
-            programme("Hoarders", Duration.ofMinutes(-17), Duration.ofMinutes(13)),
-            programme("Hoarders", Duration.ofMinutes(13), Duration.ofMinutes(43)),
-            programme("Intervention", Duration.ofMinutes(43), Duration.ofMinutes(103)),
+            programme("Storage Wars", (-47).minutes, (-17).minutes),
+            programme("Hoarders", (-17).minutes, 13.minutes),
+            programme("Hoarders", 13.minutes, 43.minutes),
+            programme("Intervention", 43.minutes, 103.minutes),
         )
         val cbc = channel("CA: CBC")
 
@@ -108,14 +110,14 @@ class GuideTest {
 
         val onCbc = awaitGuide(cbc)
         assertEquals("Hoarders", onCbc.now?.title)
-        assertEquals(now + Duration.ofMinutes(13), onCbc.next?.start)
+        assertEquals(now + 13.minutes, onCbc.next?.start)
         settle()
         assertEquals(listOf(1L), provider.guideRequests)
     }
 
     @Test fun `a merged Channel is asked about once, by the variant the guide knows, and a Channel off screen is not`() = runBlocking {
         syncLineup()
-        provider.serveGuide(2, programme("Hockey Night", Duration.ofMinutes(-10), Duration.ofHours(2)))
+        provider.serveGuide(2, programme("Hockey Night", (-10).minutes, 2.hours))
         val tsn = channel("CA: TSN 1")
 
         library.guideOnScreen(listOf(tsn))
@@ -128,7 +130,7 @@ class GuideTest {
 
     @Test fun `the Favourites' guide is asked for when Home's or Live's rows are read`() = runBlocking {
         syncLineup()
-        provider.serveGuide(1, programme("The National", Duration.ofMinutes(-30), Duration.ofMinutes(30)))
+        provider.serveGuide(1, programme("The National", (-30).minutes, 30.minutes))
         library.setFavourite("CA: CBC", true)
 
         val rows = library.liveRows(region = "CA", contentLanguages = listOf("en"))
@@ -142,24 +144,24 @@ class GuideTest {
         syncLineup()
         provider.serveGuide(
             1,
-            programme("The National", Duration.ofMinutes(-30), Duration.ofMinutes(30)),
-            programme("Dragons' Den", Duration.ofMinutes(30), Duration.ofMinutes(90)),
+            programme("The National", (-30).minutes, 30.minutes),
+            programme("Dragons' Den", 30.minutes, 90.minutes),
         )
         val cbc = channel("CA: CBC")
         library.guideOnScreen(listOf(cbc))
         awaitGuideRequests(1)
 
         // Back on screen within the hour: the cache answers, and the next programme has become the one on.
-        clock.now += Duration.ofMinutes(45)
+        clock.now += 45.minutes
         library.guideOnScreen(listOf(cbc))
         settle()
         assertEquals(1, provider.guideRequests.size)
         assertEquals("Dragons' Den" to null, library.guide(cbc)!!.let { it.now?.title to it.next })
 
         // Once the last programme is over, nothing is shown and the Channel is asked about again.
-        clock.now += Duration.ofMinutes(50)
+        clock.now += 50.minutes
         assertNull(library.guide(cbc))
-        provider.serveGuide(1, programme("Marketplace", Duration.ofMinutes(-5), Duration.ofMinutes(25)))
+        provider.serveGuide(1, programme("Marketplace", (-5).minutes, 25.minutes))
         library.guideOnScreen(listOf(cbc))
         assertEquals("Marketplace", awaitGuide(cbc).now?.title)
         assertEquals(listOf(1L, 1L), provider.guideRequests)
@@ -181,8 +183,8 @@ class GuideTest {
 
     @Test fun `the first refusal stops the guide for the day, and the next day it is asked again`() = runBlocking {
         syncLineup()
-        provider.serveGuide(1, programme("The National", Duration.ofMinutes(-30), Duration.ofMinutes(30)))
-        provider.serveGuide(2, programme("Hockey Night", Duration.ofMinutes(-10), Duration.ofHours(2)))
+        provider.serveGuide(1, programme("The National", (-30).minutes, 30.minutes))
+        provider.serveGuide(2, programme("Hockey Night", (-10).minutes, 2.hours))
         provider.refuseGuideWith = 429
         val cbc = channel("CA: CBC")
         val tsn = channel("CA: TSN 1")
@@ -206,19 +208,17 @@ class GuideTest {
         assertEquals(listOf(1L), provider.guideRequests)
 
         // The next day, the guide is asked for again.
-        clock.now += Duration.ofDays(1)
-        provider.serveGuide(1, programme("The National", Duration.ofMinutes(-30), Duration.ofMinutes(30)))
-        provider.serveGuide(2, programme("Hockey Night", Duration.ofMinutes(-10), Duration.ofHours(2)))
+        clock.now += 1.days
+        provider.serveGuide(1, programme("The National", (-30).minutes, 30.minutes))
+        provider.serveGuide(2, programme("Hockey Night", (-10).minutes, 2.hours))
         library.guideOnScreen(listOf(cbc, tsn))
         assertEquals("The National", awaitGuide(cbc).now?.title)
         assertEquals("Hockey Night", awaitGuide(tsn).now?.title)
         assertEquals(listOf(1L, 1L, 2L), provider.guideRequests)
     }
 
-    /** A clock the test moves by hand, in UTC. */
-    private class TestClock(@Volatile var now: Instant) : Clock() {
-        override fun instant(): Instant = now
-        override fun getZone(): ZoneId = ZoneOffset.UTC
-        override fun withZone(zone: ZoneId): Clock = this
+    /** A clock the test moves by hand; its days are told in UTC. */
+    private class TestClock(@Volatile var now: Instant) : Clock {
+        override fun now(): Instant = now
     }
 }

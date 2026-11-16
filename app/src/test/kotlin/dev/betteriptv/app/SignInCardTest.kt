@@ -27,7 +27,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * The first Sync's sign-in card (#438), with a scripted sign-in: under the checklist with a live code
@@ -51,7 +52,7 @@ class SignInCardTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private val code = SignInCode("K7M2QX", "https://zugig.app/sign-in?code=K7M2QX", Duration.ofMinutes(10))
+    private val code = SignInCode("K7M2QX", "https://zugig.app/sign-in?code=K7M2QX", 10.minutes)
     private var signedInAs: String? = null
     private var codesAsked = 0
     private var dismissals = 0

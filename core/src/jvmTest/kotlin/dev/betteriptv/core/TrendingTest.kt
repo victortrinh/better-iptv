@@ -9,8 +9,11 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Trending (#477): the Provider's Titles Wikipedia's readers looked up most over the week, seen
@@ -68,7 +71,7 @@ class TrendingTest {
 
     private val week = listOf("2026-11-06", "2026-11-05", "2026-11-04", "2026-11-03", "2026-11-02", "2026-11-01", "2026-10-31")
 
-    private suspend fun rows(contentLanguages: List<String> = english, appLanguage: String = "en", now: Instant = Instant.now()) =
+    private suspend fun rows(contentLanguages: List<String> = english, appLanguage: String = "en", now: Instant = Clock.System.now()) =
         library.homeRows(contentLanguages, appLanguage, "CA", emptyList(), now)
 
     private fun List<HomeRow>.trending() = filterIsInstance<HomeRow.Trending>().singleOrNull()?.titles?.map { it.name }
@@ -96,7 +99,7 @@ class TrendingTest {
         assertEquals(listOf("The Godfather", "Jailer 3", "MobLand"), french.map { it.name })
         assertEquals(french.map { it.id }.distinct(), french.map { it.id })
         // In English, only English Wikipedia's readers count.
-        assertEquals(listOf("Jailer 3", "MobLand", "The Godfather"), rows(appLanguage = "en", now = Instant.now() + Duration.ofHours(2)).trending())
+        assertEquals(listOf("Jailer 3", "MobLand", "The Godfather"), rows(appLanguage = "en", now = Clock.System.now() + 2.hours).trending())
         assertEquals(listOf("fr", "en"), cloud.trendingAsked)
     }
 
@@ -119,17 +122,17 @@ class TrendingTest {
     @Test fun `entering Home twice within an hour asks the feed once, across a restart too, and again after it`() = runBlocking {
         syncMovies("EN - First (2025)" to 1, "EN - Second (2025)" to 2, "EN - Third (2025)" to 3)
         cloud.trending("en", week[0], "First" to 900, "Second" to 800, "Third" to 700)
-        val now = Instant.now()
+        val now = Clock.System.now()
         rows(now = now)
-        rows(now = now + Duration.ofMinutes(30))
+        rows(now = now + 30.minutes)
         assertEquals(listOf("en"), cloud.trendingAsked)
 
         library.close()
         library = open()
-        rows(now = now + Duration.ofMinutes(50))
+        rows(now = now + 50.minutes)
         assertEquals(listOf("en"), cloud.trendingAsked)
 
-        rows(now = now + Duration.ofMinutes(70))
+        rows(now = now + 70.minutes)
         assertEquals(listOf("en", "en"), cloud.trendingAsked)
     }
 
@@ -141,7 +144,7 @@ class TrendingTest {
         cloud.down = true
         library.close()
         library = open()
-        assertEquals(before, rows(now = Instant.now() + Duration.ofHours(3)).trending())
+        assertEquals(before, rows(now = Clock.System.now() + 3.hours).trending())
         assertEquals(listOf("Third", "Second", "First"), before)
     }
 
@@ -167,8 +170,8 @@ class TrendingTest {
         cloud.trending("en", week[0], "Jailer 3" to 900, "Slow Horses" to 850, "Godzilla Minus One" to 800, "Black Doves" to 750, "xXx" to 700, "The Diplomat" to 650)
 
         assertEquals(listOf("Jailer 3", "Slow Horses", "Godzilla Minus One", "Black Doves", "xXx", "The Diplomat"), rows().trending())
-        val movies = library.tabRows(TitleKind.Movie, english, "en", Instant.now())
-        val shows = library.tabRows(TitleKind.Show, english, "en", Instant.now())
+        val movies = library.tabRows(TitleKind.Movie, english, "en", Clock.System.now())
+        val shows = library.tabRows(TitleKind.Show, english, "en", Clock.System.now())
         assertEquals(listOf("Jailer 3", "Godzilla Minus One", "xXx"), movies.trending())
         assertEquals(TitleKind.Movie, movies.filterIsInstance<HomeRow.Trending>().single().kind)
         assertEquals(listOf("Slow Horses", "Black Doves", "The Diplomat"), shows.trending())

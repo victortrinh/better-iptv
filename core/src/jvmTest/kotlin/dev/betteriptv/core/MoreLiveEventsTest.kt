@@ -8,8 +8,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * The Live tab's More live events row, seen through the Library: the fake Provider's Event channels
@@ -24,7 +24,7 @@ class MoreLiveEventsTest {
 
     /** A Sunday, 3 PM in Toronto (standard time, five hours behind UTC). */
     private val now = Instant.parse("2026-11-01T20:00:00Z")
-    private val toronto = ZoneId.of("America/Toronto")
+    private val toronto = TimeZone.of("America/Toronto")
     private val stick = DeviceProfile(maxHeight = 2160, hdr = emptySet(), videoDecoders = setOf("video/avc", "video/hevc"))
 
     @Before fun logIn() = runBlocking {

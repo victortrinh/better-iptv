@@ -11,9 +11,11 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * The Live tab's Game rows, seen through the Library: the fake cloud's Games matched to a fake
@@ -27,7 +29,7 @@ class GameRowsTest {
 
     /** A Sunday, 4 PM in Toronto. */
     private val now = Instant.parse("2026-11-01T20:00:00Z")
-    private val toronto = ZoneId.of("America/Toronto")
+    private val toronto = TimeZone.of("America/Toronto")
 
     @Before fun logIn() = runBlocking {
         library = Library.open(folder.root.resolve("catalog.db").path, InMemoryCredentials(), cloud.url)
@@ -266,14 +268,14 @@ class GameRowsTest {
 
         val first = rows()
         assertEquals(1, cloud.gamesAsked.size)
-        rows(at = now + Duration.ofSeconds(30))
+        rows(at = now + 30.seconds)
         assertEquals(1, cloud.gamesAsked.size)
         // The tab asks every 2 minutes while a Games row shows: each of those asks reaches the cloud.
-        rows(at = now + Duration.ofMinutes(2))
+        rows(at = now + 2.minutes)
         assertEquals(2, cloud.gamesAsked.size)
 
         cloud.down = true
-        val kept = rows(at = now + Duration.ofMinutes(4))
+        val kept = rows(at = now + 4.minutes)
         assertEquals(3, cloud.gamesAsked.size)
         assertEquals(first.map { it.name() }, kept.map { it.name() })
         assertEquals(first.liveNow().ids(), kept.liveNow().ids())

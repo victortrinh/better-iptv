@@ -8,7 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.net.URLEncoder
-import java.time.Instant
+import kotlin.time.Instant
 import java.util.Base64
 
 /**
@@ -36,7 +36,7 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 while (json.hasNext()) when (json.nextName()) {
                     "auth" -> auth = json.nextScalar()
                     "status" -> status = json.nextScalar()
-                    "exp_date" -> expiresOn = json.nextScalar()?.toLongOrNull()?.let(Instant::ofEpochSecond)
+                    "exp_date" -> expiresOn = json.nextScalar()?.toLongOrNull()?.let { Instant.fromEpochSeconds(it) }
                     else -> json.skipValue()
                 }
                 json.endObject()
@@ -398,8 +398,8 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
                 else -> skipValue()
             }
             // The table runs from days ago to days ahead: only the programmes from now on are kept.
-            if (title != null && start != null && end != null && end > start && end > now.epochSecond && programmes.size < limit) {
-                programmes += Programme(decodeTitle(title), Instant.ofEpochSecond(start), Instant.ofEpochSecond(end))
+            if (title != null && start != null && end != null && end > start && end > now.epochSeconds && programmes.size < limit) {
+                programmes += Programme(decodeTitle(title), Instant.fromEpochSeconds(start), Instant.fromEpochSeconds(end))
             }
         }
         when (json.peek()) {

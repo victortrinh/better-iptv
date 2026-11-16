@@ -39,7 +39,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * League logos on Live (#350): a League's row heading shows its logo before its name, or the name
@@ -85,7 +86,7 @@ class LeagueLogosTest {
     @After fun resetImages() = SingletonImageLoader.reset()
 
     private fun team(name: String, short: String) = GameTeam(name, short, short.take(3).uppercase(), listOf(name, short), null)
-    private val game = Game("nhl", "1", Instant.now(), GameState.Live, home = team("Toronto Maple Leafs", "Maple Leafs"), away = team("Montreal Canadiens", "Canadiens"), broadcasters = emptyList())
+    private val game = Game("nhl", "1", Clock.System.now(), GameState.Live, home = team("Toronto Maple Leafs", "Maple Leafs"), away = team("Montreal Canadiens", "Canadiens"), broadcasters = emptyList())
 
     @Test fun aLeaguesRowHeadingShowsItsLogoBeforeItsName() {
         images()

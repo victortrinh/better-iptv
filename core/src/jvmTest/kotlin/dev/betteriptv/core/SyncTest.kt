@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Instant
+import kotlin.time.Instant
 
 class SyncTest {
     @get:Rule val folder = TemporaryFolder()

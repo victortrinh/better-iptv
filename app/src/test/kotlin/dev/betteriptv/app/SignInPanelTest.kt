@@ -27,7 +27,8 @@ import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /** The Sign-in screen's panel (#429), with a scripted sign-in state: the code, the QR, the address and the waiting line. */
 @RunWith(RobolectricTestRunner::class)
@@ -47,7 +48,7 @@ class SignInPanelTest {
     @get:Rule(order = 1)
     val compose = createComposeRule()
 
-    private val code = SignInCode("K7M2QX", "https://zugig.app/sign-in?code=K7M2QX", Duration.ofMinutes(10))
+    private val code = SignInCode("K7M2QX", "https://zugig.app/sign-in?code=K7M2QX", 10.minutes)
 
     @Test fun `shows the code, its QR and the page's address while it waits for the phone`() {
         var state by mutableStateOf<SignInState>(SignInState.Asking)

@@ -10,7 +10,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Duration
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /** The Sign-in screen's loop (#429): a code, a poll every 2 s while it shows, a new code when it expires. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -24,7 +26,7 @@ class SignInLoopTest {
     private suspend fun start(): SignInCode? {
         if (!cloudUp) return null
         codes++
-        return SignInCode("ABC23$codes", "https://zugig.app/sign-in?code=ABC23$codes", Duration.ofMinutes(10))
+        return SignInCode("ABC23$codes", "https://zugig.app/sign-in?code=ABC23$codes", 10.minutes)
     }
 
     private suspend fun check(): String? {
@@ -35,7 +37,7 @@ class SignInLoopTest {
     @Test fun `shows a code and asks every 2 seconds whether the phone signed the TV in`() = runTest {
         val run = async { runSignIn(::start, ::check, shown::add) }
         runCurrent()
-        assertEquals(SignInState.Showing(SignInCode("ABC231", "https://zugig.app/sign-in?code=ABC231", Duration.ofMinutes(10))), shown.single())
+        assertEquals(SignInState.Showing(SignInCode("ABC231", "https://zugig.app/sign-in?code=ABC231", 10.minutes)), shown.single())
         assertEquals(0, checks)
         advanceTimeBy(2_001)
         assertEquals(1, checks)
@@ -51,9 +53,9 @@ class SignInLoopTest {
 
     @Test fun `asks a new code before this one expires`() = runTest {
         val run = async { runSignIn(::start, ::check, shown::add) }
-        advanceTimeBy(Duration.ofMinutes(10).minusSeconds(30).toMillis())
+        advanceTimeBy((10.minutes - 30.seconds).inWholeMilliseconds)
         assertEquals(1, codes)
-        advanceTimeBy(Duration.ofSeconds(30).toMillis())
+        advanceTimeBy(30.seconds.inWholeMilliseconds)
         assertEquals(2, codes)
         assertEquals("ABC232", (shown.last() as SignInState.Showing).code.code)
         assertFalse(run.isCompleted)

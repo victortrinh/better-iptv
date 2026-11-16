@@ -770,7 +770,7 @@ private fun Context.cardInfo(title: TitleSummary, resume: InProgress?): CardInfo
     if (resume != null) {
         val left = resume.left?.let { left ->
             // Rounded up, so the last seconds still read "1 min left".
-            val minutes = ((left.toMillis() + 59_999) / 60_000).toInt().coerceAtLeast(1)
+            val minutes = ((left.inWholeMilliseconds + 59_999) / 60_000).toInt().coerceAtLeast(1)
             getString(R.string.time_left, runtime(minutes))
         }
         val episode = resume.episode ?: return CardInfo.InProgress(title.name, left)

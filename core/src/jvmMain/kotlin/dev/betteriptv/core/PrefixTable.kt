@@ -1,10 +1,6 @@
 package dev.betteriptv.core
 
-import java.text.Normalizer
-import java.time.Year
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.util.Locale
+import kotlinx.datetime.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -32,10 +28,10 @@ internal class PrefixTable private constructor(
     /** The genre list's Kids words, as whole words of the folded name: what files a Title in the Kids catalog. */
     private val kidsWords: List<WholeWord>,
     /** The zone the Provider writes Event channel times in when the name states none ([eventStart]); UTC when the table names none. */
-    val eventTimeZone: ZoneId,
+    val eventTimeZone: TimeZone,
 ) {
     /** What the Channel browser calls a live Category's country [code] that isn't a country ("Arabic" for `AR`), or null for one not listed. */
-    fun countryAlias(code: String): String? = countryAliases[code.uppercase(Locale.ROOT)]
+    fun countryAlias(code: String): String? = countryAliases[code.uppercase()]
 
     /** The languages the table names for any Prefix or Category hint, as primary subtags: `fr-CA` counts as French. */
     private val knownLanguages: Set<String> by lazy {
@@ -112,10 +108,7 @@ internal class PrefixTable private constructor(
 
         /** Whether [codePoint] would make the phrase part of another word: a letter (`\p{L}`), a number (`\p{N}`) or a hyphen. */
         private fun joins(codePoint: Int): Boolean =
-            codePoint == '-'.code || Character.isLetter(codePoint) || when (Character.getType(codePoint).toByte()) {
-                Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER -> true
-                else -> false
-            }
+            codePoint == '-'.code || isLetter(codePoint) || isNumber(codePoint)
     }
 
     /**
@@ -208,7 +201,7 @@ internal class PrefixTable private constructor(
      * it has a word the table marks `fresh` (`EN - NEW RELEASE`, `FRANCE DERNIER AJOUT`), or it names
      * [year] or the year before (`ES - PELÍCULAS 2026`, `DE - FILME 2025/2026`).
      */
-    fun isFreshCategory(category: String, year: Int = Year.now().value): Boolean =
+    fun isFreshCategory(category: String, year: Int = thisYear()): Boolean =
         categoryRules(category).any { it.fresh } || YEAR_WORD.findAll(category).any { it.value.toInt() in year - 1..year }
 
     /**
@@ -236,7 +229,7 @@ internal class PrefixTable private constructor(
         while (true) {
             val token = TAIL_TOKEN.find(tail) ?: break
             val raw = token.groupValues[1]
-            val plain = Normalizer.normalize(raw, Normalizer.Form.NFKC).uppercase(Locale.ROOT)
+            val plain = compatibilityComposed(raw).uppercase()
             // `(HD)` is HD; `(SAT)` is only ever in its parentheses.
             val rule = qualityWords[plain] ?: qualityWords[plain.removeSurrounding("(", ")")]?.takeIf { !it.superscript || raw != plain }
             if (rule == null || (rule.superscript && raw == plain)) break
@@ -245,13 +238,13 @@ internal class PrefixTable private constructor(
             quality = listOfNotNull(quality, rule.quality).minOrNull()
             hevc = hevc || rule.hevc
         }
-        var rest = withoutSmallCapitals(Normalizer.normalize(tail, Normalizer.Form.NFKC))
+        var rest = withoutSmallCapitals(compatibilityComposed(tail))
         var country: String? = null
         // The tags before the colons at the start: Tier tags, and a country tag, in either order.
         while (true) {
             val head = HEAD.find(rest) ?: break
             val words = head.groupValues[1].split(' ')
-            val tiers = words.filter { it.uppercase(Locale.ROOT) in tierTags }
+            val tiers = words.filter { it.uppercase() in tierTags }
             val codes = words - tiers.toSet()
             // Anything else before the colon is the name's own (`Arena: Jets vs Oilers`, `NHL: ...`).
             if (codes.any { !COUNTRY_CODE.matches(it) } || codes.size > 2 || (codes.isNotEmpty() && country != null)) break
@@ -259,7 +252,7 @@ internal class PrefixTable private constructor(
             rest = rest.substring(head.range.last + 1)
         }
         val cleaned = rest.replace(SPACES, " ").trim().ifEmpty { name.trim() }
-        val key = listOfNotNull(country, cleaned).joinToString(": ").uppercase(Locale.ROOT)
+        val key = listOfNotNull(country, cleaned).joinToString(": ").uppercase()
         return ChannelName(key, cleaned, country, quality, hevc)
     }
 
@@ -272,15 +265,15 @@ internal class PrefixTable private constructor(
      * Listings ([CandidateTierTags]); nothing here applies it.
      */
     fun tierTagWord(name: String): Pair<String, String>? {
-        val normalised = withoutSmallCapitals(Normalizer.normalize(name, Normalizer.Form.NFKC))
+        val normalised = withoutSmallCapitals(compatibilityComposed(name))
         val head = HEAD.find(normalised) ?: return null
         val words = head.groupValues[1].split(' ')
-        val others = words.filter { it.uppercase(Locale.ROOT).let { word -> word !in tierTags && word !in notTierTags } && !COUNTRY_CODE.matches(it) }
+        val others = words.filter { it.uppercase().let { word -> word !in tierTags && word !in notTierTags } && !COUNTRY_CODE.matches(it) }
         val word = others.singleOrNull() ?: return null
         val kept = words - word
         val rest = normalised.substring(head.range.last + 1)
         val without = if (kept.isEmpty()) rest else "${kept.joinToString(" ")}: $rest"
-        return word.uppercase(Locale.ROOT) to channelName(without).key
+        return word.uppercase() to channelName(without).key
     }
 
     private fun categoryRules(category: String): List<Rule> = categoryRules.getOrPut(category) { matchingHints(category).map { it.rule } }
@@ -313,7 +306,7 @@ internal class PrefixTable private constructor(
         while (true) rest = PREFIX.find(rest)?.let { rest.substring(it.range.last + 1) } ?: break
         // A release-style name, `P-A.Méthot.Le.Party.Du.Millénaire.2022`, ends with a bare year;
         // one still to come is part of the name (`Blade.Runner.2049`).
-        val dotted = DOTTED.matchEntire(rest.trim())?.takeIf { it.groupValues[2].toInt() <= Year.now().value + 1 }
+        val dotted = DOTTED.matchEntire(rest.trim())?.takeIf { it.groupValues[2].toInt() <= thisYear() + 1 }
         if (dotted != null) return CleanName(dotted.groupValues[1].replace('.', ' '), dotted.groupValues[2].toInt())
         val year = YEAR.find(rest)
         val title = (if (year != null) rest.substring(0, year.range.first) else rest).replace(COUNTRY, "").replace(SPACES, " ").trim()
@@ -510,7 +503,7 @@ internal class PrefixTable private constructor(
             val countryAliases = LinkedHashMap<String, String>()
             /** Each genre word, as written, to its genre. */
             val genreWords = LinkedHashMap<String, String>()
-            var eventTimeZone: ZoneId? = null
+            var eventTimeZone: TimeZone? = null
 
             fun read(text: String, source: String, ofProvider: Boolean) {
                 // A key is listed once per source; a later source may list it again to replace it.
@@ -541,10 +534,10 @@ internal class PrefixTable private constructor(
                         "event time zone" -> {
                             if (zoneSeen) fail("a second event time zone")
                             zoneSeen = true
-                            eventTimeZone = runCatching { ZoneId.of(key) }.getOrElse { fail("$key is not a zone") }
+                            eventTimeZone = runCatching { TimeZone.of(key) }.getOrElse { fail("$key is not a zone") }
                         }
                         "country aliases" -> {
-                            val code = key.uppercase(Locale.ROOT)
+                            val code = key.uppercase()
                             once(code)
                             val alias = line.substringAfter('|', "").trim()
                             // A Provider table drops a Base alias with an empty name.
@@ -582,9 +575,9 @@ internal class PrefixTable private constructor(
                                 }
                                 "category hints" -> { once(key); hints[key] = rule }
                                 // The colon is where the tag ends, not part of it.
-                                "tier tags" -> tierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
-                                "not tier tags" -> notTierTags += key.removeSuffix(":").uppercase(Locale.ROOT)
-                                "channel quality words" -> key.uppercase(Locale.ROOT).let { once(it); qualityWords[it] = rule }
+                                "tier tags" -> tierTags += key.removeSuffix(":").uppercase()
+                                "not tier tags" -> notTierTags += key.removeSuffix(":").uppercase()
+                                "channel quality words" -> key.uppercase().let { once(it); qualityWords[it] = rule }
                                 else -> fail("outside a [section]")
                             }
                             if (rule.keepLearned && section != "prefixes") fail("keep-learned is for a Prefix's line")
@@ -600,7 +593,7 @@ internal class PrefixTable private constructor(
                 val ranked = genreWords.map { (word, genre) -> GenreWord(word, fold(word), WholeWord(fold(word)), genre, genres.getOrPut(genre) { genres.size }) }
                 return PrefixTable(
                     prefixes, hints.map { (phrase, rule) -> Hint(phrase, wholeWord(phrase), rule) }, clutterNames, liveClutterNames, emptyEventSlots,
-                    tierTags, notTierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map { WholeWord(fold(it)) }, eventTimeZone ?: ZoneOffset.UTC,
+                    tierTags, notTierTags, qualityWords, countryAliases, ranked, genreWords.filterValues { it == KIDS_GENRE }.keys.map { WholeWord(fold(it)) }, eventTimeZone ?: TimeZone.UTC,
                 )
             }
         }
@@ -649,10 +642,10 @@ internal class PrefixTable private constructor(
         /** Folds superscripts (`ᴰᴼᴸᴮʸ`), small capitals (`ɴᴇᴡꜱ`, and the small capital I that NFKC makes of `ᶦ`), accents and case, so Category hints match however they're styled. */
         fun fold(text: String): String {
             // Plain ASCII has nothing to fold but case: most Categories and genre fields are, and folding thousands costs on the stick (#497).
-            if (text.all { it < '\u0080' }) return text.uppercase(Locale.ROOT)
-            val compatible = withoutSmallCapitals(Normalizer.normalize(text, Normalizer.Form.NFKC))
-            val unaccented = Normalizer.normalize(compatible, Normalizer.Form.NFD).replace(MARKS, "")
-            return unaccented.uppercase(Locale.ROOT)
+            if (text.all { it < '\u0080' }) return text.uppercase()
+            val compatible = withoutSmallCapitals(compatibilityComposed(text))
+            val unaccented = canonicallyDecomposed(compatible).replace(MARKS, "")
+            return unaccented.uppercase()
         }
     }
 }

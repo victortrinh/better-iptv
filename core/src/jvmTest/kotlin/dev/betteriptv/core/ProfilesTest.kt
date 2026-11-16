@@ -13,7 +13,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * The household's Profiles on one device (#428): what each Viewer keeps is their Profile's, what the
@@ -225,7 +226,7 @@ class ProfilesTest {
                     "duration INTEGER, watched INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (title_key, season, number))",
             )
             execSQL("CREATE TABLE title_choices (title_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at INTEGER NOT NULL)")
-            val now = Instant.now().toEpochMilli()
+            val now = Clock.System.now().toEpochMilliseconds()
             execSQL("INSERT INTO favourite VALUES ('$espn', $now)")
             execSQL("INSERT INTO not_this_game VALUES ('nhl/1', 'us espn', $now)")
             execSQL("INSERT INTO progress VALUES ('movie/1', 600000, 6000000, 0, $now)")

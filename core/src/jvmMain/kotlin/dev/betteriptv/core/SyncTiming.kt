@@ -1,7 +1,7 @@
 package dev.betteriptv.core
 
-import java.time.Duration
-import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 
 /**
  * Where one Sync's time went, for a debug build's log (#566): each Step in order, a first Sync's
@@ -23,7 +23,7 @@ class SyncTiming(
     }
 
     override fun toString(): String = buildString {
-        val total = steps.sumOf { it.time.toNanos() }
+        val total = steps.sumOf { it.time.inWholeNanoseconds }
         append("Sync took ${seconds(total)} s: $channelListings Channel, $movieListings movie and $showListings show Listings")
         val width = (steps + saving).maxOf { it.name.length }
         steps.forEach { append("\n  ${it.name.padEnd(width + 2)}  ${line(it, total)}") }
@@ -31,11 +31,15 @@ class SyncTiming(
     }
 
     private fun line(part: Part, total: Long): String {
-        val nanos = part.time.toNanos()
+        val nanos = part.time.inWholeNanoseconds
         return "${seconds(nanos).padStart(8)} s  ${(if (total == 0L) 0 else nanos * 100 / total).toString().padStart(3)}%"
     }
 
-    private fun seconds(nanos: Long) = String.format(Locale.ROOT, "%.3f", nanos / 1e9)
+    /** [nanos] in seconds to the millisecond, rounded: `239.700`. */
+    private fun seconds(nanos: Long): String {
+        val millis = (nanos + 500_000) / 1_000_000
+        return "${millis / 1_000}.${(millis % 1_000).toString().padStart(3, '0')}"
+    }
 }
 
 /**
@@ -43,12 +47,12 @@ class SyncTiming(
  * read per mark, and a mark per Step or statement, never per Listing.
  */
 internal class SyncTimer {
-    private var last = System.nanoTime()
+    private var last = TimeSource.Monotonic.markNow()
     private val parts = ArrayList<SyncTiming.Part>()
 
     fun mark(name: String) {
-        val now = System.nanoTime()
-        parts += SyncTiming.Part(name, Duration.ofNanos(now - last))
+        val now = TimeSource.Monotonic.markNow()
+        parts += SyncTiming.Part(name, now - last)
         last = now
     }
 

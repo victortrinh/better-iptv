@@ -14,11 +14,11 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.InetSocketAddress
 import java.security.MessageDigest
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** The in-app updater against a fake release host and a fake installer: check, the first-update permission, download and install. */
@@ -75,10 +75,8 @@ class AppUpdatesTest {
 
     /** The updater's clock, moved by hand: a check is stale once [now] is far enough past it. */
     private var now = Instant.parse("2026-11-06T20:21:00Z")
-    private val clock = object : Clock() {
-        override fun instant() = now
-        override fun getZone() = ZoneOffset.UTC
-        override fun withZone(zone: ZoneId) = this
+    private val clock = object : Clock {
+        override fun now() = now
     }
 
     private fun updates(installedVersionCode: Long = 91) = AppUpdates("$host/latest/update.json", installedVersionCode, downloads, installer, clock = clock)
@@ -154,15 +152,15 @@ class AppUpdatesTest {
         updates.check()
         publish(versionCode = 97)
         // Back a minute later: the launch check stands.
-        now += Duration.ofMinutes(1)
-        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        now += 1.minutes
+        assertFalse(updates.checkIfStale(15.minutes))
         assertEquals(95L, (updates.state.value as UpdateState.Available).update.versionCode)
         // Back an hour later: the build released meanwhile is offered.
-        now += Duration.ofHours(1)
-        assertTrue(updates.checkIfStale(Duration.ofMinutes(15)))
+        now += 1.hours
+        assertTrue(updates.checkIfStale(15.minutes))
         assertEquals(97L, (updates.state.value as UpdateState.Available).update.versionCode)
         // The re-check counts as a check: right after it, nothing is read again.
-        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        assertFalse(updates.checkIfStale(15.minutes))
         assertEquals(2, requested.count { it == "/latest/update.json" })
     }
 
@@ -172,8 +170,8 @@ class AppUpdatesTest {
         updates.check()
         updates.update()
         publish(versionCode = 97)
-        now += Duration.ofHours(1)
-        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        now += 1.hours
+        assertFalse(updates.checkIfStale(15.minutes))
         assertEquals(95L, (updates.state.value as UpdateState.Installing).update.versionCode)
     }
 
@@ -217,8 +215,8 @@ class AppUpdatesTest {
         assertEquals(UpdateState.Finishing, updates.state.value)
         assertTrue(requested.isEmpty())
         assertTrue(kept.exists())
-        now += Duration.ofHours(1)
-        assertFalse(updates.checkIfStale(Duration.ofMinutes(15)))
+        now += 1.hours
+        assertFalse(updates.checkIfStale(15.minutes))
         assertEquals(UpdateState.Finishing, updates.state.value)
     }
 

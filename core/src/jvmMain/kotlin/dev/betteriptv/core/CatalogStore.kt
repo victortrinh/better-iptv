@@ -8,9 +8,12 @@ import com.squareup.moshi.JsonReader
 import com.squareup.moshi.JsonWriter
 import okio.Buffer
 import java.io.Closeable
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /**
  * The device's copy of the Provider catalog, in SQLite.
@@ -221,7 +224,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             bindLong(2, ++channelPosition)
             bindText(3, name)
             if (image == null) bindNull(4) else bindText(4, image)
-            if (eventStart == null) bindNull(5) else bindLong(5, eventStart.epochSecond)
+            if (eventStart == null) bindNull(5) else bindLong(5, eventStart.epochSeconds)
             if (categoryId == null) bindNull(6) else bindText(6, categoryId)
             bindText(7, guideId)
             bindText(8, channelKey)
@@ -469,7 +472,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 writeMeta(
                     mapOf(
                         PENDING_SYNC_AT to sync.finishedAt.toString(),
-                        PENDING_SYNC_MILLIS to sync.duration.toMillis().toString(),
+                        PENDING_SYNC_MILLIS to sync.duration.inWholeMilliseconds.toString(),
                         PENDING_MOVIE_LISTINGS to sync.movieListingCount.toString(),
                         PENDING_SHOW_LISTINGS to sync.showListingCount.toString(),
                         PENDING_CHANNEL_LISTINGS to sync.channelListingCount.toString(),
@@ -573,7 +576,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         reader.prepare("SELECT name, channel_key, event_start FROM channel ORDER BY position").use {
             var count = 0
             while (it.step()) {
-                each(it.getText(0), it.getText(1), if (it.isNull(2)) null else Instant.ofEpochSecond(it.getLong(2)))
+                each(it.getText(0), it.getText(1), if (it.isNull(2)) null else Instant.fromEpochSeconds(it.getLong(2)))
                 count++
             }
             count
@@ -618,7 +621,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val started = System.nanoTime()
         writer.execSQL("BEGIN IMMEDIATE")
         try {
-            val at = Instant.now()
+            val at = Clock.System.now()
             if (hasStagedChannels()) swapChannelsIn(at)
             timer?.mark("Channel swap")
             swapTitlesIn(started, at, timer)
@@ -652,7 +655,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writeMeta(mapOf(CHANNELS_SYNCED_AT to at.toString()))
     }
 
-    private fun swapTitlesIn(swapStarted: Long, at: Instant = Instant.now(), timer: SyncTimer? = null) {
+    private fun swapTitlesIn(swapStarted: Long, at: Instant = Clock.System.now(), timer: SyncTimer? = null) {
         writer.execSQL("DROP TABLE listing")
         writer.execSQL("DROP TABLE title")
         writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
@@ -673,7 +676,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("INSERT INTO tier_tag SELECT * FROM staging_tier_tag")
         writer.execSQL("DROP TABLE staging_tier_tag")
         val computed = meta(PENDING_SYNC_MILLIS)!!.toLong()
-        val swapped = Duration.ofNanos(System.nanoTime() - swapStarted).toMillis()
+        val swapped = (System.nanoTime() - swapStarted).nanoseconds.inWholeMilliseconds
         writeMeta(
             mapOf(
                 LAST_SYNC_AT to at.toString(),
@@ -725,7 +728,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val at = meta(LAST_SYNC_AT) ?: return null
         return CompletedSync(
             Instant.parse(at),
-            Duration.ofMillis(meta(LAST_SYNC_MILLIS)!!.toLong()),
+            meta(LAST_SYNC_MILLIS)!!.toLong().milliseconds,
             meta(LAST_SYNC_LISTINGS)!!.toInt(),
             unknownPrefixes(),
             meta(LAST_SYNC_MISMATCHES)?.toInt() ?: 0,
@@ -797,7 +800,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     "WHERE lead.id IN (${chunk.joinToString(",") { "?" }}) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY lead.id, c.position",
             ).use {
                 chunk.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
-                it.bindLong(chunk.size + 1, startedBefore.epochSecond)
+                it.bindLong(chunk.size + 1, startedBefore.epochSeconds)
                 buildList { while (it.step()) add(it.getLong(0) to it.variantRow(1)) }
             }
         }.groupBy({ it.first }, { it.second }).mapValues { (_, rows) -> channel(rows) }
@@ -809,7 +812,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             "SELECT $CHANNEL_COLUMNS FROM favourite f JOIN channel c ON c.channel_key = f.key " +
                 "WHERE f.profile = $profile AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY f.added_at, f.key, c.position",
         ).use {
-            it.bindLong(1, startedBefore.epochSecond)
+            it.bindLong(1, startedBefore.epochSeconds)
             buildList { while (it.step()) add(it.variantRow(0)) }
         }.groupBy { it.key }.values.map(::channel)
     }
@@ -826,9 +829,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE (event_start >= ? AND event_start < ?) OR name LIKE 'Live%|%' OR name LIKE 'Next%|%') " +
                 "ORDER BY c.position",
         ).use {
-            it.bindLong(1, from.epochSecond)
-            it.bindLong(2, to.epochSecond)
-            buildList { while (it.step()) add(it.variantRow(0) to (if (it.isNull(11)) null else Instant.ofEpochSecond(it.getLong(11)))) }
+            it.bindLong(1, from.epochSeconds)
+            it.bindLong(2, to.epochSeconds)
+            buildList { while (it.step()) add(it.variantRow(0) to (if (it.isNull(11)) null else Instant.fromEpochSeconds(it.getLong(11)))) }
         }.groupBy { it.first.key }.values.mapNotNull { rows ->
             val start = rows.firstNotNullOfOrNull { it.second }
             val name = rows.first().first.variant.name
@@ -878,13 +881,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
      */
     fun dropFeed(profile: Long, gameKey: String, channelKey: String, at: Instant, forgetBefore: Instant) = synchronized(writer) {
         writer.prepare("DELETE FROM not_this_game WHERE dropped_at < ?").use {
-            it.bindLong(1, forgetBefore.toEpochMilli())
+            it.bindLong(1, forgetBefore.toEpochMilliseconds())
             it.step()
         }
         writer.prepare("INSERT OR REPLACE INTO not_this_game VALUES ($profile, ?, ?, ?)").use {
             it.bindText(1, gameKey)
             it.bindText(2, channelKey)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -901,7 +904,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val insert = "INSERT OR IGNORE INTO favourite VALUES ($profile, ?, max(?, (SELECT coalesce(max(added_at), 0) + 1 FROM favourite WHERE profile = $profile)))"
         writer.prepare(if (favourite) insert else "DELETE FROM favourite WHERE profile = $profile AND key = ?").use {
             it.bindText(1, key)
-            if (favourite) it.bindLong(2, at.toEpochMilli())
+            if (favourite) it.bindLong(2, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -949,7 +952,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "WHERE lc.kind = ? AND lc.country IS NOT NULL AND (c.event_start IS NULL OR c.event_start >= ?)",
         ).use {
             it.bindText(1, kindKey(CategoryKind.Regular))
-            it.bindLong(2, startedBefore.epochSecond)
+            it.bindLong(2, startedBefore.epochSeconds)
             while (it.step()) {
                 val where = resolved.getOrPut(it.getText(0)) { country(it.getText(0)) } ?: continue
                 keys.getOrPut(where.code) { HashSet() }.add(it.getText(1))
@@ -982,7 +985,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "SELECT category_id, channel_key FROM channel WHERE category_id IN (${chunk.joinToString(",") { "?" }}) AND (event_start IS NULL OR event_start >= ?)",
             ).use {
                 chunk.forEachIndexed { i, id -> it.bindText(i + 1, id) }
-                it.bindLong(chunk.size + 1, startedBefore.epochSecond)
+                it.bindLong(chunk.size + 1, startedBefore.epochSeconds)
                 while (it.step()) keys.getOrPut(it.getText(0)) { HashSet() }.add(it.getText(1))
             }
         }
@@ -1007,7 +1010,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "WHERE c.channel_key IN (SELECT channel_key FROM channel WHERE category_id IN ($marks)) AND (c.event_start IS NULL OR c.event_start >= ?) ORDER BY c.position",
         ).use {
             ids.forEachIndexed { i, id -> it.bindText(i + 1, id) }
-            it.bindLong(ids.size + 1, startedBefore.epochSecond)
+            it.bindLong(ids.size + 1, startedBefore.epochSeconds)
             val rows = buildList { while (it.step()) add(it.variantRow(0) to it.getLong(11)) }
             val inCategory = ids.toSet()
             rows.groupBy { (row, _) -> row.key }.values
@@ -1318,7 +1321,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     it.bindLong(1, after)
                     buildList {
                         while (it.step()) {
-                            val day = if (!it.isNull(3)) LocalDate.parse(it.getText(3)) else if (!it.isNull(4)) LocalDate.of(it.getLong(4).toInt(), 1, 1) else null
+                            val day = if (!it.isNull(3)) LocalDate.parse(it.getText(3)) else if (!it.isNull(4)) LocalDate(it.getLong(4).toInt(), 1, 1) else null
                             add(Pair(it.getLong(0), Triple(it.getLong(1), it.getText(2), day)))
                         }
                     }
@@ -1334,7 +1337,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         listingId = getLong(0),
         name = getText(1),
         category = getText(2),
-        added = if (isNull(3)) null else Instant.ofEpochSecond(getLong(3)),
+        added = if (isNull(3)) null else Instant.fromEpochSeconds(getLong(3)),
         away = if (isNull(4)) null else getText(4),
         home = if (isNull(5)) null else getText(5),
         date = if (isNull(6)) null else LocalDate.parse(getText(6)),
@@ -1383,7 +1386,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             val views = body.orEmpty().mapNotNull { (wiki, articles) ->
                 (wiki as? String)?.let { name -> name to (articles as? Map<*, *>).orEmpty().mapNotNull { (k, v) -> (k as? String)?.let { a -> (v as? Number)?.let { a to it.toLong() } } }.toMap() }
             }.toMap()
-            StoredTrending(views, Instant.ofEpochMilli(it.getLong(1)))
+            StoredTrending(views, Instant.fromEpochMilliseconds(it.getLong(1)))
         }
     }
 
@@ -1401,7 +1404,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO trending VALUES (?, ?, ?)").use {
             it.bindText(1, language)
             it.bindText(2, body.readUtf8())
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1433,7 +1436,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             leagues.mapNotNull { league ->
                 statement.reset()
                 statement.bindText(1, league)
-                if (statement.step()) league to StoredGames(statement.getText(0), Instant.ofEpochMilli(statement.getLong(1))) else null
+                if (statement.step()) league to StoredGames(statement.getText(0), Instant.fromEpochMilliseconds(statement.getLong(1))) else null
             }.toMap()
         }
     }
@@ -1442,7 +1445,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO game VALUES (?, ?, ?)").use {
             it.bindText(1, league)
             it.bindText(2, body)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1493,7 +1496,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     listOf(facts?.originalLanguage, facts?.imdbId, facts?.enwiki, facts?.frwiki).forEachIndexed { i, value ->
                         if (value == null) insert.bindNull(i + 3) else insert.bindText(i + 3, value)
                     }
-                    insert.bindLong(7, at.toEpochMilli())
+                    insert.bindLong(7, at.toEpochMilliseconds())
                     insert.stepAndReset()
                 }
             }
@@ -1532,7 +1535,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         val marks = listingIds.joinToString(",") { "?" }
         val kept = reader.prepare("SELECT listing_id, modified, fetched_at FROM show_details WHERE listing_id IN ($marks)").use {
             listingIds.forEachIndexed { i, id -> it.bindLong(i + 1, id) }
-            buildMap { while (it.step()) put(it.getLong(0), (if (it.isNull(1)) null else it.getLong(1)) to Instant.ofEpochMilli(it.getLong(2))) }
+            buildMap { while (it.step()) put(it.getLong(0), (if (it.isNull(1)) null else it.getLong(1)) to Instant.fromEpochMilliseconds(it.getLong(2))) }
         }
         val episodes = reader.prepare(
             "SELECT listing_id, id, season, number, title, added, width, height, audio_language, container, still, duration FROM episode WHERE listing_id IN ($marks) ORDER BY season, number, id",
@@ -1566,7 +1569,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.prepare("INSERT OR REPLACE INTO show_details VALUES (?, ?, ?)").use {
                 it.bindLong(1, listingId)
                 if (modified == null) it.bindNull(2) else it.bindLong(2, modified)
-                it.bindLong(3, at.toEpochMilli())
+                it.bindLong(3, at.toEpochMilliseconds())
                 it.step()
             }
             writer.prepare("DELETE FROM episode WHERE listing_id = ?").use {
@@ -1611,7 +1614,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO file_read VALUES (?, ?, ?, ?)").use {
             it.bindLong(1, listingId)
             if (body == null) it.bindNull(2) else it.bindText(2, body)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.bindLong(4, if (shared) 1 else 0)
             it.step()
         }
@@ -1626,7 +1629,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindLong(2, position)
             if (duration == null) it.bindNull(3) else it.bindLong(3, duration)
             it.bindLong(4, if (watched) 1 else 0)
-            it.bindLong(5, at.toEpochMilli())
+            it.bindLong(5, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1642,7 +1645,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindLong(4, position)
             if (duration == null) it.bindNull(5) else it.bindLong(5, duration)
             it.bindLong(6, if (watched) 1 else 0)
-            it.bindLong(7, at.toEpochMilli())
+            it.bindLong(7, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1663,7 +1666,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO title_choices VALUES ($profile, ?, ?, ?)").use {
             it.bindText(1, key(id))
             it.bindText(2, body)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1683,7 +1686,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindText(1, key(id))
             it.step()
         }
-        saveTombstone(profile, key(id), NO_EPISODE, NO_EPISODE, at.toEpochMilli())
+        saveTombstone(profile, key(id), NO_EPISODE, NO_EPISODE, at.toEpochMilliseconds())
     }
 
     private fun forgetTombstone(profile: Long, titleKey: String, season: Int, number: Int) {
@@ -1735,7 +1738,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("DELETE FROM history_outbox WHERE profile = $profile AND title_key = ? AND season = ? AND number = ? AND updated_at = ?").use { delete ->
             pushed.forEach {
                 delete.bindChangeKey(it)
-                delete.bindLong(4, it.at.toEpochMilli())
+                delete.bindLong(4, it.at.toEpochMilliseconds())
                 delete.stepAndReset()
             }
         }
@@ -1829,7 +1832,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     it.bindLong(3, number.toLong())
                     if (it.step()) it.getLong(0) else null
                 }
-                val at = change.at.toEpochMilli()
+                val at = change.at.toEpochMilliseconds()
                 if (at > maxOf(local ?: Long.MIN_VALUE, removedAt ?: Long.MIN_VALUE)) {
                     if (change.removed) {
                         val table = if (change.episode == null) "progress" else "episode_progress"
@@ -1882,7 +1885,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
 
     /** Forgets removals made before [before]: the Account keeps its own as long. */
     fun forgetTombstones(before: Instant) = synchronized(writer) {
-        writer.execSQL("DELETE FROM history_tombstone WHERE removed_at < ${before.toEpochMilli()}")
+        writer.execSQL("DELETE FROM history_tombstone WHERE removed_at < ${before.toEpochMilliseconds()}")
     }
 
     /** The cursor the last sync with the Account got, for which Provider key, and whether this TV's data is merged into it yet; null before. */
@@ -1912,7 +1915,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             for (table in listOf("profile", "household", "household_pin", "sync_outbox", "sync_pulled")) writer.execSQL("DELETE FROM $table")
             listOf(SYNC_CURSOR, SYNC_PROVIDER, SYNC_LINKED, HISTORY_RESET).forEach(::deleteMeta)
             val id = addProfile(null, kids = false, at)
-            writer.execSQL("UPDATE profile SET used_at = ${at.toEpochMilli()}, changed_at = 0 WHERE id = $id")
+            writer.execSQL("UPDATE profile SET used_at = ${at.toEpochMilliseconds()}, changed_at = 0 WHERE id = $id")
             writer.execSQL("COMMIT")
             id
         } catch (e: Throwable) {
@@ -1929,7 +1932,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindText(3, provider)
             it.bindText(4, entry.key)
             if (entry.value == null) it.bindNull(5) else it.bindText(5, entry.value)
-            it.bindLong(6, entry.at.toEpochMilli())
+            it.bindLong(6, entry.at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -1949,7 +1952,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindText(1, kind)
             it.bindText(2, profile.orEmpty())
             it.bindText(3, key)
-            if (it.step() && !it.isNull(0)) Instant.ofEpochMilli(it.getLong(0)) else null
+            if (it.step() && !it.isNull(0)) Instant.fromEpochMilliseconds(it.getLong(0)) else null
         }
     }
 
@@ -1960,7 +1963,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 delete.bindText(1, it.kind)
                 delete.bindText(2, it.profile.orEmpty())
                 delete.bindText(3, it.key)
-                delete.bindLong(4, it.at.toEpochMilli())
+                delete.bindLong(4, it.at.toEpochMilliseconds())
                 delete.stepAndReset()
             }
         }
@@ -1986,7 +1989,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 insert.bindText(2, it.profile.orEmpty())
                 insert.bindText(3, it.key)
                 if (it.value == null) insert.bindNull(4) else insert.bindText(4, it.value)
-                insert.bindLong(5, it.at.toEpochMilli())
+                insert.bindLong(5, it.at.toEpochMilliseconds())
                 insert.stepAndReset()
             }
         }
@@ -2007,14 +2010,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindText(1, entry.kind)
             it.bindText(2, entry.profile.orEmpty())
             it.bindText(3, entry.key)
-            it.bindLong(4, entry.at.toEpochMilli())
+            it.bindLong(4, entry.at.toEpochMilliseconds())
             it.step()
         }
         Unit
     }
 
     private fun SQLiteStatement.syncEntry(): SyncEntry =
-        SyncEntry(getText(0), getText(1).ifEmpty { null }, getText(2), if (isNull(3)) null else getText(3), Instant.ofEpochMilli(getLong(4)))
+        SyncEntry(getText(0), getText(1).ifEmpty { null }, getText(2), if (isNull(3)) null else getText(3), Instant.fromEpochMilliseconds(getLong(4)))
 
     /** [profile]'s settings as the app wrote them, by name, those taken back left out. */
     fun profileSettings(profile: Long): Map<String, String> = synchronized(reader) {
@@ -2041,7 +2044,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         ).use {
             it.bindText(1, key)
             if (value == null) it.bindNull(2) else it.bindText(2, value)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         writerChanges() > 0
@@ -2062,7 +2065,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     fun household(key: String): Pair<String?, Instant>? = synchronized(reader) {
         reader.prepare("SELECT value, updated_at FROM household WHERE key = ?").use {
             it.bindText(1, key)
-            if (it.step()) (if (it.isNull(0)) null else it.getText(0)) to Instant.ofEpochMilli(it.getLong(1)) else null
+            if (it.step()) (if (it.isNull(0)) null else it.getText(0)) to Instant.fromEpochMilliseconds(it.getLong(1)) else null
         }
     }
 
@@ -2082,7 +2085,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT INTO household VALUES (?, ?, ?) $conflict").use {
             it.bindText(1, key)
             if (value == null) it.bindNull(2) else it.bindText(2, value)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         writerChanges() > 0
@@ -2105,7 +2108,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare(if (dropped) "INSERT OR REPLACE INTO not_this_game VALUES ($profile, ?, ?, ?)" else "DELETE FROM not_this_game WHERE profile = $profile AND game_key = ? AND channel_key = ?").use {
             it.bindText(1, gameKey)
             it.bindText(2, channelKey)
-            if (dropped) it.bindLong(3, at.toEpochMilli())
+            if (dropped) it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         Unit
@@ -2126,7 +2129,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         ).use {
             it.bindText(1, titleKey)
             it.bindText(2, body)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.step()
         }
         writerChanges() > 0
@@ -2164,7 +2167,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         if (change.duration == null) bindNull(5) else bindLong(5, change.duration)
         bindLong(6, if (change.watched) 1 else 0)
         bindLong(7, if (change.removed) 1 else 0)
-        bindLong(8, change.at.toEpochMilli())
+        bindLong(8, change.at.toEpochMilliseconds())
     }
 
     private fun SQLiteStatement.historyChange(): HistoryChange {
@@ -2176,7 +2179,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             if (isNull(4)) null else getLong(4),
             getLong(5) != 0L,
             getLong(6) != 0L,
-            Instant.ofEpochMilli(getLong(7)),
+            Instant.fromEpochMilliseconds(getLong(7)),
         )
     }
 
@@ -2254,7 +2257,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                         it.getLong(0),
                         StoredMovieDetails(
                             bitrate = if (it.isNull(1)) null else it.getLong(1),
-                            fetchedAt = Instant.ofEpochMilli(it.getLong(2)),
+                            fetchedAt = Instant.fromEpochMilliseconds(it.getLong(2)),
                             added = if (it.isNull(3)) null else it.getLong(3),
                             details = it.details(5).copy(runtimeMinutes = if (it.isNull(4)) null else it.getLong(4).toInt()),
                         ),
@@ -2272,7 +2275,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT OR REPLACE INTO movie_details (listing_id, bitrate, fetched_at, added, runtime, $DETAILS_COLUMN_NAMES) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").use { insert ->
             insert.bindLong(1, listingId)
             if (details.bitrate == null) insert.bindNull(2) else insert.bindLong(2, details.bitrate)
-            insert.bindLong(3, at.toEpochMilli())
+            insert.bindLong(3, at.toEpochMilliseconds())
             if (added == null) insert.bindNull(4) else insert.bindLong(4, added)
             val said = details.details
             if (said.runtimeMinutes == null) insert.bindNull(5) else insert.bindLong(5, said.runtimeMinutes.toLong())
@@ -2306,7 +2309,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 "UNION ALL SELECT title_key, MAX(updated_at) FROM episode_progress WHERE profile = $profile GROUP BY title_key ORDER BY 2 DESC LIMIT ?",
         ).use {
             it.bindLong(1, limit.toLong())
-            buildList { while (it.step()) add(titleId(it.getText(0)) to Instant.ofEpochMilli(it.getLong(1))) }
+            buildList { while (it.step()) add(titleId(it.getText(0)) to Instant.fromEpochMilliseconds(it.getLong(1))) }
         }
     }
 
@@ -2328,9 +2331,9 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.prepare("INSERT INTO profile (name, kids, created_at, used_at, uid, changed_at) VALUES (?, ?, ?, 0, ?, ?)").use {
             if (name == null) it.bindNull(1) else it.bindText(1, name)
             it.bindLong(2, if (kids) 1 else 0)
-            it.bindLong(3, at.toEpochMilli())
+            it.bindLong(3, at.toEpochMilliseconds())
             it.bindText(4, uid)
-            it.bindLong(5, at.toEpochMilli())
+            it.bindLong(5, at.toEpochMilliseconds())
             it.step()
         }
         writer.prepare("SELECT last_insert_rowid()").use { it.step(); it.getLong(0) }
@@ -2339,14 +2342,14 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     fun renameProfile(profile: Long, name: String?, at: Instant) = synchronized(writer) {
         writer.prepare("UPDATE profile SET name = ?, changed_at = ? WHERE id = $profile").use {
             if (name == null) it.bindNull(1) else it.bindText(1, name)
-            it.bindLong(2, at.toEpochMilli())
+            it.bindLong(2, at.toEpochMilliseconds())
             it.step()
         }
         Unit
     }
 
     fun setProfileKids(profile: Long, kids: Boolean, at: Instant) = synchronized(writer) {
-        writer.execSQL("UPDATE profile SET kids = ${if (kids) 1 else 0}, changed_at = ${at.toEpochMilli()} WHERE id = $profile")
+        writer.execSQL("UPDATE profile SET kids = ${if (kids) 1 else 0}, changed_at = ${at.toEpochMilliseconds()} WHERE id = $profile")
     }
 
     /** Gives [profile] the Account's id [uid], as signing in merges it into the Account's Profile of its name: what waits to sync for it follows. */
@@ -2369,7 +2372,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Records that the device is on [profile] from [at]: the one used last is the current one. */
     fun useProfile(profile: Long, at: Instant) = synchronized(writer) {
         // Never before the one used last, so a clock set back doesn't move the TV back to it.
-        writer.execSQL("UPDATE profile SET used_at = max(${at.toEpochMilli()}, (SELECT max(used_at) + 1 FROM profile)) WHERE id = $profile")
+        writer.execSQL("UPDATE profile SET used_at = max(${at.toEpochMilliseconds()}, (SELECT max(used_at) + 1 FROM profile)) WHERE id = $profile")
     }
 
     /** Deletes [profile] and everything kept for it, at once: its history, Favourites, "Not this game" marks and player choices. */
@@ -2388,7 +2391,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     override fun householdPin(): StoredPin? = synchronized(reader) {
         reader.prepare("SELECT hash, failures, locked_until, changed_at FROM household_pin").use {
             if (it.step()) {
-                StoredPin(it.getText(0), it.getLong(1).toInt(), if (it.isNull(2)) null else Instant.ofEpochMilli(it.getLong(2)), Instant.ofEpochMilli(it.getLong(3)))
+                StoredPin(it.getText(0), it.getLong(1).toInt(), if (it.isNull(2)) null else Instant.fromEpochMilliseconds(it.getLong(2)), Instant.fromEpochMilliseconds(it.getLong(3)))
             } else {
                 null
             }
@@ -2400,8 +2403,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             it.bindText(1, pin.hash)
             it.bindLong(2, pin.failures.toLong())
             val until = pin.lockedUntil
-            if (until == null) it.bindNull(3) else it.bindLong(3, until.toEpochMilli())
-            it.bindLong(4, pin.changedAt.toEpochMilli())
+            if (until == null) it.bindNull(3) else it.bindLong(3, until.toEpochMilliseconds())
+            it.bindLong(4, pin.changedAt.toEpochMilliseconds())
             it.step()
         }
         Unit

@@ -12,10 +12,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Clock
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * The Household PIN (#437): four digits that let a Viewer leave a Kids profile, kept on the device
@@ -30,10 +30,8 @@ class HouseholdPinTest {
 
     private fun openLibrary() = Library.open(path, credentials).also {
         libraries += it
-        (it.householdPin as KeptHouseholdPin).clock = object : Clock() {
-            override fun getZone() = ZoneOffset.UTC
-            override fun withZone(zone: java.time.ZoneId?) = this
-            override fun instant() = now
+        (it.householdPin as KeptHouseholdPin).clock = object : Clock {
+            override fun now() = now
         }
     }
 
@@ -67,14 +65,14 @@ class HouseholdPinTest {
         pin.set("2580")
         repeat(4) { assertEquals(PinCheck.Wrong(triesLeft = 4 - it), pin.check("0000")) }
 
-        val until = now + Duration.ofSeconds(30)
+        val until = now + 30.seconds
         assertEquals(PinCheck.Locked(until), pin.check("0000"))
-        assertEquals(Duration.ofSeconds(30), pin.lockedFor())
+        assertEquals(30.seconds, pin.lockedFor())
         // Locked, even the right PIN waits.
-        now += Duration.ofSeconds(29)
+        now += 29.seconds
         assertEquals(PinCheck.Locked(until), pin.check("2580"))
 
-        now += Duration.ofSeconds(1)
+        now += 1.seconds
         assertNull(pin.lockedFor())
         // Five tries again.
         assertEquals(PinCheck.Wrong(triesLeft = 4), pin.check("0000"))
@@ -98,7 +96,7 @@ class HouseholdPinTest {
         val reopened = openLibrary()
         assertTrue(reopened.householdPin.isSet.value)
         assertNotNull(reopened.householdPin.lockedFor())
-        now += Duration.ofSeconds(30)
+        now += 30.seconds
         assertEquals(PinCheck.Right, reopened.householdPin.check("2580"))
     }
 

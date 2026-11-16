@@ -11,9 +11,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.security.MessageDigest
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /**
  * Speaks the app's cloud API (cloud/src/index.ts). The device signs in with its own token, which
@@ -184,7 +185,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         val url = answer["url"] as? String
         val expiresIn = (answer["expiresIn"] as? Number)?.toLong()
         if (code == null || url == null || expiresIn == null || expiresIn <= 0) throw CloudException("The cloud sent a Sign-in code without its address or lifetime.")
-        return SignInCode(code, url, Duration.ofSeconds(expiresIn))
+        return SignInCode(code, url, expiresIn.seconds)
     }
 
     /** The email of the Account this device is signed in to, or null when it is signed in to none. */
@@ -210,10 +211,10 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
             "progress" to changes.map { (profile, it) ->
                 mapOf(
                     "profile" to profile, "title" to historyKey(it.id), "season" to it.episode?.season, "episode" to it.episode?.number, "position" to it.position,
-                    "duration" to it.duration, "watched" to it.watched, "removed" to it.removed, "at" to it.at.toEpochMilli(),
+                    "duration" to it.duration, "watched" to it.watched, "removed" to it.removed, "at" to it.at.toEpochMilliseconds(),
                 )
             },
-            "entries" to entries.map { mapOf("kind" to it.kind, "profile" to it.profile, "key" to it.key, "value" to it.value, "at" to it.at.toEpochMilli()) },
+            "entries" to entries.map { mapOf("kind" to it.kind, "profile" to it.profile, "key" to it.key, "value" to it.value, "at" to it.at.toEpochMilliseconds()) },
         )
         val answer = authorized { token -> post("v1/sync", json.serializeNulls().toJson(body), token) } as? Map<*, *>
             ?: throw CloudException("The cloud sent something other than an object.")
@@ -233,7 +234,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
                     (change["duration"] as? Number)?.toLong(),
                     change["watched"] == true,
                     change["removed"] == true,
-                    Instant.ofEpochMilli((change["at"] as? Number)?.toLong() ?: return@mapNotNull null),
+                    Instant.fromEpochMilliseconds((change["at"] as? Number)?.toLong() ?: return@mapNotNull null),
                 )
             },
             (answer["entries"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { entry ->
@@ -242,7 +243,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
                     entry["profile"] as? String,
                     entry["key"] as? String ?: return@mapNotNull null,
                     entry["value"] as? String,
-                    Instant.ofEpochMilli((entry["at"] as? Number)?.toLong() ?: return@mapNotNull null),
+                    Instant.fromEpochMilliseconds((entry["at"] as? Number)?.toLong() ?: return@mapNotNull null),
                 )
             },
         )
@@ -334,7 +335,7 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
         // A client with a call timeout shares the pool and dispatcher of the one it is built from.
-        val client = if (callTimeout == null) http else http.newBuilder().callTimeout(callTimeout).build()
+        val client = if (callTimeout == null) http else http.newBuilder().callTimeout(callTimeout.inWholeMilliseconds, java.util.concurrent.TimeUnit.MILLISECONDS).build()
         val sentAt = System.nanoTime()
         try {
             client.newCall(request).execute().use { response ->

@@ -9,8 +9,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.random.Random
 
 /**
@@ -94,7 +95,7 @@ class GenreRowsBenchmark {
             // As Background reading does about every 30 s: one more Movie's details kept, with a genre field.
             val listing = movieListings.random(random)
             val keeper = CatalogStore(path)
-            keeper.saveMovieDetails(listing, ProviderMovieDetails(null, ProviderDetails(genre = fields.random(random))), listing, Instant.now())
+            keeper.saveMovieDetails(listing, ProviderMovieDetails(null, ProviderDetails(genre = fields.random(random))), listing, Clock.System.now())
             keeper.close()
             time("Home after one more Movie's details (${round + 1})") { library.homeRows(listOf("en"), "en") }
         }
@@ -146,11 +147,11 @@ class GenreRowsBenchmark {
                 }
             },
             onFilled = {},
-            completed = { movies, shows, _ -> CompletedSync(Instant.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
+            completed = { movies, shows, _ -> CompletedSync(Clock.System.now(), Duration.ZERO, movies, emptyList(), showListingCount = shows) },
         )
         store.swapTitles()
         // As if Background reading had confirmed every Movie: its details kept with their genre field.
-        movieListings.forEach { store.saveMovieDetails(it, ProviderMovieDetails(null, ProviderDetails(genre = fields.random(random))), it, Instant.now()) }
+        movieListings.forEach { store.saveMovieDetails(it, ProviderMovieDetails(null, ProviderDetails(genre = fields.random(random))), it, Clock.System.now()) }
         return movieListings
     }
 }

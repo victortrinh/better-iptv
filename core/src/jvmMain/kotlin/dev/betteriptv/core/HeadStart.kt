@@ -1,7 +1,5 @@
 package dev.betteriptv.core
 
-import java.time.Year
-import java.util.Locale
 
 /**
  * Reads the Categories of one kind that a first Sync lands as its Head start (CONTEXT.md, ADR 0019),
@@ -24,7 +22,7 @@ internal fun readHeadStart(
     table: PrefixTable,
     categories: List<Pair<String, String>>,
     contentLanguages: List<String>,
-    year: Int = Year.now().value,
+    year: Int = thisYear(),
     read: (category: String) -> Int,
 ) {
     val eligible = categories.filter { (_, name) -> !table.isClutterCategory(name) && !table.isSportsReplayCategory(name) }
@@ -60,11 +58,10 @@ internal const val HEAD_START_FALLBACK_CATEGORIES = 3
 
 /** The words that say a Category is in [language] (a primary subtag): its name and its main country's, in English and in itself. */
 private fun languageWords(language: String): List<PrefixTable.WholeWord> {
-    val locale = Locale.forLanguageTag(language)
-    val country = languageCountries(language).firstOrNull()?.let { Locale.Builder().setRegion(it).build() }
-    return listOf(Locale.ENGLISH, locale)
-        .flatMap { into -> listOfNotNull(locale.getDisplayLanguage(into), country?.getDisplayCountry(into)) }
-        // A language the JDK can't name is given back as its code, which is no word of a Category.
+    val country = languageCountries(language).firstOrNull()
+    return listOf("en", language)
+        .flatMap { into -> listOfNotNull(displayLanguage(language, into), country?.let { displayCountry(it, into) }) }
+        // A language the platform can't name is given back as its code, which is no word of a Category.
         .filter { it.length > 3 }
         .map { PrefixTable.WholeWord(PrefixTable.fold(it)) }
 }

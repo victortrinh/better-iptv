@@ -4,8 +4,10 @@ import com.squareup.moshi.Moshi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -151,7 +153,7 @@ internal class AccountSync(
             }
             // On another Provider, the Provider's own data is another: everything is pulled again.
             if (state.provider != provider) state = state.copy(cursor = 0, provider = provider).also(store::saveSyncState)
-            store.forgetTombstones(Instant.now() - TOMBSTONES_KEPT_FOR)
+            store.forgetTombstones(Clock.System.now() - TOMBSTONES_KEPT_FOR)
             do {
                 val profiles = store.profiles()
                 val progress = ArrayList<Pair<StoredProfile, HistoryChange>>()
@@ -218,7 +220,7 @@ internal class AccountSync(
             return false
         }
         _choice.value = null
-        val now = Instant.now()
+        val now = Clock.System.now()
         for (local in locals) {
             val uid = matched[local.id]
             if ((uid ?: local.uid) in dropping) {
@@ -249,7 +251,7 @@ internal class AccountSync(
 
     /** Queues all of the device's data, as signing in merges it into the Account. */
     private fun queueAll(provider: String?) {
-        fun at(millis: Long) = Instant.ofEpochMilli(maxOf(millis, 1))
+        fun at(millis: Long) = Instant.fromEpochMilliseconds(maxOf(millis, 1))
         for (profile in store.profiles()) {
             val uid = profile.uid
             store.queueEntry(SyncEntry(SyncEntry.PROFILE, uid, "", profileValue(profile.name, profile.kids), at(profile.changedAt)), "")
@@ -339,12 +341,12 @@ internal class AccountSync(
         val (name, kids) = readProfileValue(value) ?: return false
         // Renamed or deleted here since: this TV's change is the later, and goes to the Account.
         val queued = store.queuedEntryAt(SyncEntry.PROFILE, uid, "")
-        if (queued != null && !entry.at.isAfter(queued)) return false
+        if (queued != null && entry.at <= queued) return false
         if (local == null) {
             store.addProfile(name, kids, entry.at, uid)
             return true
         }
-        if (entry.at.toEpochMilli() <= local.changedAt) return false
+        if (entry.at.toEpochMilliseconds() <= local.changedAt) return false
         if (name != local.name) store.renameProfile(local.id, name, entry.at)
         if (kids != local.kids) store.setProfileKids(local.id, kids, entry.at)
         return name != local.name || kids != local.kids
@@ -354,7 +356,7 @@ internal class AccountSync(
 
     private fun landEntry(entry: SyncEntry, byUid: Map<String, Long>): LandedAs {
         val queued = store.queuedEntryAt(entry.kind, entry.profile, entry.key)
-        if (queued != null && !entry.at.isAfter(queued)) return LandedAs.Nothing
+        if (queued != null && entry.at <= queued) return LandedAs.Nothing
         if (entry.kind == SyncEntry.HOUSEHOLD) {
             return when (entry.key) {
                 SyncEntry.REGION -> if (store.saveHousehold(SyncEntry.REGION, entry.value, entry.at, onlyIfLater = true)) LandedAs.Household else LandedAs.Nothing
@@ -419,7 +421,7 @@ internal class AccountSync(
             store.forgetSyncState()
             return false
         }
-        store.forgetAccountData(Instant.now())
+        store.forgetAccountData(Clock.System.now())
         pin.forget()
         return true
     }
@@ -431,7 +433,7 @@ internal class AccountSync(
 
     private companion object {
         /** The cloud keeps a removal as long (cloud/src/sync.ts). */
-        val TOMBSTONES_KEPT_FOR: Duration = Duration.ofDays(30)
+        val TOMBSTONES_KEPT_FOR: Duration = 30.days
         const val CLOSE_WAIT_SECONDS = 5L
         /** A Favourite's or a mark's value. */
         const val ON = "1"

@@ -9,13 +9,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** What the tab bar's pill says while the catalog on screen may still change (#304). */
 class CatalogActivityTest {
-    private val now = Instant.now()
-    private val synced = CompletedSync(now, Duration.ofSeconds(1), 150, emptyList())
+    private val now = Clock.System.now()
+    private val synced = CompletedSync(now, 1.seconds, 150, emptyList())
 
     @Test fun `nothing shows while the first Sync's checklist does`() {
         assertNull(catalogActivity(SyncStatus.NeverSynced()))

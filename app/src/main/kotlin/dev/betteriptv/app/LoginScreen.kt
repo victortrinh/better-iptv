@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlin.time.toJavaInstant
 
 /** Takes the Provider login with the remote and the on-screen keyboard. */
 @Composable
@@ -120,7 +121,7 @@ fun LoginScreen(library: Library, onLoggedIn: () -> Unit) {
 
 fun Context.describe(problem: ProviderProblem): String = when (problem) {
     WrongLogin -> getString(R.string.login_wrong)
-    is Expired -> problem.expiredOn?.let { getString(R.string.login_expired_on, longDate.format(it)) }
+    is Expired -> problem.expiredOn?.let { getString(R.string.login_expired_on, longDate.format(it.toJavaInstant())) }
         ?: getString(R.string.login_expired)
     is Unreachable -> getString(R.string.provider_unreachable, problem.detail)
 }

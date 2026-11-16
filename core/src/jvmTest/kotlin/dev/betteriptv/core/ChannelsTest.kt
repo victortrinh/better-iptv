@@ -14,9 +14,13 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.time.Duration
-import java.time.Instant
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Clock
+import kotlin.time.Instant
 import java.time.format.DateTimeFormatter
+import kotlin.time.toJavaInstant
+import kotlinx.datetime.toJavaZoneId
 
 /**
  * Live Channels through the Library: Clutter hidden at Sync, search, Favourites on the home screen,
@@ -56,13 +60,13 @@ class ChannelsTest {
     private suspend fun favouritesRow() = library.homeRows(english, "en").filterIsInstance<HomeRow.Favourites>().singleOrNull()?.channels?.map { it.key }
 
     /** How a Provider names the start of a Game [ago] before now, in its `(2026-10-29 18:00:30)` style, in its zone (the Prefix table's event time zone). */
-    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Instant.now() - ago).atZone(surveyedPrefixTable().eventTimeZone))
+    private fun startedAgo(ago: Duration) = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format((Clock.System.now() - ago).toJavaInstant().atZone(surveyedPrefixTable().eventTimeZone.toJavaZoneId()))
 
     // Clutter
 
     @Test fun `separator rows, empty and finished Event slots, and radio are hidden`() = runBlocking {
-        val onNow = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(5))})"
-        val later = "Arena: Bills vs Chiefs (${startedAgo(Duration.ofHours(-20))})"
+        val onNow = "Arena: Jets vs Oilers (${startedAgo(5.hours)})"
+        val later = "Arena: Bills vs Chiefs (${startedAgo((-20).hours)})"
         val next = "Next | Arena: Leafs vs Habs | 2026-01-02 | 01:00 (GMT)"
         provider.serveChannels(
             "####### ARENA PPV #######" to "US| ARENA PPV",
@@ -70,7 +74,7 @@ class ChannelsTest {
             "US (Arena 526) |  (2098-12-31 08:00:34)" to "US| ARENA PPV",
             "End | Arena: Rockets vs. Spurs | 2026-10-20 | 01:00 (GMT)" to "US| ARENA PPV",
             "Arena: Rockets vs. Spurs ENDED" to "US| ARENA PPV",
-            "Arena: Lakers vs Celtics (${startedAgo(Duration.ofHours(7))})" to "US| ARENA PPV",
+            "Arena: Lakers vs Celtics (${startedAgo(7.hours)})" to "US| ARENA PPV",
             onNow to "US| ARENA PPV",
             later to "US| ARENA PPV",
             next to "US| ARENA PPV",
@@ -96,7 +100,7 @@ class ChannelsTest {
     }
 
     @Test fun `empty Event slots are Clutter in every spelling the survey shows`() = runBlocking {
-        val onNow = "Matchroom Event 1 | Taylor vs Catterall (${startedAgo(Duration.ofHours(1))})"
+        val onNow = "Matchroom Event 1 | Taylor vs Catterall (${startedAgo(1.hours)})"
         provider.serveChannels(
             "RFEF EVENTO 3 | No event" to "ES| RFEF PPV",
             "MOTOGP EVENTO 1 | No event" to "ES| MOTOGP PPV",
@@ -154,7 +158,7 @@ class ChannelsTest {
     }
 
     @Test fun `a live Category is regular, Clutter, or an Event Category when most of its Listings are Events or empty slots`() = runBlocking {
-        val onNow = "Arena: Jets vs Oilers (${startedAgo(Duration.ofHours(1))})"
+        val onNow = "Arena: Jets vs Oilers (${startedAgo(1.hours)})"
         provider.serveChannels(
             // Regular: Channels, with the odd radio station among them.
             "UK: BBC ONE" to "UK| GENERAL",

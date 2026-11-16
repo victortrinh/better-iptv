@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * What a Title is comes from the Provider (#473, ADR 0014), seen through the Library over the fake
@@ -161,7 +162,7 @@ class ProviderDetailsTest {
         syncHeat()
         serveHeatDetails()
         provider.movieDetailsDelayMillis = 1_500
-        library.providerDetailsWait = java.time.Duration.ofMillis(200)
+        library.providerDetailsWait = 200.milliseconds
 
         val asked = System.nanoTime()
         val opened = page(heat)

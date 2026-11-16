@@ -12,6 +12,9 @@ plugins {
 // check a file belongs in commonMain, add a second target for a moment (macosArm64() below jvm) and
 // run ./gradlew :core:compileCommonMainKotlinMetadata.
 kotlin {
+    // kotlin.time's Instant and Clock, the Core's timestamps since #578, are still marked experimental
+    // in Kotlin 2.2 (stable from 2.3).
+    compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
     jvm {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
         // The app runs this code on Fire OS 7 (Android 9), whose Java library is about Java 8's: a JDK 9+
@@ -30,6 +33,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(libs.coroutines.core)
+            // In the Core's own signatures (a Replay's date, a zone for the Live rows), so the app sees it.
+            api(libs.datetime)
         }
         jvmMain.dependencies {
             implementation(libs.okhttp)

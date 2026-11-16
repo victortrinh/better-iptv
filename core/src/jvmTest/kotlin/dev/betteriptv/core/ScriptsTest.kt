@@ -5,15 +5,22 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.lang.Character.UnicodeScript
 
 /** What a text's letters say of its language, where the Prefix is wrong ([Scripts]). */
 class ScriptsTest {
     @Test fun `a text is in the script most of its letters are in`() {
-        assertEquals(UnicodeScript.LATIN, Scripts.of("Deux amies échouent."))
-        assertEquals(UnicodeScript.GREEK, Scripts.of("Δύο φίλες ναυαγούν στο Aegean."))
-        assertEquals(UnicodeScript.LATIN, Scripts.of("The Godfather الأب"))
+        assertEquals(Script.LATIN, Scripts.of("Deux amies échouent."))
+        assertEquals(Script.GREEK, Scripts.of("Δύο φίλες ναυαγούν στο Aegean."))
+        assertEquals(Script.LATIN, Scripts.of("The Godfather الأب"))
         assertNull(Scripts.of("1917 (2019)"))
+    }
+
+    @Test fun `the scripts the Core tells apart carry the names the platform gives them`() {
+        val names = Script::class.java.declaredFields.filter { it.type == String::class.java }.map { it.get(null) as String }
+        assertEquals(24, names.size)
+        names.forEach { assertEquals(it, Character.UnicodeScript.valueOf(it).name) }
+        assertEquals(Script.CYRILLIC, scriptOf('ж'.code))
+        assertEquals(Script.HAN, scriptOf(0x20000))
     }
 
     @Test fun `a Viewer reads their App language's script and Latin letters`() {

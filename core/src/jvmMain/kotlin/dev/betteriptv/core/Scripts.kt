@@ -1,7 +1,5 @@
 package dev.betteriptv.core
 
-import java.lang.Character.UnicodeScript
-
 /**
  * What a text's letters say of the language it is written in, for when the Prefix says otherwise:
  * a Provider files Greek plots under `EN` Listings and names `EN` Listings in Greek, and no table
@@ -18,55 +16,55 @@ internal object Scripts {
     const val UNDETERMINED = "und"
 
     /** The scripts the languages that aren't written in Latin letters are written in, by primary subtag. */
-    private val OF_LANGUAGE: Map<String, Set<UnicodeScript>> = buildMap {
-        fun put(script: UnicodeScript, vararg languages: String) = languages.forEach { put(it, setOf(script)) }
-        put(UnicodeScript.GREEK, "el")
-        put(UnicodeScript.CYRILLIC, "ru", "uk", "bg", "mk", "be", "kk", "ky", "mn", "tg")
-        put(UnicodeScript.ARABIC, "ar", "fa", "ur", "ps", "ckb")
-        put(UnicodeScript.HEBREW, "he", "iw", "yi")
-        put(UnicodeScript.DEVANAGARI, "hi", "mr", "ne")
-        put(UnicodeScript.BENGALI, "bn", "as")
-        put(UnicodeScript.GURMUKHI, "pa")
-        put(UnicodeScript.GUJARATI, "gu")
-        put(UnicodeScript.TAMIL, "ta")
-        put(UnicodeScript.TELUGU, "te")
-        put(UnicodeScript.KANNADA, "kn")
-        put(UnicodeScript.MALAYALAM, "ml")
-        put(UnicodeScript.SINHALA, "si")
-        put(UnicodeScript.THAI, "th")
-        put(UnicodeScript.KHMER, "km")
-        put(UnicodeScript.MYANMAR, "my")
-        put(UnicodeScript.ARMENIAN, "hy")
-        put(UnicodeScript.GEORGIAN, "ka")
-        put(UnicodeScript.ETHIOPIC, "am", "ti")
-        put(UnicodeScript.HANGUL, "ko")
-        put(UnicodeScript.HAN, "zh")
-        put("ja", setOf(UnicodeScript.HAN, UnicodeScript.HIRAGANA, UnicodeScript.KATAKANA))
+    private val OF_LANGUAGE: Map<String, Set<String>> = buildMap {
+        fun put(script: String, vararg languages: String) = languages.forEach { put(it, setOf(script)) }
+        put(Script.GREEK, "el")
+        put(Script.CYRILLIC, "ru", "uk", "bg", "mk", "be", "kk", "ky", "mn", "tg")
+        put(Script.ARABIC, "ar", "fa", "ur", "ps", "ckb")
+        put(Script.HEBREW, "he", "iw", "yi")
+        put(Script.DEVANAGARI, "hi", "mr", "ne")
+        put(Script.BENGALI, "bn", "as")
+        put(Script.GURMUKHI, "pa")
+        put(Script.GUJARATI, "gu")
+        put(Script.TAMIL, "ta")
+        put(Script.TELUGU, "te")
+        put(Script.KANNADA, "kn")
+        put(Script.MALAYALAM, "ml")
+        put(Script.SINHALA, "si")
+        put(Script.THAI, "th")
+        put(Script.KHMER, "km")
+        put(Script.MYANMAR, "my")
+        put(Script.ARMENIAN, "hy")
+        put(Script.GEORGIAN, "ka")
+        put(Script.ETHIOPIC, "am", "ti")
+        put(Script.HANGUL, "ko")
+        put(Script.HAN, "zh")
+        put("ja", setOf(Script.HAN, Script.HIRAGANA, Script.KATAKANA))
         // Written in either.
-        listOf("sr", "bs", "uz", "az").forEach { put(it, setOf(UnicodeScript.CYRILLIC, UnicodeScript.LATIN)) }
-        put("ku", setOf(UnicodeScript.ARABIC, UnicodeScript.LATIN))
+        listOf("sr", "bs", "uz", "az").forEach { put(it, setOf(Script.CYRILLIC, Script.LATIN)) }
+        put("ku", setOf(Script.ARABIC, Script.LATIN))
     }
 
     /** The one language a script is written for, where there is one the catalog carries. */
-    private val ONLY_LANGUAGE: Map<UnicodeScript, String> = mapOf(
-        UnicodeScript.GREEK to "el", UnicodeScript.HEBREW to "he", UnicodeScript.HANGUL to "ko", UnicodeScript.THAI to "th",
-        UnicodeScript.HIRAGANA to "ja", UnicodeScript.KATAKANA to "ja", UnicodeScript.ARMENIAN to "hy", UnicodeScript.GEORGIAN to "ka",
-        UnicodeScript.TAMIL to "ta", UnicodeScript.TELUGU to "te", UnicodeScript.KANNADA to "kn", UnicodeScript.MALAYALAM to "ml",
-        UnicodeScript.GUJARATI to "gu", UnicodeScript.GURMUKHI to "pa", UnicodeScript.SINHALA to "si", UnicodeScript.KHMER to "km",
+    private val ONLY_LANGUAGE: Map<String, String> = mapOf(
+        Script.GREEK to "el", Script.HEBREW to "he", Script.HANGUL to "ko", Script.THAI to "th",
+        Script.HIRAGANA to "ja", Script.KATAKANA to "ja", Script.ARMENIAN to "hy", Script.GEORGIAN to "ka",
+        Script.TAMIL to "ta", Script.TELUGU to "te", Script.KANNADA to "kn", Script.MALAYALAM to "ml",
+        Script.GUJARATI to "gu", Script.GURMUKHI to "pa", Script.SINHALA to "si", Script.KHMER to "km",
     )
 
-    private val LATIN = setOf(UnicodeScript.LATIN)
+    private val LATIN = setOf(Script.LATIN)
 
     /** The scripts [language] (a primary subtag) is written in: Latin unless listed otherwise. */
-    private fun of(language: String): Set<UnicodeScript> = OF_LANGUAGE[language] ?: LATIN
+    private fun of(language: String): Set<String> = OF_LANGUAGE[language] ?: LATIN
 
     /**
-     * The script most of [text]'s first letters are in, null when it has no letter. Most names and
+     * The script ([scriptOf]'s name for it) most of [text]'s first letters are in, null when it has no letter. Most names and
      * plots are Latin through and through, and those cost one pass and no lookup.
      */
-    fun of(text: CharSequence): UnicodeScript? {
+    fun of(text: CharSequence): String? {
         var latin = 0
-        var counts: HashMap<UnicodeScript, Int>? = null
+        var counts: HashMap<String, Int>? = null
         var seen = 0
         var i = 0
         while (i < text.length && seen < SAMPLE) {
@@ -76,16 +74,16 @@ internal object Scripts {
                 i++
                 continue
             }
-            val point = Character.codePointAt(text, i)
-            i += Character.charCount(point)
-            if (!Character.isLetter(point)) continue
-            val script = UnicodeScript.of(point)
-            if (script == UnicodeScript.LATIN) latin++ else (counts ?: HashMap<UnicodeScript, Int>().also { counts = it }).merge(script, 1, Int::plus)
+            val point = codePointAt(text, i)
+            i += charCount(point)
+            if (!isLetter(point)) continue
+            val script = scriptOf(point)
+            if (script == Script.LATIN) latin++ else (counts ?: HashMap<String, Int>().also { counts = it }).let { it[script] = (it[script] ?: 0) + 1 }
             seen++
         }
         if (seen == 0) return null
-        val other = counts?.maxByOrNull { it.value } ?: return UnicodeScript.LATIN
-        return if (other.value > latin) other.key else UnicodeScript.LATIN
+        val other = counts?.maxByOrNull { it.value } ?: return Script.LATIN
+        return if (other.value > latin) other.key else Script.LATIN
     }
 
     /**
@@ -94,7 +92,7 @@ internal object Scripts {
      */
     fun reads(appLanguage: String, text: CharSequence?): Boolean {
         val script = text?.let(::of) ?: return false
-        return script == UnicodeScript.LATIN || script in of(primaryLanguage(appLanguage))
+        return script == Script.LATIN || script in of(primaryLanguage(appLanguage))
     }
 
     /**
@@ -107,7 +105,7 @@ internal object Scripts {
     fun written(listed: String?, vararg texts: () -> CharSequence?): String? {
         for (text in texts) {
             val script = text()?.let(::of) ?: continue
-            if (script == UnicodeScript.LATIN) continue
+            if (script == Script.LATIN) continue
             if (listed != null && script in of(listed)) return listed
             return ONLY_LANGUAGE[script] ?: UNDETERMINED
         }
