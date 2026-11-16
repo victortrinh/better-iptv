@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.BackdropScrims
 import dev.betteriptv.app.ui.components.PrimaryAction
@@ -50,11 +51,12 @@ import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.Channel
 import dev.betteriptv.core.DeviceProfile
 import dev.betteriptv.core.Feed
-import dev.betteriptv.core.Game
+import dev.betteriptv.core.FeedGroup
 import dev.betteriptv.core.GameFeeds
+import dev.betteriptv.core.GamePage
+import dev.betteriptv.core.GamePageContent
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.PlayPlan
-import dev.betteriptv.core.Replay
 import dev.betteriptv.core.Version
 import dev.betteriptv.core.VersionAttributes
 import kotlinx.coroutines.Dispatchers
@@ -62,44 +64,62 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * A Game's page, built from the Title page's parts: a header naming the League, both teams and
- * "Live" or the start time, Play with the best Feed named under it, then every Feed grouped by
- * language, the Viewer's Content languages first, each Feed a heading naming its Event channel,
- * Broadcaster or League network by its service and broadcast ([feedName]), with its variants listed
- * under it as a Channel's Versions are, best first for this stick and TV ([deviceProfile], read when
- * the screen opens), or as one row when it has one variant; the Feeds marked "Not
- * this game" on this device come last, in a group of their own, each marked. Play starts the best
- * Feed's play plan ([planFor]: [Library.channelPlayPlan], its variants as Backups); choosing a
- * variant row starts the Feed from that variant; either way [onPlay] gets the plan, the Game's name
- * and the Feed, so the player's menu key can list the others. With no Feed, or none left, Play is
- * disabled and says "No stream found". The Game's state is the schedule's: the page never reads a
- * clock off an Event channel's name, and never shows a score. Behind it, the teams' colours fill the
- * screen, away left and home right ([TeamField]), under the [BackdropScrims]; a Game without them
- * keeps the bare ground.
- * A finished Game's Replay ([replayFor]: [Library.gameReplay], the Sports replay naming both teams on
- * the Game's day, for a Game that is over), once the Provider has one, shows under the header as a
- * "Replay" row: its name, its date and its Version ([replayPlanFor]: [Library.replayPlayPlan]), which
- * pressing it plays through [onPlayReplay] with the Game's name (a Replay is no Feed).
+ * A Game's page, drawn from the Core's content for it ([GamePage], [Library.screen]): until the Core
+ * answers, the page shows the [entry] its card had, which is the same content as of the card's
+ * reading; from then on it shows what the Core hands over, so a Feed marked "Not this game" or a
+ * Replay the Provider now has shows without the page asking again. [onPlay] also gets the Game with
+ * its Feeds as the page lists them, for the player's Feed list.
  */
 @Composable
 fun GameScreen(
+    library: Library,
     entry: GameFeeds,
+    contentLanguages: List<String>,
+    region: String,
+    deviceProfile: () -> DeviceProfile,
+    planFor: (Channel, DeviceProfile) -> PlayPlan,
+    onPlay: (PlayPlan, String, GameFeeds, Feed) -> Unit,
+    onPlayReplay: (PlayPlan, String) -> Unit,
+) {
+    val contents = remember(library, entry, contentLanguages, region) { library.screen(GamePage(entry.game, contentLanguages, region)) }
+    val content by contents.collectAsStateWithLifecycle(GamePageContent(entry))
+    GameScreen(content, deviceProfile, planFor, onPlay = { plan, name, feed -> onPlay(plan, name, content.entry, feed) }, onPlayReplay)
+}
+
+/**
+ * A Game's page, built from the Title page's parts and drawn from its [content], which the Core
+ * hands over finished ([GamePageContent]): a header naming the League, both teams and "Live" or the
+ * start time, Play with the best Feed named under it, then every Feed in the content's groups, in
+ * its order: a group per language, then the Feeds marked "Not this game" in this Profile, each
+ * marked. A Feed is a heading naming its Event channel, Broadcaster or League network by its service
+ * and broadcast ([feedName], the content's [dev.betteriptv.core.Feed.label] in the App language),
+ * with its variants listed under it as a Channel's Versions are, best first for this stick and TV
+ * ([deviceProfile], read when the screen opens), or as one row when it has one variant. The page
+ * orders and groups no Feed itself. Play starts the best Feed's play plan ([planFor]:
+ * [Library.channelPlayPlan], its variants as Backups); choosing a variant row starts the Feed from
+ * that variant; either way [onPlay] gets the plan, the Game's name and the Feed, so the player's menu
+ * key can list the others. With no Feed, or none left, Play is disabled and says "No stream found".
+ * The Game's state is the schedule's: the page never reads a clock off an Event channel's name, and
+ * never shows a score. Behind it, the teams' colours fill the screen, away left and home right
+ * ([TeamField]), under the [BackdropScrims]; a Game without them keeps the bare ground.
+ * A finished Game's Replay ([GamePageContent.replay]), once the Provider has one, shows under the
+ * header as a "Replay" row: its name, its date and its Version, which pressing it plays through
+ * [onPlayReplay] with the Game's name (a Replay is no Feed).
+ */
+@Composable
+fun GameScreen(
+    content: GamePageContent,
     deviceProfile: () -> DeviceProfile,
     planFor: (Channel, DeviceProfile) -> PlayPlan,
     onPlay: (PlayPlan, String, Feed) -> Unit,
-    replayFor: suspend (Game) -> Replay? = { null },
-    replayPlanFor: suspend (Replay) -> PlayPlan? = { null },
     onPlayReplay: (PlayPlan, String) -> Unit = { _, _ -> },
 ) {
+    val entry = content.entry
     val context = LocalContext.current
     // Each Feed's plan, so its rows list its variants in the order watching tries them.
     val plans by produceState<Map<String, PlayPlan>?>(null, entry) {
         val device = withContext(Dispatchers.Default) { deviceProfile() }
         value = withContext(Dispatchers.Default) { entry.feeds.associate { it.channel.key to planFor(it.channel, device) } }
-    }
-    // The Game's Replay with what playing it starts, once the catalog has one.
-    val replay by produceState<Pair<Replay, PlayPlan>?>(null, entry) {
-        value = withContext(Dispatchers.Default) { replayFor(entry.game)?.let { replay -> replayPlanFor(replay)?.let { replay to it } } }
     }
     val scope = rememberCoroutineScope()
     val name = remember(entry) { context.matchup(entry.game) }
@@ -118,22 +138,23 @@ fun GameScreen(
             TeamField(awayTint, homeTint, Modifier.fillMaxSize())
             BackdropScrims()
         }
-        GameContent(entry, plans, replay, onPlay = { play(it, null) }, onChoose = play, onPlayReplay = { plan -> onPlayReplay(plan, name) })
+        GameContent(content, plans, onPlay = { play(it, null) }, onChoose = play, onPlayReplay = { plan -> onPlayReplay(plan, name) })
     }
 }
 
 @Composable
 private fun GameContent(
-    entry: GameFeeds,
+    content: GamePageContent,
     plans: Map<String, PlayPlan>?,
-    replay: Pair<Replay, PlayPlan>?,
     onPlay: (Feed) -> Unit,
     onChoose: (Feed, Version) -> Unit,
     onPlayReplay: (PlayPlan) -> Unit,
 ) {
     val context = LocalContext.current
-    val game = entry.game
-    val best = entry.best
+    val entry = content.entry
+    val game = content.game
+    val best = content.best
+    val replay = content.replay
     val playFocus = remember { FocusRequester() }
     // Play takes first focus, once the list has laid it out; with no Feed to start it is disabled and still takes it, so the Viewer sees why.
     LaunchedEffect(entry.key) {
@@ -144,9 +165,6 @@ private fun GameContent(
     val away = rememberArtwork(fighters?.first()?.headshot ?: game.away?.logo)
     val home = rememberArtwork(fighters?.last()?.headshot ?: game.home?.logo)
     val leagueLogo = rememberArtwork(game.event?.logo)
-    // The Feeds by language, as ranked; the dropped ones after every language, as one group.
-    val groups = remember(entry) { entry.feeds.filter { !it.dropped }.groupBy { it.language } }
-    val dropped = remember(entry) { entry.feeds.filter { it.dropped } }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = Spacing.screenX, vertical = Spacing.screenY),
@@ -212,12 +230,16 @@ private fun GameContent(
                 VersionRow(context.versionLine(plan.version), onClick = { onPlayReplay(plan) }, modifier = Modifier.padding(bottom = Spacing.m).testTag("replay"))
             }
         }
-        if (entry.feeds.isNotEmpty()) {
+        if (content.groups.isNotEmpty()) {
             item { Text(stringResource(R.string.feeds_title), style = Type.headline, color = Colors.ink, modifier = Modifier.padding(bottom = 6.dp)) }
-            groups.entries.forEachIndexed { index, (language, feeds) ->
-                feedGroup(context, language?.let(::languageName) ?: context.getString(R.string.language_untagged), "language $language", feeds, plans, first = index == 0, onChoose)
+            // The Core's groups, in its order; the page words each one's heading.
+            content.groups.forEachIndexed { index, group ->
+                val (heading, key) = when (group) {
+                    is FeedGroup.Language -> (group.language?.let(::languageName) ?: context.getString(R.string.language_untagged)) to "language ${group.language}"
+                    is FeedGroup.NotThisGame -> context.getString(R.string.feed_not_this_game) to "dropped"
+                }
+                feedGroup(context, heading, key, group.feeds, plans, first = index == 0, onChoose)
             }
-            if (dropped.isNotEmpty()) feedGroup(context, context.getString(R.string.feed_not_this_game), "dropped", dropped, plans, first = groups.isEmpty(), onChoose)
         }
     }
 }
