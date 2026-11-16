@@ -13,6 +13,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     SearchTest::class,
+    SearchScreenTest::class,
     KidsCatalogTest::class,
     ChannelsTest::class,
     ChannelVariantsTest::class,

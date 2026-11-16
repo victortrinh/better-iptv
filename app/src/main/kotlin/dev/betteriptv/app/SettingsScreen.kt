@@ -55,9 +55,13 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.BackgroundReading
+import dev.betteriptv.core.ContentLanguagesContent
+import dev.betteriptv.core.ContentLanguagesScreen
 import dev.betteriptv.core.HouseholdPin
 import dev.betteriptv.core.Library
+import dev.betteriptv.core.ListedProfile
 import dev.betteriptv.core.Profiles
+import dev.betteriptv.core.ProfilesContent
 import dev.betteriptv.core.QualityCap
 import dev.betteriptv.core.SyncStatus
 import dev.betteriptv.core.TextSize
@@ -68,6 +72,7 @@ import java.text.Collator
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration
@@ -113,7 +118,7 @@ fun SettingsScreen(
     pin = library.householdPin,
     addProfile = addProfile,
     onAddProfileShown = onAddProfileShown,
-    catalogLanguages = library::catalogLanguages,
+    contentLanguages = { chosen -> library.screen(ContentLanguagesScreen(chosen)) },
     catalog = {
         item { SyncRow(library, onSyncNow) }
     },
@@ -124,7 +129,7 @@ fun SettingsScreen(
 )
 
 /**
- * [SettingsScreen] without the library: the catalog's languages come from [catalogLanguages], and
+ * [SettingsScreen] without the library: the Content languages list comes from [contentLanguages], and
  * the Catalog section's rows from [catalog], the Account section's rows from [account] and what they
  * open (the Sign-in screen, Sign out, the device list) from [accountPage].
  */
@@ -139,7 +144,7 @@ internal fun SettingsContent(
     profiles: Profiles,
     onProfile: (ProfileChange) -> Unit,
     pin: HouseholdPin,
-    catalogLanguages: suspend () -> List<String>,
+    contentLanguages: (chosen: List<String>) -> Flow<ContentLanguagesContent>,
     catalog: LazyListScope.() -> Unit,
     account: @Composable (open: (AccountPage) -> Unit, accountRow: Modifier, devicesRow: Modifier) -> Unit = { _, _, _ -> },
     accountPage: @Composable (page: AccountPage, onDone: () -> Unit) -> Unit = { _, _ -> },
@@ -157,6 +162,8 @@ internal fun SettingsContent(
     val addProfileRow = remember { FocusRequester() }
     val changePinRow = remember { FocusRequester() }
     val picked = profiles.all.find { it.id == profileId }
+    // The Profiles' rows, and what each opens, as the Core lists them for the Profiles this screen is handed.
+    val profilesList = remember(profiles) { ProfilesContent.of(profiles) }
     val pinSet by pin.isSet.collectAsStateWithLifecycle()
     // The name of the first Kids profile, kept while its Household PIN is chosen (#437): it is added once there is one.
     var kidsName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -193,7 +200,7 @@ internal fun SettingsContent(
         Box(Modifier.weight(1f).fillMaxWidth()) { when (picking) {
             Picker.ContentLanguages -> {
                 BackHandler { picking = null }
-                ContentLanguagesList(catalogLanguages, settings.contentLanguages, onChange = { languages -> onChange { it.copy(contentLanguages = languages) } })
+                ContentLanguagesList(contentLanguages, settings.contentLanguages, onChange = { languages -> onChange { it.copy(contentLanguages = languages) } })
             }
             Picker.Region -> {
                 BackHandler { picking = null }
@@ -322,21 +329,20 @@ internal fun SettingsContent(
                 modifier = Modifier.width(SETTINGS_WIDTH),
             ) {
                 profilesSection(
-                    profiles,
+                    profilesList,
                     rows = profileRow,
                     addRow = addProfileRow,
-                    onOpen = { profile ->
-                        if (kids) {
+                    onOpen = { listed ->
+                        val opened = when (listed.opens) {
+                            ListedProfile.Opens.Page -> Picker.Profile
                             // A Kids profile switches, and nothing more, once the Household PIN is typed.
-                            if (profile.id != profiles.currentId) {
-                                profileId = profile.id
-                                returnTo = Picker.SwitchPin
-                                picking = Picker.SwitchPin
-                            }
-                        } else {
-                            profileId = profile.id
-                            returnTo = Picker.Profile
-                            picking = Picker.Profile
+                            ListedProfile.Opens.SwitchWithPin -> Picker.SwitchPin
+                            null -> null
+                        }
+                        if (opened != null) {
+                            profileId = listed.profile.id
+                            returnTo = opened
+                            picking = opened
                         }
                     },
                     onAdd = {
@@ -344,7 +350,6 @@ internal fun SettingsContent(
                         returnTo = Picker.ProfileName
                         picking = Picker.ProfileName
                     },
-                    canAdd = !kids,
                 )
                 // Outside a Kids profile, once the household has a PIN.
                 if (!kids && pinSet) {
@@ -603,15 +608,17 @@ private enum class Picker {
 }
 
 /**
- * The catalog's languages to turn on and off as Content languages, the chosen ones first in the
- * order they were chosen: the first one the Title has is the one Play picks. The last one can't be
- * turned off.
+ * The catalog's languages to turn on and off as Content languages, in the Core's order
+ * ([ContentLanguagesContent]): the chosen ones first in the order they were chosen (the first one
+ * the Title has is the one Play picks). The last one can't be turned off.
  */
 @Composable
-private fun ContentLanguagesList(catalogLanguages: suspend () -> List<String>, chosen: List<String>, onChange: (List<String>) -> Unit) {
-    val catalog by produceState(emptyList<String>()) { value = catalogLanguages() }
-    // Kept from opening, so a language turned off doesn't jump away from under focus.
-    val order = remember(catalog) { (chosen + catalog).distinct() }
+private fun ContentLanguagesList(contentLanguages: (chosen: List<String>) -> Flow<ContentLanguagesContent>, chosen: List<String>, onChange: (List<String>) -> Unit) {
+    // Asked for with the languages chosen on opening, so one turned off doesn't jump away from under focus.
+    val opened = remember { chosen }
+    val content by remember { contentLanguages(opened) }.collectAsStateWithLifecycle(initialValue = null)
+    // Until the Core has read the catalog's, the Viewer's own stand, as they will once it has: first focus has its row.
+    val order = content?.languages ?: opened
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.requestFocus() }
     LazyColumn(

@@ -57,7 +57,9 @@ import dev.betteriptv.app.ui.theme.Colors
 import dev.betteriptv.app.ui.theme.Spacing
 import dev.betteriptv.app.ui.theme.Type
 import dev.betteriptv.core.League
+import dev.betteriptv.core.LeaguesContent
 import dev.betteriptv.core.Sport
+import dev.betteriptv.core.SportLeagues
 import kotlinx.coroutines.launch
 
 /**
@@ -72,7 +74,7 @@ internal fun leaguesValue(on: Set<League>): String {
 
 /**
  * Settings' League picker (#353): every League as a logo tile, [PER_LINE] across, under its sport's
- * heading, the sports in [Sport]'s order and each sport's Leagues in [League]'s. A sport rail sits at
+ * heading, the sports and each sport's Leagues as the Core groups them ([LeaguesContent]). A sport rail sits at
  * the left, like the Region list's letter rail: Left from a sport's first-column tile moves to its
  * sport, Up and Down move between sports, OK or Right on one jumps to its first tile. OK on a tile
  * turns its League on or off ([onChange]); every one can be off, and the Live tab then shows no
@@ -80,36 +82,39 @@ internal fun leaguesValue(on: Set<League>): String {
  */
 @Composable
 internal fun LeaguePicker(on: Set<League>, onChange: (Set<League>) -> Unit) {
-    val groups = remember { Sport.entries.associateWith { sport -> League.entries.filter { it.sport == sport } }.filterValues { it.isNotEmpty() } }
-    val tiles = remember { League.entries.associateWith { FocusRequester() } }
-    val sports = remember { groups.keys.associateWith { FocusRequester() } }
-    // Each group is its heading, then its tiles.
+    // The same for every Viewer who reaches the picker, so it is drawn in its first frame: first focus needs its tiles placed.
+    val groups = LeaguesContent.ALL.sports
+    val tiles = remember { HashMap<League, FocusRequester>() }
+    val tile = { league: League -> tiles.getOrPut(league) { FocusRequester() } }
+    val sports = remember { HashMap<Sport, FocusRequester>() }
+    val sportKey = { sport: Sport -> sports.getOrPut(sport) { FocusRequester() } }
+    // Each group is its heading, then its tiles: where a sport's first tile is in the grid.
     val firstIndex = remember {
         var index = 0
-        groups.mapValues { (_, leagues) -> (index + 1).also { index += 1 + leagues.size } }
+        HashMap<Sport, Int>().apply { for (group in groups) { put(group.sport, index + 1); index += 1 + group.leagues.size } }
     }
     val grid = rememberLazyGridState()
     val scope = rememberCoroutineScope()
-    fun jump(sport: Sport) {
+    fun jump(sport: SportLeagues) {
         scope.launch {
             // The heading too, so the sport's name comes into view with its tiles.
-            grid.scrollToItem(firstIndex.getValue(sport) - 1)
+            grid.scrollToItem(firstIndex.getValue(sport.sport) - 1)
             withFrameNanos {}
-            tiles.getValue(groups.getValue(sport).first()).requestFocus()
+            tile(sport.leagues.first()).requestFocus()
         }
     }
     LaunchedEffect(Unit) {
         // The grid places its tiles in its first layout, after this composition.
         withFrameNanos {}
-        tiles.getValue(League.entries.first()).requestFocus()
+        tile(groups.first().leagues.first()).requestFocus()
     }
     Row(Modifier.padding(start = Spacing.screenX)) {
         Column(
             Modifier.width(IntrinsicSize.Max).padding(vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            for ((sport, focus) in sports) {
-                SportKey(sportName(sport), onClick = { jump(sport) }, Modifier.fillMaxWidth().focusRequester(focus).testTag("sport:${sport.name}"))
+            for (group in groups) {
+                SportKey(sportName(group.sport), onClick = { jump(group) }, Modifier.fillMaxWidth().focusRequester(sportKey(group.sport)).testTag("sport:${group.sport.name}"))
             }
         }
         Spacer(Modifier.width(Spacing.l))
@@ -136,8 +141,8 @@ internal fun LeaguePicker(on: Set<League>, onChange: (Set<League>) -> Unit) {
                         isOn = league in on,
                         onClick = { onChange(if (league in on) on - league else on + league) },
                         Modifier
-                            .focusRequester(tiles.getValue(league))
-                            .focusProperties { if (column == 0) left = sports.getValue(sport) },
+                            .focusRequester(tile(league))
+                            .focusProperties { if (column == 0) left = sportKey(sport) },
                     )
                 }
             }

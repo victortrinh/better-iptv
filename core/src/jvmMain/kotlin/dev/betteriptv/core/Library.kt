@@ -928,7 +928,7 @@ class Library private constructor(
      * The languages the catalog has Versions in, as primary language subtags (`fr` for `fr-CA` too),
      * most Listings first: the choices for the Viewer's Content languages. Untagged Listings aren't counted.
      */
-    suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
+    internal suspend fun catalogLanguages(): List<String> = withContext(Dispatchers.IO) {
         val counts = HashMap<String, Int>()
         store.forEachListing { name, category ->
             prefixTable.describe(name, category).attributes.language?.value?.let { counts.merge(primaryLanguage(it), 1, Int::plus) }
@@ -977,7 +977,7 @@ class Library private constructor(
      * [prepareSearchInBackground]: a search before the first one waits for it, and one during or
      * after a Sync answers from the index built before it until the new one is.
      */
-    fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
+    internal fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
         if (!searchInMemory) return@flow emit(searchStored(query, letters, contentLanguages, appLanguage))
         // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
@@ -1749,7 +1749,7 @@ class Library private constructor(
      * The devices signed in to this one's Account (#434), by when they signed in, this one marked;
      * null without a cloud, while it can't be reached, or when this device isn't signed in.
      */
-    suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
+    internal suspend fun accountDevices(): List<AccountDevice>? = withContext(Dispatchers.IO) {
         if (cloud == null || _account.value == null) return@withContext null
         try {
             cloud.accountDevices()

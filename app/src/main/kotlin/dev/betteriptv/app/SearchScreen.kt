@@ -40,7 +40,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import dev.betteriptv.app.ui.components.Completions
@@ -55,19 +58,20 @@ import dev.betteriptv.core.Channel
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.Replay
 import dev.betteriptv.core.SearchCard
-import dev.betteriptv.core.SearchResults
+import dev.betteriptv.core.SearchContent
+import dev.betteriptv.core.SearchResultsScreen
 import dev.betteriptv.core.TitleId
+import dev.betteriptv.core.key
 import dev.betteriptv.core.tooShortToSearch
 import dev.betteriptv.core.TitleSummary
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
  * Search, laid out as Netflix's: the [query] typed on a D-pad keyboard on the left, completions under
  * it, and to their right the query over one grid of cards that fills in as each letter lands, with no
  * row headings, nor names under the cards: the Titles found by name, best first whatever their kind,
- * then the genres' Titles, the Channels, the Sports replays and the people's Titles ([SearchResults.cards]). Each key
+ * then the genres' Titles, the Channels, the Sports replays and the people's Titles, as the Core hands them ([SearchContent.cards]). Each key
  * [onEdit]s the query as it is when the key lands, so keys pressed faster than the stick redraws
  * aren't lost. Under the keyboard, completions replace the query in one press and move focus to the
  * first card; before anything is typed they are genre shortcuts. A Title's card opens it ([onOpen]);
@@ -93,17 +97,20 @@ fun SearchScreen(
     val catalog by library.catalogChanges.collectAsStateWithLifecycle()
     // A first Sync still adding the catalog (ADR 0019): a Search that finds nothing says more is coming.
     val status by library.syncStatus.collectAsStateWithLifecycle()
-    var results by remember { mutableStateOf(SearchResults.NONE) }
-    // The query [results] answer: the one being typed until the index, if still being built, has them.
-    var answered by remember { mutableStateOf("") }
+    // What the Core found, with the query it answers: the one being typed, once the index, if still being built, has them.
+    var content by remember { mutableStateOf<SearchContent?>(null) }
+    val cards = content?.cards.orEmpty()
+    val answered = content?.query == query
     // Finishes the index at the Viewer's priority, if its build in the background hasn't, while they reach for the first letters.
     LaunchedEffect(catalog) { library.prepareSearch() }
-    LaunchedEffect(query, catalog, contentLanguages, appLanguage) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(library, query, contentLanguages, appLanguage, lifecycle) {
         // Letters typed in quick succession make one search.
         delay(TYPING_PAUSE_MS)
-        // One answer, from the device's index (ADR 0014).
-        results = library.search(query, contentLanguages, appLanguage).first()
-        answered = query
+        // The Core's answer from the device's index (ADR 0014), handed again when a catalog lands under it.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            library.screen(SearchResultsScreen(query, contentLanguages, appLanguage)).collect { content = it }
+        }
     }
     val keyboard = remember { FocusRequester() }
     val tab = remember { FocusRequester() }
@@ -113,8 +120,8 @@ fun SearchScreen(
     // A completion was picked: focus goes to the first card once its query is answered.
     val firstResult = remember { FocusRequester() }
     var toResults by remember { mutableStateOf(false) }
-    LaunchedEffect(toResults, results, answered) {
-        if (!toResults || answered != query || results.isEmpty) return@LaunchedEffect
+    LaunchedEffect(toResults, content, answered) {
+        if (!toResults || !answered || cards.isEmpty()) return@LaunchedEffect
         // The first card is laid out in the frame these results are composed in.
         withFrameNanos {}
         firstResult.requestFocus()
@@ -133,7 +140,7 @@ fun SearchScreen(
                 Modifier.padding(start = Spacing.screenX).width(KEYBOARD_WIDTH).verticalScroll(column)
                     // Right from Space or Delete, above the first row of cards, would reach the tabs
                     // before the grid: Right out of the column goes into the grid, to its last focused card.
-                    .focusProperties { onExit = { if (requestedFocusDirection == FocusDirection.Right && !results.isEmpty) grid.requestFocus() } }
+                    .focusProperties { onExit = { if (requestedFocusDirection == FocusDirection.Right && cards.isNotEmpty()) grid.requestFocus() } }
                     .focusGroup(),
             ) {
                 RemoteKeyboard(
@@ -144,7 +151,7 @@ fun SearchScreen(
                     entry = keyboard,
                 )
                 Completions(
-                    results.completions,
+                    content?.completions.orEmpty(),
                     onPick = { completion ->
                         onEdit { completion }
                         toResults = true
@@ -155,10 +162,11 @@ fun SearchScreen(
             Spacer(Modifier.width(COLUMN_GAP))
             Column(Modifier.weight(1f)) {
                 Query(query)
-                Results(query, results, searching = answered != query, stillAdding = stillAddingCatalog(status), tab, grid, firstResult, onOpen, onWatch, onPlayReplay) { channel, favourite ->
+                Results(query, cards, searching = !answered, stillAdding = stillAddingCatalog(status), tab, grid, firstResult, onOpen, onWatch, onPlayReplay) { channel, favourite ->
                     scope.launch {
                         library.setFavourite(channel.key, favourite)
-                        results = results.copy(channels = results.channels.map { if (it.key == channel.key) it.copy(favourite = favourite) else it })
+                        // Marked where it stands: the cards under the Viewer stay in place.
+                        content = content?.withFavourite(channel, favourite)
                     }
                 }
             }
@@ -197,7 +205,7 @@ private fun Query(query: String) {
 @Composable
 private fun Results(
     query: String,
-    results: SearchResults,
+    cards: List<SearchCard>,
     searching: Boolean,
     stillAdding: Boolean,
     tab: FocusRequester,
@@ -208,7 +216,7 @@ private fun Results(
     onPlayReplay: (Replay) -> Unit,
     onFavourite: (Channel, Boolean) -> Unit,
 ) {
-    if (results.isEmpty) {
+    if (cards.isEmpty()) {
         val message = searchMessage(query, searching) ?: return
         Column(Modifier.padding(top = GRID_TOP)) {
             Text(
@@ -228,7 +236,6 @@ private fun Results(
         }
         return
     }
-    val cards = remember(results, query) { results.cards(query) }
     // Focusing [grid] enters it at the card that had focus; Back focuses the tab.
     ResultGrid(cards, wide = { it !is SearchCard.OfTitle }, keyOf = { it.key }, first = firstResult, modifier = Modifier.focusRequester(grid).backKeyToTab(tab)) { card, modifier ->
         when (card) {
@@ -254,13 +261,6 @@ internal fun searchMessage(query: String, searching: Boolean): SearchMessage? = 
     searching -> SearchMessage.Searching
     else -> SearchMessage.NothingMatches
 }
-
-private val SearchCard.key: String
-    get() = when (this) {
-        is SearchCard.OfTitle -> title.id.toString()
-        is SearchCard.OfChannel -> "channel/${channel.key}"
-        is SearchCard.OfReplay -> "replay/${replay.listingId}"
-    }
 
 /**
  * A Title found: its poster alone, as on Netflix, with no name or badges under it when focused:
