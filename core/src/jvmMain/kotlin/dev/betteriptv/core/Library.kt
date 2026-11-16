@@ -134,6 +134,19 @@ class Library private constructor(
     /** The low-priority thread building the search index in the background, while it runs. */
     @Volatile private var searchBuilder: Thread? = null
     @Volatile private var searchIndex: BuiltIndex? = null
+
+    /**
+     * The switch back to the index built in memory at each launch ([SearchIndex]), off by default: Search
+     * reads the index a Sync stores ([SearchIndexStore], #584). Kept until the Fire TV Stick has shown
+     * the stored one types as fast and ranks the same (#585, #586). Either way a Sync stores its index,
+     * so the switch can be turned at any time. On the JVM, `-Dbetteriptv.search=memory` turns it on.
+     */
+    @Volatile var searchInMemory: Boolean = System.getProperty(SEARCH_PROPERTY) == SEARCH_IN_MEMORY
+
+    private val storedSearch = StoredSearch(store, StoredSearch.Limits(TITLES_FOUND, PEOPLE_FOUND, GENRES_FOUND, COMPLETIONS, CHANNELS_FOUND, REPLAYS_FOUND))
+    /** How many catalogs have landed, and how many had when the stored index last read the movie details kept while one waited ([SearchIndexStore.catchUp]). */
+    private val catalogsLanded = AtomicInteger()
+    @Volatile private var searchCaughtUp = 0
     private val connection = ConnectionGate()
     private val headerReader = HeaderReader(http)
 
@@ -220,7 +233,10 @@ class Library private constructor(
         val pendingAt = store.pendingAt()
         return when {
             pendingAt != null && last != null -> SyncStatus.Ready(last, pendingAt)
-            pendingAt != null -> SyncStatus.Synced(store.applyPending()!!).also { prefixTable = prefixTableFor(credentials.load()) }
+            pendingAt != null -> SyncStatus.Synced(store.applyPending()!!).also {
+                prefixTable = prefixTableFor(credentials.load())
+                catalogsLanded.incrementAndGet()
+            }
             last != null -> SyncStatus.Synced(last)
             else -> SyncStatus.NeverSynced(store.channelsSyncedAt(), store.headStartAt())
         }
@@ -597,7 +613,9 @@ class Library private constructor(
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
                             val hidden = description.hidden != null
-                            staging.listing(kind, id, name, categoryId, added, image, hidden, titleNumber, table.cleanName(name).year ?: releaseYear, container, rating, details)
+                            // The search index is built from the name cleaned here.
+                            val clean = table.cleanName(name)
+                            staging.listing(kind, id, name, categoryId, added, image, hidden, titleNumber, clean.year ?: releaseYear, container, rating, details, clean)
                             // A Sports replay is kept apart, with what its name says: its Title number and poster are wrong and ignored.
                             if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
                                 staging.replay(id, name, category, added, container, ReplayNames.parse(name))
@@ -653,6 +671,7 @@ class Library private constructor(
                         )
                     },
                     timer = timer,
+                    search = SearchSources(table),
                 )
                 when {
                     // Under the player nothing lands: a first Sync's catalog too waits for it to close (#563).
@@ -679,7 +698,10 @@ class Library private constructor(
         }
         if (finished is SyncStatus.Failed) runCatching { store.discardPending() }
         // The new catalog shows from here: screens count its Titles again before the status changes (#271).
-        if (finished is SyncStatus.Synced) catalogChanged()
+        if (finished is SyncStatus.Synced) {
+            catalogsLanded.incrementAndGet()
+            catalogChanged()
+        }
         _syncStatus.value = finished
         if (finished is SyncStatus.Synced) prepareSearchInBackground()
         return finished
@@ -697,7 +719,7 @@ class Library private constructor(
     private fun landHeadStart(client: XtreamClient, table: PrefixTable, contentLanguages: List<String>): Instant? {
         return try {
             val at = Clock.System.now()
-            val landed = store.landHeadStart(at) { staging ->
+            val landed = store.landHeadStart(at, SearchSources(table)) { staging ->
                 /** Reads [kind]'s Head start: [listings] reads one Category's Listings and answers how many of them show. */
                 fun read(kind: TitleKind, categories: ((String, String) -> Unit) -> Unit, listings: (category: String, categoryName: String) -> Int) {
                     val names = LinkedHashMap<String, String>()
@@ -771,6 +793,7 @@ class Library private constructor(
                     _syncStatus.value = store.lastSync()?.let { SyncStatus.Synced(it) } ?: SyncStatus.NeverSynced(store.channelsSyncedAt(), store.headStartAt())
                     return@withContext false
                 }
+                catalogsLanded.incrementAndGet()
                 catalogChanged()
                 _syncStatus.value = SyncStatus.Synced(sync)
                 prepareSearchInBackground()
@@ -944,12 +967,16 @@ class Library private constructor(
      * anything is typed, they are the genres with the most Titles in the Viewer's languages, named in
      * the App language.
      *
-     * The search index of the whole catalog is built in the background after a Sync and by
-     * [prepareSearchInBackground]; a search before the first one waits for it, and one during or
+     * The search index is stored by each Sync with its catalog and lands with it (#584), so a search
+     * answers from the catalog on screen as soon as there is one; only on a database kept from
+     * before the index does the first search wait for it to be built, once. With [searchInMemory],
+     * the index is the one built in memory in the background after a Sync and by
+     * [prepareSearchInBackground]: a search before the first one waits for it, and one during or
      * after a Sync answers from the index built before it until the new one is.
      */
     fun search(query: String, contentLanguages: List<String>, appLanguage: String): Flow<SearchResults> = flow {
         val letters = SearchIndex.words(query).sumOf { it.length }
+        if (!searchInMemory) return@flow emit(searchStored(query, letters, contentLanguages, appLanguage))
         // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
         val forKids = if (kids) KidsSearch(kidsCatalog().values.flatten().toHashSet(), kidsChannels(Clock.System.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
         val inCatalog: (SearchIndex, Int) -> Boolean = if (forKids == null) { _, _ -> true } else { index, position -> index.titleId(position) in forKids.titles }
@@ -966,6 +993,54 @@ class Library private constructor(
 
     /** What a Kids profile's search keeps: the Kids catalog's [titles] and the Channels of Kids Categories, by key. */
     private class KidsSearch(val titles: Set<TitleId>, val channels: Set<String>)
+
+    /** [search] from the index a Sync stores (#584): the same answer as from the one built in memory. */
+    private fun searchStored(query: String, letters: Int, contentLanguages: List<String>, appLanguage: String): SearchResults {
+        storedSearchIndex()
+        val wanted = contentLanguages.map(::primaryLanguage).toSet()
+        // A Kids profile searches the Kids catalog alone: its Titles, and the Channels of Kids Categories.
+        val forKids = if (kids) StoredSearch.KidsScope(kidsSearchRows(), kidsChannels(Clock.System.now()).values.flatten().mapTo(HashSet()) { it.key }) else null
+        if (letters == 0) return SearchResults.NONE.copy(completions = storedSearch.genreShortcuts(wanted, appLanguage, forKids))
+        if (letters < SearchIndex.MIN_LETTERS) return SearchResults.NONE
+        return storedSearch.search(
+            query, wanted, appLanguage, profile, forKids, Clock.System.now() - EVENT_FINISHED_AFTER,
+            summaries = { summaries(it, contentLanguages, appLanguage) },
+            completions = { titles, people, genres -> completions(query, titles, people, genres) },
+        )
+    }
+
+    /** The Kids catalog's Titles as the stored index's rows, worked out once per Kids catalog. */
+    private fun kidsSearchRows(): Set<Long> {
+        val catalog = kidsCatalog()
+        kidsRows?.takeIf { it.first === catalog }?.let { return it.second }
+        return storedSearch.rows(catalog.values.flatten()).also { kidsRows = catalog to it }
+    }
+
+    @Volatile private var kidsRows: Pair<Map<TitleKind, List<TitleId>>, Set<Long>>? = null
+
+    /**
+     * Has the stored index ready to search. A Sync lands it with its catalog, so there is nothing to
+     * do but on a database kept from before the index, whose catalog is indexed here, once, the Viewer
+     * waiting as they did at each launch before (and for a Sync that holds the writer meanwhile, which
+     * lands an index of its own); and after a catalog that waited has landed, when the movie details
+     * kept meanwhile are read into it, which never waits on a Sync.
+     */
+    private fun storedSearchIndex() {
+        if (!store.search.ready) synchronized(searchLock) { if (!store.search.ready) store.search.rebuild(SearchSources(prefixTable)) }
+        if (searchCaughtUp != catalogsLanded.get() && !syncWriting) {
+            // One at a time, and a search that finds it under way waits for it.
+            synchronized(searchLock) {
+                val landed = catalogsLanded.get()
+                if (searchCaughtUp != landed) {
+                    store.search.catchUp(SearchSources(prefixTable))
+                    searchCaughtUp = landed
+                }
+            }
+        }
+    }
+
+    /** Reads the movie details just kept for [title] into the stored index: its cast and genres. */
+    private fun indexMovieDetails(title: TitleId) = store.search.reindex(title, SearchSources(prefixTable))
 
     /** The Sports replays whose names match [query], closest first, then the newest by the date in the name, then in the Provider's order: every one, a highlights show as well as a game. */
     private fun foundReplays(index: SearchIndex, query: String): List<Replay> {
@@ -1217,11 +1292,12 @@ class Library private constructor(
     }
 
     /**
-     * Builds the search index now, so the Viewer's first letters don't wait for it. A build already
-     * running in the background is sped up to the Viewer's priority and waited for.
+     * Has the search index ready now, so the Viewer's first letters don't wait for it: nothing to do
+     * when a Sync stored it. With [searchInMemory] it is built here; a build already running in the
+     * background is sped up to the Viewer's priority and waited for.
      */
     suspend fun prepareSearch() {
-        withContext(Dispatchers.IO) { rebuildSearchIndex() }
+        withContext(Dispatchers.IO) { if (searchInMemory) rebuildSearchIndex() else storedSearchIndex() }
     }
 
     /**
@@ -1230,6 +1306,20 @@ class Library private constructor(
      * and Home's frames don't either. Each Sync does this once it finishes.
      */
     fun prepareSearchInBackground() {
+        if (!searchInMemory) {
+            // The stored index landed with its catalog; only one kept from before it, or with details to catch up on, has work here.
+            if (!rebuildingSearch.compareAndSet(false, true)) return
+            thread(name = "search-index", isDaemon = true, priority = Thread.MIN_PRIORITY) {
+                try {
+                    storedSearchIndex()
+                } catch (e: Exception) {
+                    // The Library closed meanwhile; the next search tries again.
+                } finally {
+                    rebuildingSearch.set(false)
+                }
+            }
+            return
+        }
         if (searchIndexReady || !rebuildingSearch.compareAndSet(false, true)) return
         val builder = thread(start = false, name = "search-index", isDaemon = true, priority = Thread.MIN_PRIORITY) {
             try {
@@ -1249,7 +1339,7 @@ class Library private constructor(
 
     /** Whether the search index of the current catalog and the details kept for it is built. */
     internal val searchIndexReady: Boolean
-        get() = searchIndex?.let { it.catalog == catalogGeneration.get() && it.details == detailsGeneration.get() } == true
+        get() = if (searchInMemory) searchIndex?.let { it.catalog == catalogGeneration.get() && it.details == detailsGeneration.get() } == true else store.search.ready && searchCaughtUp == catalogsLanded.get()
 
     private class BuiltIndex(val catalog: Int, val details: Int, val index: SearchIndex)
 
@@ -1387,6 +1477,7 @@ class Library private constructor(
                         val now = Clock.System.now()
                         val keep = {
                             store.saveMovieDetails(id, read, listing.added, now)
+                            indexMovieDetails(title.id)
                             detailsGeneration.incrementAndGet()
                         }
                         // A Sync holds the writer until its catalog is in place, minutes on a first Sync: a Head start's page
@@ -2800,7 +2891,7 @@ class Library private constructor(
         val login = credentials.load() ?: return
         val client = XtreamClient(login, http)
         val shows = keptShows(title)
-        if (shows == null) readMovieDetails(client, title.listings, changed)
+        if (shows == null) readMovieDetails(client, title, changed)
         // The Provider numbers Movies and Episodes from one sequence, so Listing ids don't collide.
         val ids = shows?.flatMap { (_, episodes) -> episodes.map { it.id } } ?: title.listings.map { it.id }
         val provider = providerKey(login)
@@ -2882,7 +2973,8 @@ class Library private constructor(
      * details aren't kept from when the Provider last changed them. The page's own Listing was read
      * as the page opened ([title]); this reads its other Versions'.
      */
-    private suspend fun readMovieDetails(client: XtreamClient, listings: List<StoredListing>, changed: suspend () -> Unit) {
+    private suspend fun readMovieDetails(client: XtreamClient, title: StoredTitle, changed: suspend () -> Unit) {
+        val listings = title.listings
         val kept = store.movieDetails(listings.map { it.id })
         val unread = listings.filter { listing -> kept[listing.id].let { it == null || it.added != listing.added } }
         if (unread.isEmpty()) return
@@ -2902,6 +2994,7 @@ class Library private constructor(
         }.filterNotNull()
         val now = Clock.System.now()
         read.forEach { (listing, details) -> store.saveMovieDetails(listing.id, details, listing.added, now) }
+        if (read.isNotEmpty()) indexMovieDetails(title.id)
         if (read.isNotEmpty()) detailsGeneration.incrementAndGet()
         // Whatever they say: a page that opened before a slow Provider answered shows its details now.
         if (read.isNotEmpty()) changed()
@@ -3454,6 +3547,9 @@ class Library private constructor(
         /** The Region when the device doesn't say (CONTEXT.md). */
         const val DEFAULT_REGION = "CA"
         /** At most this many Movies and this many Shows per search, and Titles per person: two rows of cards. */
+        /** The JVM property that turns [searchInMemory] on when it is [SEARCH_IN_MEMORY]. */
+        const val SEARCH_PROPERTY = "betteriptv.search"
+        const val SEARCH_IN_MEMORY = "memory"
         private const val TITLES_FOUND = 40
         private const val PEOPLE_FOUND = 10
         /** Genres whose names match a query: a few, as a query rarely names one. */

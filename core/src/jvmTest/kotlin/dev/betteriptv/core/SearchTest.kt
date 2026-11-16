@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -429,6 +430,8 @@ class SearchTest {
     }
 
     @Test fun `searching while a Sync runs and right after it answers from the index built before it (#241)`() = runBlocking {
+        // The index built in memory: the one a Sync stores lands with its catalog (the test after this one).
+        assumeTrue(library.searchInMemory)
         syncMovies("EN - Heat (1995)" to 949, "EN - Alien (1979)" to 348)
         // Every build of the index from here waits until released: on the stick one takes 70 to 90 s (#106).
         val building = CountDownLatch(1)
@@ -479,6 +482,8 @@ class SearchTest {
     }
 
     @Test fun `the search index can be built in the background when the app starts`() = runBlocking {
+        // The index built in memory: the stored one is there as the app starts (#584, below).
+        assumeTrue(library.searchInMemory)
         library.sync()
         library.close()
         library = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
@@ -487,6 +492,16 @@ class SearchTest {
         library.prepareSearchInBackground()
 
         assertTrue("no search index after starting", awaitSearchIndex())
+        assertEquals(godfather, search("godfather").movies.first().id)
+    }
+
+    @Test fun `the index a Sync stores is there when the app starts, with nothing to build (#584)`() = runBlocking {
+        assumeTrue(!library.searchInMemory)
+        library.sync()
+        library.close()
+        library = Library.open(folder.root.resolve("catalog.db").path, credentials, cloud.url)
+
+        assertTrue(library.searchIndexReady)
         assertEquals(godfather, search("godfather").movies.first().id)
     }
 
