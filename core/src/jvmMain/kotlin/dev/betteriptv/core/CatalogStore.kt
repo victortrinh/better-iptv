@@ -196,7 +196,11 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     }
     private val reader: SQLiteConnection = driver.open(path)
 
+    /** The search index, built by a Sync's stages and landed with the catalog (#584). */
+    val search = SearchIndexStore(writer, reader)
+
     init {
+        search.createLive()
         // A Sync the app was closed during left half a catalog staged: it goes, the next Sync stages it again.
         if (!hasPending()) discardPending()
     }
@@ -255,7 +259,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Where a Sync writes the Titles stage: the movie and show Categories and Listings, and the Sports replays. */
     class TitleStaging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var replayPosition = 0L
 
@@ -274,7 +278,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
          * Title. [added] orders the list, newest first: for a Show, it is when the Provider last changed
          * it. [container] is a movie file's extension (`mkv`), which its stream location ends with.
          * [rating] is the Provider's, on a 10 scale, and [details] what a show Listing says of its Show
-         * (ADR 0014); a movie Listing has none.
+         * (ADR 0014); a movie Listing has none. [clean] is its cleaned name, when the Sync has worked
+         * it out, so the search index doesn't again.
          */
         fun listing(
             kind: TitleKind,
@@ -289,6 +294,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             container: String? = null,
             rating: Double? = null,
             details: ProviderDetails? = null,
+            clean: PrefixTable.CleanName? = null,
         ) = insertListing.run {
             bindText(1, kindKey(kind))
             bindLong(2, id)
@@ -303,6 +309,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             if (container == null) bindNull(11) else bindText(11, container)
             val said = details?.takeUnless { it.isEmpty }
             bindDetails(12, rating ?: said?.rating, said)
+            if (clean == null) bindNull(20) else bindText(20, clean.name)
+            if (clean?.year == null) bindNull(21) else bindLong(21, clean.year.toLong())
             stepAndReset()
         }
 
@@ -341,6 +349,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
         writer.execSQL(CHANNEL_TABLE.format("staging_channel"))
         writer.execSQL(LIVE_CATEGORY_TABLE.format("staging_live_category"))
+        search.stageChannelTables()
         try {
             writer.execSQL("BEGIN")
             val staging = ChannelStaging(writer)
@@ -349,11 +358,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             } finally {
                 staging.close()
             }
+            search.buildStagedChannels()
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
             if (writer.inTransaction()) writer.execSQL("ROLLBACK")
             writer.execSQL("DROP TABLE IF EXISTS staging_channel")
             writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
+            search.dropStagedChannels()
             throw e
         }
         truncateLog()
@@ -366,12 +377,16 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
      * built. [completed] runs once they are, with the new Listing counts and how many Unmatched Titles
      * the year rule made, and the Sync it returns is kept as pending until [swapTitles] or [applyPending]
      * lands it, through a close and reopen if need be. A [timer] is told each statement as it ends.
+     * The search index of what was staged is built beside it, from what [search] reads in each Listing,
+     * with the staged Sports replays unless [searchReplays] is false.
      */
     internal fun stageTitles(
         fill: (TitleStaging) -> Unit,
         onFilled: () -> Unit,
         completed: (movieCount: Int, showCount: Int, mismatches: Int) -> CompletedSync,
         timer: SyncTimer? = null,
+        search: SearchSources = SearchSources(PrefixTable.base()),
+        searchReplays: Boolean = true,
     ): CompletedSync =
         synchronized(writer) {
             writer.execSQL("DROP TABLE IF EXISTS staging_category")
@@ -385,12 +400,13 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
                 "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                    "title_number INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES)",
+                    "title_number INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES, clean_name TEXT, clean_year INTEGER)",
             )
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
             writer.execSQL(UNKNOWN_PREFIX_TABLE.format("staging_unknown_prefix"))
             writer.execSQL(TIER_TAG_TABLE.format("staging_tier_tag"))
+            this.search.stageTitleTables()
             try {
                 writer.execSQL("BEGIN")
                 val staging = TitleStaging(writer)
@@ -439,6 +455,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     """.trimIndent(),
                 )
                 timer?.mark("Kept-Listing insert")
+                this.search.buildStagedTitles(search, searchReplays)
+                timer?.mark("Search index")
                 writer.execSQL("DROP INDEX staging_title_key")
                 writer.execSQL("DROP TABLE staging_listing")
                 writer.execSQL("DROP TABLE staging_category")
@@ -498,11 +516,12 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
      * landed whole. While it is staged it is marked as a Head start, so an app closed midway never
      * takes it for a finished Sync's pending catalog ([pendingAt]).
      */
-    fun landHeadStart(at: Instant, fill: (TitleStaging) -> Unit): Boolean = synchronized(writer) {
+    fun landHeadStart(at: Instant, search: SearchSources = SearchSources(PrefixTable.base()), fill: (TitleStaging) -> Unit): Boolean = synchronized(writer) {
         writeMeta(mapOf(PENDING_HEAD_START to at.toString()))
         try {
             var listings = 0
-            stageTitles(fill, onFilled = {}, completed = { movieCount, showCount, mismatches ->
+            // Its Sports replays don't land, so they aren't indexed.
+            stageTitles(fill, onFilled = {}, search = search, searchReplays = false, completed = { movieCount, showCount, mismatches ->
                 listings = movieCount + showCount
                 CompletedSync(at, Duration.ZERO, movieCount, emptyList(), mismatches, showCount)
             })
@@ -514,6 +533,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                 writer.execSQL("ALTER TABLE staging_kept_listing RENAME TO listing")
                 writer.execSQL("ALTER TABLE staging_title RENAME TO title")
                 TITLE_INDEXES.forEach { writer.execSQL(it) }
+                this.search.landTitles()
                 dropTitleStaging()
                 writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
                 writeMeta(mapOf(HEAD_START_AT to at.toString()))
@@ -557,6 +577,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             dropTitleStaging()
             writer.execSQL("DROP TABLE IF EXISTS staging_channel")
             writer.execSQL("DROP TABLE IF EXISTS staging_live_category")
+            search.dropStagedChannels()
             writer.execSQL("DELETE FROM meta WHERE key LIKE 'pending_sync_%'")
             writer.execSQL("COMMIT")
         } catch (e: Throwable) {
@@ -641,6 +662,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("DROP TABLE live_category")
         writer.execSQL("ALTER TABLE staging_live_category RENAME TO live_category")
         CHANNEL_INDEXES.forEach { writer.execSQL(it) }
+        search.landChannels()
         // Each Channel's first variant leads it: the search index and [channels] read Channels by their leads.
         writer.execSQL("UPDATE channel SET lead = 1 WHERE position IN (SELECT min(position) FROM channel GROUP BY channel_key)")
         // Favourites an older app kept by stream id become Favourites of the Channels those ids are variants of now;
@@ -664,6 +686,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("ALTER TABLE staging_replay RENAME TO replay")
         timer?.mark("Table swap")
         TITLE_INDEXES.forEach { writer.execSQL(it) }
+        search.landTitles()
         timer?.mark("Index creation")
         // Show details of Listings the Provider no longer has won't be asked for again.
         writer.execSQL("DELETE FROM show_details WHERE listing_id NOT IN (SELECT id FROM listing WHERE kind = 'show')")
@@ -701,6 +724,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
         writer.execSQL("DROP TABLE IF EXISTS staging_replay")
         writer.execSQL("DROP TABLE IF EXISTS staging_unknown_prefix")
         writer.execSQL("DROP TABLE IF EXISTS staging_tier_tag")
+        search.dropStagedTitles()
     }
 
     private fun tableExists(name: String): Boolean =

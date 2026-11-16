@@ -68,11 +68,15 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         )
         // A debug build logs where each Sync's time went (#566): `adb logcat -s SyncTiming`. A release build times nothing.
         if (BuildConfig.DEBUG) library.onSyncTimed = { timing -> Log.d("SyncTiming", timing.toString()) }
+        // Search reads the index a Sync stores (#584). The one built in memory at each launch stays behind a switch until the
+        // stick has been checked (#585): `adb shell setprop debug.betteriptv.search memory`, then start the app again.
+        scope.launch(Dispatchers.IO) { if (debugProperty(SEARCH_SWITCH) == Library.SEARCH_IN_MEMORY) library.searchInMemory = true }
         // On the Profile the device was last on: nobody is asked on launch. Its settings follow it.
         settings = ViewerSettingsStore(this, library, library.deviceSettings, scope)
         // The first launch after the release that dropped the cloud's metadata clears the image cache, once (#480).
         scope.launch(Dispatchers.IO) { library.clearImagesOnce { clearCachedArtwork(SingletonImageLoader.get(this@BetterIptvApp)) } }
-        // The first search mustn't wait for the index (over a minute on the stick, #106), nor Home's first rows for its build.
+        // A Sync stores the search index with its catalog (#584), so this has work only on a database kept from before that, once,
+        // or with the switch on: then the first search mustn't wait for the index (over a minute on the stick, #106), nor Home's first rows for its build.
         scope.launch {
             delay(SEARCH_INDEX_AFTER)
             library.prepareSearchInBackground()
@@ -225,8 +229,13 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
         }
     }
 
+    /** A system property a developer set over adb (`setprop debug.…`), or null: read through `getprop`, which needs no hidden API. */
+    private fun debugProperty(name: String): String? =
+        runCatching { Runtime.getRuntime().exec(arrayOf("getprop", name)).inputStream.bufferedReader().use { it.readLine()?.trim() } }.getOrNull()
+
     private companion object {
         const val TAG = "Sync"
+        const val SEARCH_SWITCH = "debug.betteriptv.search"
         val STALE_AFTER: Duration = 6.hours
         // CI releases within minutes of a merge, and the manifest is one small read.
         val RECHECK_UPDATES_AFTER: Duration = 15.minutes
