@@ -174,7 +174,7 @@ fun PlayerScreen(
         choices = chosen
         scope.launch { library.saveChoices(plan, chosen) }
     }
-    val session = remember(plan) { library.playback(plan, playerEngines(context, plan, library.providerHttp, library::rememberedTracks, { choices }) { style }) }
+    val session = remember(plan) { library.playback(plan, playerEngines(context, plan, (context.applicationContext as BetterIptvApp).providerHttp, library::rememberedTracks, { choices }) { style }) }
     val state by session.state.collectAsState()
     var panel by remember(session) { mutableStateOf(Panel.None) }
     var overlay by remember(session) { mutableStateOf(false) }

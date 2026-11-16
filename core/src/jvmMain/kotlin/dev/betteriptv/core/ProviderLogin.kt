@@ -1,6 +1,7 @@
 package dev.betteriptv.core
 
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import io.ktor.http.URLBuilder
+import io.ktor.http.parseUrl
 
 /** The Viewer's Xtream Codes login. Never logged: [toString] hides the username and password. */
 class ProviderLogin(val address: String, val username: String, val password: String) {
@@ -19,11 +20,11 @@ class ProviderLogin(val address: String, val username: String, val password: Str
          */
         fun fromM3uUrl(text: String): ProviderLogin? {
             val trimmed = text.trim()
-            val url = (if ("://" in trimmed) trimmed else "http://$trimmed").toHttpUrlOrNull() ?: return null
-            val username = url.queryParameter("username")?.takeIf { it.isNotBlank() } ?: return null
-            val password = url.queryParameter("password")?.takeIf { it.isNotEmpty() } ?: return null
-            val origin = url.newBuilder().encodedPath("/").query(null).fragment(null).username("").password("").build()
-            return ProviderLogin(origin.toString().removeSuffix("/"), username, password)
+            val url = parseUrl(if ("://" in trimmed) trimmed else "http://$trimmed")?.takeIf { it.isWeb() } ?: return null
+            val username = url.parameters["username"]?.takeIf { it.isNotBlank() } ?: return null
+            val password = url.parameters["password"]?.takeIf { it.isNotEmpty() } ?: return null
+            val origin = URLBuilder(protocol = url.protocol, host = url.host.lowercase(), port = url.specifiedPort)
+            return ProviderLogin(origin.buildString().removeSuffix("/"), username, password)
         }
     }
 }

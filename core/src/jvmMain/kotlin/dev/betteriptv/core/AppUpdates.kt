@@ -1,6 +1,17 @@
 package dev.betteriptv.core
 
 import com.squareup.moshi.Moshi
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.url
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.request
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.isSuccess
+import io.ktor.http.takeFrom
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,9 +19,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -108,7 +116,7 @@ class AppUpdates(
     private val installedVersionCode: Long,
     private val downloads: File,
     private val installer: ApkInstaller,
-    private val http: OkHttpClient = OkHttpClient(),
+    private val http: HttpClient = updatesHttp(),
     private val clock: Clock = Clock.System,
 ) {
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Unknown)
@@ -222,27 +230,32 @@ class AppUpdates(
     private fun offered(): AppUpdate? = _state.value.offered
 
     private fun manifest(): AppUpdate? {
-        http.newCall(Request.Builder().url(manifestUrl).header("Cache-Control", "no-cache").build()).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("The update manifest answered HTTP ${response.code}.")
-            val body = json.fromJson(response.body!!.string()) as? Map<*, *> ?: return null
-            val versionCode = (body["versionCode"] as? Number)?.toLong() ?: return null
-            val versionName = body["versionName"] as? String ?: return null
-            val apk = body["apk"] as? String ?: return null
-            val sha256 = (body["sha256"] as? String)?.lowercase()?.takeIf { it.matches(SHA256) } ?: return null
-            val size = (body["size"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
+        return http.blocking({ url(manifestUrl); header("Cache-Control", "no-cache") }) manifest@{ response ->
+            if (!response.status.isSuccess()) throw IOException("The update manifest answered HTTP ${response.status.value}.")
+            val body = json.fromJson(response.bodyAsText(Charsets.UTF_8)) as? Map<*, *> ?: return@manifest null
+            val versionCode = (body["versionCode"] as? Number)?.toLong() ?: return@manifest null
+            val versionName = body["versionName"] as? String ?: return@manifest null
+            val apk = body["apk"] as? String ?: return@manifest null
+            val sha256 = (body["sha256"] as? String)?.lowercase()?.takeIf { it.matches(SHA256) } ?: return@manifest null
+            val size = (body["size"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return@manifest null
             // Release manifests give an absolute address; a bare name resolves against the address the
             // manifest was finally served from, which for GitHub is a signed asset address that refuses it.
-            val apkUrl = response.request.url.resolve(apk)?.toString() ?: return null
+            val servedFrom = response.request.url
+            val apkUrl = servedFrom.resolve(apk) ?: return@manifest null
             // Without a usable profile the build still installs; the app is compiled later instead.
             val dexMetadata = run {
-                val url = (body["dm"] as? String)?.let { response.request.url.resolve(it) }?.toString() ?: return@run null
+                val url = (body["dm"] as? String)?.let { servedFrom.resolve(it) } ?: return@run null
                 val dmSha256 = (body["dmSha256"] as? String)?.lowercase()?.takeIf { it.matches(SHA256) } ?: return@run null
                 val dmSize = (body["dmSize"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return@run null
                 DexMetadata(url, dmSha256, dmSize)
             }
-            return AppUpdate(versionCode, versionName, apkUrl, sha256, size, dexMetadata)
+            AppUpdate(versionCode, versionName, apkUrl, sha256, size, dexMetadata)
         }
     }
+
+    /** The address [link] names when it is found at this one: itself when absolute, else beside this one. Null when it is no address. */
+    private fun Url.resolve(link: String): String? =
+        runCatching { URLBuilder(this).apply { parameters.clear(); trailingQuery = false; fragment = "" }.takeFrom(link).build() }.getOrNull()?.takeIf { it.isWeb() }?.toString()
 
     /** [update]'s APK in [downloads], downloaded unless a whole, verified copy is already there. */
     private fun download(update: AppUpdate): File =
@@ -266,11 +279,11 @@ class AppUpdates(
         downloads.mkdirs()
         val partial = File(downloads, "${file.name}.part")
         progress(0)
-        http.newCall(Request.Builder().url(url.toHttpUrl()).build()).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("The download answered HTTP ${response.code}.")
+        http.blocking({ url(Url(url).also { require(it.isWeb()) }) }) { response ->
+            if (!response.status.isSuccess()) throw IOException("The download answered HTTP ${response.status.value}.")
             val digest = MessageDigest.getInstance("SHA-256")
             var downloaded = 0L
-            response.body!!.byteStream().use { input ->
+            response.bodyAsChannel().toInputStream().use { input ->
                 partial.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var lastShown = 0L

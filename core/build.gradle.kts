@@ -35,11 +35,15 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(libs.coroutines.core)
+            // The HTTP client the Core reads the Provider and the Cloud with (#579); each platform gives it an engine.
+            api(libs.ktor.client.core)
             // In the Core's own signatures (a Replay's date, a zone for the Live rows), so the app sees it.
             api(libs.datetime)
         }
         jvmMain.dependencies {
-            implementation(libs.okhttp)
+            // Android's engine: OkHttp, which the app's player and artwork read with too (OkHttpNetwork.kt).
+            api(libs.okhttp)
+            implementation(libs.ktor.client.okhttp)
             implementation(libs.moshi)
             implementation(libs.sqlite.bundled)
         }
@@ -69,6 +73,8 @@ tasks.named<Test>("jvmTest") {
     // ./gradlew :core:jvmTest --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     providers.gradleProperty("surveyCloud").orNull?.let { systemProperty("surveyCloud", it) }
+    // ./gradlew :core:jvmTest --tests '*RealUpdatesTest' -PrealUpdates reads the real update manifest from GitHub.
+    providers.gradleProperty("realUpdates").orNull?.let { systemProperty("realUpdates", "true") }
     // ./gradlew :core:jvmTest --tests '*SearchIndexBenchmark' -Pbenchmark
     // Its made-up catalog has more names than the real one (up to 40 translations a Title), so more heap.
     providers.gradleProperty("benchmark").orNull?.let {

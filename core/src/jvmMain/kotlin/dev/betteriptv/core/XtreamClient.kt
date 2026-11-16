@@ -2,24 +2,29 @@ package dev.betteriptv.core
 
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonReader
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import io.ktor.client.HttpClient
+import io.ktor.client.request.url
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.appendPathSegments
+import io.ktor.http.encodeURLParameter
+import io.ktor.http.encodedPath
+import io.ktor.http.isSuccess
+import io.ktor.http.parseUrl
 import java.io.IOException
 import java.net.URLEncoder
 import kotlin.time.Instant
 import java.util.Base64
 
 /**
- * Speaks the Xtream Codes `player_api`. Responses are read as they arrive (OkHttp asks for gzip and
- * inflates on the fly), so no whole JSON document is ever held in memory.
+ * Speaks the Xtream Codes `player_api`. Responses are read as they arrive (on Android OkHttp, under
+ * the client, asks for gzip and inflates on the fly), so no whole JSON document is ever held in memory.
  *
  * The login travels in every URL, so no URL or raw error message leaves this class: failures become
  * [ProviderException]s with the credentials scrubbed out.
  */
-internal class XtreamClient(private val login: ProviderLogin, private val http: OkHttpClient) {
-    private val base: HttpUrl = baseUrl(login.address)
+internal class XtreamClient(private val login: ProviderLogin, private val http: HttpClient) {
+    private val base: Url = baseUrl(login.address)
 
     /** Checks the login and the subscription; throws a [ProviderException] when either is refused. */
     fun account(): LoggedIn {
@@ -359,18 +364,18 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         val text = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         val key = when {
             "://" !in text -> text
-            else -> runCatching { text.toHttpUrl() }.getOrNull()?.let { url -> url.queryParameter("v") ?: url.pathSegments.lastOrNull { it.isNotEmpty() } }
+            else -> parseUrl(text)?.takeIf { it.isWeb() }?.let { url -> url.parameters["v"] ?: url.segments.lastOrNull() }
         }
         return key?.takeIf { YOUTUBE_ID.matches(it) }
     }
 
     /** Where movie Listing [id]'s file streams from. It holds the login, so it goes to the player engine only. */
     fun movieLocation(id: Long, container: String): String =
-        base.newBuilder().addPathSegment("movie").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
+        fileLocation("movie", "$id.$container")
 
     /** Where Episode [id]'s file streams from. It holds the login, so it goes to the player engine only. */
     fun episodeLocation(id: Long, container: String): String =
-        base.newBuilder().addPathSegment("series").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$container").build().toString()
+        fileLocation("series", "$id.$container")
 
     /**
      * The Provider's guide for Channel variant [streamId] (its full table, `get_simple_data_table`):
@@ -427,27 +432,31 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
      * goes to the player engine only.
      */
     fun liveLocation(id: Long, format: String): String =
-        base.newBuilder().addPathSegment("live").addPathSegment(login.username).addPathSegment(login.password).addPathSegment("$id.$format").build().toString()
+        fileLocation("live", "$id.$format")
+
+    /** Where the Provider serves [file] of a [kind] (`movie`, `series`, `live`) from, for this login. */
+    private fun fileLocation(kind: String, file: String): String =
+        URLBuilder(base).appendPathSegments(listOf(kind, login.username, login.password, file), encodeSlash = true).buildString()
 
     /**
      * One `player_api` call. A response that isn't a success becomes an [Unreachable]
      * [ProviderException], unless [refused] makes something else of its status (a guide call refused).
      */
     private fun <T> api(action: String?, vararg parameters: Pair<String, String>, refused: ((Int) -> IOException)? = null, read: (JsonReader) -> T): T {
-        val url = base.newBuilder()
-            .addPathSegment("player_api.php")
-            .addQueryParameter("username", login.username)
-            .addQueryParameter("password", login.password)
-            .apply { if (action != null) addQueryParameter("action", action) }
-            .apply { parameters.forEach { (name, value) -> addQueryParameter(name, value) } }
-            .build()
+        val url = URLBuilder(base).apply {
+            appendPathSegments("player_api.php")
+            // Encoded here, a space as %20: as the Provider was always asked (Ktor's own writes it as a plus).
+            val query = listOf("username" to login.username, "password" to login.password) + listOfNotNull(action?.let { "action" to it }) + parameters
+            query.forEach { (name, value) -> encodedParameters.append(name.encodeURLParameter(), value.encodeURLParameter()) }
+        }.build()
         try {
-            http.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            return http.blocking({ url(url) }) { response ->
+                val status = response.status.value
                 // The Viewer's Provider answers a wrong password with 513 and a missing login with 511.
-                if (action == null && response.code in setOf(401, 403, 511, 513)) throw ProviderException(WrongLogin)
-                if (!response.isSuccessful && refused != null) throw refused(response.code)
-                if (!response.isSuccessful) throw ProviderException(Unreachable("The Provider answered HTTP ${response.code}."))
-                return JsonReader.of(response.body!!.source()).use(read)
+                if (action == null && status in setOf(401, 403, 511, 513)) throw ProviderException(WrongLogin)
+                if (!response.status.isSuccess() && refused != null) throw refused(status)
+                if (!response.status.isSuccess()) throw ProviderException(Unreachable("The Provider answered HTTP $status."))
+                JsonReader.of(response.source()).use(read)
             }
         } catch (e: ProviderException) {
             throw e
@@ -481,17 +490,22 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
         private val YOUTUBE_ID = Regex("""[A-Za-z0-9_-]{6,20}""")
 
         /** Accepts a bare host, host:port, or a pasted player link, like the survey script. */
-        fun baseUrl(raw: String): HttpUrl {
+        fun baseUrl(raw: String): Url {
             val trimmed = raw.trim()
             val withScheme = if ("://" in trimmed) trimmed else "http://$trimmed"
-            return try {
-                withScheme.toHttpUrl().newBuilder().encodedPath("/").query(null).fragment(null).build()
-            } catch (e: IllegalArgumentException) {
-                throw ProviderException(Unreachable("That Provider address doesn't look right."))
-            }
+            val url = parseUrl(withScheme)?.takeIf { it.isWeb() } ?: throw ProviderException(Unreachable("That Provider address doesn't look right."))
+            return URLBuilder(url).apply {
+                encodedPath = "/"
+                this.parameters.clear()
+                trailingQuery = false
+                fragment = ""
+            }.build()
         }
     }
 }
+
+/** Whether this is an address a request can be made to: `http` or `https`, with a host that could be one. */
+internal fun Url.isWeb(): Boolean = protocol.name in setOf("http", "https") && host.isNotEmpty() && host.none { it.isWhitespace() || it in "/\\?#@<>" }
 
 internal class ProviderException(val problem: ProviderProblem) : IOException(problem.toString())
 

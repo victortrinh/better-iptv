@@ -75,7 +75,7 @@ internal const val PLAYER_TAG = "Player"
  * once the file is open, with what the Viewer chose for its Title ([choices]) and last picked
  * anywhere ([remembered]), both read as each file opens, so a pick made while playing carries over
  * to a Backup, and drawing subtitles in the [style] of the moment. Media3 reads the Provider through
- * [http], the Library's client.
+ * [http], the client the Library's own runs on.
  */
 fun playerEngines(
     context: Context,

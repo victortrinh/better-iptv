@@ -5,6 +5,9 @@ coroutines = "1.10.2"
 # Dates, time zones and local dates for the Core (#578). 0.8 needs Kotlin 2.3.21; 0.7.1 is the last for 2.2.
 datetime = "0.7.1"
 okhttp = "4.12.0"
+# The Core's HTTP client (#579). 3.2 is the last line whose OkHttp engine is built on OkHttp 4.12, the one
+# Media3 and Coil share with it; 3.3 and later bring OkHttp 5 to the whole app.
+ktor = "3.2.4"
 moshi = "1.15.1"
 sqlite = "2.6.2"
 compose-bom = "2025.10.00"
@@ -34,6 +37,8 @@ coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-androi
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
