@@ -237,6 +237,14 @@ class FakeCloud : Closeable {
     val syncsAsked: List<Map<*, *>>
         get() = received.filter { it.path == "/v1/sync" }.map { read(it.body) as Map<*, *> }
 
+    /** Refuses every registration with HTTP 400, as the cloud does one it can't read. */
+    @Volatile var refusesRegistrations = false
+
+    private val registered = LinkedHashMap<String, Pair<String, String?>>()
+
+    /** Each device ever registered, in order, as it last said it is: its platform and app version. */
+    val devices: List<Pair<String, String?>> get() = synchronized(tokens) { registered.values.toList() }
+
     /** Forgets every device, as if its token were revoked. */
     fun forgetDevices() = synchronized(tokens) { tokens.clear() }
 
@@ -251,9 +259,17 @@ class FakeCloud : Closeable {
         synchronized(tokens) { if (caller in tokens) exchange.responseHeaders.add("Zugig-Account", if (caller in accounts) "signed-in" else "none") }
         when (exchange.requestURI.path) {
             "/v1/devices" -> {
-                val token = UUID.randomUUID().toString()
-                synchronized(tokens) { tokens += token }
-                respond(exchange, 201, mapOf("token" to token))
+                if (refusesRegistrations) return respond(exchange, 400, mapOf("error" to "platform must be one the cloud knows."))
+                // A device that names no platform is taken as Android; one that sends its token keeps it.
+                val said = body.takeIf { it.isNotBlank() }?.let { read(it) as Map<*, *> }.orEmpty()
+                val device = (said["platform"] as String? ?: "android") to said["appVersion"] as String?
+                val known = synchronized(tokens) { caller?.takeIf { it in tokens } }
+                val token = known ?: UUID.randomUUID().toString()
+                synchronized(tokens) {
+                    tokens += token
+                    registered[token] = device
+                }
+                respond(exchange, if (known == null) 201 else 200, mapOf("token" to token))
             }
             "/v1/file-reads", "/v1/file-reads/lookup" -> {
                 val token = exchange.requestHeaders.getFirst("Authorization")?.removePrefix("Bearer ")

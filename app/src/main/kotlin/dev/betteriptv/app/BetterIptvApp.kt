@@ -49,6 +49,7 @@ class BetterIptvApp : Application(), SingletonImageLoader.Factory {
             getDatabasePath("catalog.db").apply { parentFile?.mkdirs() }.path,
             KeystoreCredentialStore(this),
             cloudAddress = BuildConfig.CLOUD_URL,
+            device = cloudDevice(this),
         )
         // A debug build logs where each Sync's time went (#566): `adb logcat -s SyncTiming`. A release build times nothing.
         if (BuildConfig.DEBUG) library.onSyncTimed = { timing -> Log.d("SyncTiming", timing.toString()) }

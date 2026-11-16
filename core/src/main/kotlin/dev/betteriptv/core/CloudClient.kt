@@ -20,7 +20,7 @@ import java.time.LocalDate
  * it registers for on first use; no Provider login, address or stream URL is ever sent. File reads
  * are shared under a hash of the Provider's host ([providerKey]), which doesn't reveal it.
  */
-internal class CloudClient(address: String, private val http: OkHttpClient, private val tokens: DeviceTokenStore) {
+internal class CloudClient(address: String, private val http: OkHttpClient, private val tokens: DeviceTokenStore, private val device: CloudDevice? = null) {
     private val base: HttpUrl = address.toHttpUrl()
 
     /**
@@ -280,9 +280,13 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
      */
     @Volatile var onAccountHeard: ((signedIn: Boolean, sentAt: Long) -> Unit)? = null
 
-    /** Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it. */
+    /**
+     * Runs [call] with the device's token, registering first if it has none, and again if the cloud no longer knows it.
+     * A device whose platform or app version isn't what it last registered with, as after an update, registers
+     * again with its token first, so the cloud's record follows it (#570).
+     */
     private fun authorized(call: (token: String) -> Any?): Any? {
-        val token = tokens.deviceToken() ?: register()
+        val token = tokens.deviceToken()?.let(::registeredAsItIs) ?: register()
         return try {
             call(token)
         } catch (_: Unauthorized) {
@@ -290,12 +294,37 @@ internal class CloudClient(address: String, private val http: OkHttpClient, priv
         }
     }
 
-    private fun register(): String {
-        val token = (post("v1/devices", "", token = null) as? Map<*, *>)?.get("token") as? String
-            ?: throw CloudException("The cloud didn't give this device a token.")
-        tokens.saveDeviceToken(token)
-        return token
+    /** Whether this launch already told the cloud what the device is now, or tried to. */
+    @Volatile private var saidWhatItIs = false
+
+    /**
+     * [token], after telling the cloud the device's platform and app version when they aren't the ones it
+     * registered with: once a launch, and a cloud that can't take them doesn't stop the request that follows.
+     */
+    private fun registeredAsItIs(token: String): String {
+        val said = device?.registration ?: return token
+        if (saidWhatItIs || tokens.registeredAs() == said) return token
+        saidWhatItIs = true
+        return try {
+            register(token)
+        } catch (_: CloudException) {
+            token
+        }
     }
+
+    /** Registers the device, as a new one or, with the [token] it has, to say what it is now; the token to use from here on. */
+    private fun register(token: String? = null): String {
+        val said = device?.registration
+        val given = (post("v1/devices", said.orEmpty(), token) as? Map<*, *>)?.get("token") as? String
+            ?: throw CloudException("The cloud didn't give this device a token.")
+        tokens.saveDeviceToken(given)
+        if (said != null) tokens.saveRegisteredAs(said)
+        return given
+    }
+
+    /** What the device says of itself when it registers, as the cloud reads it. */
+    private val CloudDevice.registration: String
+        get() = json.toJson(linkedMapOf("platform" to platform.cloudName, "appVersion" to appVersion))
 
     /** POSTs [body] to [path] and reads the answer as JSON, or with [text] as text. */
     private fun post(path: String, body: String, token: String?, callTimeout: Duration? = null, text: Boolean = false): Any? {
@@ -427,7 +456,26 @@ internal open class CloudException(message: String) : IOException(message)
 internal interface DeviceTokenStore {
     fun deviceToken(): String?
     fun saveDeviceToken(token: String)
+
+    /** The registration the cloud last took from this device (its platform and app version), null when it sent none. */
+    fun registeredAs(): String?
+    fun saveRegisteredAs(registration: String)
 }
+
+/** The platform a device runs Zugig on, as it tells the cloud when it registers (ADR 0020). */
+enum class DevicePlatform(internal val cloudName: String) {
+    FireOs("fire-os"),
+    GoogleTv("google-tv"),
+    Android("android"),
+    Ios("ios"),
+    MacOs("macos"),
+    Windows("windows"),
+    Linux("linux"),
+    Tizen("tizen"),
+}
+
+/** What a device tells the cloud of itself when it registers: its [platform] and the [appVersion] it runs. */
+class CloudDevice(val platform: DevicePlatform, val appVersion: String)
 
 /**
  * The key Viewers of one Provider share file reads under: a SHA-256 of its host, so the cloud
