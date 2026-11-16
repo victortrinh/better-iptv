@@ -187,6 +187,10 @@ _Avoid_: Backend, decoder
 The part of Zugig that is the same on every device: it Syncs, Matches, picks the Best playable Version and decides what each screen shows. Each platform's app draws what the Core hands it and plays with its own Player engine.
 _Avoid_: Backend, engine, shared library, SDK
 
+**Screen content**:
+What is on a screen, as the Core hands it to an app: its Rows in order with their cards, each card's Title or Game and what its badges say. It names things and never says how they look: no layout, focus, colour or translated wording, which each app draws and words by itself. An app asks for a screen once and is handed its content again whenever that changes (a catalog lands, Title facts land, the Profile switches, history syncs), so it only redraws.
+_Avoid_: View model, UI state, page data
+
 **Cloud**:
 The part of Zugig that runs off the device and serves what is the same for every Viewer, plus Accounts and Purchases. It never holds a Viewer's Provider login.
 _Avoid_: Backend, server, API

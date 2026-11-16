@@ -82,10 +82,15 @@ import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.TitleSummary
 import dev.betteriptv.core.VersionAttributes
+import dev.betteriptv.core.cardKey
+import dev.betteriptv.core.cardKeys
+import dev.betteriptv.core.key
+import dev.betteriptv.core.withUniqueCards
 
 /**
- * A card on Home, Movies or Shows: the [row] it is in, by the row's key (not its place, which
- * changes as Continue watching and Favourites come and go), and its Title's or Channel's [key].
+ * A card on Home, Movies or Shows: the [row] it is in, by the row's key from the Core (not its place,
+ * which changes as Continue watching and Favourites come and go), and its Title's or Channel's [key],
+ * the Core's too ([dev.betteriptv.core.cardKeys]).
  */
 data class RowCard(val row: String, val key: String)
 
@@ -120,7 +125,7 @@ fun restoredCard(card: RowCard, before: Map<String, List<String>>, after: Map<St
 internal fun rowsUnderFocus(shown: List<HomeRow>, fresh: List<HomeRow>, focusedRow: String?): List<HomeRow> {
     val held = shown.firstOrNull { it.key == focusedRow } ?: return fresh
     val at = fresh.indexOfFirst { it.key == focusedRow }
-    if (at >= 0 && fresh[at].keys == held.keys) return fresh
+    if (at >= 0 && fresh[at].cardKeys == held.cardKeys) return fresh
     val kept = held.refreshedFrom(fresh)
     if (at >= 0) return fresh.toMutableList().apply { set(at, kept) }
     // The row has gone from the fresh rows: it stays after the nearest row above it that is still there.
@@ -476,7 +481,7 @@ internal fun RowsLayout(
     val focusOn = pending?.takeUnless { it.row == HERO_ROW && hero == null } ?: when {
         focused || focusTab || backOnTabs || onTabs -> null
         hero != null -> RowCard(HERO_ROW, HERO_PLAY)
-        else -> rows?.firstOrNull()?.let { RowCard(it.key, it.keys.first()) }
+        else -> rows?.firstOrNull()?.let { RowCard(it.key, it.cardKeys.first()) }
     }
     val onFocused = {
         pending = null
@@ -582,7 +587,7 @@ internal fun RowsLayout(
                             // Channels, countries, Games and Replays are wide cards alike.
                             val channels = row is HomeRow.Favourites || row is HomeRow.KidsChannels || row is HomeRow.Channels || row is HomeRow.MoreLiveEvents || row.games != null || row is HomeRow.Replays
                             // Kept with the row: new lists would compose each of its cards again.
-                            val keys = remember(row) { row.keys }
+                            val keys = remember(row) { row.cardKeys }
                             val titles = remember(row) { row.titles }
                             val loop = remember(keys.size, channels) { RailLoop(keys.size, if (channels) seen.channels else seen.posters) }
                             val cardWidth = if (channels) Cards.wideWidth else Cards.posterWidth
@@ -749,7 +754,7 @@ private fun RailInfo(library: Library, row: HomeRow, card: RowCard?, contentLang
         return
     }
     val titles = row.titles
-    val index = titles.indexOfFirst { it.id.toString() == card?.key }
+    val index = titles.indexOfFirst { it.id.cardKey == card?.key }
     if (index < 0) {
         RailInfo(null, emptyList(), short, modifier)
         return
@@ -814,63 +819,9 @@ private val HomeRow.games: List<GameFeeds>?
 internal val HomeRow.mixesLeagues: Boolean
     get() = this is HomeRow.LiveNow || this is HomeRow.Today
 
-/** A row's key, as [RowCard]s hold it: the same row keeps it when rows before it come or go. */
-private val HomeRow.key: String
-    get() = when (this) {
-        is HomeRow.ContinueWatching -> "continue"
-        is HomeRow.Favourites -> "favourites"
-        is HomeRow.Channels -> "channels"
-        is HomeRow.Trending -> "trending"
-        is HomeRow.NewOnYourService -> "new"
-        is HomeRow.NewForKids -> "new-for-kids"
-        is HomeRow.ForKids -> "for-kids/$kind"
-        is HomeRow.KidsChannels -> "kids-channels/${country.code}"
-        is HomeRow.Genre -> "genre/$name"
-        is HomeRow.LiveNow -> "live-now"
-        is HomeRow.Today -> "today"
-        is HomeRow.LeagueGames -> "league/${league.key}"
-        is HomeRow.MoreLiveEvents -> "more-live-events"
-        is HomeRow.Replays -> "replays"
-    }
-
-/**
- * These rows with each card once in its row, where it first comes, and each row once: the rails and
- * the rows' list key their items by these keys, and a key used twice closes the app (#378). The
- * Library gives each Title once in a row, so this only stands guard over a list that slips one in twice.
- */
-internal fun List<HomeRow>.withUniqueCards(): List<HomeRow> = distinctBy { it.key }.map { row ->
-    when (row) {
-        is HomeRow.ContinueWatching -> row.copy(titles = row.titles.distinctBy { it.title.id })
-        is HomeRow.Favourites -> row.copy(channels = row.channels.distinctBy(::channelKey))
-        is HomeRow.KidsChannels -> row.copy(channels = row.channels.distinctBy(::channelKey))
-        is HomeRow.Channels -> row.copy(countries = row.countries.distinctBy(::countryKey))
-        is HomeRow.Trending -> row.copy(titles = row.titles.distinctBy { it.id })
-        is HomeRow.NewOnYourService -> row.copy(titles = row.titles.distinctBy { it.id })
-        is HomeRow.NewForKids -> row.copy(titles = row.titles.distinctBy { it.id })
-        is HomeRow.ForKids -> row.copy(titles = row.titles.distinctBy { it.id })
-        is HomeRow.Genre -> row.copy(titles = row.titles.distinctBy { it.id })
-        is HomeRow.LiveNow -> row.copy(games = row.games.distinctBy(::gameKey))
-        is HomeRow.Today -> row.copy(games = row.games.distinctBy(::gameKey))
-        is HomeRow.LeagueGames -> row.copy(games = row.games.distinctBy(::gameKey))
-        is HomeRow.MoreLiveEvents -> row.copy(events = row.events.distinctBy { channelKey(it.channel) })
-        is HomeRow.Replays -> row.copy(replays = row.replays.distinctBy(::replayKey))
-    }
-}
-
 /** Each row's key to its cards' keys, in screen order, for [restoredCard]. */
 private val List<HomeRow>.cards: Map<String, List<String>>
-    get() = associate { it.key to it.keys }
-
-/** The keys of a row's cards, as [RowCard]s hold them. */
-private val HomeRow.keys: List<String>
-    get() = when {
-        this is HomeRow.Favourites || this is HomeRow.KidsChannels -> channelCards.map(::channelKey)
-        this is HomeRow.Channels -> countries.map(::countryKey)
-        this is HomeRow.MoreLiveEvents -> events.map { channelKey(it.channel) }
-        this is HomeRow.Replays -> replays.map(::replayKey)
-        games != null -> games!!.map(::gameKey)
-        else -> titles.map { it.id.toString() }
-    }
+    get() = associate { it.key to it.cardKeys }
 
 /** What a row's cards are, so a `LazyRow` reuses a card's composition only for one of the same kind. */
 private val HomeRow.contentType: String
@@ -881,13 +832,13 @@ private val HomeRow.contentType: String
         else -> "title"
     }
 
-private fun channelKey(channel: Channel) = "channel/${channel.key}"
+private fun channelKey(channel: Channel) = channel.cardKey
 
-private fun countryKey(country: LiveCountry) = "country/${country.code}"
+private fun countryKey(country: LiveCountry) = country.cardKey
 
-private fun gameKey(game: GameFeeds) = "game/${game.key}"
+private fun gameKey(game: GameFeeds) = game.cardKey
 
-private fun replayKey(replay: LeagueReplay) = "replay/${replay.replay.listingId}"
+private fun replayKey(replay: LeagueReplay) = replay.cardKey
 
 /**
  * Scrolls a rail so the card at [place] starts at its left margin, the keyline, as Netflix's rows do

@@ -41,6 +41,7 @@ import dev.betteriptv.core.League
 import dev.betteriptv.core.LiveCountry
 import dev.betteriptv.core.PlayPlan
 import dev.betteriptv.core.Replay
+import dev.betteriptv.core.Screen
 import dev.betteriptv.core.TitleId
 import dev.betteriptv.core.TitleKind
 import dev.betteriptv.core.UpdateState
@@ -481,7 +482,7 @@ private fun PreReadOtherTabs(
             library.featured(screen, languages, appLanguage, device(), settings.qualityCap, settings.preferOriginalAudio, readDetails)
         }
         val tabs = listOf(
-            Browse.Home to PreReadTab(home, { library.homeRows(languages, appLanguage, settings.region, leagues) }, featured(FeaturedScreen.Home)),
+            Browse.Home to PreReadTab(home, { library.screen(Screen.Home(languages, appLanguage, settings.region, leagues)).first().rows }, featured(FeaturedScreen.Home)),
             Browse.Movies to PreReadTab(movies.rows, { library.tabRows(TitleKind.Movie, languages, appLanguage) }, featured(FeaturedScreen.Movies)),
             Browse.Shows to PreReadTab(shows.rows, { library.tabRows(TitleKind.Show, languages, appLanguage) }, featured(FeaturedScreen.Shows)),
             Browse.Live to PreReadTab(live, { library.liveRows(leagues, settings.region, languages) }),

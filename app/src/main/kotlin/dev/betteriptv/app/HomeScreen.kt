@@ -29,6 +29,7 @@ import dev.betteriptv.core.GameFeeds
 import dev.betteriptv.core.League
 import dev.betteriptv.core.Library
 import dev.betteriptv.core.QualityCap
+import dev.betteriptv.core.Screen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import dev.betteriptv.core.SyncStatus
@@ -66,12 +67,11 @@ fun BrowseTabs(selected: Browse, onSelect: (Browse) -> Unit, modifier: Modifier 
  * The home screen's rows ([RowsScreen]): Continue watching (stills with how far the Viewer got),
  * Live now (the Games of the [leagues] on that are in progress with a Feed, as the Live tab's Game
  * cards; no row otherwise), Trending this week, New on your service, the Viewer's Favourites,
- * then a row per genre. The Games are asked
- * for when Home opens and again every [GAMES_REFRESH] while Live now is on screen, as on Live, but
- * never hold the other rows: the kept Games show first, and the rows are read again once fresh ones
- * land ([Library.catalogChanges]). While a first Sync's Head start is all the catalog holds (ADR
- * 0019), the rows are Continue watching, Live now, New on your service and Favourites, with no
- * Trending or genre row yet. Above the rows, a featured Title from Trending, else New, a
+ * then a row per genre. The screen works out none of them: it asks the Core for Home
+ * ([Screen.Home], [liveContent]) and draws the Rows it is handed, again each time the Core hands it
+ * new ones (a catalog landing, a Profile switch, fresh Games while Live now shows). While a first
+ * Sync's Head start is all the catalog holds (ADR 0019), those are Continue watching, Live now, New
+ * on your service and Favourites, with no Trending or genre row yet. Above the rows, a featured Title from Trending, else New, a
  * different one each time Home is entered ([Library.featured]): its Play plays it ([onPlay]), its
  * Details opens it ([onOpen]). [restoreFocus] and [focusTab] are as on [RowsScreen]. A Title's card opens it ([onOpen]); a Game's
  * opens its page ([onOpenGame]); a Channel's watches it ([onWatch]), and its menu key adds or
@@ -105,11 +105,10 @@ fun HomeScreen(
     // Once they have, the Titles are coming until they land, and the Catalog pill says so (#562); a failure then shows in Settings.
     val titlesComing = !noChannels && status.last == null && status !is SyncStatus.Failed
     val onTheirWay = titlesOnTheirWay(status)
-    val refreshes = gamesRefreshes(state)
-    // Bumped when fresh Games land behind a read (and when a Sync lands a new catalog): the rows are read again.
-    val catalog by library.catalogChanges.collectAsStateWithLifecycle()
-    // A catalog that lands is read at once: the rows around the focused one may come and go, but the
-    // focused row itself waits for focus to leave it ([RowsLayout]).
+    // Home's content, from the Core: new content is read at once, so the rows around the focused one
+    // may come and go, but the focused row itself waits for focus to leave it ([RowsLayout]).
+    val home = remember(contentLanguages, appLanguage, region, leagues) { Screen.Home(contentLanguages, appLanguage, region, leagues) }
+    val content = liveContent(library, home)
     // The first Sync's sign-in card (#438): under the checklist, then under the rows until the Titles land.
     val scope = rememberCoroutineScope()
     val duringFirstSync = remember { status.last == null }
@@ -123,8 +122,8 @@ fun HomeScreen(
     )
     RowsScreen(
         library, contentLanguages, appLanguage, state, restoreFocus, focusTab,
-        reading = listOf(GamesReading(leagues, region, contentLanguages, refreshes), appLanguage, catalog),
-        read = { library.homeRows(contentLanguages, appLanguage, region, leagues) },
+        reading = listOf(home, content.changes),
+        read = { content.read().rows },
         empty = stringResource(R.string.home_empty),
         onOpen = onOpen,
         onWatch = onWatch,
