@@ -455,6 +455,9 @@ class Library private constructor(
      */
     @Volatile var onSyncTimed: ((SyncTiming) -> Unit)? = null
 
+    /** The clock a resumed first Sync tells its Channels' age by. Tests move it. */
+    @Volatile internal var syncClock: Clock = Clock.systemUTC()
+
     /**
      * Downloads the Provider's catalog and replaces the device's copy, in two stages. The Channels
      * stage (live Categories and Listings) comes first; the Titles stage (movie and show Categories
@@ -470,7 +473,9 @@ class Library private constructor(
      * request of its own, one at a time, and landed as Titles to play while the full lists are read;
      * the Titles stage then replaces them whole. With no Content languages, or when a Category can't
      * be read, there is none, and no error either. A first Sync stopped past its Head start (the app
-     * closed, the full read failed) keeps it on screen, and the next one doesn't read it again. A later Sync has none. A later Sync computes both behind the catalog on
+     * closed, the full read failed) keeps it on screen, and the next one doesn't read it again; nor does
+     * it read the Channels again when they landed within the day ([CHANNELS_KEPT_FOR]): it starts at the
+     * full movie and show lists. A later Sync has none, and reads its Channels every time. A later Sync computes both behind the catalog on
      * screen, then either swaps them in together (the default), or with [hold] keeps them staged as
      * [SyncStatus.Ready] for [applyPendingCatalog], which the app calls between screens so rows never
      * move under focus; a Sync started meanwhile discards what was held. A first Sync's Titles stage
@@ -492,7 +497,9 @@ class Library private constructor(
         val last = _syncStatus.value.last
         var channelsAt = _syncStatus.value.channelsAt
         var headStartAt = _syncStatus.value.headStartAt
-        var step = SyncStep.Channels
+        // A first Sync resumed (a reopened app, a Retry) keeps the Channels it landed within the day: its Channels Step is done.
+        val channelsKept = last == null && channelsAt?.let { Duration.between(it, syncClock.instant()) < CHANNELS_KEPT_FOR } == true
+        var step = if (channelsKept) SyncStep.Movies else SyncStep.Channels
         var entriesRead = 0
         val running = { _syncStatus.value = SyncStatus.Running(last, channelsAt, step, entriesRead, headStartAt) }
         running()
@@ -511,7 +518,10 @@ class Library private constructor(
             // A Sync holds the writer from here until the new catalog is in place: reads don't wait on it to save (#213).
             syncWriting = true
             try {
-                val channelCount = store.stageChannels { staging ->
+                // What the Channels read tells this Sync, its count and its candidate Tier tags, the Channels kept tell as well.
+                val channelCount = if (channelsKept) store.eachChannelVariant { name, key, start ->
+                    if (!isEventChannel(name, start)) tierTags.add(name, key)
+                } else store.stageChannels { staging ->
                     val liveCategories = LinkedHashMap<String, String>()
                     client.liveCategories { id, name -> liveCategories[id] = name }
                     val now = Instant.now()
@@ -543,7 +553,9 @@ class Library private constructor(
                         staging.liveCategory(id, name, normalisedCategoryName(name), categoryCountry(name), kind)
                     }
                 }
-                if (last == null) {
+                if (channelsKept) {
+                    prefixTable = table
+                } else if (last == null) {
                     // The first stage shows at once: Live and Home have their Channels while the Titles are read.
                     val at = Instant.now()
                     store.swapChannels(at)
@@ -3322,6 +3334,9 @@ class Library private constructor(
         private val CLOUD_RETRY_AFTER: Duration = Duration.ofMinutes(1)
         /** Background reading waits this long after the Provider didn't answer: the Wi-Fi may be down. */
         private val OFFLINE_PAUSE: Duration = Duration.ofMinutes(15)
+
+        /** How long a first Sync's Channels are kept for the Sync that resumes it; older ones are read again. */
+        internal val CHANNELS_KEPT_FOR: Duration = Duration.ofDays(1)
         /** Batches failing this many times in a row mean the cloud is down: the rest wait for the next Sync. */
         private const val CLOUD_FAILURES_IN_A_ROW = 3
 
