@@ -1,0 +1,7 @@
+{
+  "name": "samsung-sqlite-timing-check",
+  "private": true,
+  "description": "Checks that what the timing page ships stays within Chromium 76's JavaScript and WebAssembly.",
+  "scripts": { "check": "node check.js" },
+  "devDependencies": { "acorn": "8.15.0", "wabt": "1.0.37" }
+}

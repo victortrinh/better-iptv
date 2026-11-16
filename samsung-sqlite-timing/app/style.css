@@ -1,0 +1,22 @@
+/* Sized in hundredths of the screen's width, so a 720p and a 1080p set show the same page. */
+html { font-size: 0.8vw; }
+body { margin: 0; padding: 1.2rem 2.4rem 4rem; background: #101216; color: #e8eaee; font-family: sans-serif; line-height: 1.3; overflow: hidden; }
+h1 { margin: 0; font-size: 1.5rem; }
+header p { margin: 0.2rem 0 0; color: #9aa3b2; }
+h2 { margin: 0 0 0.3rem; font-size: 1.1rem; color: #ffd27a; }
+.status { margin: 0.6rem 0; padding: 0.4rem 0.8rem; background: #1c2129; border-left: 0.3rem solid #5b9dff; font-size: 1.15rem; }
+.status.error { border-color: #ff5b5b; color: #ffb3b3; }
+.survived { margin: 0 0 0.6rem; padding: 0.4rem 0.8rem; background: #14301c; border-left: 0.3rem solid #4fd17a; font-size: 1.15rem; }
+.columns { display: flex; align-items: flex-start; }
+section { flex: 1; min-width: 0; margin-right: 1.6rem; }
+section:last-child { margin-right: 0; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 0.04rem 0.4rem; vertical-align: top; border-bottom: 1px solid #1f242c; }
+td:first-child { white-space: nowrap; }
+td.time { text-align: right; white-space: nowrap; font-weight: bold; }
+td.note { color: #9aa3b2; font-size: 0.85rem; }
+tr.group td { padding-top: 0.35rem; color: #8fb8ff; font-weight: bold; border-bottom-color: #36415a; }
+tr.total td { color: #ffd27a; }
+footer { position: fixed; left: 2.4rem; bottom: 1.2rem; font-size: 1.1rem; color: #9aa3b2; }
+.button { display: inline-block; margin-right: 1rem; padding: 0.4rem 1.2rem; border: 0.15rem solid #3a4352; border-radius: 0.4rem; color: #e8eaee; }
+.button.focused { border-color: #ffffff; background: #2b5fb8; }
