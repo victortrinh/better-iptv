@@ -64,6 +64,75 @@ describe("device tokens", () => {
   });
 });
 
+/** #570: the Cloud keeps each device's platform and app version, as it said them when it registered. */
+describe("a device's platform and app version", () => {
+  const devices = async () => (await env.DB.prepare("SELECT platform, app_version FROM device ORDER BY rowid").all<{ platform: string; app_version: string | null }>()).results;
+
+  it("keeps both as the device registered them", async () => {
+    const response = await call("POST", "/v1/devices", { platform: "fire-os", appVersion: "0.1.812" });
+    expect(response.status).toBe(201);
+    expect(await devices()).toEqual([{ platform: "fire-os", app_version: "0.1.812" }]);
+  });
+
+  it("takes every platform Zugig runs on", async () => {
+    for (const platform of ["fire-os", "google-tv", "android", "ios", "macos", "windows", "linux", "tizen"]) {
+      expect((await call("POST", "/v1/devices", { platform, appVersion: "1.0" })).status).toBe(201);
+    }
+    expect((await devices()).map((device) => device.platform)).toEqual(["fire-os", "google-tv", "android", "ios", "macos", "windows", "linux", "tizen"]);
+  });
+
+  it("updates both when the device registers again with its token, which it keeps", async () => {
+    const token = ((await (await call("POST", "/v1/devices", { platform: "android", appVersion: "0.1.812" })).json()) as { token: string }).token;
+    const again = await call("POST", "/v1/devices", { platform: "google-tv", appVersion: "0.1.830" }, token);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ token });
+    expect(await devices()).toEqual([{ platform: "google-tv", app_version: "0.1.830" }]);
+    expect((await call("POST", "/v1/provider-table", aProvider, token)).status).toBe(200);
+  });
+
+  it("registers a new device when the token sent is one no device was given", async () => {
+    const response = await call("POST", "/v1/devices", { platform: "tizen", appVersion: "1.0" }, "A".repeat(43));
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as { token: string }).token).not.toBe("A".repeat(43));
+    expect(await devices()).toEqual([{ platform: "tizen", app_version: "1.0" }]);
+  });
+
+  it("registers a device that sends neither, as builds before this did, and takes it as Android", async () => {
+    const token = await registerDevice();
+    expect(await devices()).toEqual([{ platform: "android", app_version: null }]);
+    expect((await call("POST", "/v1/provider-table", aProvider, token)).status).toBe(200);
+    // An empty object, or a version alone, is Android too.
+    expect((await call("POST", "/v1/devices", {})).status).toBe(201);
+    expect((await call("POST", "/v1/devices", { appVersion: "0.1.700" })).status).toBe(201);
+    expect((await devices()).slice(1)).toEqual([{ platform: "android", app_version: null }, { platform: "android", app_version: "0.1.700" }]);
+  });
+
+  it("refuses a platform it doesn't know, naming the ones it does", async () => {
+    for (const platform of ["webos", "Fire OS", "", 7]) {
+      const response = await call("POST", "/v1/devices", { platform, appVersion: "1.0" });
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toBe("platform must be one of fire-os, google-tv, android, ios, macos, windows, linux, tizen.");
+    }
+    expect(await devices()).toEqual([]);
+  });
+
+  it("refuses an app version that isn't a short text, and a body that isn't an object", async () => {
+    for (const appVersion of [812, "", "9".repeat(41)]) {
+      const response = await call("POST", "/v1/devices", { platform: "android", appVersion });
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toBe("appVersion must be the app's version, at most 40 characters.");
+    }
+    expect((await call("POST", "/v1/devices", ["android"])).status).toBe(400);
+    expect(await devices()).toEqual([]);
+  });
+
+  it("leaves a registered device as it was when its new registration is refused", async () => {
+    const token = ((await (await call("POST", "/v1/devices", { platform: "ios", appVersion: "1.0" })).json()) as { token: string }).token;
+    expect((await call("POST", "/v1/devices", { platform: "webos", appVersion: "2.0" }, token)).status).toBe(400);
+    expect(await devices()).toEqual([{ platform: "ios", app_version: "1.0" }]);
+  });
+});
+
 /** M6 (#481, ADR 0014): the cloud keeps no TMDB data and needs no TMDB key, as TMDB's terms ask when use ends. */
 describe("without TMDB", () => {
   const removed: [string, unknown][] = [
