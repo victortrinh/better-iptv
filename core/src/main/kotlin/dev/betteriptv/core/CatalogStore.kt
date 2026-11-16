@@ -565,6 +565,21 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** When the Channels on screen landed, or null before any have. */
     fun channelsSyncedAt(): Instant? = meta(CHANNELS_SYNCED_AT)?.let(Instant::parse)
 
+    /**
+     * Hands [each] the Channel variants on screen, in the Provider's order: a variant's Listing name,
+     * its Channel key and the start its name gives an Event channel. Returns how many there are.
+     */
+    fun eachChannelVariant(each: (name: String, key: String, eventStart: Instant?) -> Unit): Int = synchronized(reader) {
+        reader.prepare("SELECT name, channel_key, event_start FROM channel ORDER BY position").use {
+            var count = 0
+            while (it.step()) {
+                each(it.getText(0), it.getText(1), if (it.isNull(2)) null else Instant.ofEpochSecond(it.getLong(2)))
+                count++
+            }
+            count
+        }
+    }
+
     /** Swaps the staged Channels in, as of [at], so Live and Home have them while the Titles are still read. */
     fun swapChannels(at: Instant) = synchronized(writer) {
         writer.execSQL("BEGIN IMMEDIATE")

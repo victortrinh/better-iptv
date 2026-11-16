@@ -59,7 +59,7 @@ Refreshing the device's copy of the Provider's catalog, in two Stages.
 _Avoid_: Refresh, import, scan
 
 **Stage**:
-One of a Sync's two halves: the Channels (live Categories and Listings), then the Titles (movie and show Categories and Listings, and Sports replays). A first Sync lands each Stage as soon as it is ready, so Live and Home open on the Channels while the Titles are still read.
+One of a Sync's two halves: the Channels (live Categories and Listings), then the Titles (movie and show Categories and Listings, and Sports replays). A first Sync lands each Stage as soon as it is ready, so Live and Home open on the Channels while the Titles are still read. A first Sync stopped after its Channels landed (the app closed, the Titles couldn't be read) keeps them, and the next one goes straight to the Titles Stage; Channels landed more than a day ago are read again.
 _Avoid_: Phase, half, pass
 
 **Head start**:
