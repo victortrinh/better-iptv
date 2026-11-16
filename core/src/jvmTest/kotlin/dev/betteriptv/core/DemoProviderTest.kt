@@ -43,24 +43,23 @@ class DemoProviderTest {
     }
 
     @Test fun `every Listing lands, and the Base table knows every Prefix`() {
-        assertEquals(15, synced.last.movieListingCount)
-        assertEquals(3, synced.last.showListingCount)
-        assertEquals(2, synced.last.channelListingCount)
+        assertEquals(8, synced.last.movieListingCount)
+        assertEquals(2, synced.last.showListingCount)
+        assertEquals(1, synced.last.channelListingCount)
         assertEquals(emptyList<UnknownPrefix>(), synced.last.unknownPrefixes)
         assertEquals(0, synced.last.mismatches)
     }
 
-    @Test fun `the Movies are grouped into a dozen Titles, named without their Prefix`() = runBlocking {
+    @Test fun `the Movies land as seven Titles, named without their Prefix`() = runBlocking {
         val movies = library.titles(0, 100, english, appLanguage = "en")
 
-        assertEquals(12, movies.size)
-        assertEquals(12, library.titleCount(TitleKind.Movie))
+        assertEquals(7, movies.size)
+        assertEquals(7, library.titleCount(TitleKind.Movie))
         assertTrue(movies.all { it.id is TitleId.Numbered })
         assertEquals(
             setOf(
                 "Big Buck Bunny" to 2008, "Sintel" to 2010, "Tears of Steel" to 2012, "Elephants Dream" to 2006, "Cosmos Laundromat" to 2015,
-                "Spring" to 2019, "Hero" to 2018, "A Trip to the Moon" to 1902, "The Great Train Robbery" to 1903,
-                "The Cabinet of Dr. Caligari" to 1920, "Battleship Potemkin" to 1925, "Man with a Movie Camera" to 1929,
+                "Spring" to 2019, "Hero" to 2018,
             ),
             movies.map { it.name to it.year }.toSet(),
         )
@@ -74,23 +73,22 @@ class DemoProviderTest {
         assertEquals(setOf(Quality.UHD, null), versions.map { it.attributes.quality?.value }.toSet())
     }
 
-    @Test fun `the Shows land with their Episodes, one with a Title number and two without`() = runBlocking {
+    @Test fun `the Shows land with their Episodes, one with a Title number and one without`() = runBlocking {
         val shows = library.titles(0, 100, english, appLanguage = "en", kind = TitleKind.Show)
 
-        assertEquals(setOf("BBS: The Documentary", "Caminandes", "Les Vampires"), shows.map { it.name }.toSet())
+        assertEquals(setOf("BBS: The Documentary", "Caminandes"), shows.map { it.name }.toSet())
         val bbs = TitleId.Numbered(TitleKind.Show, 84836)
         assertEquals(1, shows.count { it.id == bbs })
         val episodes = shows.associate { it.name to library.episodes(it.id, english)!!.seasons.single().episodes }
-        assertEquals(mapOf("BBS: The Documentary" to 8, "Caminandes" to 3, "Les Vampires" to 10), episodes.mapValues { it.value.size })
-        assertEquals((1..10).toList(), episodes.getValue("Les Vampires").map { it.number })
-        assertEquals("fr", versions(shows.single { it.name == "Les Vampires" }.id).single().attributes.language?.value)
+        assertEquals(mapOf("BBS: The Documentary" to 8, "Caminandes" to 3), episodes.mapValues { it.value.size })
+        assertEquals((1..8).toList(), episodes.getValue("BBS: The Documentary").map { it.number })
     }
 
     @Test fun `the Channels land under their country, in a Category the browser knows`() = runBlocking {
         val category = library.browsedCategories("US").single()
 
         assertEquals("DOCUMENTARY", category.name)
-        assertEquals(listOf("NASA TV", "NASA ISS LIVE"), library.categoryChannels(category).map { it.name })
+        assertEquals(listOf("NASA TV"), library.categoryChannels(category).map { it.name })
         assertEquals(listOf("US: NASA TV HD"), library.categoryChannels(category).first().variants.map { it.name })
     }
 }

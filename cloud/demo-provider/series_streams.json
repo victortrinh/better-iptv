@@ -44,28 +44,5 @@
     "category_ids": [
       2
     ]
-  },
-  {
-    "num": 3,
-    "name": "FR - Les Vampires (1915)",
-    "series_id": 2003,
-    "cover": "",
-    "plot": "Un journaliste poursuit les Vampires, une bande de criminels qui terrorise Paris. Sérial en dix épisodes.",
-    "cast": "Musidora, Édouard Mathé, Marcel Lévesque",
-    "director": "Louis Feuillade",
-    "genre": "Crime / Mystery",
-    "releaseDate": "1915-11-13",
-    "release_date": "1915-11-13",
-    "last_modified": "1763157600",
-    "rating": "",
-    "rating_5based": 0,
-    "backdrop_path": [],
-    "youtube_trailer": "",
-    "tmdb": "",
-    "episode_run_time": "0",
-    "category_id": "3",
-    "category_ids": [
-      3
-    ]
   }
 ]
