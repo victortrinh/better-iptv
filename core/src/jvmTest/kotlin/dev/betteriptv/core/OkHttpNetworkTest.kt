@@ -39,4 +39,26 @@ class OkHttpNetworkTest {
             assertEquals(1, okHttp.connectionPool.connectionCount())
         }
     }
+
+    @Test fun `a login is written into the Provider's address as OkHttp wrote it`() {
+        ServerSocket(0, 1, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).use { server ->
+            val asked = CompletableDeferred<String>()
+            thread(isDaemon = true) {
+                val socket = server.accept()
+                asked.complete(socket.getInputStream().bufferedReader(Charsets.ISO_8859_1).readLine())
+                socket.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]".toByteArray()) }.flush()
+                socket.close()
+            }
+            val login = ProviderLogin("http://127.0.0.1:${server.localPort}", "v i+e@r", "p&a=5/5 %x#é")
+
+            XtreamClient(login, coreHttp()).movieCategories { _, _ -> }
+
+            // What OkHttp's HttpUrl made of the same login before the Core had this client (#579): a space is %20, never a plus.
+            assertEquals(
+                "GET /player_api.php?username=v%20i%2Be%40r&password=p%26a%3D5%2F5%20%25x%23%C3%A9&action=get_vod_categories HTTP/1.1",
+                runBlocking { asked.await() },
+            )
+            assertEquals("http://127.0.0.1:${server.localPort}/movie/v%20i+e@r/p&a=5%2F5%20%25x%23%C3%A9/7.mkv", XtreamClient(login, coreHttp()).movieLocation(7, "mkv"))
+        }
+    }
 }

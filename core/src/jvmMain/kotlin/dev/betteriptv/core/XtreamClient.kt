@@ -7,6 +7,7 @@ import io.ktor.client.request.url
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.encodedPath
 import io.ktor.http.isSuccess
 import io.ktor.http.parseUrl
@@ -444,10 +445,9 @@ internal class XtreamClient(private val login: ProviderLogin, private val http: 
     private fun <T> api(action: String?, vararg parameters: Pair<String, String>, refused: ((Int) -> IOException)? = null, read: (JsonReader) -> T): T {
         val url = URLBuilder(base).apply {
             appendPathSegments("player_api.php")
-            this.parameters.append("username", login.username)
-            this.parameters.append("password", login.password)
-            if (action != null) this.parameters.append("action", action)
-            parameters.forEach { (name, value) -> this.parameters.append(name, value) }
+            // Encoded here, a space as %20: as the Provider was always asked (Ktor's own writes it as a plus).
+            val query = listOf("username" to login.username, "password" to login.password) + listOfNotNull(action?.let { "action" to it }) + parameters
+            query.forEach { (name, value) -> encodedParameters.append(name.encodeURLParameter(), value.encodeURLParameter()) }
         }.build()
         try {
             return http.blocking({ url(url) }) { response ->

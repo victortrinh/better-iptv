@@ -73,6 +73,8 @@ tasks.named<Test>("jvmTest") {
     // ./gradlew :core:jvmTest --tests '*SurveyCoverageTest' -Psurvey=/path/to/.survey/raw
     providers.gradleProperty("survey").orNull?.let { systemProperty("survey", it) }
     providers.gradleProperty("surveyCloud").orNull?.let { systemProperty("surveyCloud", it) }
+    // ./gradlew :core:jvmTest --tests '*RealUpdatesTest' -PrealUpdates reads the real update manifest from GitHub.
+    providers.gradleProperty("realUpdates").orNull?.let { systemProperty("realUpdates", "true") }
     // ./gradlew :core:jvmTest --tests '*SearchIndexBenchmark' -Pbenchmark
     // Its made-up catalog has more names than the real one (up to 40 translations a Title), so more heap.
     providers.gradleProperty("benchmark").orNull?.let {
