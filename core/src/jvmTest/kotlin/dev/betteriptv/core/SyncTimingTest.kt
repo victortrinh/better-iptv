@@ -50,7 +50,8 @@ class SyncTimingTest {
         assertEquals(listOf("Channels", "Movies", "Shows", "Saving"), timing.steps.map { it.name })
         assertEquals(
             listOf(
-                "Number-year build", "Mismatch update", "Title insert", "Title key index", "Kept-Listing insert", "Search index", "Staging drop", "Commit", "Counts and pending Sync",
+                "Number-year build", "Mismatch update", "Title insert", "Title key index", "Kept-Listing insert",
+                "Search index: Titles", "Search index: people, genres", "Search index: replays", "Search index: merge", "Staging drop", "Commit", "Counts and pending Sync",
                 "Table swap", "Index creation", "Stale details delete", "Sync record", "Swap commit",
             ),
             timing.saving.map { it.name },

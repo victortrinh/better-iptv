@@ -2,7 +2,9 @@ package dev.betteriptv.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 /** The Provider's text fields read clean (#473): HTML tags and entities gone, whitespace folded. */
 class ProviderTextTest {
@@ -11,6 +13,34 @@ class ProviderTextTest {
         assertEquals("Ringo ist ein Mann. Er beschließt", cleanText("Ringo ist ein Mann.\r\n\r\nEr beschließt   "))
         assertEquals("A & B", cleanText("A &amp; B"))
         assertEquals("Rock & roll <3", cleanText("Rock & roll <3"))
+    }
+
+    @Test fun `every kind of space folds to one, and a field with none comes back as it is`() {
+        assertEquals("A B C D E F", cleanText("A\tB\u00A0C\u2007D\u202FE \n F"))
+        assertEquals("Al Pacino", cleanText(" Al Pacino"))
+        val plain = "Robert De Niro"
+        assertTrue(plain === cleanText(plain))
+    }
+
+    @Test fun `a field reads the same as when every regex ran on it (#567)`() {
+        // cleanText as it was before it skipped the regexes that can't match.
+        val tag = Regex("""<[^>]{1,200}>""")
+        val entity = Regex("""&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});""")
+        val whitespace = Regex("[\\s\u00A0\u2007\u202F]+")
+        fun before(raw: String): String? = entity.replace(tag.replace(raw, " ")) { match ->
+            val name = match.groupValues[1]
+            when {
+                name.startsWith("#x", ignoreCase = true) -> name.drop(2).toIntOrNull(16)?.let { codePointString(it) }
+                name.startsWith("#") -> name.drop(1).toIntOrNull()?.let { codePointString(it) }
+                else -> mapOf("amp" to "&", "nbsp" to " ", "hellip" to "…")[name.lowercase()]
+            } ?: match.value
+        }.replace(whitespace, " ").trim().takeIf { it.isNotEmpty() }
+        val pieces = listOf("a", "B", "é", " ", "  ", "\t", "\n", "\r", "\u000B", "\u000C", "\u00A0", "\u2007", "\u202F", "\u2003", "<b>", "<", ">", "&amp;", "&nbsp;", "&#39;", "&hellip;", "&", ";", ",")
+        val random = Random(567)
+        repeat(20_000) {
+            val raw = (1..random.nextInt(0, 12)).joinToString("") { pieces.random(random) }
+            assertEquals(raw, before(raw), cleanText(raw))
+        }
     }
 
     @Test fun `an empty or blank field is nothing`() {

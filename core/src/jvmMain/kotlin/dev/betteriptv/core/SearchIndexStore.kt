@@ -14,18 +14,38 @@ import kotlin.random.Random
 internal class SearchSources(private val table: PrefixTable) {
     /** A Category's genres are worked out once, not once per Listing filed under it. */
     private val categoryGenres = HashMap<String, List<String>>()
+    /** And a genre field's once, not once per Listing that has it: the Provider writes a few thousand different ones (#567). */
+    private val fieldGenres = HashMap<String, List<String>>()
 
     fun clean(name: String): PrefixTable.CleanName = table.cleanName(name)
 
     fun language(name: String, category: String): String? = table.language(name, category)?.let(::primaryLanguage)
 
-    fun genres(category: String, field: String?): List<String> = categoryGenres.getOrPut(category) { table.titleGenres(category) } + table.genres(field)
+    /** The genres a Listing's Category names. */
+    fun categoryGenres(category: String): List<String> = categoryGenres.getOrPut(category) { table.titleGenres(category) }
 
-    fun cast(raw: String?): List<String> = castNames(raw)
+    /** The genres a Listing's genre field names. */
+    fun fieldGenres(field: String?): List<String> = if (field == null) emptyList() else fieldGenres.getOrPut(field) { table.genres(field) }
+
+    /** A cast field's people are worked out once, not once per Listing that has it: half the Provider's show Listings share theirs with another (#567). */
+    private val castFields = HashMap<String, List<String>>()
+
+    fun cast(raw: String?): List<String> = if (raw == null) emptyList() else castFields.getOrPut(raw) { castNames(raw) }
 }
 
-/** One Listing of a Title, as the search index reads it; [clean] is its cleaned name when the Sync already worked it out. */
-internal class IndexedListing(val name: String, val category: String, val genre: String?, val cast: String?, val clean: PrefixTable.CleanName? = null)
+/**
+ * One Listing of a Title, as the search index reads it. [clean] is its cleaned name when it was
+ * already worked out, and [language] then the primary language its description tells (null for
+ * none): the two come together, from the Sync that described it, so neither is worked out again (#567).
+ */
+internal class IndexedListing(
+    val name: String,
+    val category: String,
+    val genre: String?,
+    val cast: String?,
+    val clean: PrefixTable.CleanName? = null,
+    val language: String? = null,
+)
 
 /** What a Title's Listings say of it, for the search index: the names it is found by, its languages, its cast and its genres (English names). */
 internal class IndexedTitle(listings: List<IndexedListing>, sources: SearchSources) {
@@ -33,9 +53,14 @@ internal class IndexedTitle(listings: List<IndexedListing>, sources: SearchSourc
         val clean = listing.clean ?: sources.clean(listing.name)
         listOfNotNull(clean.name, clean.year?.let { "${clean.name} $it" })
     }
-    val languages: Set<String> = listings.mapNotNullTo(HashSet()) { sources.language(it.name, it.category) }
+    val languages: Set<String> = listings.mapNotNullTo(HashSet()) { if (it.clean != null) it.language else sources.language(it.name, it.category) }
     val cast: Set<String> = listings.flatMapTo(LinkedHashSet()) { sources.cast(it.cast) }
-    val genres: List<String> = listings.flatMapTo(LinkedHashSet()) { sources.genres(it.category, it.genre) }.map(Genres::english).distinct()
+    val genres: List<String> = LinkedHashSet<String>().also { found ->
+        listings.forEach {
+            found += sources.categoryGenres(it.category)
+            found += sources.fieldGenres(it.genre)
+        }
+    }.map(Genres::english).distinct()
 }
 
 /**
@@ -106,26 +131,31 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
      * Indexes the staged Titles, in list order, with their people and genres, and the staged Sports
      * replays unless [replays] is false (a Head start lands none). Runs while the Titles stage still
      * has its raw Listings (`staging_listing`), so a name the Sync cleaned isn't cleaned again.
+     * Marks each part on [timer]: the Titles, their people and genres, the Sports replays and the merge.
      */
-    fun buildStagedTitles(sources: SearchSources, replays: Boolean) {
+    fun buildStagedTitles(sources: SearchSources, replays: Boolean, timer: SyncTimer? = null) {
         val mark = writer.prepare("SELECT coalesce(max(fetched_at), 0) FROM movie_details").use { it.step(); it.getLong(0) }
         CatalogWriter(STAGING, sources).use { index ->
             writer.prepare(
                 """
                 SELECT t.kind, t.position, l.name, coalesce(c.name, ''), CASE WHEN l.kind = 'movie' THEN d.genre ELSE l.genre END,
-                    CASE WHEN l.kind = 'movie' THEN d.actors ELSE l.actors END, l.clean_name, l.clean_year
+                    CASE WHEN l.kind = 'movie' THEN d.actors ELSE l.actors END, l.clean_name, l.clean_year, l.clean_language
                 FROM staging_listing l JOIN staging_title t ON t.key = l.title_key
                 LEFT JOIN staging_category c ON c.kind = l.kind AND c.id = l.category_id
                 LEFT JOIN movie_details d ON l.kind = 'movie' AND d.listing_id = l.id
                 WHERE l.hidden = 0 ORDER BY t.kind, t.position, l.added DESC, l.name, l.id
                 """.trimIndent(),
             ).use { index.titles(it, cleaned = true) }
-            if (replays) writer.prepare("SELECT position, name FROM staging_replay ORDER BY position").use { index.replays(it) }
+            timer?.mark(TIMED_TITLES)
             index.finish()
+            timer?.mark(TIMED_PEOPLE_AND_GENRES)
+            if (replays) writer.prepare("SELECT position, name FROM staging_replay ORDER BY position").use { index.replays(it) }
+            timer?.mark(TIMED_REPLAYS)
         }
         optimize("${STAGING}search_catalog")
         writeMeta(PENDING_TITLES, VERSION)
         writeMeta(PENDING_DETAILS, mark.toString())
+        timer?.mark(TIMED_MERGE)
     }
 
     /** Lands the staged Channels' index with them, inside their swap; one staged by an app without it leaves none, to be built ([rebuild]). */
@@ -199,7 +229,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             val going = write {
                 buildChannels("", "channel")
                 writeMeta(CHANNELS, VERSION)
-                index = CatalogWriter("", sources).also { catalog -> writer.prepare("SELECT position, name FROM replay ORDER BY position").use { catalog.replays(it) } }
+                index = CatalogWriter("", sources)
             }
             if (!going) return ready
             for (kind in listOf("movie", "show")) {
@@ -214,6 +244,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             val mark = synchronized(reader) { reader.prepare("SELECT coalesce(max(fetched_at), 0) FROM movie_details").use { it.step(); it.getLong(0) } }
             write {
                 index!!.finish()
+                writer.prepare("SELECT position, name FROM replay ORDER BY position").use { index!!.replays(it) }
                 optimize("search_catalog")
                 writeMeta(TITLES, VERSION)
                 writeMeta(DETAILS, mark.toString())
@@ -237,7 +268,9 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
         }
         // A Title's Listings in list order, as a Sync reads them.
         return rows.groupBy { it.first }.map { (position, listings) ->
-            position to listings.sortedBy { it.second }.map { (_, _, listing) -> IndexedListing(listing.name, listing.category, listing.genre, listing.cast, sources.clean(listing.name)) }
+            position to listings.sortedBy { it.second }.map { (_, _, listing) ->
+                IndexedListing(listing.name, listing.category, listing.genre, listing.cast, sources.clean(listing.name), sources.language(listing.name, listing.category))
+            }
         }
     }
 
@@ -366,8 +399,9 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
         private val insertGenreTitle = writer.prepare("INSERT OR IGNORE INTO ${prefix}search_title_genre VALUES (?, ?)")
         private val insertLanguages = writer.prepare("INSERT INTO ${prefix}search_languages VALUES (?, ?)")
         private val insertGenreCount = writer.prepare("INSERT INTO ${prefix}search_genre_count VALUES (?, ?, ?)")
-        private val people = HashMap<String, Long>()
-        private val genres = HashMap<String, Long>()
+        /** People and genres by name, their ids in the order they were met: their words are written after every Title's ([finish]). */
+        private val people = LinkedHashMap<String, Long>()
+        private val genres = LinkedHashMap<String, Long>()
         private val languageSets = LinkedHashMap<Set<String>, Long>()
         /** How many Titles each genre has per language set, by [countKey]. */
         private val genreCounts = HashMap<Long, Long>()
@@ -393,7 +427,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             insert.stepAndReset()
         }
 
-        /** Every Title of [rows] (kind, position, then a Listing: name, Category, genre field, cast and, when [cleaned], its clean name and year), a Title's rows together. */
+        /** Every Title of [rows] (kind, position, then a Listing: name, Category, genre field, cast and, when [cleaned], its clean name, year and language), a Title's rows together. */
         fun titles(rows: SQLiteStatement, cleaned: Boolean) {
             var kind = ""
             var position = -1L
@@ -406,7 +440,7 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
                     position = rows.getLong(1)
                 }
                 val clean = if (cleaned && !rows.isNull(6)) PrefixTable.CleanName(rows.getText(6), if (rows.isNull(7)) null else rows.getLong(7).toInt()) else null
-                listings += IndexedListing(rows.getText(2), rows.getText(3), rows.textOrNull(4), rows.textOrNull(5), clean)
+                listings += IndexedListing(rows.getText(2), rows.getText(3), rows.textOrNull(4), rows.textOrNull(5), clean, if (clean != null) rows.textOrNull(8) else null)
             }
             if (listings.isNotEmpty()) title(kind, position, listings)
         }
@@ -427,32 +461,35 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             pair(insertTitle, row, languages)
             for (name in title.cast) {
                 val person = people.getOrPut(name) {
-                    people.size.toLong().also { id ->
-                        named(insertPerson, id, name)
-                        words(PERSON shl SCOPE_SHIFT or id, SearchIndex.words(name).distinct())
-                    }
+                    people.size.toLong().also { id -> named(insertPerson, id, name) }
                 }
                 pair(insertCast, row, person)
             }
             for (name in title.genres) {
                 val genre = genres.getOrPut(name) {
-                    genres.size.toLong().also { id ->
-                        named(insertGenre, id, name)
-                        words(GENRE shl SCOPE_SHIFT or id, Genres.every(name).flatMap(SearchIndex::words).distinct())
-                    }
+                    genres.size.toLong().also { id -> named(insertGenre, id, name) }
                 }
                 pair(insertGenreTitle, row, genre)
                 countKey(genre, languages).let { genreCounts[it] = (genreCounts[it] ?: 0) + 1 }
             }
         }
 
-        /** Every Sports replay of [rows] (position, name), found by its name without its Prefix. */
+        /** Every Sports replay of [rows] (position, name), found by its name without its Prefix. After [finish]: their rows come last. */
         fun replays(rows: SQLiteStatement) {
             while (rows.step()) words(REPLAY shl SCOPE_SHIFT or rows.getLong(0), SearchIndex.words(ReplayNames.body(rows.getText(1))).distinct())
         }
 
+        /**
+         * Writes what waited for every Title: the people's and the genres' words, and the side tables.
+         * A full-text table's rows are written in row id order, scope by scope (Titles, people, genres,
+         * then Sports replays): FTS5 writes out what it holds in memory whenever a row id is lower than
+         * the one before, and people met between Titles made it do that for nearly every Title (#567).
+         */
         fun finish() {
-            (0 until nameCount).sortedWith(compareBy({ names[it * 2] }, { names[it * 2 + 1] })).forEach { pair(insertName, names[it * 2], names[it * 2 + 1]) }
+            people.forEach { (name, id) -> words(PERSON shl SCOPE_SHIFT or id, SearchIndex.words(name).distinct()) }
+            genres.forEach { (name, id) -> words(GENRE shl SCOPE_SHIFT or id, Genres.every(name).flatMap(SearchIndex::words).distinct()) }
+            sortPairs(names, nameCount)
+            for (i in 0 until nameCount) pair(insertName, names[i * 2], names[i * 2 + 1])
             // The links the other way round, each in its own order.
             writer.execSQL("INSERT INTO ${prefix}search_person_title SELECT person, title FROM ${prefix}search_cast ORDER BY person, title")
             writer.execSQL("INSERT INTO ${prefix}search_genre_title SELECT genre, title FROM ${prefix}search_title_genre ORDER BY genre, title")
@@ -833,6 +870,11 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
         /** Raised whenever the index's shape or what it holds changes: an index of another version is built again ([rebuild]). */
         const val VERSION = "1"
         const val STAGING = "staging_"
+        /** The parts of a Sync's Saving that build the Titles' index ([buildStagedTitles], [SyncTiming]). */
+        const val TIMED_TITLES = "Search index: Titles"
+        const val TIMED_PEOPLE_AND_GENRES = "Search index: people, genres"
+        const val TIMED_REPLAYS = "Search index: replays"
+        const val TIMED_MERGE = "Search index: merge"
         /** A `search_catalog` row id's scope, above this bit: a Title, a person, a genre or a Sports replay. */
         const val SCOPE_SHIFT = 40
         const val TITLE = 0L
@@ -915,6 +957,39 @@ internal class SearchIndexStore(private val writer: SQLiteConnection, private va
             }
             return hash
         }
+    }
+}
+
+/**
+ * Sorts the first [count] pairs of [pairs] (two numbers a pair, side by side) by their first number,
+ * then their second, in place: without boxing a number, which sorting 200,000 names' hashes did (#567).
+ */
+internal fun sortPairs(pairs: LongArray, count: Int) {
+    fun less(a: Int, b: Int) = pairs[a * 2] < pairs[b * 2] || pairs[a * 2] == pairs[b * 2] && pairs[a * 2 + 1] < pairs[b * 2 + 1]
+    fun swap(a: Int, b: Int) {
+        val first = pairs[a * 2]
+        val second = pairs[a * 2 + 1]
+        pairs[a * 2] = pairs[b * 2]
+        pairs[a * 2 + 1] = pairs[b * 2 + 1]
+        pairs[b * 2] = first
+        pairs[b * 2 + 1] = second
+    }
+    // A heap sort: no recursion, no extra memory, and n log n whatever the order.
+    fun siftDown(from: Int, end: Int) {
+        var root = from
+        while (true) {
+            var child = root * 2 + 1
+            if (child >= end) return
+            if (child + 1 < end && less(child, child + 1)) child++
+            if (!less(root, child)) return
+            swap(root, child)
+            root = child
+        }
+    }
+    for (i in count / 2 - 1 downTo 0) siftDown(i, count)
+    for (end in count - 1 downTo 1) {
+        swap(0, end)
+        siftDown(0, end)
     }
 }
 

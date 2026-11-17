@@ -633,9 +633,10 @@ class Library private constructor(
                                 unknownPrefixes.merge(prefix, UnknownPrefix(prefix, 1, name)) { seen, _ -> seen.copy(listingCount = seen.listingCount + 1) }
                             }
                             val hidden = description.hidden != null
-                            // The search index is built from the name cleaned here.
+                            // The search index is built from the name cleaned here, and the language described here.
                             val clean = table.cleanName(name)
-                            staging.listing(kind, id, name, categoryId, added, image, hidden, titleNumber, clean.year ?: releaseYear, container, rating, details, clean)
+                            val language = description.attributes.language?.value?.ifEmpty { null }?.let(::primaryLanguage)
+                            staging.listing(kind, id, name, categoryId, added, image, hidden, titleNumber, clean.year ?: releaseYear, container, rating, details, clean, language)
                             // A Sports replay is kept apart, with what its name says: its Title number and poster are wrong and ignored.
                             if (description.hidden == PrefixTable.Hidden.SportsReplay && kind == TitleKind.Movie) {
                                 staging.replay(id, name, category, added, container, ReplayNames.parse(name))

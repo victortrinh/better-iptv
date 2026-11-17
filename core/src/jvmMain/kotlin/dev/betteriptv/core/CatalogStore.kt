@@ -259,7 +259,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
     /** Where a Sync writes the Titles stage: the movie and show Categories and Listings, and the Sports replays. */
     class TitleStaging internal constructor(connection: SQLiteConnection) {
         private val insertCategory = connection.prepare("INSERT OR REPLACE INTO staging_category VALUES (?, ?, ?)")
-        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        private val insertListing = connection.prepare("INSERT INTO staging_listing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private val insertReplay = connection.prepare("INSERT OR REPLACE INTO staging_replay VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         private var replayPosition = 0L
 
@@ -279,7 +279,8 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
          * it. [container] is a movie file's extension (`mkv`), which its stream location ends with.
          * [rating] is the Provider's, on a 10 scale, and [details] what a show Listing says of its Show
          * (ADR 0014); a movie Listing has none. [clean] is its cleaned name, when the Sync has worked
-         * it out, so the search index doesn't again.
+         * it out, and [language] the primary language its description told (null for none), so the
+         * search index works out neither again.
          */
         fun listing(
             kind: TitleKind,
@@ -295,6 +296,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             rating: Double? = null,
             details: ProviderDetails? = null,
             clean: PrefixTable.CleanName? = null,
+            language: String? = null,
         ) = insertListing.run {
             bindText(1, kindKey(kind))
             bindLong(2, id)
@@ -311,6 +313,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             bindDetails(12, rating ?: said?.rating, said)
             if (clean == null) bindNull(20) else bindText(20, clean.name)
             if (clean?.year == null) bindNull(21) else bindLong(21, clean.year.toLong())
+            if (clean == null || language == null) bindNull(22) else bindText(22, language)
             stepAndReset()
         }
 
@@ -400,7 +403,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
             writer.execSQL("CREATE TABLE staging_category (kind TEXT, id TEXT, name TEXT NOT NULL, PRIMARY KEY (kind, id))")
             writer.execSQL(
                 "CREATE TABLE staging_listing (kind TEXT, id INTEGER, name TEXT, category_id TEXT, added INTEGER, hidden INTEGER, image TEXT, title_key TEXT, " +
-                    "title_number INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES, clean_name TEXT, clean_year INTEGER)",
+                    "title_number INTEGER, year INTEGER, container TEXT, $DETAILS_COLUMN_NAMES, clean_name TEXT, clean_year INTEGER, clean_language TEXT)",
             )
             writer.execSQL(LISTING_TABLE.format("staging_kept_listing"))
             writer.execSQL(TITLE_TABLE.format("staging_title"))
@@ -455,8 +458,7 @@ internal class CatalogStore(path: String) : Closeable, DeviceTokenStore, PinStor
                     """.trimIndent(),
                 )
                 timer?.mark("Kept-Listing insert")
-                this.search.buildStagedTitles(search, searchReplays)
-                timer?.mark("Search index")
+                this.search.buildStagedTitles(search, searchReplays, timer)
                 writer.execSQL("DROP INDEX staging_title_key")
                 writer.execSQL("DROP TABLE staging_listing")
                 writer.execSQL("DROP TABLE staging_category")
