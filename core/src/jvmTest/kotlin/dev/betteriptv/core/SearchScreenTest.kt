@@ -12,7 +12,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -179,8 +178,6 @@ class SearchScreenTest {
         provider.showCategoriesOverride = "[]"
         provider.showListOverride = "[]"
         val library = library()
-        // The index built in memory answers from the one built before a Sync until the new one is (#241), and tells no one when it is.
-        assumeFalse(library.searchInMemory)
         library.sync()
         val seen = Seen<SearchContent>(Seen.UNLIMITED)
         val collecting = launch(Dispatchers.Default) { library.screen(searching("smart")).collect { seen.send(it) } }
