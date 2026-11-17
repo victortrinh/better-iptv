@@ -4,9 +4,8 @@ import kotlin.time.Instant
 
 /**
  * Search over the index a Sync stores ([SearchIndexStore]): what [Library.search] answers from. The
- * index finds what matches and how closely; this ranks it with the rules the in-memory index
- * ([SearchIndex]) was read with, so the same query shows the same Titles, people, genres, Channels
- * and Sports replays in the same order.
+ * index finds what matches and how closely ([SearchIndex.distance]); this ranks the Titles, people,
+ * genres, Channels and Sports replays it found.
  */
 internal class StoredSearch(private val store: CatalogStore, private val limits: Limits) {
     private val index = store.search

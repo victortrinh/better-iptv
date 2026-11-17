@@ -4,17 +4,16 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.lang.management.ManagementFactory
 import kotlin.time.Duration
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.random.Random
 
 /**
- * Times building the search index of a catalog the size of the real one (#106): about 58,000 Titles
- * in about 145,000 Listings, each Show's Listing and each Movie's details naming 12 cast and a few
- * genres as the Provider does, and 45,000 Channels. Skipped unless run with `-Pbenchmark`; prints
- * each part's time and what the garbage collector did.
+ * Times building the stored search index of a catalog the size of the real one (#106, #584): about
+ * 58,000 Titles in about 145,000 Listings, each Show's Listing and each Movie's details naming 12
+ * cast and a few genres as the Provider does, and 45,000 Channels, then what finding a few queries
+ * costs. Skipped unless run with `-Pbenchmark`.
  */
 class SearchIndexBenchmark {
     @get:Rule val folder = TemporaryFolder()
@@ -25,47 +24,19 @@ class SearchIndexBenchmark {
 
     private fun name(words: Int) = (1..words).joinToString(" ") { word().replaceFirstChar(Char::uppercase) }
 
-    @Test fun `build the search index of a full-size catalog`() {
+    @Test fun `build and search the stored index of a full-size catalog`() {
         assumeTrue("run with -Pbenchmark", System.getProperty("benchmark") != null)
         val store = CatalogStore(folder.root.resolve("catalog.db").path)
         fill(store)
 
         val prefixTable = surveyedPrefixTable()
-        val gc = ManagementFactory.getGarbageCollectorMXBeans()
-        val runtime = Runtime.getRuntime()
-        repeat(3) { run ->
-            System.gc()
-            val before = runtime.totalMemory() - runtime.freeMemory()
-            val collections = gc.sumOf { it.collectionCount }
-            val collecting = gc.sumOf { it.collectionTime }
-            val threads = ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
-            val allocated = threads.currentThreadAllocatedBytes
-            val phases = LinkedHashMap<String, String>()
-            var phaseAllocated = allocated
-            val started = System.nanoTime()
-            val index = buildSearchIndex(store, prefixTable) { name, ms ->
-                val now = threads.currentThreadAllocatedBytes
-                phases[name] = "$ms ms/${(now - phaseAllocated) / (1024 * 1024)} MB"
-                phaseAllocated = now
-            }
-            val total = (System.nanoTime() - started) / 1_000_000
-            val allocatedMb = (threads.currentThreadAllocatedBytes - allocated) / (1024 * 1024)
-            System.gc()
-            val heldMb = (runtime.totalMemory() - runtime.freeMemory() - before) / (1024 * 1024)
-            println(
-                "Search index build ${run + 1}: $total ms (" + phases.entries.joinToString { "${it.key} ${it.value}" } + "), " +
-                    "$allocatedMb MB allocated, ${gc.sumOf { it.collectionCount } - collections} GCs taking ${gc.sumOf { it.collectionTime } - collecting} ms, " +
-                    "${index.titleCount} Titles, ${index.channels.size} Channels and ${index.peopleCount} people in $heldMb MB of heap",
-            )
-        }
-        val index = buildSearchIndex(store, prefixTable)
-        // The same catalog's index as a Sync stores it (#584), built here as a database kept from before it builds it once.
+        // The catalog's index as a Sync stores it (#584), built here as a database kept from before it builds it once.
         repeat(3) { run ->
             val started = System.nanoTime()
             store.search.rebuild(SearchSources(prefixTable), evenIfReady = true)
             println("Stored search index build ${run + 1}: ${(System.nanoTime() - started) / 1_000_000} ms, catalog.db ${folder.root.resolve("catalog.db").length() / (1024 * 1024)} MB")
         }
-        // What a keystroke costs each index: finding the query's Titles, people, genres, Channels and Replays, before ranking. Best of 5.
+        // What a keystroke costs: finding the query's Titles, people, genres and Channels, before ranking. Best of 5.
         val title = sampleTitle.lowercase()
         val person = samplePerson.lowercase()
         val queries = listOf(
@@ -74,33 +45,12 @@ class SearchIndexBenchmark {
         ).distinct()
         for (query in queries) {
             fun best(find: () -> Unit) = (1..5).minOf { val started = System.nanoTime(); find(); (System.nanoTime() - started) / 1_000 } / 1000.0
-            var inMemory = listOf<Map<*, Int>>()
-            var stored = listOf<Map<*, Int>>()
-            val memoryMs = best {
-                inMemory = listOf(
-                    index.findTitles(query).associate { index.titleId(it.index) to it.distance },
-                    index.findPeople(query).associate { index.person(it.index) to it.distance },
-                    index.findGenres(query).associate { index.genres[it.index] to it.distance },
-                    index.findChannels(query).associate { index.channels[it.index] to it.distance },
-                )
+            var found = listOf<Map<*, Int>>()
+            val ms = best {
+                val titles = store.search.find(query)
+                found = listOf(titles.titles, titles.people, titles.genres, store.search.findChannels(query))
             }
-            val storedMs = best {
-                val found = store.search.find(query)
-                val channels = store.search.findChannels(query)
-                stored = listOf(found.titles, found.people, found.genres, channels)
-            }
-            // Both name what they found the same way, and must have found the same, as closely.
-            val found = store.search.find(query)
-            val ids = store.search.titleIds(found.titles.keys)
-            val people = store.search.personNames(found.people.keys)
-            val genres = store.search.genreNames(found.genres.keys)
-            val channels = store.search.findChannels(query)
-            val leads = store.search.channelIds(channels.keys)
-            org.junit.Assert.assertEquals("Titles for $query", inMemory[0], found.titles.mapKeys { ids.getValue(it.key) })
-            org.junit.Assert.assertEquals("people for $query", inMemory[1], found.people.mapKeys { people.getValue(it.key) })
-            org.junit.Assert.assertEquals("genres for $query", inMemory[2], found.genres.mapKeys { genres.getValue(it.key) })
-            org.junit.Assert.assertEquals("Channels for $query", inMemory[3], channels.mapKeys { leads.getValue(it.key) })
-            println("Find \"$query\": in memory $memoryMs ms, stored $storedMs ms (${stored[0].size} Titles, ${stored[1].size} people, ${stored[2].size} genres, ${stored[3].size} Channels)")
+            println("Find \"$query\": $ms ms (${found[0].size} Titles, ${found[1].size} people, ${found[2].size} genres, ${found[3].size} Channels)")
         }
         store.close()
     }

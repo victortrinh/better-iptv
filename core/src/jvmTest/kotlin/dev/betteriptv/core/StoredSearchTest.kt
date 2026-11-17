@@ -30,10 +30,7 @@ class StoredSearchTest {
     private val path by lazy { folder.root.resolve("catalog.db").path }
     private var opened: Library? = null
 
-    private fun open(): Library = Library.open(path, credentials).also {
-        it.searchInMemory = false
-        opened = it
-    }
+    private fun open(): Library = Library.open(path, credentials).also { opened = it }
 
     @After fun tearDown() {
         opened?.close()
@@ -197,20 +194,5 @@ class StoredSearchTest {
         library = open()
         assertTrue(library.searchIndexReady)
         assertEquals(godfather, library.find("godfather").movies.first().id)
-    }
-
-    @Test fun `the index built in memory can still be switched on, and answers the same`() = runBlocking {
-        val library = open()
-        library.logIn(provider.login)
-        provider.serveChannels("US: ESPN HD" to "US| SPORTS", "US: ESPN FHD" to "US| SPORTS", "UK: BBC ONE HD" to "UK| GENERAL")
-        library.sync()
-        val queries = listOf("", "go", "the", "godfather", "the godfahter", "game of thrnoes", "dra", "drama", "comedy", "espn", "bbc one", "be", "st", "star", "night", "king", "love 2019")
-
-        val stored = queries.associateWith { library.find(it) }
-        library.searchInMemory = true
-        val inMemory = queries.associateWith { library.find(it) }
-
-        assertFalse(stored.getValue("godfather").isEmpty)
-        for (query in queries) assertEquals(query, inMemory.getValue(query), stored.getValue(query))
     }
 }
