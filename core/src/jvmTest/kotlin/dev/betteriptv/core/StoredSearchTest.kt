@@ -195,4 +195,42 @@ class StoredSearchTest {
         assertTrue(library.searchIndexReady)
         assertEquals(godfather, library.find("godfather").movies.first().id)
     }
+
+    @Test fun `the index a Sync builds answers as one built afresh from the same catalog does (#567)`() = runBlocking {
+        var library = open()
+        library.logIn(provider.login)
+        provider.serveChannels("US: ESPN HD" to "US| SPORTS", "US: ESPN FHD" to "US| SPORTS", "UK: BBC ONE HD" to "UK| GENERAL")
+        serveMovies("EN - Heat (1995)" to 949, "FR - Heat (1995)" to 949, "EN - Ronin (1998)" to 8195, "4K-EN - The Godfather (1972)" to 238, "DE - Der Pate (1972)" to 238)
+        provider.serveShows(
+            FakeProvider.ShowListing("EN - Breaking Bad (2008)", "EN | SERIES", 1396, genre = "Drama / Crime", cast = "Bryan Cranston, Aaron Paul"),
+            FakeProvider.ShowListing("FR - Breaking Bad (2008)", "FR | SÉRIES", 1396, genre = "Drame, Crime", cast = "Bryan Cranston,  Aaron&nbsp;Paul"),
+            FakeProvider.ShowListing("DE - Succession (2018)", "DE | SERIEN", 76331, genre = "Drama", cast = "Brian Cox, Jeremy Strong"),
+            FakeProvider.ShowListing("EN - Succession", "EN | SERIES", 76331, genre = "Drama", cast = "Brian Cox, Jeremy Strong"),
+            FakeProvider.ShowListing("EN - Taskmaster", "EN | COMEDY", null, cast = "Greg Davies: the Taskmaster, Alex Horne"),
+        )
+        provider.serveMovieDetails(1, cast = "Al Pacino, Robert De Niro", genre = "Crime / Thriller")
+        library.sync()
+        // Heat's details kept, so the next Sync reads its cast and genres too.
+        library.title(heat, english, "en")
+        library.sync()
+        val queries = listOf(
+            "", "he", "heat", "hat", "ronin", "the", "godfather", "pate", "the godfahter", "dra", "drama", "drame", "crime", "thriller", "espn", "bbc one", "be",
+            "breaking", "breakng bad", "succession 2018", "taskmaster", "al pacino", "pacino", "de niro", "bryan", "cranston", "aaron paul", "brian cox", "greg", "alex horne",
+        )
+        val synced = queries.associateWith { library.find(it) }
+        library.close()
+        // As if the index had never been built: the next search builds it from the catalog on screen,
+        // its names cleaned and its languages described there, not handed over by a Sync.
+        androidx.sqlite.driver.bundled.BundledSQLiteDriver().open(path).use { it.prepare("DELETE FROM meta WHERE key = 'search_titles'").use { delete -> delete.step() } }
+
+        library = open()
+        assertFalse(library.searchIndexReady)
+        val rebuilt = queries.associateWith { library.find(it) }
+
+        assertTrue(library.searchIndexReady)
+        assertFalse(synced.getValue("godfather").isEmpty)
+        assertEquals(listOf(heat), synced.getValue("pacino").people.single().titles.map { it.id })
+        assertFalse(synced.getValue("cranston").people.isEmpty())
+        for (query in queries) assertEquals(query, synced.getValue(query), rebuilt.getValue(query))
+    }
 }

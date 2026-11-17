@@ -7,7 +7,10 @@ package dev.betteriptv.core
  */
 internal fun cleanText(raw: String?): String? {
     if (raw == null) return null
-    val unescaped = ENTITY.replace(TAG.replace(raw, " ")) { match ->
+    // Each regex runs only where it can match: most fields have no tag, entity or odd space, and the
+    // search index cleans every piece of every cast (#567), on a stick where a regex costs.
+    val untagged = if (raw.indexOf('<') >= 0) TAG.replace(raw, " ") else raw
+    val unescaped = if (untagged.indexOf('&') < 0) untagged else ENTITY.replace(untagged) { match ->
         val entity = match.groupValues[1]
         when {
             entity.startsWith("#x", ignoreCase = true) -> entity.drop(2).toIntOrNull(16)?.let { codePoint(it) }
@@ -15,8 +18,22 @@ internal fun cleanText(raw: String?): String? {
             else -> NAMED_ENTITIES[entity.lowercase()]
         } ?: match.value
     }
-    return unescaped.replace(WHITESPACE, " ").trim().takeIf { it.isNotEmpty() }
+    return (if (hasOddSpace(unescaped)) unescaped.replace(WHITESPACE, " ") else unescaped).trim().takeIf { it.isNotEmpty() }
 }
+
+/**
+ * Whether [WHITESPACE] could change [text]: it has a space other than a lone `' '`. Any Unicode space
+ * counts, more than the JVM's `\s` matches, so the answer holds whatever a platform's `\s` is.
+ */
+private fun hasOddSpace(text: String): Boolean {
+    for (i in text.indices) {
+        val c = text[i]
+        if (if (c == ' ') i + 1 < text.length && isAnySpace(text[i + 1]) else isAnySpace(c)) return true
+    }
+    return false
+}
+
+private fun isAnySpace(c: Char): Boolean = c.isWhitespace() || c == '\u00A0' || c == '\u2007' || c == '\u202F'
 
 /** A list the Provider writes as one string (`Marlon Brando, Al Pacino`), split on commas, each name clean, none twice. */
 internal fun cleanList(raw: String?): List<String> =
@@ -48,8 +65,9 @@ internal fun castNames(raw: String?): List<String> = cleanList(raw).filter(::rea
  * Measured on the live Provider (2026-11-08): it leaves out 862 of 50,922 cast pieces.
  */
 internal fun readsAsName(piece: String): Boolean {
-    if (SENTENCE_PUNCTUATION.containsMatchIn(piece)) return false
-    if (SENTENCE_STOP.findAll(piece).any { it.groupValues[1].lowercase() !in ABBREVIATIONS }) return false
+    // Each regex runs only where it can match: most names have neither punctuation nor a full stop.
+    if (piece.any { it in PUNCTUATION_MARKS } && SENTENCE_PUNCTUATION.containsMatchIn(piece)) return false
+    if (piece.indexOf('.') >= 0 && SENTENCE_STOP.findAll(piece).any { it.groupValues[1].lowercase() !in ABBREVIATIONS }) return false
     val words = piece.split(' ')
     if (words.size > MAX_NAME_WORDS) return false
     val lowercase = words.count(::isLowercaseWord)
@@ -64,6 +82,8 @@ private fun isLowercaseWord(word: String): Boolean {
 
 private const val MAX_NAME_WORDS = 5
 private val SENTENCE_PUNCTUATION = Regex("""[:;!?…：]\s|[；！？…：]|\s[-–—]\s""")
+/** Every character one of [SENTENCE_PUNCTUATION]'s matches holds besides spaces. */
+private const val PUNCTUATION_MARKS = ":;!?…：；！？-–—"
 private val SENTENCE_STOP = Regex("""(\p{L}{3,})\.\s+\S""")
 private val ABBREVIATIONS = setOf("mrs", "prof", "gen", "col", "capt", "sgt", "mohd")
 private val CASED_NAME_SCRIPTS = setOf(Script.LATIN, Script.GREEK, Script.CYRILLIC)
